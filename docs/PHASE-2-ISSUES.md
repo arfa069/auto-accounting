@@ -40,8 +40,11 @@ These issues are written as independently grabbable tracer bullets. Each issue s
     - Blocked by: 9, 10
     - User stories covered: request account deletion, cancel during cooling-off, delete cloud account data
 12. Package internal beta QA, metrics, and release build
-    - Blocked by: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+    - Blocked by: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13
     - User stories covered: internal beta validation, capture quality measurement, release readiness
+13. Correct tester-facing Android copy encoding
+    - Blocked by: 1
+    - User stories covered: internal beta readability, compliance clarity, account and permission comprehension
 
 ## Issue 1: Baseline Audit And Phase 2 Risk Map
 
@@ -271,6 +274,25 @@ Create the internal beta release package: repeatable build procedure, device mat
 - Issue 9: Persist Backend Auth, SMS, And Registered Devices
 - Issue 10: Persist Backend Cloud Configuration And AI Proxy State
 - Issue 11: Persist Account Deletion And Scheduled Cloud Cleanup
+- Issue 13: Correct Tester-Facing Android Copy Encoding
+
+## Issue 13: Correct Tester-Facing Android Copy Encoding
+
+## What to build
+
+Correct mojibake tester-facing Android string literals in Kotlin source and resources so account, review queue, ledger, reports, permissions, backup, deletion, AI, compliance, and beta-readiness copy is readable before any internal tester build.
+
+## Acceptance criteria
+
+- [ ] User-facing Android copy renders as intended Chinese text in the main app flows.
+- [ ] Account, permission, local data deletion, account deletion, AI consent, backup/export, and compliance risk copy remains plain and clear.
+- [ ] Any shared repeated copy is moved to resources or local helpers where that reduces future encoding drift.
+- [ ] Unit or UI tests that assert key copy are updated to the corrected strings.
+- [ ] Android build passes after copy correction.
+
+## Blocked by
+
+- Issue 1: Baseline Audit And Phase 2 Risk Map
 
 ## Approval Questions
 

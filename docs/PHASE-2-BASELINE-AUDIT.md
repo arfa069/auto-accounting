@@ -10,6 +10,8 @@ Phase 1 is a feature-complete skeleton that covers the intended product surface 
 
 Phase 2 should treat this repository as a coherent baseline, not as production-ready behavior.
 
+This audit does not remove every mock/demo seam in the same commit. Instead, it isolates them by naming the exact seam, owner area, and follow-up issue that must replace or close it. The seams that block real internal beta are scheduled in the follow-up map below.
+
 ## Reviewed Scope
 
 Reviewed against:
@@ -38,19 +40,34 @@ Real and useful:
 - Backend account, SMS-code, password hashing, login lockout, deletion cooling-off, and AI proxy/log models exist with route/service tests.
 
 Still mocked, in-memory, or local-only:
-- Main app state is mostly held in Compose `remember` state in `MainActivity`: account session, review queue, confirmed entries, categorization rules, AI settings, continuous monitoring, and deletion state.
-- `LocalLedgerRepository` and Room are present but not wired into the main UI flow.
-- The app starts with `sampleReviewQueueEntries()`, so review/ledger/report data is demonstration state by default.
-- Android account UI defaults to `FakeAccountRepository`, returning `mock-token` for login, registration, and recovery.
-- `DemoAiCategorizationGateway` in `MainActivity` returns local suggestions instead of calling the backend AI route.
-- Backend `AccountService` stores users, SMS codes, issue times, deletion state, and tokens in process memory.
-- Backend `AiCategorizationService` stores AI logs in process memory and uses local heuristic suggestions, not a provider configured through environment variables.
-- Backup/export UI uses a fixed `DEMO_BACKUP_PASSPHRASE` and operates on a `LocalDataSnapshot` assembled from current Compose state.
-- Notification listener forwards notification text to an in-process capture bus; permission-state detection, settings deep-link, service lifecycle, and durable capture handoff are not closed.
-- Accessibility service is declared but currently has no bill-sync event handling; bill sync uses sample page text in the review UI.
-- Continuous monitoring is a UI/state reducer, not a real Android service boundary.
-- Permission center copy exists, but permission health is not backed by real Android permission checks.
-- Several Android user-facing string literals in Kotlin source appear mojibake and should be corrected before any tester-facing build.
+- Main app state is mostly held in Compose `remember` state in `MainActivity`: account session, review queue, confirmed entries, categorization rules, AI settings, continuous monitoring, and deletion state. Follow-up: Issues 2, 3, 4, and 8.
+- `LocalLedgerRepository` and Room are present but not wired into the main UI flow. Follow-up: Issues 2 and 3.
+- The app starts with `sampleReviewQueueEntries()`, so review/ledger/report data is demonstration state by default. Follow-up: Issue 2.
+- Android account UI defaults to `FakeAccountRepository`, returning `mock-token` for login, registration, and recovery. Follow-up: Issue 9.
+- `DemoAiCategorizationGateway` in `MainActivity` returns local suggestions instead of calling the backend AI route. Follow-up: Issue 10.
+- Backend `AccountService` stores users, SMS codes, issue times, deletion state, and tokens in process memory. Follow-up: Issues 9 and 11.
+- Backend `AiCategorizationService` stores AI logs in process memory and uses local heuristic suggestions, not a provider configured through environment variables. Follow-up: Issue 10.
+- Backup/export UI uses a fixed `DEMO_BACKUP_PASSPHRASE` and operates on a `LocalDataSnapshot` assembled from current Compose state. Follow-up: Issue 5.
+- Notification listener forwards notification text to an in-process capture bus; permission-state detection, settings deep-link, service lifecycle, and durable capture handoff are not closed. Follow-up: Issue 6.
+- Accessibility service is declared but currently has no bill-sync event handling; bill sync uses sample page text in the review UI. Follow-up: Issue 7.
+- Continuous monitoring is a UI/state reducer, not a real Android service boundary. Follow-up: Issue 8.
+- Permission center copy exists, but permission health is not backed by real Android permission checks. Follow-up: Issues 6, 7, and 8.
+- Several Android user-facing string literals in Kotlin source appear mojibake and should be corrected before any tester-facing build. Follow-up: Issue 13.
+
+## Follow-Up Issue Map
+
+- Issue 2: replace sample/default pending review state with persisted review queue and ignored-entry state.
+- Issue 3: connect confirmed ledger entries, reports, and local data deletion to persisted local data.
+- Issue 4: persist categorization rules, AI consent, enhanced context, and monitoring setting state.
+- Issue 5: replace demo backup passphrase and transient snapshot backup with user-entered passphrase handling over persisted app data.
+- Issue 6: close notification listener permission, settings deep-link, filtering, and durable pending-entry capture.
+- Issue 7: close accessibility bill-sync permission, user-started sync session, service event handling, and durable pending-entry capture.
+- Issue 8: replace continuous monitoring UI-only state with a real opt-in service boundary and guardrails.
+- Issue 9: replace Android fake account repository and backend in-memory auth/SMS/device state with durable backend integration.
+- Issue 10: replace demo AI gateway and backend heuristic/provider placeholder with durable cloud configuration and provider-backed AI proxy.
+- Issue 11: connect account deletion UI/backend state to durable scheduled cloud cleanup.
+- Issue 12: package validated internal beta QA and release artifacts after Issues 2-11 and Issue 13.
+- Issue 13: correct mojibake tester-facing Android strings before any internal tester build.
 
 ## Risk Map
 
@@ -58,15 +75,15 @@ Still mocked, in-memory, or local-only:
 
 - Persist app state through Room/repositories before relying on any UX behavior.
   Owner area: Android local data and main app wiring.
-  Follow-up: Phase 2 Issues 2-5.
+  Follow-up: Phase 2 Issues 2, 3, 4, and 5.
 
 - Replace fake Android account and AI gateways with backend clients and safe provider seams.
   Owner area: Android account/AI clients and backend services.
-  Follow-up: Phase 2 Issues 9-10.
+  Follow-up: Phase 2 Issues 9 and 10.
 
 - Close real Android permission and service flows for notification capture, bill sync, and continuous monitoring.
   Owner area: Android permissions, notification listener, accessibility service, monitoring.
-  Follow-up: Phase 2 Issues 6-8.
+  Follow-up: Phase 2 Issues 6, 7, and 8.
 
 - Replace demo backup passphrase with user-entered passphrase handling and persisted backup data.
   Owner area: Android backup/export.
@@ -76,11 +93,11 @@ Still mocked, in-memory, or local-only:
 
 - Move backend account, SMS, deletion, registered-device, cloud configuration, and AI log state to PostgreSQL.
   Owner area: backend persistence and migrations.
-  Follow-up: Phase 2 Issues 9-11.
+  Follow-up: Phase 2 Issues 9, 10, and 11.
 
 - Correct mojibake user-facing Kotlin string literals and verify app copy on device.
   Owner area: Android UI/copy.
-  Follow-up: add to the first Android UI-touching Phase 2 implementation issue or create a dedicated copy cleanup issue.
+  Follow-up: Phase 2 Issue 13.
 
 - Add real permission health and ROM guidance without overpromising background behavior.
   Owner area: Android permission center.
@@ -121,9 +138,19 @@ Still mocked, in-memory, or local-only:
 - Slice 14: Continuous monitoring UI state exists; real service boundary remains open.
 - Slice 15: Beta readiness surfaces exist; real device QA package and release artifact remain open.
 
+## Architecture And Glossary Notes
+
+- Architecture says the Android app owns ledger truth and the first backend must not sync or store the user's full ledger. Baseline keeps ledger data local, but main UI currently uses transient state rather than durable Room-backed local truth.
+- Architecture says the capture pipeline never writes directly to confirmed ledger entries. Baseline follows this in UI state: notification/bill candidates become pending entries, then review actions confirm into ledger-facing state.
+- Architecture names notification listener, accessibility bill sync, dedupe, categorization, pending entries, review queue, ledger, reports, CSV/export, backend, SMS, and AI as separate responsibilities. Baseline has these responsibilities as files/classes, but main app wiring still centralizes several responsibilities in `MainActivity`.
+- Glossary terms used in this audit follow the project vocabulary: pending entry, ledger entry, review queue, ignored entry, duplicate candidate, categorization rule, AI categorization, bill sync, continuous monitoring, local mode, account deletion, local data deletion, internal beta, and sensitive transaction information.
+- Avoided terms: this audit does not call pending entries "raw transactions", ignored entries "deleted entries", bill sync "scraping", or local mode a "guest account".
+
 ## Validation Record
 
 Commands run during this audit:
 - `rg -n -i "mock|demo|sample|placeholder|todo|fixme|in[- ]?memory|fake|stub|hardcoded|passphrase|password|token|secret|local mode|local-only" apps services shared docs README.md CONTEXT.md`
 - `.\gradlew.bat --no-daemon test` - passed.
 - `.\gradlew.bat --no-daemon build` - passed.
+
+The root `test` and `build` tasks ran the documented narrower test/build tasks through Gradle task dependencies, including Android debug unit tests and backend tests. Separate explicit invocations of `:apps:android:testDebugUnitTest`, `:apps:android:assembleDebug`, and `:services:backend:test` were not rerun after root `build` passed.
