@@ -6,11 +6,17 @@ Make the confirm-to-ledger path durable end to end: a reviewed pending entry bec
 
 ## Acceptance criteria
 
-- [ ] Confirming a pending entry writes a durable ledger entry and removes the resolved pending entry from the review queue.
-- [ ] Ledger monthly summary, search/filter, category ranking, and trend data are derived from persisted ledger data.
-- [ ] Reports continue to show the same confirmed ledger data after app restart.
-- [ ] Local data deletion clears ledger entries, pending entries, ignored entries, settings covered by this issue, and related local metadata.
-- [ ] Tests cover confirm-to-ledger, report aggregate persistence, restart/recreate behavior, and local data deletion.
+- [x] Confirming a pending entry writes a durable ledger entry and removes the resolved pending entry from the review queue.
+- [x] Ledger monthly summary, search/filter, category ranking, and trend data are derived from persisted ledger data.
+- [x] Reports continue to show the same confirmed ledger data after app restart.
+- [x] Local data deletion clears ledger entries, pending entries, ignored entries, settings covered by this issue, and related local metadata.
+- [x] Tests cover confirm-to-ledger, report aggregate persistence, restart/recreate behavior, and local data deletion.
+
+## Verification record
+
+- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests com.autoaccounting.data.local.LocalLedgerRepositoryTest --tests com.autoaccounting.feature.ledger.LedgerModelsTest` - passed.
+- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` - passed.
+- `.\gradlew.bat --no-daemon :apps:android:assembleDebug` - passed.
 
 ## Blocked by
 

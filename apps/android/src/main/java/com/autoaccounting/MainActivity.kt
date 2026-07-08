@@ -36,6 +36,7 @@ import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.capture.NotificationCapturePipeline
 import com.autoaccounting.feature.capture.PaymentNotificationCaptureBus
+import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
@@ -90,13 +91,13 @@ fun AutoAccountingApp() {
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
+    var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val notificationCapturePipeline = remember {
         NotificationCapturePipeline(
             captureTimeFormatter = ::formatNotificationCaptureTime
         )
     }
-    val ledgerEntries = reviewState.confirmedEntries.map { it.toLedgerUiEntry() }
     val currentReviewState by rememberUpdatedState(reviewState)
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
@@ -121,6 +122,12 @@ fun AutoAccountingApp() {
                 lastAction = reviewState.lastAction,
                 undoEventSequence = reviewState.undoEventSequence
             )
+        }
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.ledgerEntries.collect { entries ->
+            ledgerEntries = entries.map { it.toLedgerUiEntry() }
         }
     }
 
@@ -210,6 +217,10 @@ fun AutoAccountingApp() {
                             categorizationRules = emptyList()
                             aiSettings = AiCategorizationSettings()
                             continuousMonitoringState = ContinuousMonitoringState()
+                            ledgerEntries = emptyList()
+                            coroutineScope.launch {
+                                localLedgerRepository.clearLocalData()
+                            }
                         },
                         accountSession = accountSession,
                         accountDeletionState = accountDeletionState,

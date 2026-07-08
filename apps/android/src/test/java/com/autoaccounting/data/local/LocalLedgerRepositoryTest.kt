@@ -76,6 +76,52 @@ class LocalLedgerRepositoryTest {
     }
 
     @Test
+    fun confirmedLedgerEntriesCanBeObservedAfterDatabaseReopen() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "ledger-reopen-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val fileDatabase = Room.databaseBuilder(
+            context,
+            AutoAccountingDatabase::class.java,
+            databaseName
+        ).allowMainThreadQueries().build()
+        val fileRepository = LocalLedgerRepository(
+            database = fileDatabase,
+            clock = { NOW },
+            idGenerator = { "ledger-generated" }
+        )
+        runBlocking {
+            fileRepository.seedSystemCategories()
+            fileRepository.upsertPending(samplePending(id = "pending-reopen"))
+            fileRepository.confirmPending(
+                pendingEntryId = "pending-reopen",
+                categoryId = "food"
+            )
+        }
+        fileDatabase.close()
+
+        val reopenedDatabase = Room.databaseBuilder(
+            context,
+            AutoAccountingDatabase::class.java,
+            databaseName
+        ).allowMainThreadQueries().build()
+        val reopenedRepository = LocalLedgerRepository(reopenedDatabase)
+
+        val ledgerEntries = runBlocking {
+            reopenedRepository.ledgerEntries.first()
+        }
+
+        assertEquals(listOf("ledger-generated"), ledgerEntries.map { it.id })
+        assertEquals("pending-reopen", ledgerEntries.single().originPendingEntryId)
+        runBlocking {
+            assertNull(reopenedDatabase.pendingEntryDao().getById("pending-reopen"))
+        }
+
+        reopenedDatabase.close()
+        context.deleteDatabase(databaseName)
+    }
+
+    @Test
     fun ignorePendingKeepsRecoverableSnapshotForThirtyDays() = runBlocking {
         repository.upsertPending(samplePending())
 
@@ -153,6 +199,25 @@ class LocalLedgerRepositoryTest {
         val ignoredEntries = repository.recoverableIgnoredEntries(NOW).first()
 
         assertEquals(listOf("recoverable"), ignoredEntries.map { it.id })
+    }
+
+    @Test
+    fun clearLocalDataDeletesLedgerPendingIgnoredAndMetadata() = runBlocking {
+        repository.seedSystemCategories()
+        val fundingAccount = repository.ensureFundingAccount(PaymentSource.ALIPAY, "余额")
+        repository.upsertPending(samplePending(id = "pending-clear", fundingAccountId = fundingAccount.id))
+        repository.confirmPending("pending-clear", categoryId = "food")
+        repository.upsertPending(samplePending(id = "pending-left"))
+        repository.upsertIgnored(sampleIgnored(id = "ignored-left", originalPendingEntryId = "ignored-source"))
+
+        repository.clearLocalData()
+
+        assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+        assertTrue(database.ignoredEntryDao().listRecoverable(NOW).isEmpty())
+        assertTrue(database.fundingAccountDao().getAllFundingAccounts().isEmpty())
+        val categories = database.categoryDao().getAllCategories()
+        assertTrue(categories.any { it.id == "food" && it.name == "餐饮" })
     }
 
     @Test

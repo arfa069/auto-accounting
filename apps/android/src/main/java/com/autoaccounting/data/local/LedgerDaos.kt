@@ -19,6 +19,9 @@ interface CategoryDao {
 
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getCategory(id: String): CategoryEntity?
+
+    @Query("DELETE FROM categories")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -31,6 +34,9 @@ interface FundingAccountDao {
 
     @Query("SELECT * FROM funding_accounts ORDER BY source ASC, label ASC")
     suspend fun getAllFundingAccounts(): List<FundingAccountEntity>
+
+    @Query("DELETE FROM funding_accounts")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -60,6 +66,9 @@ interface PendingEntryDao {
 
     @Query("DELETE FROM pending_entries WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM pending_entries")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -85,8 +94,14 @@ interface LedgerEntryDao {
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
     suspend fun listLedgerEntries(): List<LedgerEntryEntity>
 
+    @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
+    fun observeLedgerEntries(): Flow<List<LedgerEntryEntity>>
+
     @Query("DELETE FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId")
     suspend fun deleteByOriginPendingEntryId(pendingEntryId: String)
+
+    @Query("DELETE FROM ledger_entries")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -117,4 +132,7 @@ interface IgnoredEntryDao {
 
     @Query("DELETE FROM ignored_entries WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM ignored_entries")
+    suspend fun deleteAll()
 }

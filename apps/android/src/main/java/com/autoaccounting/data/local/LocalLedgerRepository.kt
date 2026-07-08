@@ -9,6 +9,7 @@ class LocalLedgerRepository(
     private val idGenerator: () -> String = { UUID.randomUUID().toString() }
 ) {
     val pendingEntries = database.pendingEntryDao().observePendingEntries()
+    val ledgerEntries = database.ledgerEntryDao().observeLedgerEntries()
 
     fun recoverableIgnoredEntries(nowEpochMillis: Long) =
         database.ignoredEntryDao().observeRecoverable(nowEpochMillis)
@@ -132,6 +133,15 @@ class LocalLedgerRepository(
 
     suspend fun deleteLedgerByOriginPendingEntryId(pendingEntryId: String) {
         database.ledgerEntryDao().deleteByOriginPendingEntryId(pendingEntryId)
+    }
+
+    suspend fun clearLocalData() = database.withTransaction {
+        database.ledgerEntryDao().deleteAll()
+        database.pendingEntryDao().deleteAll()
+        database.ignoredEntryDao().deleteAll()
+        database.fundingAccountDao().deleteAll()
+        database.categoryDao().deleteAll()
+        database.categoryDao().insertIgnore(DefaultCategories.systemDefaults(clock()))
     }
 
     companion object {
