@@ -5,7 +5,6 @@ import java.math.RoundingMode
 
 data class PaymentNotificationEvent(
     val packageName: String,
-    val appName: String,
     val title: String,
     val text: String,
     val postedAtEpochMillis: Long
@@ -38,7 +37,7 @@ class PaymentNotificationParser {
             amountMinor = amountMinor,
             transactionKindLabel = kindLabel,
             fundingAccountLabel = source.defaultFundingAccountLabel,
-            rawEvidenceText = event.text,
+            rawEvidenceText = rawText,
             parsedFields = listOf(
                 "来源=${source.label}",
                 "商户=$merchantTitle",
@@ -58,9 +57,9 @@ private enum class PaymentNotificationSource(
 }
 
 private fun PaymentNotificationEvent.paymentSource(): PaymentNotificationSource? {
-    return when {
-        packageName == "com.tencent.mm" || appName.contains("微信") -> PaymentNotificationSource.WeChat
-        packageName == "com.eg.android.AlipayGphone" || appName.contains("支付宝") -> PaymentNotificationSource.Alipay
+    return when (packageName) {
+        "com.tencent.mm" -> PaymentNotificationSource.WeChat
+        "com.eg.android.AlipayGphone" -> PaymentNotificationSource.Alipay
         else -> null
     }
 }

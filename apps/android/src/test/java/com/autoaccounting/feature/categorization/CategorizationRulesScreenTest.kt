@@ -73,8 +73,13 @@ class CategorizationRulesScreenTest {
 
     @Test
     fun profileCanShowNotificationPermissionItem() {
+        var settingsOpened = false
         composeRule.setContent {
-            CategorizationRulesScreen(showPermissionCenter = true)
+            CategorizationRulesScreen(
+                showPermissionCenter = true,
+                notificationListenerAccessGranted = true,
+                onOpenNotificationListenerSettings = { settingsOpened = true }
+            )
         }
 
         composeRule.onNodeWithText("权限中心").performScrollTo().assertIsDisplayed()
@@ -82,6 +87,9 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithText("用于识别微信、支付宝的收付款通知，生成待确认账目。")
             .performScrollTo()
             .assertIsDisplayed()
+        composeRule.onNodeWithText("当前状态：已授权").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("notification-listener-settings").performScrollTo().performClick()
+        assertTrue(settingsOpened)
     }
 
     @Test

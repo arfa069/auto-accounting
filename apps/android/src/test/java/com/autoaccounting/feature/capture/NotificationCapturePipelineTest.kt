@@ -19,7 +19,6 @@ class NotificationCapturePipelineTest {
         val entry = pipeline.capture(
             PaymentNotificationEvent(
                 packageName = "com.tencent.mm",
-                appName = "微信",
                 title = "微信支付",
                 text = "付款成功 商户：午餐 金额：¥35.90",
                 postedAtEpochMillis = NOW
@@ -31,7 +30,7 @@ class NotificationCapturePipelineTest {
         assertEquals(3590, entry.amountMinor)
         assertEquals("通知捕获", entry.captureReasonLabel)
         assertEquals(ConfidenceState.NEEDS_REVIEW, entry.confidence)
-        assertEquals("付款成功 商户：午餐 金额：¥35.90", entry.rawEvidenceText)
+        assertEquals("微信支付 付款成功 商户：午餐 金额：¥35.90", entry.rawEvidenceText)
         assertTrue(entry.parsedFields.contains("来源=微信"))
         assertTrue(entry.parsedFields.contains("金额=35.90"))
     }
@@ -46,7 +45,6 @@ class NotificationCapturePipelineTest {
             pipeline.capture(
                 PaymentNotificationEvent(
                     packageName = "com.eg.android.AlipayGphone",
-                    appName = "支付宝",
                     title = "支付宝",
                     text = "支付成功 地铁出行 6.00元",
                     postedAtEpochMillis = NOW

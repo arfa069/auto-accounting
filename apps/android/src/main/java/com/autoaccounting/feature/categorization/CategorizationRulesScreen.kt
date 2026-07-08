@@ -67,6 +67,8 @@ fun CategorizationRulesScreen(
         error("Backup repository unavailable")
     },
     onDeleteLocalData: () -> Unit = {},
+    notificationListenerAccessGranted: Boolean = false,
+    onOpenNotificationListenerSettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
@@ -85,6 +87,8 @@ fun CategorizationRulesScreen(
         onExportEncryptedBackup = onExportEncryptedBackup,
         onImportEncryptedBackup = onImportEncryptedBackup,
         onDeleteLocalData = onDeleteLocalData,
+        notificationListenerAccessGranted = notificationListenerAccessGranted,
+        onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
@@ -109,6 +113,8 @@ fun CategorizationRulesScreen(
         error("Backup repository unavailable")
     },
     onDeleteLocalData: () -> Unit = {},
+    notificationListenerAccessGranted: Boolean = false,
+    onOpenNotificationListenerSettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
@@ -188,7 +194,10 @@ fun CategorizationRulesScreen(
                 onImportEncryptedBackup = onImportEncryptedBackup,
                 onRequestDelete = { showDeleteDialog = true }
             )
-            PermissionCenterNotificationItem()
+            PermissionCenterNotificationItem(
+                accessGranted = notificationListenerAccessGranted,
+                onOpenSettings = onOpenNotificationListenerSettings
+            )
             ContinuousMonitoringItem(
                 state = currentContinuousMonitoringState,
                 onStateChange = ::updateContinuousMonitoringState
@@ -286,7 +295,10 @@ fun CategorizationRulesScreen(
 }
 
 @Composable
-private fun PermissionCenterNotificationItem() {
+private fun PermissionCenterNotificationItem(
+    accessGranted: Boolean,
+    onOpenSettings: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -303,6 +315,21 @@ private fun PermissionCenterNotificationItem() {
                 AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.NotificationListening),
                 style = MaterialTheme.typography.bodyMedium
             )
+            Text(
+                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (accessGranted) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+            OutlinedButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.testTag("notification-listener-settings")
+            ) {
+                Text("打开系统设置")
+            }
         }
     }
 }

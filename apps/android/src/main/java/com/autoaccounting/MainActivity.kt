@@ -1,6 +1,8 @@
 package com.autoaccounting
 
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,18 +14,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.room.Room
-import com.autoaccounting.data.local.AutoAccountingDatabase
+import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -35,48 +34,54 @@ import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
-import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
-import com.autoaccounting.feature.capture.NotificationCapturePipeline
-import com.autoaccounting.feature.capture.PaymentNotificationCaptureBus
+import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
-import com.autoaccounting.feature.review.reduceReviewQueue
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val notificationListenerAccessGranted = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            AutoAccountingApp()
+            AutoAccountingApp(
+                notificationListenerAccessGranted = notificationListenerAccessGranted.value,
+                onOpenNotificationListenerSettings = ::openNotificationListenerSettings
+            )
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        notificationListenerAccessGranted.value =
+            NotificationListenerPermission.isGranted(this)
+    }
+
+    private fun openNotificationListenerSettings() {
+        runCatching {
+            startActivity(NotificationListenerPermission.settingsIntent())
+        }.getOrElse {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
 }
 
 @Composable
-fun AutoAccountingApp() {
+fun AutoAccountingApp(
+    notificationListenerAccessGranted: Boolean = false,
+    onOpenNotificationListenerSettings: () -> Unit = {}
+) {
     val context = LocalContext.current
     val database = remember {
-        Room.databaseBuilder(
-            context.applicationContext,
-            AutoAccountingDatabase::class.java,
-            "auto-accounting.db"
-        )
-            .addMigrations(
-                AutoAccountingDatabase.MIGRATION_1_2,
-                AutoAccountingDatabase.MIGRATION_2_3
-            )
-            .build()
+        AutoAccountingDatabaseProvider.get(context)
     }
     val localLedgerRepository = remember(database) {
         LocalLedgerRepository(database)
@@ -105,13 +110,6 @@ fun AutoAccountingApp() {
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
-    val notificationCapturePipeline = remember {
-        NotificationCapturePipeline(
-            captureTimeFormatter = ::formatNotificationCaptureTime
-        )
-    }
-    val currentReviewState by rememberUpdatedState(reviewState)
-    val currentCategorizationRules by rememberUpdatedState(categorizationRules)
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
         reviewState = nextState
@@ -175,24 +173,6 @@ fun AutoAccountingApp() {
         localPreferencesRepository.userPreferences.collect { preferences ->
             aiSettings = preferences.aiSettings
             continuousMonitoringState = preferences.continuousMonitoringState
-        }
-    }
-
-    DisposableEffect(notificationCapturePipeline, reviewQueuePersistence) {
-        PaymentNotificationCaptureBus.setHandler { event ->
-            val entry = notificationCapturePipeline.capture(event)
-                ?.applyCategorizationSuggestion(currentCategorizationRules)
-                ?: return@setHandler
-            persistReviewTransition(
-                currentReviewState,
-                reduceReviewQueue(
-                    currentReviewState,
-                    ReviewQueueAction.AddPending(entry)
-                )
-            )
-        }
-        onDispose {
-            PaymentNotificationCaptureBus.clearHandler()
         }
     }
 
@@ -276,6 +256,8 @@ fun AutoAccountingApp() {
                                 localPreferencesRepository.clearLocalData()
                             }
                         },
+                        notificationListenerAccessGranted = notificationListenerAccessGranted,
+                        onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
                         accountSession = accountSession,
                         accountDeletionState = accountDeletionState,
                         onAccountDeletionStateChange = { next ->
@@ -336,10 +318,4 @@ private fun List<CategorizationRule>.upsert(rule: CategorizationRule): List<Cate
     } else {
         this + rule
     }
-}
-
-private fun formatNotificationCaptureTime(epochMillis: Long): String {
-    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.ofEpochMilli(epochMillis))
 }
