@@ -109,7 +109,8 @@ class LocalLedgerRepository(
             parsedFieldsText = pending.parsedFieldsText,
             ignoredAtEpochMillis = ignoredAtEpochMillis,
             expiresAtEpochMillis = ignoredAtEpochMillis + IGNORED_RETENTION_MILLIS,
-            reason = reason
+            reason = reason,
+            suggestedCategoryLabel = pending.suggestedCategoryLabel
         )
 
         database.ignoredEntryDao().upsert(ignoredEntry)
@@ -165,5 +166,6 @@ private fun IgnoredEntryEntity.toPendingEntry(): PendingEntryEntity = PendingEnt
     fundingAccountLabel = fundingAccountLabel,
     note = note,
     evidenceSummary = evidenceSummary,
-    parsedFieldsText = parsedFieldsText
+    parsedFieldsText = parsedFieldsText,
+    suggestedCategoryLabel = suggestedCategoryLabel
 )

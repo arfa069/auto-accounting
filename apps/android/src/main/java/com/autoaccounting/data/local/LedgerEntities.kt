@@ -74,7 +74,8 @@ data class PendingEntryEntity(
     @ColumnInfo(name = "funding_account_label") val fundingAccountLabel: String?,
     val note: String?,
     @ColumnInfo(name = "evidence_summary") val evidenceSummary: String?,
-    @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?
+    @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?,
+    @ColumnInfo(name = "suggested_category_label") val suggestedCategoryLabel: String? = null
 )
 
 @Entity(
@@ -146,5 +147,30 @@ data class IgnoredEntryEntity(
     @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?,
     @ColumnInfo(name = "ignored_at_epoch_millis") val ignoredAtEpochMillis: Long,
     @ColumnInfo(name = "expires_at_epoch_millis") val expiresAtEpochMillis: Long,
-    val reason: IgnoreReason
+    val reason: IgnoreReason,
+    @ColumnInfo(name = "suggested_category_label") val suggestedCategoryLabel: String? = null
 )
+
+@Entity(tableName = "categorization_rules")
+data class CategorizationRuleEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "merchant_contains") val merchantContains: String,
+    @ColumnInfo(name = "title_contains") val titleContains: String,
+    @ColumnInfo(name = "source_label") val sourceLabel: String,
+    @ColumnInfo(name = "transaction_kind") val transactionKind: String,
+    val category: String,
+    val priority: Int,
+    val enabled: Boolean,
+    @ColumnInfo(name = "updated_at_epoch_millis") val updatedAtEpochMillis: Long
+)
+
+@Entity(tableName = "local_settings")
+data class LocalSettingsEntity(
+    @PrimaryKey val id: String = LOCAL_SETTINGS_ID,
+    @ColumnInfo(name = "ai_consent_granted") val aiConsentGranted: Boolean,
+    @ColumnInfo(name = "enhanced_context_granted") val enhancedContextGranted: Boolean,
+    @ColumnInfo(name = "continuous_bill_sync_completed") val continuousBillSyncCompleted: Boolean,
+    @ColumnInfo(name = "continuous_monitoring_enabled") val continuousMonitoringEnabled: Boolean
+)
+
+const val LOCAL_SETTINGS_ID = "local"

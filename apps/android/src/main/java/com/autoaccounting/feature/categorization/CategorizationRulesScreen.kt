@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.account.AccountDeletionUiAction
@@ -232,6 +233,9 @@ fun CategorizationRulesScreen(
                         onEdit = {
                             editingRule = rule
                             isCreating = false
+                        },
+                        onDelete = {
+                            onRulesChange(rules.filterNot { it.id == rule.id })
                         }
                     )
                 }
@@ -658,7 +662,8 @@ private fun LocalDataDeletionDialog(
 @Composable
 private fun CategorizationRuleRow(
     rule: CategorizationRule,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -682,6 +687,13 @@ private fun CategorizationRuleRow(
                 Text(rule.scopeLabel(), style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.width(12.dp))
+            OutlinedButton(
+                onClick = onDelete,
+                modifier = Modifier.testTag("delete-rule-${rule.id}")
+            ) {
+                Text("删除")
+            }
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = onEdit) {
                 Text("编辑")
             }

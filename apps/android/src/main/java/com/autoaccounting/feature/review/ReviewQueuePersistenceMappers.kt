@@ -15,7 +15,7 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     title = merchantTitle,
     amountMinor = amountMinor,
     transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
-    category = suggestedCategoryId?.toCategoryLabel().orEmpty(),
+    category = suggestedCategoryLabel ?: suggestedCategoryId?.toCategoryLabel().orEmpty(),
     fundingAccountLabel = fundingAccountLabel ?: fundingAccountId?.let { "账户 $it" }.orEmpty(),
     sourceLabel = source.toLabel(),
     kindLabel = transactionKind.toLabel(),
@@ -54,7 +54,8 @@ internal fun ReviewQueueEntry.toEntity(zoneId: ZoneId): PendingEntryEntity = Pen
     fundingAccountLabel = fundingAccountLabel.ifBlank { null },
     note = note,
     evidenceSummary = rawEvidenceText.ifBlank { null },
-    parsedFieldsText = parsedFields.encodeParsedFields()
+    parsedFieldsText = parsedFields.encodeParsedFields(),
+    suggestedCategoryLabel = category.ifBlank { null }
 )
 
 internal fun ReviewQueueIgnoredEntry.toEntity(zoneId: ZoneId): IgnoredEntryEntity {
@@ -79,7 +80,8 @@ internal fun ReviewQueueIgnoredEntry.toEntity(zoneId: ZoneId): IgnoredEntryEntit
         parsedFieldsText = pending.parsedFieldsText,
         ignoredAtEpochMillis = ignoredAtEpochMillis,
         expiresAtEpochMillis = expiresAtEpochMillis,
-        reason = IgnoreReason.USER_IGNORED
+        reason = IgnoreReason.USER_IGNORED,
+        suggestedCategoryLabel = pending.suggestedCategoryLabel
     )
 }
 
@@ -111,7 +113,8 @@ private fun IgnoredEntryEntity.toPendingEntryEntity(): PendingEntryEntity = Pend
     fundingAccountLabel = fundingAccountLabel,
     note = note,
     evidenceSummary = evidenceSummary,
-    parsedFieldsText = parsedFieldsText
+    parsedFieldsText = parsedFieldsText,
+    suggestedCategoryLabel = suggestedCategoryLabel
 )
 
 private fun PaymentSource.toLabel(): String = when (this) {

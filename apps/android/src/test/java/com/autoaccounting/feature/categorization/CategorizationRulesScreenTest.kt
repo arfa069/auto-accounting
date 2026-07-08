@@ -2,6 +2,7 @@ package com.autoaccounting.feature.categorization
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -48,6 +49,27 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithText("保存规则").performClick()
 
         composeRule.onNodeWithText("工作餐").assertIsDisplayed()
+    }
+
+    @Test
+    fun userCanDeleteRule() {
+        var updatedRules: List<CategorizationRule>? = null
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                rules = listOf(
+                    CategorizationRule(
+                        id = "rule-delete",
+                        merchantContains = "coffee",
+                        category = "food"
+                    )
+                ),
+                onRulesChange = { updatedRules = it }
+            )
+        }
+
+        composeRule.onNodeWithTag("delete-rule-rule-delete").performClick()
+
+        assertTrue(updatedRules?.isEmpty() == true)
     }
 
     @Test

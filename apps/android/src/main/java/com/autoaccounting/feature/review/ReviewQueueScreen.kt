@@ -61,6 +61,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationResult
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
+import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
@@ -72,6 +73,7 @@ fun ReviewQueueScreen(
         pendingEntries = sampleReviewQueueEntries()
     ),
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
+    categorizationRules: List<CategorizationRule> = emptyList(),
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
@@ -84,6 +86,7 @@ fun ReviewQueueScreen(
         onStateChange = { state = it },
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
+        categorizationRules = categorizationRules,
         accountSession = accountSession,
         aiSettings = aiSettings,
         aiCategorizationGateway = aiCategorizationGateway,
@@ -98,6 +101,7 @@ fun ReviewQueueScreen(
     onStateChange: (ReviewQueueState) -> Unit,
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
+    categorizationRules: List<CategorizationRule> = emptyList(),
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
@@ -133,9 +137,11 @@ fun ReviewQueueScreen(
             existingPendingEntries = state.pendingEntries,
             capturedAtEpochMillis = state.nowEpochMillis
         )
-        val nextState = (result.mergedEntries + result.createdEntries).fold(state) { currentState, entry ->
-            reduceReviewQueue(currentState, ReviewQueueAction.AddPending(entry))
-        }
+        val nextState = (result.mergedEntries + result.createdEntries)
+            .map { it.applyCategorizationSuggestion(categorizationRules) }
+            .fold(state) { currentState, entry ->
+                reduceReviewQueue(currentState, ReviewQueueAction.AddPending(entry))
+            }
         onStateChange(nextState)
         billSyncResult = result
         onContinuousMonitoringStateChange(

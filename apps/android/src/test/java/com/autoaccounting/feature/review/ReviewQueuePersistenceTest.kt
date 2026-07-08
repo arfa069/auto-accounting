@@ -150,6 +150,32 @@ class ReviewQueuePersistenceTest {
         assertEquals("pending-lunch", database.pendingEntryDao().getById("pending-lunch")?.id)
     }
 
+    @Test
+    fun customSuggestedCategorySurvivesPendingPersistence() = runBlocking {
+        val previous = ReviewQueueState(
+            nowEpochMillis = NOW,
+            todayStartEpochMillis = NOW - 1
+        )
+        val next = reduceReviewQueue(
+            previous,
+            ReviewQueueAction.AddPending(
+                ReviewQueueEntry(
+                    id = "pending-custom-category",
+                    title = "Coffee Shop",
+                    category = "work-meal",
+                    sourceLabel = "wechat",
+                    kindLabel = "expense",
+                    capturedAtEpochMillis = NOW
+                )
+            )
+        )
+
+        persistence.persistTransition(previous, next)
+
+        val restored = persistence.observeState().first().pendingEntries.single()
+        assertEquals("work-meal", restored.category)
+    }
+
     private fun samplePending(
         id: String = "pending-lunch",
         confidence: ConfidenceState = ConfidenceState.NEEDS_REVIEW,

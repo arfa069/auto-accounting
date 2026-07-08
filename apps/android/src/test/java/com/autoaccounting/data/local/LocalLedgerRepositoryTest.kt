@@ -222,7 +222,7 @@ class LocalLedgerRepositoryTest {
 
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(2, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(3, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
@@ -271,6 +271,7 @@ class LocalLedgerRepositoryTest {
             databaseName
         )
             .addMigrations(AutoAccountingDatabase.MIGRATION_1_2)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
 
@@ -286,9 +287,16 @@ class LocalLedgerRepositoryTest {
         assertEquals(0, ignored.capturedAtEpochMillis)
         assertNull(ignored.fundingAccountLabel)
         assertNull(ignored.parsedFieldsText)
+        assertNull(ignored.suggestedCategoryLabel)
         assertEquals("支付宝账单 午餐 35.90", pending?.evidenceSummary)
         assertNull(pending?.fundingAccountLabel)
         assertNull(pending?.parsedFieldsText)
+        assertNull(pending?.suggestedCategoryLabel)
+
+        runBlocking {
+            assertTrue(migratedDatabase.categorizationRuleDao().listRules().isEmpty())
+            assertNull(migratedDatabase.localSettingsDao().getById())
+        }
 
         migratedDatabase.close()
         context.deleteDatabase(databaseName)

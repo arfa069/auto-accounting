@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.room.Room
 import com.autoaccounting.data.local.AutoAccountingDatabase
 import com.autoaccounting.data.local.LocalLedgerRepository
+import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
@@ -34,6 +35,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
+import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
 import com.autoaccounting.feature.capture.NotificationCapturePipeline
 import com.autoaccounting.feature.capture.PaymentNotificationCaptureBus
 import com.autoaccounting.feature.ledger.LedgerUiEntry
@@ -69,11 +71,17 @@ fun AutoAccountingApp() {
             AutoAccountingDatabase::class.java,
             "auto-accounting.db"
         )
-            .addMigrations(AutoAccountingDatabase.MIGRATION_1_2)
+            .addMigrations(
+                AutoAccountingDatabase.MIGRATION_1_2,
+                AutoAccountingDatabase.MIGRATION_2_3
+            )
             .build()
     }
     val localLedgerRepository = remember(database) {
         LocalLedgerRepository(database)
+    }
+    val localPreferencesRepository = remember(database) {
+        LocalPreferencesRepository(database)
     }
     val reviewQueuePersistence = remember(localLedgerRepository) {
         ReviewQueuePersistence(localLedgerRepository)
@@ -99,6 +107,7 @@ fun AutoAccountingApp() {
         )
     }
     val currentReviewState by rememberUpdatedState(reviewState)
+    val currentCategorizationRules by rememberUpdatedState(categorizationRules)
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
         reviewState = nextState
@@ -109,6 +118,27 @@ fun AutoAccountingApp() {
 
     fun persistReviewState(nextState: ReviewQueueState) {
         persistReviewTransition(reviewState, nextState)
+    }
+
+    fun persistCategorizationRules(nextRules: List<CategorizationRule>) {
+        categorizationRules = nextRules
+        coroutineScope.launch {
+            localPreferencesRepository.replaceCategorizationRules(nextRules)
+        }
+    }
+
+    fun persistAiSettings(nextSettings: AiCategorizationSettings) {
+        aiSettings = nextSettings
+        coroutineScope.launch {
+            localPreferencesRepository.updateAiSettings(nextSettings)
+        }
+    }
+
+    fun persistContinuousMonitoringState(nextState: ContinuousMonitoringState) {
+        continuousMonitoringState = nextState
+        coroutineScope.launch {
+            localPreferencesRepository.updateContinuousMonitoringState(nextState)
+        }
     }
 
     LaunchedEffect(localLedgerRepository) {
@@ -131,9 +161,24 @@ fun AutoAccountingApp() {
         }
     }
 
+    LaunchedEffect(localPreferencesRepository) {
+        localPreferencesRepository.categorizationRules.collect { rules ->
+            categorizationRules = rules
+        }
+    }
+
+    LaunchedEffect(localPreferencesRepository) {
+        localPreferencesRepository.userPreferences.collect { preferences ->
+            aiSettings = preferences.aiSettings
+            continuousMonitoringState = preferences.continuousMonitoringState
+        }
+    }
+
     DisposableEffect(notificationCapturePipeline, reviewQueuePersistence) {
         PaymentNotificationCaptureBus.setHandler { event ->
-            val entry = notificationCapturePipeline.capture(event) ?: return@setHandler
+            val entry = notificationCapturePipeline.capture(event)
+                ?.applyCategorizationSuggestion(currentCategorizationRules)
+                ?: return@setHandler
             persistReviewTransition(
                 currentReviewState,
                 reduceReviewQueue(
@@ -174,8 +219,9 @@ fun AutoAccountingApp() {
                         onStateChange = ::persistReviewState,
                         modifier = Modifier.padding(innerPadding),
                         onCategorizationRuleRequested = { rule ->
-                            categorizationRules = categorizationRules.upsert(rule)
+                            persistCategorizationRules(categorizationRules.upsert(rule))
                         },
+                        categorizationRules = categorizationRules,
                         accountSession = accountSession,
                         aiSettings = if (accountDeletionState.cloudWritesAllowed) {
                             aiSettings
@@ -184,7 +230,7 @@ fun AutoAccountingApp() {
                         },
                         aiCategorizationGateway = DemoAiCategorizationGateway,
                         continuousMonitoringState = continuousMonitoringState,
-                        onContinuousMonitoringStateChange = { continuousMonitoringState = it }
+                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                     )
 
                     AppTab.Ledger -> LedgerScreen(
@@ -199,18 +245,18 @@ fun AutoAccountingApp() {
 
                     AppTab.Profile -> CategorizationRulesScreen(
                         rules = categorizationRules,
-                        onRulesChange = { categorizationRules = it },
+                        onRulesChange = ::persistCategorizationRules,
                         modifier = Modifier.padding(innerPadding),
                         showPermissionCenter = true,
                         aiSettings = aiSettings,
-                        onAiSettingsChange = { aiSettings = it },
+                        onAiSettingsChange = ::persistAiSettings,
                         ledgerEntries = ledgerEntries,
                         reviewState = reviewState,
                         onRestoreLocalData = { snapshot ->
                             reviewState = snapshot.reviewState
-                            categorizationRules = snapshot.categorizationRules
-                            aiSettings = snapshot.aiSettings
-                            continuousMonitoringState = snapshot.continuousMonitoringState
+                            persistCategorizationRules(snapshot.categorizationRules)
+                            persistAiSettings(snapshot.aiSettings)
+                            persistContinuousMonitoringState(snapshot.continuousMonitoringState)
                         },
                         onDeleteLocalData = {
                             reviewState = ReviewQueueState()
@@ -220,18 +266,16 @@ fun AutoAccountingApp() {
                             ledgerEntries = emptyList()
                             coroutineScope.launch {
                                 localLedgerRepository.clearLocalData()
+                                localPreferencesRepository.clearLocalData()
                             }
                         },
                         accountSession = accountSession,
                         accountDeletionState = accountDeletionState,
                         onAccountDeletionStateChange = { next ->
                             accountDeletionState = next
-                            if (!next.cloudWritesAllowed) {
-                                aiSettings = AiCategorizationSettings()
-                            }
                         },
                         continuousMonitoringState = continuousMonitoringState,
-                        onContinuousMonitoringStateChange = { continuousMonitoringState = it }
+                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                     )
                 }
             }

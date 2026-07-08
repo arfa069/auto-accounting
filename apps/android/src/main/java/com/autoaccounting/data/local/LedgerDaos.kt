@@ -136,3 +136,43 @@ interface IgnoredEntryDao {
     @Query("DELETE FROM ignored_entries")
     suspend fun deleteAll()
 }
+
+@Dao
+interface CategorizationRuleDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(rules: List<CategorizationRuleEntity>)
+
+    @Query(
+        """
+        SELECT * FROM categorization_rules
+        ORDER BY priority DESC, updated_at_epoch_millis DESC
+        """
+    )
+    fun observeRules(): Flow<List<CategorizationRuleEntity>>
+
+    @Query(
+        """
+        SELECT * FROM categorization_rules
+        ORDER BY priority DESC, updated_at_epoch_millis DESC
+        """
+    )
+    suspend fun listRules(): List<CategorizationRuleEntity>
+
+    @Query("DELETE FROM categorization_rules")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface LocalSettingsDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(settings: LocalSettingsEntity)
+
+    @Query("SELECT * FROM local_settings WHERE id = :id")
+    suspend fun getById(id: String = LOCAL_SETTINGS_ID): LocalSettingsEntity?
+
+    @Query("SELECT * FROM local_settings WHERE id = :id")
+    fun observeById(id: String = LOCAL_SETTINGS_ID): Flow<LocalSettingsEntity?>
+
+    @Query("DELETE FROM local_settings")
+    suspend fun deleteAll()
+}
