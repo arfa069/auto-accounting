@@ -11,7 +11,6 @@ import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.settings.LocalDataSnapshot
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -107,22 +106,26 @@ class CategorizationRulesScreenTest {
     @Test
     fun profileCanExportBackupAndConfirmLocalDataDeletion() {
         var deleted = false
-        var restored: LocalDataSnapshot? = null
+        var importedBackup: String? = null
         composeRule.setContent {
             CategorizationRulesScreen(
                 showPermissionCenter = true,
-                onRestoreLocalData = { restored = it },
+                onExportEncryptedBackup = { "backup-1" },
+                onImportEncryptedBackup = { backup, _ -> importedBackup = backup },
                 onDeleteLocalData = { deleted = true }
             )
         }
 
         composeRule.onNodeWithText("备份和导出").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("backup-passphrase")
+            .performScrollTo()
+            .performTextInput("test-passphrase")
         composeRule.onNodeWithText("导出 CSV").performScrollTo().performClick()
         composeRule.onNodeWithText("CSV 已生成").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("导出加密备份").performScrollTo().performClick()
         composeRule.onNodeWithText("加密备份已生成").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("导入加密备份").performScrollTo().performClick()
-        assertTrue(restored != null)
+        assertTrue(importedBackup == "backup-1")
 
         composeRule.onNodeWithText("删除本机数据").performScrollTo().performClick()
         composeRule.onNodeWithText("确认删除前请先导出加密备份。").assertIsDisplayed()

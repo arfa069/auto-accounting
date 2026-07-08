@@ -14,6 +14,9 @@ interface CategoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(category: CategoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(categories: List<CategoryEntity>)
+
     @Query("SELECT * FROM categories ORDER BY sort_order ASC, name ASC")
     suspend fun getAllCategories(): List<CategoryEntity>
 
@@ -29,6 +32,9 @@ interface FundingAccountDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(account: FundingAccountEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(accounts: List<FundingAccountEntity>)
+
     @Query("SELECT * FROM funding_accounts WHERE source = :source AND label = :label LIMIT 1")
     suspend fun findBySourceAndLabel(source: PaymentSource, label: String): FundingAccountEntity?
 
@@ -43,6 +49,9 @@ interface FundingAccountDao {
 interface PendingEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: PendingEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<PendingEntryEntity>)
 
     @Query("SELECT * FROM pending_entries WHERE id = :id")
     suspend fun getById(id: String): PendingEntryEntity?
@@ -75,6 +84,9 @@ interface PendingEntryDao {
 interface LedgerEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: LedgerEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<LedgerEntryEntity>)
 
     @Query("SELECT * FROM ledger_entries WHERE id = :id")
     suspend fun getById(id: String): LedgerEntryEntity?
@@ -109,6 +121,9 @@ interface IgnoredEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: IgnoredEntryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entries: List<IgnoredEntryEntity>)
+
     @Query("SELECT * FROM ignored_entries WHERE id = :id")
     suspend fun getById(id: String): IgnoredEntryEntity?
 
@@ -129,6 +144,9 @@ interface IgnoredEntryDao {
         """
     )
     fun observeRecoverable(nowEpochMillis: Long): Flow<List<IgnoredEntryEntity>>
+
+    @Query("SELECT * FROM ignored_entries ORDER BY ignored_at_epoch_millis DESC")
+    suspend fun listAll(): List<IgnoredEntryEntity>
 
     @Query("DELETE FROM ignored_entries WHERE id = :id")
     suspend fun deleteById(id: String)

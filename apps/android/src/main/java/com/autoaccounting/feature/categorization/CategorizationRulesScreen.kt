@@ -25,11 +25,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.account.AccountDeletionUiAction
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -44,15 +46,12 @@ import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
-import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.DELETE_LOCAL_DATA_PHRASE
 import com.autoaccounting.feature.settings.LocalDataDeletionAction
 import com.autoaccounting.feature.settings.LocalDataDeletionState
-import com.autoaccounting.feature.settings.LocalDataSnapshot
-import com.autoaccounting.feature.settings.exportEncryptedBackup
 import com.autoaccounting.feature.settings.exportLedgerCsv
-import com.autoaccounting.feature.settings.importEncryptedBackup
 import com.autoaccounting.feature.settings.reduceLocalDataDeletionState
+import kotlinx.coroutines.launch
 
 @Composable
 fun CategorizationRulesScreen(
@@ -61,8 +60,12 @@ fun CategorizationRulesScreen(
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     ledgerEntries: List<LedgerUiEntry> = emptyList(),
-    reviewState: ReviewQueueState = ReviewQueueState(),
-    onRestoreLocalData: (LocalDataSnapshot) -> Unit = {},
+    onExportEncryptedBackup: suspend (String) -> String = {
+        error("Backup repository unavailable")
+    },
+    onImportEncryptedBackup: suspend (String, String) -> Unit = { _, _ ->
+        error("Backup repository unavailable")
+    },
     onDeleteLocalData: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
@@ -79,8 +82,8 @@ fun CategorizationRulesScreen(
         aiSettings = aiSettings,
         onAiSettingsChange = onAiSettingsChange,
         ledgerEntries = ledgerEntries,
-        reviewState = reviewState,
-        onRestoreLocalData = onRestoreLocalData,
+        onExportEncryptedBackup = onExportEncryptedBackup,
+        onImportEncryptedBackup = onImportEncryptedBackup,
         onDeleteLocalData = onDeleteLocalData,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
@@ -99,8 +102,12 @@ fun CategorizationRulesScreen(
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     ledgerEntries: List<LedgerUiEntry> = emptyList(),
-    reviewState: ReviewQueueState = ReviewQueueState(),
-    onRestoreLocalData: (LocalDataSnapshot) -> Unit = {},
+    onExportEncryptedBackup: suspend (String) -> String = {
+        error("Backup repository unavailable")
+    },
+    onImportEncryptedBackup: suspend (String, String) -> Unit = { _, _ ->
+        error("Backup repository unavailable")
+    },
     onDeleteLocalData: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
@@ -173,17 +180,12 @@ fun CategorizationRulesScreen(
             )
             LocalDataToolsItem(
                 ledgerEntries = ledgerEntries,
-                snapshot = LocalDataSnapshot(
-                    reviewState = reviewState,
-                    categorizationRules = rules,
-                    aiSettings = currentAiSettings,
-                    continuousMonitoringState = currentContinuousMonitoringState
-                ),
                 exportedBackup = exportedBackup,
                 message = localDataMessage,
                 onMessageChange = { localDataMessage = it },
                 onBackupExported = { exportedBackup = it },
-                onRestoreLocalData = onRestoreLocalData,
+                onExportEncryptedBackup = onExportEncryptedBackup,
+                onImportEncryptedBackup = onImportEncryptedBackup,
                 onRequestDelete = { showDeleteDialog = true }
             )
             PermissionCenterNotificationItem()
@@ -545,14 +547,16 @@ private fun AiConsentItem(
 @Composable
 private fun LocalDataToolsItem(
     ledgerEntries: List<LedgerUiEntry>,
-    snapshot: LocalDataSnapshot,
     exportedBackup: String?,
     message: String?,
     onMessageChange: (String) -> Unit,
     onBackupExported: (String) -> Unit,
-    onRestoreLocalData: (LocalDataSnapshot) -> Unit,
+    onExportEncryptedBackup: suspend (String) -> String,
+    onImportEncryptedBackup: suspend (String, String) -> Unit,
     onRequestDelete: () -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    var backupPassphrase by remember { mutableStateOf("") }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -568,6 +572,16 @@ private fun LocalDataToolsItem(
                 "CSV 是明文表格；完整迁移请使用加密备份。",
                 style = MaterialTheme.typography.bodyMedium
             )
+            OutlinedTextField(
+                value = backupPassphrase,
+                onValueChange = { backupPassphrase = it },
+                label = { Text("备份密码") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("backup-passphrase")
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     exportLedgerCsv(ledgerEntries)
@@ -576,10 +590,17 @@ private fun LocalDataToolsItem(
                     Text(if (message == "CSV 已生成") "CSV 已生成" else "导出 CSV")
                 }
                 OutlinedButton(onClick = {
-                    val backup = exportEncryptedBackup(snapshot, DEMO_BACKUP_PASSPHRASE)
-                    onBackupExported(backup)
-                    onMessageChange("加密备份已生成")
-                }) {
+                    coroutineScope.launch {
+                        runCatching { onExportEncryptedBackup(backupPassphrase) }
+                            .onSuccess { backup ->
+                                onBackupExported(backup)
+                                onMessageChange("加密备份已生成")
+                            }
+                            .onFailure {
+                                onMessageChange("加密备份失败")
+                            }
+                        }
+                }, enabled = backupPassphrase.isNotBlank()) {
                     Text(if (message == "加密备份已生成") "加密备份已生成" else "导出加密备份")
                 }
             }
@@ -587,12 +608,20 @@ private fun LocalDataToolsItem(
                 OutlinedButton(
                     onClick = {
                         exportedBackup?.let { backup ->
-                            onRestoreLocalData(
-                                importEncryptedBackup(backup, DEMO_BACKUP_PASSPHRASE)
-                            )
-                            onMessageChange("备份已恢复")
+                            coroutineScope.launch {
+                                runCatching {
+                                    onImportEncryptedBackup(backup, backupPassphrase)
+                                }
+                                    .onSuccess {
+                                        onMessageChange("备份已恢复")
+                                    }
+                                    .onFailure {
+                                        onMessageChange("备份恢复失败")
+                                    }
+                            }
                         } ?: onMessageChange("请先导出加密备份")
-                    }
+                    },
+                    enabled = backupPassphrase.isNotBlank()
                 ) {
                     Text("导入加密备份")
                 }
@@ -805,5 +834,3 @@ private fun CategorizationRule.scopeLabel(): String {
 private fun List<CategorizationRule>.nextUpdatedAt(): Long {
     return (maxOfOrNull { it.updatedAtEpochMillis } ?: 0L) + 1L
 }
-
-private const val DEMO_BACKUP_PASSPHRASE = "internal-beta-demo"

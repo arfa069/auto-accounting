@@ -48,6 +48,7 @@ import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.review.reduceReviewQueue
+import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -82,6 +83,9 @@ fun AutoAccountingApp() {
     }
     val localPreferencesRepository = remember(database) {
         LocalPreferencesRepository(database)
+    }
+    val localDataBackupRepository = remember(database) {
+        LocalDataBackupRepository(database)
     }
     val reviewQueuePersistence = remember(localLedgerRepository) {
         ReviewQueuePersistence(localLedgerRepository)
@@ -251,12 +255,15 @@ fun AutoAccountingApp() {
                         aiSettings = aiSettings,
                         onAiSettingsChange = ::persistAiSettings,
                         ledgerEntries = ledgerEntries,
-                        reviewState = reviewState,
-                        onRestoreLocalData = { snapshot ->
-                            reviewState = snapshot.reviewState
-                            persistCategorizationRules(snapshot.categorizationRules)
-                            persistAiSettings(snapshot.aiSettings)
-                            persistContinuousMonitoringState(snapshot.continuousMonitoringState)
+                        onExportEncryptedBackup = { passphrase ->
+                            localDataBackupRepository.exportEncryptedBackup(passphrase)
+                        },
+                        onImportEncryptedBackup = { backup, passphrase ->
+                            localDataBackupRepository.importEncryptedBackup(
+                                backup,
+                                passphrase
+                            )
+                            reviewState = ReviewQueueState()
                         },
                         onDeleteLocalData = {
                             reviewState = ReviewQueueState()
