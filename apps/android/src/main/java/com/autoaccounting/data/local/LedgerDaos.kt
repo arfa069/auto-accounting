@@ -1,0 +1,105 @@
+package com.autoaccounting.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface CategoryDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(categories: List<CategoryEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(category: CategoryEntity)
+
+    @Query("SELECT * FROM categories ORDER BY sort_order ASC, name ASC")
+    suspend fun getAllCategories(): List<CategoryEntity>
+
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun getCategory(id: String): CategoryEntity?
+}
+
+@Dao
+interface FundingAccountDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(account: FundingAccountEntity): Long
+
+    @Query("SELECT * FROM funding_accounts WHERE source = :source AND label = :label LIMIT 1")
+    suspend fun findBySourceAndLabel(source: PaymentSource, label: String): FundingAccountEntity?
+
+    @Query("SELECT * FROM funding_accounts ORDER BY source ASC, label ASC")
+    suspend fun getAllFundingAccounts(): List<FundingAccountEntity>
+}
+
+@Dao
+interface PendingEntryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: PendingEntryEntity)
+
+    @Query("SELECT * FROM pending_entries WHERE id = :id")
+    suspend fun getById(id: String): PendingEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM pending_entries
+        ORDER BY
+            CASE confidence
+                WHEN 'DUPLICATE_SUSPECT' THEN 0
+                WHEN 'NEEDS_REVIEW' THEN 1
+                ELSE 2
+            END,
+            captured_at_epoch_millis DESC
+        """
+    )
+    fun observePendingEntries(): Flow<List<PendingEntryEntity>>
+
+    @Query("SELECT * FROM pending_entries ORDER BY captured_at_epoch_millis DESC")
+    suspend fun listPendingEntries(): List<PendingEntryEntity>
+
+    @Query("DELETE FROM pending_entries WHERE id = :id")
+    suspend fun deleteById(id: String)
+}
+
+@Dao
+interface LedgerEntryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: LedgerEntryEntity)
+
+    @Query("SELECT * FROM ledger_entries WHERE id = :id")
+    suspend fun getById(id: String): LedgerEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ledger_entries
+        WHERE transaction_time_epoch_millis BETWEEN :startEpochMillis AND :endEpochMillis
+        ORDER BY transaction_time_epoch_millis DESC
+        """
+    )
+    fun observeLedgerEntriesBetween(
+        startEpochMillis: Long,
+        endEpochMillis: Long
+    ): Flow<List<LedgerEntryEntity>>
+
+    @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
+    suspend fun listLedgerEntries(): List<LedgerEntryEntity>
+}
+
+@Dao
+interface IgnoredEntryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: IgnoredEntryEntity)
+
+    @Query("SELECT * FROM ignored_entries WHERE id = :id")
+    suspend fun getById(id: String): IgnoredEntryEntity?
+
+    @Query(
+        """
+        SELECT * FROM ignored_entries
+        WHERE expires_at_epoch_millis > :nowEpochMillis
+        ORDER BY ignored_at_epoch_millis DESC
+        """
+    )
+    suspend fun listRecoverable(nowEpochMillis: Long): List<IgnoredEntryEntity>
+}

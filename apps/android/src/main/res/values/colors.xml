@@ -1,0 +1,7 @@
+<resources>
+    <color name="brand_primary">#6366F1</color>
+    <color name="brand_secondary">#14B8A6</color>
+    <color name="expense_warm">#F97316</color>
+    <color name="income_green">#16A34A</color>
+    <color name="risk_red">#DC2626</color>
+</resources>

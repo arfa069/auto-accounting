@@ -1,0 +1,949 @@
+package com.autoaccounting.feature.review
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.billsync.BillSyncPipeline
+import com.autoaccounting.feature.billsync.BillSyncResult
+import com.autoaccounting.feature.billsync.BillSyncSource
+import com.autoaccounting.feature.categorization.AiCategorizationClient
+import com.autoaccounting.feature.categorization.AiCategorizationGateway
+import com.autoaccounting.feature.categorization.AiCategorizationResult
+import com.autoaccounting.feature.categorization.AiCategorizationSettings
+import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
+import com.autoaccounting.feature.categorization.CategorizationRule
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
+
+@Composable
+fun ReviewQueueScreen(
+    modifier: Modifier = Modifier,
+    initialState: ReviewQueueState = ReviewQueueState(
+        pendingEntries = sampleReviewQueueEntries()
+    ),
+    onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
+    accountSession: AccountSession? = null,
+    aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
+    aiCategorizationGateway: AiCategorizationGateway? = null,
+    continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+) {
+    var state by remember { mutableStateOf(initialState) }
+    ReviewQueueScreen(
+        state = state,
+        onStateChange = { state = it },
+        modifier = modifier,
+        onCategorizationRuleRequested = onCategorizationRuleRequested,
+        accountSession = accountSession,
+        aiSettings = aiSettings,
+        aiCategorizationGateway = aiCategorizationGateway,
+        continuousMonitoringState = continuousMonitoringState,
+        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
+    )
+}
+
+@Composable
+fun ReviewQueueScreen(
+    state: ReviewQueueState,
+    onStateChange: (ReviewQueueState) -> Unit,
+    modifier: Modifier = Modifier,
+    onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
+    accountSession: AccountSession? = null,
+    aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
+    aiCategorizationGateway: AiCategorizationGateway? = null,
+    continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+) {
+    var editingEntry by remember { mutableStateOf<ReviewQueueEntry?>(null) }
+    var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
+    var showIgnoredList by remember { mutableStateOf(false) }
+    var showBillSyncDialog by remember { mutableStateOf(false) }
+    var billSyncResult by remember { mutableStateOf<BillSyncResult?>(null) }
+    var showPostBillSyncMonitoringPrompt by remember { mutableStateOf(false) }
+    var syncMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    fun dispatch(action: ReviewQueueAction) {
+        onStateChange(reduceReviewQueue(state, action))
+    }
+
+    fun applyEdit(pending: PendingCategoryRuleSave) {
+        dispatch(pending.edit.toSaveAction(pending.entry.id))
+        syncMessage = pending.edit.category.trim()
+        pendingRuleSave = null
+        editingEntry = null
+    }
+
+    fun startBillSync(source: BillSyncSource) {
+        val result = BillSyncPipeline(
+            captureTimeFormatter = { "2026-07-08 12:30" }
+        ).sync(
+            source = source,
+            pageText = sampleBillPageText(source),
+            existingPendingEntries = state.pendingEntries,
+            capturedAtEpochMillis = state.nowEpochMillis
+        )
+        val nextState = (result.mergedEntries + result.createdEntries).fold(state) { currentState, entry ->
+            reduceReviewQueue(currentState, ReviewQueueAction.AddPending(entry))
+        }
+        onStateChange(nextState)
+        billSyncResult = result
+        onContinuousMonitoringStateChange(
+            reduceContinuousMonitoringState(
+                continuousMonitoringState,
+                ContinuousMonitoringAction.MarkBillSyncCompleted
+            )
+        )
+    }
+
+    val lastAction = state.lastAction
+    LaunchedEffect(lastAction?.eventId) {
+        val undoAction = lastAction ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = undoAction.message,
+            actionLabel = "撤销",
+            duration = SnackbarDuration.Short
+        )
+        dispatch(
+            if (result == SnackbarResult.ActionPerformed) {
+                ReviewQueueAction.UndoLastAction
+            } else {
+                ReviewQueueAction.DismissUndo
+            }
+        )
+    }
+
+    LaunchedEffect(syncMessage) {
+        val message = syncMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Short
+        )
+        syncMessage = null
+    }
+
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        ReviewQueueContent(
+            state = state,
+            onAction = ::dispatch,
+            onEdit = { editingEntry = it },
+            onShowIgnoredList = { showIgnoredList = true },
+            onStartBillSync = {
+                billSyncResult = null
+                showBillSyncDialog = true
+            },
+            showPostBillSyncMonitoringPrompt = showPostBillSyncMonitoringPrompt &&
+                !continuousMonitoringState.enabled,
+            onEnableContinuousMonitoring = {
+                onContinuousMonitoringStateChange(
+                    reduceContinuousMonitoringState(
+                        continuousMonitoringState.copy(billSyncCompleted = true),
+                        ContinuousMonitoringAction.Enable
+                    )
+                )
+                showPostBillSyncMonitoringPrompt = false
+            },
+            onDismissContinuousMonitoringPrompt = {
+                showPostBillSyncMonitoringPrompt = false
+            },
+            modifier = Modifier.padding(innerPadding)
+        )
+    }
+
+    editingEntry?.let { entry ->
+        ReviewEditDialog(
+            entry = entry,
+            onDismiss = { editingEntry = null },
+            onConfirm = {
+                dispatch(ReviewQueueAction.Confirm(entry.id))
+                editingEntry = null
+            },
+            onIgnore = {
+                dispatch(ReviewQueueAction.Ignore(entry.id))
+                editingEntry = null
+            },
+            onAiSuggest = { draft ->
+                val gateway = aiCategorizationGateway
+                    ?: return@ReviewEditDialog AiCategorizationResult(
+                        skipReason = AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT
+                    )
+                AiCategorizationClient(gateway).suggestCategory(
+                    entry = draft,
+                    session = accountSession,
+                    settings = aiSettings
+                )
+            },
+            onSave = { title, amountText, timeText, transactionKind, category, fundingAccount, note ->
+                val edit = PendingReviewEdit(
+                    title = title,
+                    amountText = amountText,
+                    timeText = timeText,
+                    transactionKind = transactionKind,
+                    category = category,
+                    fundingAccount = fundingAccount,
+                    note = note
+                )
+                if (entry.hasCategoryCorrection(edit.category)) {
+                    pendingRuleSave = PendingCategoryRuleSave(entry, edit)
+                } else {
+                    dispatch(edit.toSaveAction(entry.id))
+                    editingEntry = null
+                }
+            }
+        )
+    }
+
+    pendingRuleSave?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { applyEdit(pending) },
+            title = { Text("保存为分类规则？") },
+            text = {
+                Text("以后遇到相同商户、来源和交易类型时，自动建议“${pending.edit.category.trim()}”。")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onCategorizationRuleRequested(pending.toCategorizationRule())
+                        applyEdit(pending)
+                    }
+                ) {
+                    Text("保存规则")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { applyEdit(pending) }) {
+                    Text("这次不保存")
+                }
+            }
+        )
+    }
+
+    if (showIgnoredList) {
+        IgnoredEntriesDialog(
+            ignoredEntries = state.recoverableIgnoredEntries,
+            onDismiss = { showIgnoredList = false },
+            onRecover = {
+                dispatch(ReviewQueueAction.RecoverIgnored(it))
+                showIgnoredList = false
+            }
+        )
+    }
+
+    if (showBillSyncDialog) {
+        BillSyncDialog(
+            result = billSyncResult,
+            onSourceSelected = ::startBillSync,
+            onDismiss = {
+                if (billSyncResult != null) {
+                    showPostBillSyncMonitoringPrompt = true
+                }
+                showBillSyncDialog = false
+                billSyncResult = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReviewQueueContent(
+    state: ReviewQueueState,
+    onAction: (ReviewQueueAction) -> Unit,
+    onEdit: (ReviewQueueEntry) -> Unit,
+    onShowIgnoredList: () -> Unit,
+    onStartBillSync: () -> Unit,
+    showPostBillSyncMonitoringPrompt: Boolean,
+    onEnableContinuousMonitoring: () -> Unit,
+    onDismissContinuousMonitoringPrompt: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val sortedEntries = state.sortedPendingEntries
+    val carefulEntries = sortedEntries.filter { it.requiresCarefulReview }
+    val quickEntries = sortedEntries.filterNot { it.requiresCarefulReview }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "待确认队列",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "先确认再入账，误操作可撤销",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            OutlinedButton(onClick = onShowIgnoredList) {
+                Text("忽略列表")
+            }
+        }
+
+        ReviewSummary(state, onStartBillSync)
+
+        if (showPostBillSyncMonitoringPrompt) {
+            PostBillSyncMonitoringPrompt(
+                onEnable = onEnableContinuousMonitoring,
+                onDismiss = onDismissContinuousMonitoringPrompt
+            )
+        }
+
+        ReviewEntryGroup(
+            title = "需细看",
+            subtitle = "金额、重复或分类需要人工确认",
+            entries = carefulEntries,
+            emptyText = "暂时没有需要细看的记录",
+            onAction = onAction,
+            onEdit = onEdit
+        )
+
+        ReviewEntryGroup(
+            title = "快捷确认",
+            subtitle = "置信度较高，可快速滑动或点确认",
+            entries = quickEntries,
+            emptyText = "快捷确认列表为空",
+            onAction = onAction,
+            onEdit = onEdit
+        )
+    }
+}
+
+@Composable
+private fun PostBillSyncMonitoringPrompt(
+    onEnable: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("试试连续监控", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("只观察支付相关页面，可随时关闭。", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onEnable) {
+                    Text("开启连续监控")
+                }
+                OutlinedButton(onClick = onDismiss) {
+                    Text("暂不开启")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewSummary(
+    state: ReviewQueueState,
+    onStartBillSync: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SummaryChip("待确认 ${state.pendingEntries.size}", Modifier.weight(1f))
+            SummaryChip("疑似重复 ${state.duplicateSuspectCount}", Modifier.weight(1f))
+            SummaryChip("今日新增 ${state.todaysNewlyCapturedCount}", Modifier.weight(1f))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SummaryChip("已确认 ${state.confirmedEntries.size}", Modifier.weight(1f))
+            Button(onClick = onStartBillSync, modifier = Modifier.weight(1f)) {
+                Text("账单同步")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryChip(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
+private fun ReviewEntryGroup(
+    title: String,
+    subtitle: String,
+    entries: List<ReviewQueueEntry>,
+    emptyText: String,
+    onAction: (ReviewQueueAction) -> Unit,
+    onEdit: (ReviewQueueEntry) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall)
+        if (entries.isEmpty()) {
+            Text(emptyText, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            entries.forEach { entry ->
+                key(entry.id) {
+                    ReviewEntryRow(
+                        entry = entry,
+                        onConfirm = { onAction(ReviewQueueAction.Confirm(entry.id)) },
+                        onIgnore = { onAction(ReviewQueueAction.Ignore(entry.id)) },
+                        onEdit = { onEdit(entry) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReviewEntryRow(
+    entry: ReviewQueueEntry,
+    onConfirm: () -> Unit,
+    onIgnore: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> onConfirm()
+                SwipeToDismissBoxValue.EndToStart -> onIgnore()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            value != SwipeToDismissBoxValue.Settled
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = true,
+        enableDismissFromEndToStart = true,
+        backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
+        content = {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("detail-${entry.id}")
+                    .clickable(onClick = onEdit),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.title, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${entry.sourceLabel} · ${entry.kindLabel} · ${entry.category}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    entry.captureReasonLabel,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    confidenceLabel(entry.confidence),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            entry.note?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        Text(
+                            text = formatAmount(entry.amountMinor),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onIgnore,
+                            modifier = Modifier.testTag("ignore-${entry.id}")
+                        ) {
+                            Text("忽略")
+                        }
+                        Button(
+                            onClick = onConfirm,
+                            modifier = Modifier.testTag("confirm-${entry.id}")
+                        ) {
+                            Text("确认")
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
+    val text = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> "滑动确认"
+        SwipeToDismissBoxValue.EndToStart -> "滑动忽略"
+        SwipeToDismissBoxValue.Settled -> ""
+    }
+    val color = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> Color(0xFFE6F4EA)
+        SwipeToDismissBoxValue.EndToStart -> Color(0xFFFFECE8)
+        SwipeToDismissBoxValue.Settled -> Color.Transparent
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color)
+            .padding(horizontal = 20.dp),
+        contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) {
+            Alignment.CenterStart
+        } else {
+            Alignment.CenterEnd
+        }
+    ) {
+        Text(text = text, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun BillSyncDialog(
+    result: BillSyncResult?,
+    onSourceSelected: (BillSyncSource) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (result == null) "选择同步来源" else "账单同步进度")
+        },
+        text = {
+            if (result == null) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("选择后会读取当前账单页，并把新交易加入待确认队列。")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onSourceSelected(BillSyncSource.WeChat) }) {
+                            Text("微信")
+                        }
+                        Button(onClick = { onSourceSelected(BillSyncSource.Alipay) }) {
+                            Text("支付宝")
+                        }
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    result.steps.forEach { step ->
+                        Text(syncStepDisplayLabel(step.label))
+                    }
+                    result.errorMessage?.let { message ->
+                        Text(message)
+                    }
+                    Text(result.summary, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            if (result != null) {
+                Button(onClick = onDismiss) {
+                    Text("完成")
+                }
+            }
+        },
+        dismissButton = {
+            if (result == null) {
+                TextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        }
+    )
+}
+
+private fun sampleBillPageText(source: BillSyncSource): String = when (source) {
+    BillSyncSource.WeChat -> "2026-07-08 18:30 晚餐 支出 ¥42.50 微信零钱"
+    BillSyncSource.Alipay -> "2026-07-08 18:30 晚餐 支出 42.50元 支付宝余额"
+}
+
+private fun syncStepDisplayLabel(label: String): String =
+    if (label == "完成") "同步完成" else label
+
+private data class PendingCategoryRuleSave(
+    val entry: ReviewQueueEntry,
+    val edit: PendingReviewEdit
+) {
+    fun toCategorizationRule(): CategorizationRule = CategorizationRule(
+        id = "rule-${entry.id}-${entry.capturedAtEpochMillis}",
+        merchantContains = edit.title.trim(),
+        sourceLabel = entry.sourceLabel,
+        transactionKind = edit.transactionKind.trim(),
+        category = edit.category.trim(),
+        updatedAtEpochMillis = entry.capturedAtEpochMillis
+    )
+}
+
+private data class PendingReviewEdit(
+    val title: String,
+    val amountText: String,
+    val timeText: String,
+    val transactionKind: String,
+    val category: String,
+    val fundingAccount: String,
+    val note: String
+) {
+    fun toSaveAction(entryId: String): ReviewQueueAction.SaveEdit = ReviewQueueAction.SaveEdit(
+        entryId = entryId,
+        title = title,
+        amountText = amountText,
+        timeText = timeText,
+        transactionKind = transactionKind,
+        category = category,
+        fundingAccount = fundingAccount,
+        note = note
+    )
+}
+
+private fun ReviewQueueEntry.hasCategoryCorrection(category: String): Boolean {
+    return category.trim().isNotBlank() && category.trim() != this.category
+}
+
+@Composable
+private fun ReviewEditDialog(
+    entry: ReviewQueueEntry,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    onIgnore: () -> Unit,
+    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult,
+    onSave: (
+        title: String,
+        amountText: String,
+        timeText: String,
+        transactionKind: String,
+        category: String,
+        fundingAccount: String,
+        note: String
+    ) -> Unit
+) {
+    var title by remember(entry.id) { mutableStateOf(entry.title) }
+    var amountText by remember(entry.id) { mutableStateOf(amountMinorToText(entry.amountMinor)) }
+    var timeText by remember(entry.id) { mutableStateOf(entry.transactionTimeText) }
+    var transactionKind by remember(entry.id) { mutableStateOf(entry.kindLabel) }
+    var category by remember(entry.id) { mutableStateOf(entry.category) }
+    var fundingAccount by remember(entry.id) { mutableStateOf(entry.fundingAccountLabel) }
+    var note by remember(entry.id) { mutableStateOf(entry.note.orEmpty()) }
+    var showEvidence by remember(entry.id) { mutableStateOf(false) }
+    var amountError by remember(entry.id) { mutableStateOf<String?>(null) }
+    var aiMessage by remember(entry.id) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑待确认记录") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                TextButton(onClick = { showEvidence = !showEvidence }) {
+                    Text(if (showEvidence) "收起证据" else "查看证据")
+                }
+                if (showEvidence) {
+                    EvidenceSection(entry)
+                }
+                OutlinedButton(
+                    onClick = {
+                        val amountMinor = parseReviewAmountMinor(amountText)
+                        if (amountMinor == null) {
+                            amountError = "金额格式不正确"
+                            return@OutlinedButton
+                        }
+                        val result = onAiSuggest(
+                            entry.copy(
+                                title = title,
+                                amountMinor = amountMinor,
+                                transactionTimeText = timeText,
+                                kindLabel = transactionKind,
+                                category = category,
+                                fundingAccountLabel = fundingAccount,
+                                note = note.ifBlank { null }
+                            )
+                        )
+                        result.suggestion?.let { suggestion ->
+                            category = suggestion.category
+                            aiMessage = "AI 建议：${suggestion.category}"
+                        } ?: run {
+                            aiMessage = when (result.skipReason) {
+                                AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT -> "登录后才能使用云端 AI 分类"
+                                AiCategorizationSkipReason.REQUIRES_AI_CONSENT -> "开启云端 AI 后才能获取分类建议"
+                                null -> "暂时没有 AI 分类建议"
+                            }
+                        }
+                    }
+                ) {
+                    Text("AI 建议分类")
+                }
+                aiMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("商户/标题") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-title")
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = {
+                        amountText = it
+                        amountError = null
+                    },
+                    label = { Text("金额") },
+                    singleLine = true,
+                    isError = amountError != null,
+                    supportingText = {
+                        amountError?.let {
+                            Text(it)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-amount")
+                )
+                OutlinedTextField(
+                    value = timeText,
+                    onValueChange = { timeText = it },
+                    label = { Text("交易时间") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-time")
+                )
+                OutlinedTextField(
+                    value = transactionKind,
+                    onValueChange = { transactionKind = it },
+                    label = { Text("交易类型") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-kind")
+                )
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("分类") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-category")
+                )
+                OutlinedTextField(
+                    value = fundingAccount,
+                    onValueChange = { fundingAccount = it },
+                    label = { Text("资金账户") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-funding-account")
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("备注") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-note")
+                )
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onIgnore) {
+                        Text("忽略此条")
+                    }
+                    Button(onClick = onConfirm) {
+                        Text("确认入账")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        if (parseReviewAmountMinor(amountText) == null) {
+                            amountError = "金额格式不正确"
+                            return@Button
+                        }
+                        onSave(
+                            title,
+                            amountText,
+                            timeText,
+                            transactionKind,
+                            category,
+                            fundingAccount,
+                            note
+                        )
+                    }
+                ) {
+                    Text("保存")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EvidenceSection(entry: ReviewQueueEntry) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("证据", fontWeight = FontWeight.SemiBold)
+        Text("来源：${entry.sourceLabel}", style = MaterialTheme.typography.bodySmall)
+        Text("捕获时间：${entry.captureTimeText}", style = MaterialTheme.typography.bodySmall)
+        Text("解析字段", fontWeight = FontWeight.SemiBold)
+        entry.parsedFields.forEach { field ->
+            Text(field, style = MaterialTheme.typography.bodySmall)
+        }
+        Text("原始文本", fontWeight = FontWeight.SemiBold)
+        Text(entry.rawEvidenceText, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun IgnoredEntriesDialog(
+    ignoredEntries: List<ReviewQueueIgnoredEntry>,
+    onDismiss: () -> Unit,
+    onRecover: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("忽略列表") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (ignoredEntries.isEmpty()) {
+                    Text("没有可恢复的忽略记录")
+                } else {
+                    ignoredEntries.forEach { ignored ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(ignored.entry.title, fontWeight = FontWeight.SemiBold)
+                                Text(formatAmount(ignored.entry.amountMinor))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            OutlinedButton(
+                                onClick = { onRecover(ignored.id) },
+                                modifier = Modifier.testTag("recover-${ignored.id}")
+                            ) {
+                                Text("恢复")
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+fun confidenceLabel(confidence: ConfidenceState): String = when (confidence) {
+    ConfidenceState.HIGH -> "高置信"
+    ConfidenceState.NEEDS_REVIEW -> "需复核"
+    ConfidenceState.DUPLICATE_SUSPECT -> "疑似重复"
+}

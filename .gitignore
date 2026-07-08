@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Android / local machine
+local.properties
+*.iml
+.idea/
+
+# Generated
+captures/
+*.apk
+*.aab
+
+# Secrets
+.env
+*.keystore
+*.jks
+*.p12
+*.pem

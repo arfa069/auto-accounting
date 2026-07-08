@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Auto Accounting</string>
+    <string name="notification_listener_label">自动记账通知捕获</string>
+    <string name="bill_sync_accessibility_label">自动记账账单同步</string>
+    <string name="bill_sync_accessibility_description">仅在你手动同步时读取微信、支付宝账单页，补充漏记或历史账目</string>
+</resources>
