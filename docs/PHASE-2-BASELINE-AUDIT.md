@@ -40,19 +40,19 @@ Real and useful:
 - Backend account, SMS-code, password hashing, login lockout, deletion cooling-off, and AI proxy/log models exist with route/service tests.
 
 Still mocked, in-memory, or local-only:
-- Main app state is mostly held in Compose `remember` state in `MainActivity`: account session, review queue, confirmed entries, categorization rules, AI settings, continuous monitoring, and deletion state. Follow-up: Issues 2, 3, 4, and 8.
-- `LocalLedgerRepository` and Room are present but not wired into the main UI flow. Follow-up: Issues 2 and 3.
-- The app starts with `sampleReviewQueueEntries()`, so review/ledger/report data is demonstration state by default. Follow-up: Issue 2.
-- Android account UI defaults to `FakeAccountRepository`, returning `mock-token` for login, registration, and recovery. Follow-up: Issue 9.
-- `DemoAiCategorizationGateway` in `MainActivity` returns local suggestions instead of calling the backend AI route. Follow-up: Issue 10.
-- Backend `AccountService` stores users, SMS codes, issue times, deletion state, and tokens in process memory. Follow-up: Issues 9 and 11.
-- Backend `AiCategorizationService` stores AI logs in process memory and uses local heuristic suggestions, not a provider configured through environment variables. Follow-up: Issue 10.
-- Backup/export UI uses a fixed `DEMO_BACKUP_PASSPHRASE` and operates on a `LocalDataSnapshot` assembled from current Compose state. Follow-up: Issue 5.
-- Notification listener forwards notification text to an in-process capture bus; permission-state detection, settings deep-link, service lifecycle, and durable capture handoff are not closed. Follow-up: Issue 6.
-- Accessibility service is declared but currently has no bill-sync event handling; bill sync uses sample page text in the review UI. Follow-up: Issue 7.
-- Continuous monitoring is a UI/state reducer, not a real Android service boundary. Follow-up: Issue 8.
-- Permission center copy exists, but permission health is not backed by real Android permission checks. Follow-up: Issues 6, 7, and 8.
-- Several Android user-facing string literals in Kotlin source appear mojibake and should be corrected before any tester-facing build. Follow-up: Issue 13.
+- Main app state is mostly held in Compose `remember` state in `MainActivity`: account session, review queue, confirmed entries, categorization rules, AI settings, continuous monitoring, and deletion state. Owner area: Android app composition/local state. Follow-up: Issues 2, 3, 4, and 8.
+- `LocalLedgerRepository` and Room are present but not wired into the main UI flow. Owner area: Android local data. Follow-up: Issues 2 and 3.
+- The app starts with `sampleReviewQueueEntries()`, so review/ledger/report data is demonstration state by default. Owner area: Android review queue. Follow-up: Issue 2.
+- Android account UI defaults to `FakeAccountRepository`, returning `mock-token` for login, registration, and recovery. Owner area: Android account/backend auth integration. Follow-up: Issue 9.
+- `DemoAiCategorizationGateway` in `MainActivity` returns local suggestions instead of calling the backend AI route. Owner area: Android AI/backend AI integration. Follow-up: Issue 10.
+- Backend `AccountService` stores users, SMS codes, issue times, deletion state, and tokens in process memory. Owner area: backend auth/SMS/deletion persistence. Follow-up: Issues 9 and 11.
+- Backend `AiCategorizationService` stores AI logs in process memory and uses local heuristic suggestions, not a provider configured through environment variables. Owner area: backend AI provider/persistence. Follow-up: Issue 10.
+- Backup/export UI uses a fixed `DEMO_BACKUP_PASSPHRASE` and operates on a `LocalDataSnapshot` assembled from current Compose state. Owner area: Android backup/export. Follow-up: Issue 5.
+- Notification listener forwards notification text to an in-process capture bus; permission-state detection, settings deep-link, service lifecycle, and durable capture handoff are not closed. Owner area: Android notification capture/permissions. Follow-up: Issue 6.
+- Accessibility service is declared but currently has no bill-sync event handling; bill sync uses sample page text in the review UI. Owner area: Android accessibility bill sync. Follow-up: Issue 7.
+- Continuous monitoring is a UI/state reducer, not a real Android service boundary. Owner area: Android monitoring service. Follow-up: Issue 8.
+- Permission center copy exists, but permission health is not backed by real Android permission checks. Owner area: Android permission center. Follow-up: Issues 6, 7, and 8.
+- Several Android user-facing string literals in Kotlin source appear mojibake and should be corrected before any tester-facing build. Owner area: Android UI/copy. Follow-up: Issue 13.
 
 ## Follow-Up Issue Map
 
