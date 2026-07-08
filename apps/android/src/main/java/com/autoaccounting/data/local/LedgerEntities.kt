@@ -71,8 +71,10 @@ data class PendingEntryEntity(
     @ColumnInfo(name = "captured_at_epoch_millis") val capturedAtEpochMillis: Long,
     @ColumnInfo(name = "suggested_category_id") val suggestedCategoryId: String?,
     @ColumnInfo(name = "funding_account_id") val fundingAccountId: Long?,
+    @ColumnInfo(name = "funding_account_label") val fundingAccountLabel: String?,
     val note: String?,
-    @ColumnInfo(name = "evidence_summary") val evidenceSummary: String?
+    @ColumnInfo(name = "evidence_summary") val evidenceSummary: String?,
+    @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?
 )
 
 @Entity(
@@ -128,13 +130,20 @@ data class IgnoredEntryEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "original_pending_entry_id") val originalPendingEntryId: String,
     val source: PaymentSource,
+    @ColumnInfo(name = "capture_reason", defaultValue = "'NOTIFICATION'") val captureReason: CaptureReason,
+    @ColumnInfo(defaultValue = "'NEEDS_REVIEW'") val confidence: ConfidenceState,
     @ColumnInfo(name = "transaction_kind") val transactionKind: TransactionKind,
     @ColumnInfo(name = "amount_minor") val amountMinor: Long,
     val currency: String,
     @ColumnInfo(name = "merchant_title") val merchantTitle: String,
     @ColumnInfo(name = "transaction_time_epoch_millis") val transactionTimeEpochMillis: Long,
+    @ColumnInfo(name = "captured_at_epoch_millis", defaultValue = "0") val capturedAtEpochMillis: Long,
     @ColumnInfo(name = "suggested_category_id") val suggestedCategoryId: String?,
     @ColumnInfo(name = "funding_account_id") val fundingAccountId: Long?,
+    @ColumnInfo(name = "funding_account_label") val fundingAccountLabel: String?,
+    val note: String?,
+    @ColumnInfo(name = "evidence_summary") val evidenceSummary: String?,
+    @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?,
     @ColumnInfo(name = "ignored_at_epoch_millis") val ignoredAtEpochMillis: Long,
     @ColumnInfo(name = "expires_at_epoch_millis") val expiresAtEpochMillis: Long,
     val reason: IgnoreReason

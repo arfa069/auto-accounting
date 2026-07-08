@@ -10,6 +10,9 @@ class LocalLedgerRepository(
 ) {
     val pendingEntries = database.pendingEntryDao().observePendingEntries()
 
+    fun recoverableIgnoredEntries(nowEpochMillis: Long) =
+        database.ignoredEntryDao().observeRecoverable(nowEpochMillis)
+
     suspend fun seedSystemCategories() {
         database.categoryDao().insertIgnore(DefaultCategories.systemDefaults(clock()))
     }
@@ -38,6 +41,14 @@ class LocalLedgerRepository(
 
     suspend fun upsertPending(entry: PendingEntryEntity) {
         database.pendingEntryDao().upsert(entry)
+    }
+
+    suspend fun deletePending(pendingEntryId: String) {
+        database.pendingEntryDao().deleteById(pendingEntryId)
+    }
+
+    suspend fun upsertIgnored(entry: IgnoredEntryEntity) {
+        database.ignoredEntryDao().upsert(entry)
     }
 
     suspend fun confirmPending(
@@ -81,13 +92,20 @@ class LocalLedgerRepository(
             id = idGenerator(),
             originalPendingEntryId = pending.id,
             source = pending.source,
+            captureReason = pending.captureReason,
+            confidence = pending.confidence,
             transactionKind = pending.transactionKind,
             amountMinor = pending.amountMinor,
             currency = pending.currency,
             merchantTitle = pending.merchantTitle,
             transactionTimeEpochMillis = pending.transactionTimeEpochMillis,
+            capturedAtEpochMillis = pending.capturedAtEpochMillis,
             suggestedCategoryId = pending.suggestedCategoryId,
             fundingAccountId = pending.fundingAccountId,
+            fundingAccountLabel = pending.fundingAccountLabel,
+            note = pending.note,
+            evidenceSummary = pending.evidenceSummary,
+            parsedFieldsText = pending.parsedFieldsText,
             ignoredAtEpochMillis = ignoredAtEpochMillis,
             expiresAtEpochMillis = ignoredAtEpochMillis + IGNORED_RETENTION_MILLIS,
             reason = reason
@@ -98,7 +116,44 @@ class LocalLedgerRepository(
         ignoredEntry
     }
 
+    suspend fun recoverIgnored(ignoredEntryId: String): PendingEntryEntity = database.withTransaction {
+        val ignored = requireNotNull(database.ignoredEntryDao().getById(ignoredEntryId)) {
+            "Ignored entry not found: $ignoredEntryId"
+        }
+        val restored = ignored.toPendingEntry()
+        database.pendingEntryDao().upsert(restored)
+        database.ignoredEntryDao().deleteById(ignoredEntryId)
+        restored
+    }
+
+    suspend fun deleteIgnored(ignoredEntryId: String) {
+        database.ignoredEntryDao().deleteById(ignoredEntryId)
+    }
+
+    suspend fun deleteLedgerByOriginPendingEntryId(pendingEntryId: String) {
+        database.ledgerEntryDao().deleteByOriginPendingEntryId(pendingEntryId)
+    }
+
     companion object {
         const val IGNORED_RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1000L
     }
 }
+
+private fun IgnoredEntryEntity.toPendingEntry(): PendingEntryEntity = PendingEntryEntity(
+    id = originalPendingEntryId,
+    source = source,
+    captureReason = captureReason,
+    confidence = confidence,
+    transactionKind = transactionKind,
+    amountMinor = amountMinor,
+    currency = currency,
+    merchantTitle = merchantTitle,
+    transactionTimeEpochMillis = transactionTimeEpochMillis,
+    capturedAtEpochMillis = capturedAtEpochMillis,
+    suggestedCategoryId = suggestedCategoryId,
+    fundingAccountId = fundingAccountId,
+    fundingAccountLabel = fundingAccountLabel,
+    note = note,
+    evidenceSummary = evidenceSummary,
+    parsedFieldsText = parsedFieldsText
+)

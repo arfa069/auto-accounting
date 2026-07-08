@@ -84,6 +84,9 @@ interface LedgerEntryDao {
 
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
     suspend fun listLedgerEntries(): List<LedgerEntryEntity>
+
+    @Query("DELETE FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId")
+    suspend fun deleteByOriginPendingEntryId(pendingEntryId: String)
 }
 
 @Dao
@@ -102,4 +105,16 @@ interface IgnoredEntryDao {
         """
     )
     suspend fun listRecoverable(nowEpochMillis: Long): List<IgnoredEntryEntity>
+
+    @Query(
+        """
+        SELECT * FROM ignored_entries
+        WHERE expires_at_epoch_millis > :nowEpochMillis
+        ORDER BY ignored_at_epoch_millis DESC
+        """
+    )
+    fun observeRecoverable(nowEpochMillis: Long): Flow<List<IgnoredEntryEntity>>
+
+    @Query("DELETE FROM ignored_entries WHERE id = :id")
+    suspend fun deleteById(id: String)
 }

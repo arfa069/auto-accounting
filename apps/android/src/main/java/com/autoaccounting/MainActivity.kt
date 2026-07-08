@@ -13,11 +13,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.room.Room
+import com.autoaccounting.data.local.AutoAccountingDatabase
+import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
@@ -34,13 +41,14 @@ import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.review.ReviewQueueAction
+import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.review.reduceReviewQueue
-import com.autoaccounting.feature.review.sampleReviewQueueEntries
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,6 +61,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AutoAccountingApp() {
+    val context = LocalContext.current
+    val database = remember {
+        Room.databaseBuilder(
+            context.applicationContext,
+            AutoAccountingDatabase::class.java,
+            "auto-accounting.db"
+        )
+            .addMigrations(AutoAccountingDatabase.MIGRATION_1_2)
+            .build()
+    }
+    val localLedgerRepository = remember(database) {
+        LocalLedgerRepository(database)
+    }
+    val reviewQueuePersistence = remember(localLedgerRepository) {
+        ReviewQueuePersistence(localLedgerRepository)
+    }
+    val coroutineScope = rememberCoroutineScope()
     val tabs = listOf(
         AppTab.Review,
         AppTab.Ledger,
@@ -64,11 +89,7 @@ fun AutoAccountingApp() {
     var accountDeletionState by remember { mutableStateOf(AccountDeletionUiState()) }
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
-    var reviewState by remember {
-        mutableStateOf(
-            ReviewQueueState(pendingEntries = sampleReviewQueueEntries())
-        )
-    }
+    var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val notificationCapturePipeline = remember {
         NotificationCapturePipeline(
@@ -76,13 +97,42 @@ fun AutoAccountingApp() {
         )
     }
     val ledgerEntries = reviewState.confirmedEntries.map { it.toLedgerUiEntry() }
+    val currentReviewState by rememberUpdatedState(reviewState)
 
-    DisposableEffect(notificationCapturePipeline) {
+    fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
+        reviewState = nextState
+        coroutineScope.launch {
+            reviewQueuePersistence.persistTransition(previousState, nextState)
+        }
+    }
+
+    fun persistReviewState(nextState: ReviewQueueState) {
+        persistReviewTransition(reviewState, nextState)
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.seedSystemCategories()
+    }
+
+    LaunchedEffect(reviewQueuePersistence) {
+        reviewQueuePersistence.observeState().collect { persistedState ->
+            reviewState = persistedState.copy(
+                confirmedEntries = reviewState.confirmedEntries,
+                lastAction = reviewState.lastAction,
+                undoEventSequence = reviewState.undoEventSequence
+            )
+        }
+    }
+
+    DisposableEffect(notificationCapturePipeline, reviewQueuePersistence) {
         PaymentNotificationCaptureBus.setHandler { event ->
             val entry = notificationCapturePipeline.capture(event) ?: return@setHandler
-            reviewState = reduceReviewQueue(
-                reviewState,
-                ReviewQueueAction.AddPending(entry)
+            persistReviewTransition(
+                currentReviewState,
+                reduceReviewQueue(
+                    currentReviewState,
+                    ReviewQueueAction.AddPending(entry)
+                )
             )
         }
         onDispose {
@@ -114,7 +164,7 @@ fun AutoAccountingApp() {
                 when (selectedTab) {
                     AppTab.Review -> ReviewQueueScreen(
                         state = reviewState,
-                        onStateChange = { reviewState = it },
+                        onStateChange = ::persistReviewState,
                         modifier = Modifier.padding(innerPadding),
                         onCategorizationRuleRequested = { rule ->
                             categorizationRules = categorizationRules.upsert(rule)
