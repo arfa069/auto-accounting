@@ -41,6 +41,13 @@ Correct tester-facing Android copy in Kotlin source, Android resources, and test
 
 - Copy-only changes should be easy to revert. Keep behavior changes out of this issue so rollback does not affect product state or persistence.
 
+## Verification record
+
+- `rg -n "楼|锛|銆|鐨|鍗|寰|鏀|绫|鍒|璐|闅|瀵|楠|宸|鏈|浜|涓|杩|瀹|浠|犲||||||||" apps\android\src\main apps\android\src\test` - no matches.
+- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` - passed.
+- `.\gradlew.bat --no-daemon :apps:android:assembleDebug` - passed.
+- Manual device/app inspection is still pending because this pass only performed static scan plus automated Android test/build verification.
+
 ## Blocked by
 
 - Issue 1: Baseline Audit And Phase 2 Risk Map
