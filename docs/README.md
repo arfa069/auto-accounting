@@ -8,6 +8,7 @@ Start here:
 - [Compliance And Privacy Draft](./COMPLIANCE.md)
 - [Development Slices](./DEVELOPMENT-SLICES.md)
 - [Phase 2 Slices](./PHASE-2-SLICES.md)
+- [Phase 2 Baseline Audit](./PHASE-2-BASELINE-AUDIT.md)
 - [Phase 2 Issues](./PHASE-2-ISSUES.md)
 - [Phase 2 Issue Files](./issues/phase-2/)
 - [Domain Glossary](../CONTEXT.md)

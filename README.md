@@ -39,4 +39,13 @@
 - Slice 14: 连续监控高级模式、账单同步后提示、可随时关闭的控制项、权限中心状态和支付页面观察边界已建立。
 - Slice 15: 内测崩溃/日志脱敏、核心质量指标计算、设备矩阵、已知风险、合规复核清单和源码密钥扫描已建立。
 
+## Phase 2 baseline
+
+Phase 1 当前是功能面完整的骨架 baseline，不是可直接内测的生产闭环。核心限制见 [Phase 2 Baseline Audit](docs/PHASE-2-BASELINE-AUDIT.md)：
+
+- Android 主流程仍主要使用 Compose 内存状态；Room 仓储已建立但未接入主 UI 闭环。
+- 账号、AI、备份、通知捕获、账单同步、连续监控仍存在 mock/demo/in-memory 边界。
+- 后端账号、短信、AI 日志和注销状态仍是进程内存实现，尚未接 PostgreSQL/provider。
+- Phase 2 的可分派 issue 见 [Phase 2 Issues](docs/PHASE-2-ISSUES.md) 和 [issue files](docs/issues/phase-2/)。
+
 后续切片见 [Development Slices](docs/DEVELOPMENT-SLICES.md)。
