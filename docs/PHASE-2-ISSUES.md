@@ -45,6 +45,15 @@ These issues are written as independently grabbable tracer bullets. Each issue s
 13. Correct tester-facing Android copy encoding
     - Blocked by: 1
     - User stories covered: internal beta readability, compliance clarity, account and permission comprehension
+14. Execute internal beta device matrix and capture findings
+    - Blocked by: 12, 13
+    - User stories covered: internal beta validation, device-matrix evidence, release go/no-go
+15. Persist local-mode session across app restarts
+    - Blocked by: 14
+    - User stories covered: local-only onboarding, restart resilience
+16. Cover in-app payment message capture paths
+    - Blocked by: 7, 8
+    - User stories covered: capture payment records that do not post usable system notifications
 
 ## Issue 1: Baseline Audit And Phase 2 Risk Map
 

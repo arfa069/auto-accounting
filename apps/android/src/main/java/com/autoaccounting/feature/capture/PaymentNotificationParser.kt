@@ -78,6 +78,7 @@ private fun String.transactionKindLabel(): String? = when {
     // Merchant payment keywords (original)
     contains("收款") || contains("收款到账") || contains("到账") -> "收入"
     contains("付款") || contains("支付成功") || contains("付款成功") -> "支出"
+    contains("支出") && contains("交易") -> "支出"
     else -> null
 }
 
@@ -121,17 +122,31 @@ private fun extractCounterpartyTitle(rawText: String): String? {
 }
 
 private fun parseAmountMinor(rawText: String): Long? {
-    val match = Regex("(?:¥|￥)?\\s*(\\d+(?:\\.\\d{1,2})?)\\s*(?:元)?")
+    val explicitAmount = listOf(
+        Regex("(?:¥|￥)\\s*(\\d+(?:\\.\\d{1,2})?)"),
+        Regex("(\\d+(?:\\.\\d{1,2})?)\\s*元")
+    )
+        .asSequence()
+        .flatMap { it.findAll(rawText).map { match -> match.groupValues[1] } }
+        .firstOrNull()
+    if (explicitAmount != null) {
+        return explicitAmount.toAmountMinor()
+    }
+
+    val implicitAmounts = Regex("\\d+(?:\\.\\d{1,2})?")
         .findAll(rawText)
-        .lastOrNull()
-        ?: return null
-    return runCatching {
-        BigDecimal(match.groupValues[1])
+        .map { it.value }
+        .toList()
+    return implicitAmounts.singleOrNull()?.toAmountMinor()
+}
+
+private fun String.toAmountMinor(): Long? =
+    runCatching {
+        BigDecimal(this)
             .setScale(2, RoundingMode.HALF_UP)
             .movePointRight(2)
             .longValueExact()
     }.getOrNull()
-}
 
 private fun amountMinorToText(amountMinor: Long): String {
     val yuan = amountMinor / 100

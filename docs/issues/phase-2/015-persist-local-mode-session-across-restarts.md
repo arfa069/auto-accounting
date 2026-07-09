@@ -56,6 +56,7 @@ Persist a user's confirmed local-mode session so reopening the app returns direc
 - `2026-07-10`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.account.*"` passed.
 - `2026-07-10`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` passed.
 - `2026-07-10`: after installing the latest Debug APK on the Xiaomi device, confirming local mode showed `待确认队列`; a subsequent force-stop and cold launch also showed `待确认队列` without `继续使用本地模式`.
+- `2026-07-10`: after replacing the Debug package with the signed Release APK and completing fresh local-mode onboarding, a force-stop and cold launch also returned directly to `待确认队列`.
 
 ## Discovered by
 

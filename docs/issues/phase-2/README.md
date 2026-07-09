@@ -21,6 +21,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 13. [Correct Tester-Facing Android Copy Encoding](./013-correct-tester-facing-android-copy-encoding.md)
 14. [Execute Internal Beta Device Matrix And Capture Findings](./014-execute-internal-beta-device-matrix-and-capture-findings.md)
 15. [Persist Local-Mode Session Across App Restarts](./015-persist-local-mode-session-across-restarts.md)
+16. [Cover In-App Payment Message Capture Paths](./016-cover-in-app-payment-message-capture-paths.md)
 
 ## Dependency Shape
 
@@ -32,3 +33,4 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 - Issue 12 unblocks Issue 14.
 - Issue 13 can start after Issue 1 and must finish before any internal tester build.
 - Issue 14 identified Issue 15; Issue 15 is independently implementable and must complete before beta distribution.
+- Issue 14 identified Issue 16; Issue 16 depends on the user-started bill-sync and continuous-monitoring boundaries from Issues 7 and 8.

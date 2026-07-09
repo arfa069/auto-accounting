@@ -32,11 +32,11 @@ Run the manual beta checklist from the existing release package on a controlled 
 
 - [x] `.\gradlew.bat --no-daemon :services:backend:test`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:assembleRelease` (historical 2026-07-09 pass; current 2026-07-10 run blocked during signing)
+- [x] `.\gradlew.bat --no-daemon :apps:android:assembleRelease` (2026-07-10 local internal-beta signing identity reconfigured; output passed v2 signature verification)
 
 ## Device verification
 
-Status: In progress. One Xiaomi `24117RK2CC` (`zorn`) device was validated through ADB over Wi-Fi on Android 16 / SDK 36 / MIUI `V816`. This is useful MIUI evidence, but it is outside the planned Android 12-14 Xiaomi range. On 2026-07-10 the latest Debug build installed and launched successfully; the signed Release rebuild then failed because the local `release.jks` password did not match the configured value. The current device run therefore uses Debug and does not clear the signed-package distribution blocker.
+Status: In progress. One Xiaomi `24117RK2CC` (`zorn`) device was validated through ADB over Wi-Fi on Android 16 / SDK 36 / MIUI `V816`. This is useful MIUI evidence, but it is outside the planned Android 12-14 Xiaomi range. On 2026-07-10 the Release rebuild passed signing and v2 verification. After preserving the encrypted device backup and receiving explicit approval to clear app data, the Debug package was uninstalled and the Release package was installed successfully; a forced-stop cold start returned to `com.autoaccounting/.MainActivity`.
 
 - [ ] Run the release artifact on the target Android 10-15 device matrix and record install / launch outcome.
 - [ ] Verify notification listener permission, accessibility permission, and continuous monitoring enable/disable behavior on each available ROM family.
@@ -58,14 +58,14 @@ Status: In progress. One Xiaomi `24117RK2CC` (`zorn`) device was validated throu
 
 | Flow | Status | Evidence or blocker |
 | :--- | :--- | :--- |
-| Local mode, compliance, notification/accessibility deep links, permission retention, local data deletion | Pass on Android 16 / MIUI only | Recorded in the 2026-07-09 and 2026-07-10 device evidence below; not a substitute for the planned matrix. |
-| WeChat / Alipay P2P notification capture | Blocked | The initial real-device run failed; the parser follow-up has unit coverage, but a real WeChat and Alipay payment has not yet been repeated on the connected Debug build. |
+| Local mode, compliance, notification/accessibility deep links, permission retention, local data deletion | Pass with mixed Debug / Release evidence on Android 16 / MIUI only | Permission and local-deletion scenarios were verified on Debug before replacement; the fresh Release install and local-mode cold-start persistence also passed. This is not a substitute for the planned matrix. |
+| WeChat / Alipay notification capture | Partial pass on Android 16 / MIUI Release | Alipay transfer notifications can enter the pending queue after enabling MIUI autostart and re-binding notification access. A first real capture parsed the wrong amount because the notification text contained multiple numeric values; the parser now prefers explicit currency markers and rejects ambiguous multi-number text, and the patched Release captured a later `0.01` yuan transfer correctly. Alipay merchant QR / tap-to-pay and WeChat payment flows still need a source path beyond system notifications when the apps keep payment messages inside their in-app message centers. |
 | Backup / restore | Pass with caveat on Android 16 / MIUI Debug | Export created `Download/2026-07-10-02-50-ac-backup.bak`; SAF import restored a copied test payload successfully. `LocalDataBackupRepositoryTest` covers wrong-password failure before persisted data changes. Direct `.bak` selection and delete-then-restore remain unrecorded on-device. |
 | Bill sync, continuous monitoring, review queue, ledger, reports, AI, account deletion | Blocked | No connected test device and, where applicable, no signed-in tester/backend scenario are available for this run. |
 
 ### Beta decision
 
-**No-go for controlled beta distribution.** The current Release build is blocked by a local keystore-password mismatch; the planned ROM/Android matrix is also untested. P2P capture lacks a post-fix real-device result, while backup/restore has only a Debug-device partial pass. Capture accuracy, deduplication accuracy, and review efficiency cannot be calculated from the available evidence; permission retention has only Android 16 / MIUI restart and reboot evidence.
+**No-go for controlled beta distribution.** A current signed Release APK now installs and cold-starts on one Xiaomi Android 16 device, but the planned ROM/Android matrix is untested. Alipay notification capture has a partial real-device pass, but system-notification coverage is not enough for Alipay merchant QR / tap-to-pay or WeChat payment flows observed so far. Backup/restore has only a Debug-device partial pass. Capture accuracy, deduplication accuracy, and review efficiency cannot be calculated from the available evidence; permission retention has only Android 16 / MIUI restart and reboot evidence.
 
 ## Rollback or safety notes
 
@@ -116,12 +116,27 @@ Status: In progress. One Xiaomi `24117RK2CC` (`zorn`) device was validated throu
 - `2026-07-10`: `:apps:android:assembleRelease` failed during `packageRelease` because `release.jks` could not be opened with the configured password; no current signed Release APK is available for installation.
 - `2026-07-10`: after confirming local mode, force-stopping and cold-starting the app returned to the onboarding screen instead of the pending-review queue. This is tracked by Issue 15.
 - `2026-07-10`: after implementing Issue 15, the latest Debug build retained local mode across force-stop and cold start on the Xiaomi device; the pending-review queue opened directly.
+- `2026-07-10`: a new local internal-beta signing identity was configured; `:apps:android:assembleRelease` passed and `android-release.apk` passed `apksigner verify --verbose` with one v2 signer.
+- `2026-07-10`: non-destructive `adb install -r` of the Release APK returned `INSTALL_FAILED_UPDATE_INCOMPATIBLE` because the device already has a differently signed Debug package; the existing app and its data were not changed.
+- `2026-07-10`: copied `Download/2026-07-10-02-50-ac-backup.bak` from the device to a workspace-external backup and verified the 626-byte size before uninstalling the Debug package with explicit approval.
+- `2026-07-10`: `android-release.apk` installed successfully; after force-stop, `am start -W` reported `Status: ok`, `LaunchState: COLD`, and `TotalTime: 230 ms`, with `com.autoaccounting/.MainActivity` as the resumed activity.
+- `2026-07-10`: on the Release package, completed local-mode onboarding into `待确认队列`; a later force-stop and cold launch returned directly to `待确认队列` without the onboarding entry.
+- `2026-07-10`: after Release replacement and parser calibration, MIUI reported `AutoStartManagerService` rejecting the notification listener until autostart was enabled and notification access was re-bound. After that, `PaymentNotificationListenerService` stayed Live.
+- `2026-07-10`: a real Alipay test notification on the signed Release package entered the pending queue; the review screen showed `待确认 1`, `今日新增 1`, `疑似重复 0`, and no capture-failure log was recorded.
+- `2026-07-10`: tester confirmed the captured Alipay transfer should have been `0.01` yuan but the pending card showed `5.00` yuan. Root cause: the notification amount parser selected the last numeric token, which can be a balance or unrelated number. `PaymentNotificationParser` now prefers explicit `¥` / `￥` / `元` amounts and rejects multiple unmarked numeric values; `:apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"` passed.
+- `2026-07-10`: after setting the local release signing alias in the current shell, `:apps:android:assembleRelease` passed again, `android-release.apk` passed v2 signature verification, and `adb install -r` installed the patched Release APK over the existing Release package. `PaymentNotificationListenerService` was still Live after install.
+- `2026-07-10`: tester repeated a real Alipay `0.01` yuan transfer on the patched Release package. The listener stayed Live, the review screen changed to `待确认 2` / `今日新增 2`, and the newly captured entry displayed `¥0.01`; the previous incorrect `¥5.00` entry remained as historical test data.
+- `2026-07-10`: the previous incorrect `¥5.00` pending entry was ignored on-device. The review screen then showed `待确认 1` / `今日新增 1`, with the remaining Alipay notification-captured entry displaying `¥0.01`; the listener still reported Live and no capture-failure log was present.
+- `2026-07-10`: Android notification settings on the Xiaomi device show Alipay `10.8.70.8000` has `POST_NOTIFICATIONS` allowed and enabled channels including `朋友消息提醒` (`社交聊天、红包转账等消息`) and `交易与账号安全通知` (`支付交易、账单及账户安全等消息`). This proves the OS can receive Alipay transaction-class notifications when Alipay posts them, but it does not prove every payment surface posts a system notification.
+- `2026-07-10`: Android notification settings show WeChat `8.0.71` has `POST_NOTIFICATIONS` allowed and enabled channels such as `新消息通知` and `其他通知`; no separate payment / wallet / transaction channel was visible from the OS notification-channel list. The tester also observed WeChat red packet, transfer, and QR payment flows did not post transaction details to the system notification shade.
+- `2026-07-10`: platform constraint recorded for the capture strategy: Android `NotificationListenerService` only receives notifications after apps post them to the system. Payment messages kept only inside Alipay `消息 -> 消息盒子 -> 支付信息` or WeChat in-app surfaces are outside this notification-capture path and need bill-sync, accessibility, or another explicit integration path.
+- `2026-07-10`: created Issue 16 to track the non-notification capture path for Alipay in-app payment messages and WeChat payment surfaces.
 
 ## Current blockers
 
-- [BLOCKED] Release packaging requires a matching local `release.jks` password; the latest `assembleRelease` failed during `packageRelease`, so no current signed APK is available for installation.
+- [RESOLVED] The Xiaomi Debug package was backed up, uninstalled with explicit approval, and replaced by the signed Release APK; cold-start launch passed.
 - Xiaomi local-mode validation covers notification-listener enablement, accessibility enable/disable reflection, system-settings deep links, permission retention across restarts, and local data deletion on Android 16 / MIUI only. The device is connected again, but planned Android 12-14 Xiaomi coverage is still blocked.
-- [IMPLEMENTED, AWAITING REAL PAYMENT] WeChat / Alipay P2P capture: `PaymentNotificationParser` supports P2P red packets and transfers in both directions (send/receive). See ADR 0049.
+- [PARTIAL PASS] Alipay real transfer notification capture works on the signed Xiaomi Release package after MIUI autostart and notification-listener rebind, and the patched parser captured a later real `0.01` yuan transfer correctly after the earlier `5.00` misread. Alipay merchant QR / tap-to-pay and WeChat payment flows may not emit usable system notifications; follow-up Issue 16 covers the non-notification capture path. See ADR 0049.
 - [IMPLEMENTED, PARTIALLY VERIFIED] Backup/restore: encrypted backups are saved to `/Download` as `.bak` files; Debug-device export and SAF import succeeded, wrong-password safety has repository coverage, but direct `.bak` selection and delete-then-restore remain open. See ADR 0048.
 - [RESOLVED] Account-deletion manual check (in local mode) is equivalent to local data deletion, which has been fully verified on-device.
-- [RESOLVED] Local-mode confirmation now survives force-stop and cold start on the Xiaomi Debug build. See Issue 15.
+- [RESOLVED] Local-mode confirmation now survives force-stop and cold start on the Xiaomi Debug and Release builds. See Issue 15.

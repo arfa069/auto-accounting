@@ -23,3 +23,4 @@ The original merchant-payment regex patterns retain highest priority and are not
 - The parser becomes more permissive: some non-payment P2P notifications from WeChat/Alipay could potentially be captured. This is acceptable during internal beta as entries go through the review queue before reaching the ledger.
 - P2P notification formats vary across app versions and ROM vendors. The regex patterns cover common variants observed on Xiaomi/MIUI but may need calibration after wider device testing.
 - Six new test cases cover the expanded scenarios and protect against regressions.
+- Later Issue 14 validation found notification capture is only a partial source: Alipay transfer notifications can be captured, but Alipay merchant QR / tap-to-pay and observed WeChat payment flows may keep records inside in-app message or bill surfaces instead of Android notifications. Issue 16 tracks that non-notification capture path.

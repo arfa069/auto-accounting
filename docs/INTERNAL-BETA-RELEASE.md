@@ -100,7 +100,7 @@
 ### 4.4 签名假设
 - `assembleDebug` 使用默认 `debug.keystore`，仅用于开发验证。
 - `assembleRelease` 只有在本地签名配置齐备且密码匹配时才能生成 release APK；不得将签名材料或密码提交到仓库。
-- `2026-07-10` 当前本地 `release.jks` 密码不匹配，`packageRelease` 失败；此前生成的 APK 不作为当前可分发产物。
+- `2026-07-10` 本机内测签名已重新配置，`assembleRelease` 可生成通过 v2 签名校验的 APK。该签名身份与先前的 Debug 包不同，必须以全新安装方式替换；Xiaomi 设备已在保留加密备份后完成该替换。
 
 ## 5. 合规核对清单
 
@@ -114,8 +114,8 @@
 
 - 真机 ROM 的后台限制与权限回收策略仍需要按设备矩阵逐台验证。
 - 微信/支付宝页面结构变动仍可能影响通知解析与账单同步稳定性。
-- P2P 支付通知解析和备份/恢复流程虽已有自动化覆盖，但修复后的版本仍需真机复验。
-- 签名 Release 安装仍受本地 keystore 密码阻塞；支付通知、无障碍滚动和锁屏保活仍依赖真机场景验证。
+- 支付宝转账类真实通知已在 Xiaomi Release 包上复验入队，补丁 Release 已正确显示 `0.01` 元测试转账；金额解析已修正为优先使用带 `¥`、`￥` 或 `元` 的金额，避免把余额等后续数字误当交易金额。支付宝商户扫码 / 碰一碰与微信支付类消息可能只进入应用内消息中心，不能只依赖系统通知监听，后续由 Issue 16 跟进。
+- Release 构建和签名不再受本地 keystore 密码阻塞；Xiaomi 设备已在保留加密备份后完成 Release 全新安装及冷启动。未来设备替换仍应先备份数据，并明确确认会清除旧签名安装的数据。支付通知、无障碍滚动和锁屏保活仍依赖真机场景验证。
 
 ## 7. 内测退出标准
 
@@ -130,7 +130,7 @@
 - 真实支付通知拦截：必须在真机上完成。
 - 锁屏保活与 ROM 清后台：必须在真机上完成。
 - 微信/支付宝真实账单同步滚动：必须在真机上完成。
-- 已签名 beta 分发包：当前因 keystore 密码不匹配无法重建；修复签名配置并完成目标 ROM 安装、启动和核心链路前不得分发。
+- 已签名 beta 分发包：已成功重建并通过 v2 签名校验，并在 Xiaomi 设备完成全新安装和冷启动；完成目标 ROM 的核心链路前不得分发。
 
 ## 9. 验证记录
 
@@ -138,6 +138,18 @@
 - `2026-07-09`：`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` 通过。
 - `2026-07-09`：`.\gradlew.bat --no-daemon :apps:android:assembleRelease` 通过。
 - `2026-07-10`：`assembleRelease` 在 `packageRelease` 阶段因 `release.jks` 密码不匹配失败；当前没有可供真机安装的 Release APK。
+- `2026-07-10`：重新配置本机内测签名后，`.\gradlew.bat --no-daemon :apps:android:assembleRelease` 通过；`android-release.apk` 经 `apksigner verify --verbose` 校验为单签名 v2 APK。
+- `2026-07-10`：在 `192.168.1.6:37145` 对已安装的 Debug 包执行 `adb install -r` 返回 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`；未卸载或清空设备数据，现有 Debug 安装保持不变。
+- `2026-07-10`：已将设备中的加密备份拉取到工作区外并核对大小一致；经明确确认后卸载 Debug 包并全新安装 `android-release.apk`。
+- `2026-07-10`：Release 包强制停止后冷启动成功，`am start -W` 返回 `Status: ok`、`LaunchState: COLD`、`TotalTime: 230 ms`，前台活动为 `com.autoaccounting/.MainActivity`。
 - `2026-07-10`：`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
 - `2026-07-10`：设备 `192.168.1.6:37145` 连接成功；Debug 包安装、启动、权限设置跳转、备份导出和 SAF 导入均完成记录。
 - `2026-07-10`：Phase 2 Issue 15 已在 Xiaomi Debug 包验证：确认本地模式后，强制停止并冷启动会直接进入待确认队列。
+- `2026-07-10`：Phase 2 Issue 15 同样在 Xiaomi Release 包复验通过：完成本地模式确认后，强制停止并冷启动仍直接进入待确认队列。
+- `2026-07-10`：Xiaomi Release 包覆盖安装后，MIUI 自启动管理一度拒绝重新绑定通知监听服务；开启自启动并重新授权通知使用权后，`PaymentNotificationListenerService` 回到 Live 状态。
+- `2026-07-10`：支付宝真实测试通知在 Release 包上成功进入待确认队列，界面显示 `待确认 1`、`今日新增 1`，未出现捕获失败日志。
+- `2026-07-10`：真实支付宝转账通知曾将 `0.01` 元误解析为 `5.00` 元；修正金额解析后，`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"` 与 `.\gradlew.bat --no-daemon :apps:android:assembleRelease` 通过，补丁 Release 已通过 `adb install -r` 覆盖安装到 Xiaomi 设备。
+- `2026-07-10`：补丁 Release 上重复执行一笔真实支付宝 `0.01` 元转账后，通知监听保持 Live，待确认队列变为 `待确认 2`、`今日新增 2`，新入队项显示 `¥0.01`；旧的 `¥5.00` 错误项仍作为历史测试数据留在队列。
+- `2026-07-10`：旧的 `¥5.00` 错误待确认项已在设备上忽略；队列回到 `待确认 1`、`今日新增 1`，剩余新项为支付宝通知捕获 `¥0.01`。
+- `2026-07-10`：Xiaomi 系统通知设置显示支付宝的 `朋友消息提醒` 与 `交易与账号安全通知` 通道已启用；微信只有 `新消息通知`、`其他通知` 等通道可见，未看到独立支付通道。当前证据说明通知监听只能覆盖实际推送到系统通知栏的支付消息，应用内消息盒子里的支付信息需要后续账单同步或无障碍路径覆盖。
+- `2026-07-10`：新增 Issue 16，专门跟进支付宝应用内支付信息与微信支付表面无法通过系统通知覆盖的问题。

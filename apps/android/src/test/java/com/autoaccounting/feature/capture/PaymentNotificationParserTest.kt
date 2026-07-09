@@ -184,6 +184,38 @@ class PaymentNotificationParserTest {
         assertEquals("支出", parsed.transactionKindLabel)
     }
 
+    @Test
+    fun parsesAlipayExpenseNotificationWithTransactionSummary() {
+        val parsed = PaymentNotificationParser().parse(
+            PaymentNotificationEvent(
+                packageName = "com.eg.android.AlipayGphone",
+                title = "支付宝",
+                text = "支出 交易 ¥0.01 余额 5.00",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertNotNull(parsed)
+        assertEquals("支付宝", parsed!!.sourceLabel)
+        assertEquals(FALLBACK_COUNTERPARTY, parsed.merchantTitle)
+        assertEquals(1L, parsed.amountMinor)
+        assertEquals("支出", parsed.transactionKindLabel)
+    }
+
+    @Test
+    fun ignoresAmbiguousAmountsWithoutCurrencyMarker() {
+        val parsed = PaymentNotificationParser().parse(
+            PaymentNotificationEvent(
+                packageName = "com.eg.android.AlipayGphone",
+                title = "支付宝",
+                text = "支出 交易 0.01 余额 5.00",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertNull(parsed)
+    }
+
     // ---- P2P: Fallback ----
 
     @Test

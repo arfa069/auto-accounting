@@ -94,6 +94,7 @@ Includes:
 
 Resolved during beta validation:
 - Phase 2 Issue 15 persists the non-sensitive local-mode confirmation across force-stop/relaunch without storing account credentials.
+- Phase 2 Issue 16 tracks payment records that source apps keep inside in-app message or bill surfaces instead of posting as Android notifications.
 
 Verification:
 - `.\gradlew.bat --no-daemon test` passes.
