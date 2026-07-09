@@ -85,6 +85,6 @@ Status: In progress on 2026-07-09. One Xiaomi `24117RK2CC` (`zorn`) device conne
 
 - [RESOLVED] Release packaging is now signed (`release.jks` configured) and available as `android-release.apk`, ready for beta distribution.
 - Xiaomi local-mode validation now covers notification-listener enablement, accessibility enable/disable reflection, system-settings deep links, permission retention across restarts, and local data deletion. Note: 本次内测仅充分覆盖了 MIUI，其他 ROM 风险后置到灰度测试阶段。
-- WeChat / Alipay payment-capture flows are blocked because the current beta parser strictly requires merchant-payment formats (ignoring P2P transfers/red packets), and the tester is unable to generate a real merchant payment in the current environment.
-- Backup/restore round-trip was tested on-device but lacks Android Storage Access Framework (SAF) integration (backups are currently held in memory) and provides no visual feedback upon restore, making it unusable for real testers.
+- [RESOLVED] WeChat / Alipay payment-capture: `PaymentNotificationParser` has been expanded to support P2P red packets and transfers in both directions (send/receive). See ADR 0049.
+- [RESOLVED] Backup/restore: Encrypted backups are now saved directly to `/Download` as `.bak` files; import uses SAF file picker; both export and restore show Snackbar feedback. See ADR 0048.
 - [RESOLVED] Account-deletion manual check (in local mode) is equivalent to local data deletion, which has been fully verified on-device.

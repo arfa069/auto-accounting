@@ -28,25 +28,27 @@ class PaymentNotificationParser {
             .joinToString(" ")
         val amountMinor = parseAmountMinor(rawText) ?: return null
         val kindLabel = rawText.transactionKindLabel() ?: return null
-        val merchantTitle = extractMerchantTitle(rawText)
-            ?: return null
+        val counterpartyTitle = extractCounterpartyTitle(rawText)
+            ?: FALLBACK_COUNTERPARTY
 
         return ParsedPaymentNotification(
             sourceLabel = source.label,
-            merchantTitle = merchantTitle,
+            merchantTitle = counterpartyTitle,
             amountMinor = amountMinor,
             transactionKindLabel = kindLabel,
             fundingAccountLabel = source.defaultFundingAccountLabel,
             rawEvidenceText = rawText,
             parsedFields = listOf(
                 "来源=${source.label}",
-                "商户=$merchantTitle",
+                "商户=$counterpartyTitle",
                 "金额=${amountMinorToText(amountMinor)}",
                 "类型=$kindLabel"
             )
         )
     }
 }
+
+internal const val FALLBACK_COUNTERPARTY = "未知来源"
 
 private enum class PaymentNotificationSource(
     val label: String,
@@ -66,21 +68,56 @@ private fun PaymentNotificationEvent.paymentSource(): PaymentNotificationSource?
 
 private fun String.transactionKindLabel(): String? = when {
     contains("退款") -> "退款"
+    // P2P incoming: receive red packet or transfer
+    contains("收到") && (contains("红包") || contains("转账")) -> "收入"
+    Regex("向你转账").containsMatchIn(this) -> "收入"
+    // P2P outgoing: send red packet or transfer
+    contains("发出红包") || contains("红包已发出") -> "支出"
+    contains("转账给") -> "支出"
+    Regex("向(?!你).*转账").containsMatchIn(this) -> "支出"
+    // Merchant payment keywords (original)
     contains("收款") || contains("收款到账") || contains("到账") -> "收入"
     contains("付款") || contains("支付成功") || contains("付款成功") -> "支出"
     else -> null
 }
 
-private fun extractMerchantTitle(rawText: String): String? {
+private fun extractCounterpartyTitle(rawText: String): String? {
+    // Merchant payment patterns (original, highest priority)
     val merchantRegexes = listOf(
         Regex("商户[:：]\\s*([^\\s，,]+)"),
         Regex("支付成功\\s+([^\\s，,]+)\\s+\\d"),
         Regex("付款成功\\s+([^\\s，,]+)\\s+\\d")
     )
-    return merchantRegexes
+    merchantRegexes
         .asSequence()
         .mapNotNull { it.find(rawText)?.groupValues?.getOrNull(1)?.trim() }
         .firstOrNull { it.isNotBlank() }
+        ?.let { return it }
+
+    // P2P patterns: red packets and transfers (both directions)
+    val p2pRegexes = listOf(
+        // Received red packet: "收到xxx的红包"
+        Regex("收到(.+?)的红包"),
+        // Received transfer: "收到xxx的转账" or "xxx向你转账"
+        Regex("收到(.+?)的转账"),
+        Regex("([^\\s]+?)向你转账"),
+        // Sent transfer: "转账给xxx" or "向xxx转账"
+        Regex("转账给(.+?)\\s"),
+        Regex("转账给(.+?)$"),
+        Regex("向([^\\s]+?)转账")
+    )
+    p2pRegexes
+        .asSequence()
+        .mapNotNull { it.find(rawText)?.groupValues?.getOrNull(1)?.trim() }
+        .firstOrNull { it.isNotBlank() && it != "你" }
+        ?.let { return it }
+
+    // Sent red packet with no named recipient
+    if (rawText.contains("发出红包") || rawText.contains("红包已发出")) {
+        return "红包"
+    }
+
+    return null
 }
 
 private fun parseAmountMinor(rawText: String): Long? {
