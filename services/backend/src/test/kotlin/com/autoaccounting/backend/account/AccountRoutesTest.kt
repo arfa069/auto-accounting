@@ -12,12 +12,14 @@ import org.junit.Test
 
 class AccountRoutesTest {
     @Test
-    fun registerLoginAndRecoveryReturnStableJsonContracts() = testApplication {
+    fun registerLoginRecoveryAndTokenVerifyReturnStableJsonContracts() = testApplication {
+        val clock = MutableClock()
         application {
             module(
                 accountService = AccountService(
                     smsCodeGenerator = { "123456" },
-                    tokenGenerator = { "token-1" }
+                    tokenGenerator = { "token-1" },
+                    clock = clock
                 )
             )
         }
@@ -38,6 +40,7 @@ class AccountRoutesTest {
                 append("phone", "13800138000")
                 append("code", "123456")
                 append("password", "Aa123456!")
+                append("deviceId", "device-a")
             }
         )
         assertEquals(HttpStatusCode.OK, registered.status)
@@ -51,7 +54,17 @@ class AccountRoutesTest {
             }
         )
         assertEquals(HttpStatusCode.Unauthorized, failedLogin.status)
-        assertEquals("""{"ok":false,"error":"LOGIN_FAILED","message":"手机号或密码不正确"}""", failedLogin.bodyAsText())
+        assertTrue(failedLogin.bodyAsText().contains(""""error":"LOGIN_FAILED""""))
+
+        clock.advanceBy(61_000)
+        client.submitForm(
+            url = "/account/sms",
+            formParameters = Parameters.build {
+                append("phone", "13800138000")
+                append("deviceId", "device-a")
+                append("ipAddress", "127.0.0.2")
+            }
+        )
 
         val recovered = client.submitForm(
             url = "/account/recover",
@@ -59,10 +72,20 @@ class AccountRoutesTest {
                 append("phone", "13800138000")
                 append("code", "123456")
                 append("password", "Bb123456!")
+                append("deviceId", "device-a")
             }
         )
         assertEquals(HttpStatusCode.OK, recovered.status)
         assertTrue(recovered.bodyAsText().contains(""""token":"token-1""""))
+
+        val verified = client.submitForm(
+            url = "/account/token/verify",
+            formParameters = Parameters.build {
+                append("token", "token-1")
+            }
+        )
+        assertEquals(HttpStatusCode.OK, verified.status)
+        assertEquals("""{"ok":true,"phone":"13800138000","token":"token-1"}""", verified.bodyAsText())
     }
 
     @Test
@@ -90,6 +113,7 @@ class AccountRoutesTest {
                 append("phone", "13800138000")
                 append("code", "123456")
                 append("password", "Aa123456!")
+                append("deviceId", "device-a")
             }
         )
 
@@ -105,10 +129,19 @@ class AccountRoutesTest {
             requested.bodyAsText()
         )
 
-        val configWrite = client.submitForm(
+        val unauthenticatedConfigWrite = client.submitForm(
             url = "/account/cloud-config",
             formParameters = Parameters.build {
                 append("phone", "13800138000")
+            }
+        )
+        assertEquals(HttpStatusCode.Unauthorized, unauthenticatedConfigWrite.status)
+        assertTrue(unauthenticatedConfigWrite.bodyAsText().contains("TOKEN_INVALID"))
+
+        val configWrite = client.submitForm(
+            url = "/account/cloud-config",
+            formParameters = Parameters.build {
+                append("token", "token-1")
             }
         )
         assertEquals(HttpStatusCode.Conflict, configWrite.status)

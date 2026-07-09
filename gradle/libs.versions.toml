@@ -11,6 +11,8 @@ ktor = "3.2.3"
 logback = "1.5.18"
 junit = "4.13.2"
 robolectric = "4.15.1"
+postgres = "42.7.4"
+h2 = "2.2.224"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -41,3 +43,5 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "k
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgres" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }

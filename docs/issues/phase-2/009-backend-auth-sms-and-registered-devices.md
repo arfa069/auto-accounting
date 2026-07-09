@@ -6,11 +6,19 @@ Move backend account registration, login, SMS verification, password recovery, t
 
 ## Acceptance criteria
 
-- [ ] Users, password credentials, SMS verification codes/limits, sessions/tokens, and registered devices are persisted through migrations.
-- [ ] Registration, login, account recovery, and token-protected routes work after backend restart.
-- [ ] SMS sending uses an environment-configured provider seam and fails safely when provider configuration is missing.
-- [ ] Login failure, SMS expiry, retry limits, and lockout behavior match the PRD without leaking whether a phone number exists.
-- [ ] Backend integration tests cover database persistence, auth flows, SMS limits, and token verification.
+- [x] Users, password credentials, SMS verification codes/limits, sessions/tokens, and registered devices are persisted through migrations.
+- [x] Registration, login, account recovery, and token-protected routes work after backend restart.
+- [x] SMS sending uses an environment-configured provider seam and fails safely when provider configuration is missing.
+- [x] Login failure, SMS expiry, retry limits, and lockout behavior match the PRD without leaking whether a phone number exists.
+- [x] Backend integration tests cover database persistence, auth flows, SMS limits, and token verification.
+
+## Verification
+
+- `.\gradlew.bat --no-daemon :services:backend:test --tests com.autoaccounting.backend.account.AccountServiceTest --tests com.autoaccounting.backend.account.AccountRoutesTest --tests com.autoaccounting.backend.account.AccountPersistenceTest`
+- `.\gradlew.bat --no-daemon :services:backend:test`
+- `.\gradlew.bat --no-daemon :services:backend:build`
+- PostgreSQL production wiring is environment-driven through `AUTO_ACCOUNTING_DATABASE_URL`, `AUTO_ACCOUNTING_DATABASE_USER`, `AUTO_ACCOUNTING_DATABASE_PASSWORD`, `AUTO_ACCOUNTING_SMS_PROVIDER=webhook`, `AUTO_ACCOUNTING_SMS_WEBHOOK_URL`, and `AUTO_ACCOUNTING_SMS_API_KEY`; automated persistence coverage uses H2 in PostgreSQL mode.
+- Production account bootstrap fails fast without `AUTO_ACCOUNTING_DATABASE_URL`; tests inject in-memory stores explicitly. Cloud configuration writes require a verified token.
 
 ## Blocked by
 

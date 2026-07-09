@@ -38,13 +38,46 @@ class AccountServiceTest {
             AccountError.SMS_TOO_FREQUENT,
             service.issueSmsCode("13800138000", "device-b", "127.0.0.2").error
         )
+
+        repeat(4) { index ->
+            assertEquals(
+                AccountResult.Success(Unit),
+                service.issueSmsCode("1390013900$index", "device-a", "127.0.0.${index + 2}")
+            )
+        }
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            service.issueSmsCode("13900139000", "device-a", "127.0.0.2").error
+            service.issueSmsCode("13700137000", "device-a", "127.0.0.9").error
         )
+
+        val ipLimitedService = accountService()
+        repeat(5) { index ->
+            assertEquals(
+                AccountResult.Success(Unit),
+                ipLimitedService.issueSmsCode("1360013600$index", "device-$index", "127.0.0.1")
+            )
+        }
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            service.issueSmsCode("13900139000", "device-b", "127.0.0.1").error
+            ipLimitedService.issueSmsCode("13500135000", "device-z", "127.0.0.1").error
+        )
+    }
+
+    @Test
+    fun smsCodeIsInvalidatedAfterThreeWrongAttempts() {
+        val service = accountService()
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+
+        repeat(3) {
+            assertEquals(
+                AccountError.VERIFICATION_CODE_WRONG,
+                service.register("13800138000", "000000", "Aa123456!").error
+            )
+        }
+
+        assertEquals(
+            AccountError.VERIFICATION_CODE_WRONG,
+            service.register("13800138000", "123456", "Aa123456!").error
         )
     }
 
@@ -60,6 +93,43 @@ class AccountServiceTest {
 
         assertEquals(AccountError.ACCOUNT_LOCKED, service.login("13800138000", "wrong").error)
         assertEquals(AccountError.ACCOUNT_LOCKED, service.login("13800138000", "Aa123456!").error)
+    }
+
+    @Test
+    fun registrationCreatesPersistedTokenAndRegisteredDevice() {
+        val service = accountService()
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+
+        val registered = service.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>
+
+        assertEquals(
+            AccountResult.Success(AccountToken("13800138000", "token-1")),
+            service.verifyToken(registered.value.token)
+        )
+        assertEquals(
+            listOf("device-a"),
+            service.registeredDevices("13800138000").map { it.deviceId }
+        )
+    }
+
+    @Test
+    fun missingSmsProviderFailsWithoutPersistingCodeOrRateLimit() {
+        val service = AccountService(
+            smsProvider = MissingSmsProvider,
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-1" },
+            clock = MutableClock(0)
+        )
+
+        assertEquals(
+            AccountError.SMS_PROVIDER_UNCONFIGURED,
+            service.issueSmsCode("13800138000", "device-a", "127.0.0.1").error
+        )
+        assertEquals(
+            AccountError.VERIFICATION_CODE_WRONG,
+            service.register("13800138000", "123456", "Aa123456!").error
+        )
     }
 
     @Test

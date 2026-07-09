@@ -24,7 +24,7 @@ fun main() {
 }
 
 fun Application.module(
-    accountService: AccountService = AccountService(),
+    accountService: AccountService = AccountService.fromEnvironment(),
     aiCategorizationService: AiCategorizationService = AiCategorizationService()
 ) {
     routing {

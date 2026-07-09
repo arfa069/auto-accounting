@@ -25,7 +25,9 @@ fun Route.accountRoutes(accountService: AccountService) {
         val result = accountService.register(
             phone = parameters["phone"].orEmpty(),
             code = parameters["code"].orEmpty(),
-            password = parameters["password"].orEmpty()
+            password = parameters["password"].orEmpty(),
+            deviceId = parameters["deviceId"].orEmpty(),
+            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
         )
         call.respondAccountResult(result)
     }
@@ -34,7 +36,9 @@ fun Route.accountRoutes(accountService: AccountService) {
         val parameters = call.receiveParameters()
         val result = accountService.login(
             phone = parameters["phone"].orEmpty(),
-            password = parameters["password"].orEmpty()
+            password = parameters["password"].orEmpty(),
+            deviceId = parameters["deviceId"].orEmpty(),
+            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
         )
         call.respondAccountResult(result)
     }
@@ -44,7 +48,17 @@ fun Route.accountRoutes(accountService: AccountService) {
         val result = accountService.recoverPassword(
             phone = parameters["phone"].orEmpty(),
             code = parameters["code"].orEmpty(),
-            newPassword = parameters["password"].orEmpty()
+            newPassword = parameters["password"].orEmpty(),
+            deviceId = parameters["deviceId"].orEmpty(),
+            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
+        )
+        call.respondAccountResult(result)
+    }
+
+    post("/account/token/verify") {
+        val parameters = call.receiveParameters()
+        val result = accountService.verifyToken(
+            token = parameters["token"].orEmpty()
         )
         call.respondAccountResult(result)
     }
@@ -75,9 +89,10 @@ fun Route.accountRoutes(accountService: AccountService) {
 
     post("/account/cloud-config") {
         val parameters = call.receiveParameters()
-        val result = accountService.writeCloudConfiguration(
-            phone = parameters["phone"].orEmpty()
-        )
+        val result = when (val verified = accountService.verifyToken(parameters["token"].orEmpty())) {
+            is AccountResult.Failure -> verified
+            is AccountResult.Success -> accountService.writeCloudConfiguration(verified.value.phone)
+        }
         call.respondAccountResult(result)
     }
 }
@@ -105,9 +120,12 @@ private suspend fun ApplicationCall.respondAccountResult(result: AccountResult<*
 }
 
 private fun AccountError.statusCode(): HttpStatusCode = when (this) {
+    AccountError.TOKEN_INVALID -> HttpStatusCode.Unauthorized
     AccountError.LOGIN_FAILED -> HttpStatusCode.Unauthorized
     AccountError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
     AccountError.SMS_TOO_FREQUENT -> HttpStatusCode.TooManyRequests
+    AccountError.SMS_PROVIDER_UNCONFIGURED,
+    AccountError.SMS_SEND_FAILED -> HttpStatusCode.ServiceUnavailable
     AccountError.PHONE_ALREADY_REGISTERED -> HttpStatusCode.Conflict
     AccountError.PHONE_NOT_REGISTERED -> HttpStatusCode.NotFound
     AccountError.ACCOUNT_DELETION_PENDING -> HttpStatusCode.Conflict

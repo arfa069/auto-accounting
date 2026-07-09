@@ -18,7 +18,10 @@ class AiCategorizationRoutesTest {
     fun routeFiltersPayloadAndLogsMinimalContextByDefault() = testApplication {
         val aiService = AiCategorizationService()
         application {
-            module(aiCategorizationService = aiService)
+            module(
+                accountService = AccountService(),
+                aiCategorizationService = aiService
+            )
         }
 
         val response = client.submitForm(
@@ -47,7 +50,10 @@ class AiCategorizationRoutesTest {
     fun enhancedContextIsLoggedOnlyWhenExplicitlyRequested() = testApplication {
         val aiService = AiCategorizationService()
         application {
-            module(aiCategorizationService = aiService)
+            module(
+                accountService = AccountService(),
+                aiCategorizationService = aiService
+            )
         }
 
         client.submitForm(
