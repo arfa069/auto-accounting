@@ -1,0 +1,21 @@
+# Android 通知采集指南
+
+## 职责
+
+本目录负责通知监听权限、微信/支付宝支付通知过滤、文本解析、采集 Pipeline 和持久化待确认记录。
+
+## 约束
+
+- Listener 只接受明确允许的包名和支付相关通知；来源不明、字段不足或无关通知应安全忽略。
+- 原始通知文本属于敏感交易信息。只保留完成审核所需的最小证据，不写日志、不上传到非项目后端。
+- Parser 与 Pipeline 保持纯逻辑和确定性；Android Service 只负责生命周期和事件交接。
+- 每个候选必须经过分类和去重后进入待确认队列，不得直接写入账本。
+- Service 重建、重复通知和处理重试不得产生不可控重复记录；权限被撤销时停止采集。
+
+## 验证
+
+```powershell
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"
+```
+
+覆盖允许来源、拒绝来源、退款等交易类型、缺失字段、重复事件和持久化交接。
