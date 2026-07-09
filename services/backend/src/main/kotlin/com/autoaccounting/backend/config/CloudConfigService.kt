@@ -13,25 +13,11 @@ class CloudConfigService(
         )
     }
 
-    fun writeConfig(
-        phone: String,
-        aiConsentGranted: Boolean,
-        enhancedContextGranted: Boolean,
-        featureFlags: String,
-        updatedAtMillis: Long
-    ): CloudConfigResult {
-        if (!accountService.canWriteCloudData(phone)) {
+    fun writeConfig(config: StoredCloudConfig): CloudConfigResult {
+        if (!accountService.canWriteCloudData(config.phone)) {
             return CloudConfigResult.DeletionPending
         }
-        store.upsertConfig(
-            StoredCloudConfig(
-                phone = phone,
-                aiConsentGranted = aiConsentGranted,
-                enhancedContextGranted = enhancedContextGranted,
-                featureFlags = featureFlags,
-                updatedAtMillis = updatedAtMillis
-            )
-        )
+        store.upsertConfig(config)
         return CloudConfigResult.Written
     }
 

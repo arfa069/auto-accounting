@@ -29,11 +29,13 @@ class CloudConfigServiceTest {
         service.accountService.register("13800138000", "123456", "Aa123456!")
 
         val result = service.configService.writeConfig(
-            phone = "13800138000",
-            aiConsentGranted = true,
-            enhancedContextGranted = true,
-            featureFlags = """{"beta_reports":true}""",
-            updatedAtMillis = 1000
+            StoredCloudConfig(
+                phone = "13800138000",
+                aiConsentGranted = true,
+                enhancedContextGranted = true,
+                featureFlags = """{"beta_reports":true}""",
+                updatedAtMillis = 1000
+            )
         )
 
         assertEquals(CloudConfigResult.Written, result)
@@ -51,11 +53,13 @@ class CloudConfigServiceTest {
         service.accountService.requestAccountDeletion("13800138000")
 
         val result = service.configService.writeConfig(
-            phone = "13800138000",
-            aiConsentGranted = true,
-            enhancedContextGranted = false,
-            featureFlags = "{}",
-            updatedAtMillis = 1000
+            StoredCloudConfig(
+                phone = "13800138000",
+                aiConsentGranted = true,
+                enhancedContextGranted = false,
+                featureFlags = "{}",
+                updatedAtMillis = 1000
+            )
         )
 
         assertEquals(CloudConfigResult.DeletionPending, result)
@@ -67,11 +71,13 @@ class CloudConfigServiceTest {
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
         service.accountService.register("13800138000", "123456", "Aa123456!")
         service.configService.writeConfig(
-            phone = "13800138000",
-            aiConsentGranted = true,
-            enhancedContextGranted = true,
-            featureFlags = "{}",
-            updatedAtMillis = 1000
+            StoredCloudConfig(
+                phone = "13800138000",
+                aiConsentGranted = true,
+                enhancedContextGranted = true,
+                featureFlags = "{}",
+                updatedAtMillis = 1000
+            )
         )
 
         service.configService.deleteConfig("13800138000")

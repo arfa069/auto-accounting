@@ -55,11 +55,13 @@ fun Route.cloudConfigRoutes(
         }
         val phone = (verified as AccountResult.Success<AccountToken>).value.phone
         val result = cloudConfigService.writeConfig(
-            phone = phone,
-            aiConsentGranted = parameters["aiConsentGranted"].toBoolean(),
-            enhancedContextGranted = parameters["enhancedContextGranted"].toBoolean(),
-            featureFlags = parameters["featureFlags"]?.takeIf { it.isNotBlank() } ?: "{}",
-            updatedAtMillis = System.currentTimeMillis()
+            StoredCloudConfig(
+                phone = phone,
+                aiConsentGranted = parameters["aiConsentGranted"].toBoolean(),
+                enhancedContextGranted = parameters["enhancedContextGranted"].toBoolean(),
+                featureFlags = parameters["featureFlags"]?.takeIf { it.isNotBlank() } ?: "{}",
+                updatedAtMillis = System.currentTimeMillis()
+            )
         )
         when (result) {
             is CloudConfigResult.Written -> call.respondText(
