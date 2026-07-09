@@ -13,11 +13,15 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.billsync.BillSyncPipeline
+import com.autoaccounting.feature.billsync.BillSyncSessionController
+import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -107,6 +111,7 @@ class ReviewQueueScreenTest {
 
     @Test
     fun summaryShowsSpecCountsAndSyncAction() {
+        val sessionController = BillSyncSessionController()
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(
@@ -115,7 +120,10 @@ class ReviewQueueScreenTest {
                         sampleEntry(id = "quick", confidence = ConfidenceState.HIGH)
                     ),
                     todayStartEpochMillis = NOW - 1
-                )
+                ),
+                billSyncAccessibilityAccessGranted = true,
+                onLaunchBillSyncSource = { true },
+                billSyncSessionController = sessionController
             )
         }
 
@@ -125,11 +133,73 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithText("账单同步").performClick()
         composeRule.onNodeWithText("选择同步来源").assertIsDisplayed()
         composeRule.onNodeWithText("微信").performClick()
+        completeBillSync(sessionController, BillSyncSource.WeChat)
         composeRule.onNodeWithText("打开来源").assertIsDisplayed()
         composeRule.onNodeWithText("读取账单").assertIsDisplayed()
         composeRule.onNodeWithText("已创建 1 条，已去重 0 条").assertIsDisplayed()
-        composeRule.onNodeWithText("完成").performClick()
+        composeRule.onNodeWithText("关闭").performClick()
         composeRule.onNodeWithText("待确认 3").assertIsDisplayed()
+    }
+
+    @Test
+    fun billSyncWithoutPermissionOpensSettingsAndDoesNotLaunchSource() {
+        var settingsOpened = false
+        var sourceLaunched = false
+        val sessionController = BillSyncSessionController()
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(),
+                billSyncAccessibilityAccessGranted = false,
+                onOpenBillSyncAccessibilitySettings = { settingsOpened = true },
+                onLaunchBillSyncSource = {
+                    sourceLaunched = true
+                    true
+                },
+                billSyncSessionController = sessionController
+            )
+        }
+
+        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("微信").performClick()
+
+        assertTrue(settingsOpened)
+        assertTrue(!sourceLaunched)
+    }
+
+    @Test
+    fun billSyncFailureRendersProgressAndErrorWithoutChangingQueue() {
+        val sessionController = BillSyncSessionController()
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(),
+                billSyncAccessibilityAccessGranted = true,
+                onLaunchBillSyncSource = { true },
+                billSyncSessionController = sessionController
+            )
+        }
+
+        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("支付宝").performClick()
+        runBlocking {
+            sessionController.submitBillPage(
+                packageName = BillSyncSource.Alipay.packageName,
+                pageText = "not a bill page"
+            ) { source, pageText ->
+                BillSyncPipeline().sync(
+                    source = source,
+                    pageText = pageText,
+                    existingPendingEntries = emptyList(),
+                    capturedAtEpochMillis = NOW
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("解析账单").assertIsDisplayed()
+        composeRule.onNodeWithText("同步失败").assertIsDisplayed()
+        composeRule.onNodeWithText("未识别到账单记录，请确认已打开对应账单页面").assertIsDisplayed()
+        composeRule.onNodeWithText("关闭").performClick()
+        composeRule.onNodeWithText("待确认 0").assertIsDisplayed()
     }
 
     @Test
@@ -201,9 +271,13 @@ class ReviewQueueScreenTest {
     @Test
     fun billSyncCompletionCanPromptAdvancedMonitoringButFirstScreenDoesNotShowIt() {
         var monitoringState = ContinuousMonitoringState()
+        val sessionController = BillSyncSessionController()
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                billSyncAccessibilityAccessGranted = true,
+                onLaunchBillSyncSource = { true },
+                billSyncSessionController = sessionController,
                 continuousMonitoringState = monitoringState,
                 onContinuousMonitoringStateChange = { monitoringState = it }
             )
@@ -212,13 +286,41 @@ class ReviewQueueScreenTest {
         composeRule.onAllNodesWithText("连续监控").assertCountEquals(0)
         composeRule.onNodeWithText("账单同步").performClick()
         composeRule.onNodeWithText("微信").performClick()
-        composeRule.onNodeWithText("完成").performClick()
+        completeBillSync(sessionController, BillSyncSource.WeChat)
+        composeRule.onNodeWithText("关闭").performClick()
 
         composeRule.onNodeWithText("试试连续监控").assertIsDisplayed()
         composeRule.onNodeWithText("只观察支付相关页面，可随时关闭。").assertIsDisplayed()
         composeRule.onNodeWithText("开启连续监控").performClick()
 
         assertTrue(monitoringState.enabled)
+    }
+
+    private fun completeBillSync(
+        controller: BillSyncSessionController,
+        source: BillSyncSource
+    ) {
+        runBlocking {
+            controller.submitBillPage(
+                packageName = source.packageName,
+                pageText = when (source) {
+                    BillSyncSource.WeChat ->
+                        "2026-07-08 18:30 晚餐 支出 ¥42.50 微信零钱"
+                    BillSyncSource.Alipay ->
+                        "2026-07-08 18:30 晚餐 支出 42.50元 支付宝余额"
+                }
+            ) { actualSource, pageText ->
+                BillSyncPipeline(
+                    captureTimeFormatter = { "2026-07-08 18:31" }
+                ).sync(
+                    source = actualSource,
+                    pageText = pageText,
+                    existingPendingEntries = emptyList(),
+                    capturedAtEpochMillis = NOW
+                )
+            }
+        }
+        composeRule.waitForIdle()
     }
 
     private fun sampleEntry(

@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -52,8 +53,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.account.AccountSession
-import com.autoaccounting.feature.billsync.BillSyncPipeline
-import com.autoaccounting.feature.billsync.BillSyncResult
+import com.autoaccounting.feature.billsync.BillSyncSessionController
+import com.autoaccounting.feature.billsync.BillSyncSessionPhase
+import com.autoaccounting.feature.billsync.BillSyncSessionState
+import com.autoaccounting.feature.billsync.BillSyncSessions
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationClient
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
@@ -61,7 +64,6 @@ import com.autoaccounting.feature.categorization.AiCategorizationResult
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
-import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
@@ -73,10 +75,13 @@ fun ReviewQueueScreen(
         pendingEntries = sampleReviewQueueEntries()
     ),
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
-    categorizationRules: List<CategorizationRule> = emptyList(),
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
+    billSyncAccessibilityAccessGranted: Boolean = false,
+    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
+    onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
+    billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
@@ -86,10 +91,13 @@ fun ReviewQueueScreen(
         onStateChange = { state = it },
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
-        categorizationRules = categorizationRules,
         accountSession = accountSession,
         aiSettings = aiSettings,
         aiCategorizationGateway = aiCategorizationGateway,
+        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+        onLaunchBillSyncSource = onLaunchBillSyncSource,
+        billSyncSessionController = billSyncSessionController,
         continuousMonitoringState = continuousMonitoringState,
         onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
     )
@@ -101,10 +109,13 @@ fun ReviewQueueScreen(
     onStateChange: (ReviewQueueState) -> Unit,
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
-    categorizationRules: List<CategorizationRule> = emptyList(),
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
+    billSyncAccessibilityAccessGranted: Boolean = false,
+    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
+    onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
+    billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
@@ -112,7 +123,8 @@ fun ReviewQueueScreen(
     var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
     var showIgnoredList by remember { mutableStateOf(false) }
     var showBillSyncDialog by remember { mutableStateOf(false) }
-    var billSyncResult by remember { mutableStateOf<BillSyncResult?>(null) }
+    val billSyncSessionState by billSyncSessionController.state.collectAsState()
+    var handledBillSyncSessionId by remember { mutableStateOf<Long?>(null) }
     var showPostBillSyncMonitoringPrompt by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -129,27 +141,37 @@ fun ReviewQueueScreen(
     }
 
     fun startBillSync(source: BillSyncSource) {
-        val result = BillSyncPipeline(
-            captureTimeFormatter = { "2026-07-08 12:30" }
-        ).sync(
-            source = source,
-            pageText = sampleBillPageText(source),
-            existingPendingEntries = state.pendingEntries,
-            capturedAtEpochMillis = state.nowEpochMillis
-        )
+        if (!billSyncAccessibilityAccessGranted) {
+            syncMessage = "请先授权账单同步无障碍服务"
+            onOpenBillSyncAccessibilitySettings()
+            return
+        }
+        billSyncSessionController.start(source)
+        if (!onLaunchBillSyncSource(source)) {
+            billSyncSessionController.fail("未找到${source.label}，无法打开账单页面")
+        }
+    }
+
+    LaunchedEffect(billSyncSessionState.sessionId, billSyncSessionState.phase) {
+        if (
+            billSyncSessionState.phase != BillSyncSessionPhase.Completed ||
+            handledBillSyncSessionId == billSyncSessionState.sessionId
+        ) {
+            return@LaunchedEffect
+        }
+        val result = billSyncSessionState.result ?: return@LaunchedEffect
         val nextState = (result.mergedEntries + result.createdEntries)
-            .map { it.applyCategorizationSuggestion(categorizationRules) }
             .fold(state) { currentState, entry ->
                 reduceReviewQueue(currentState, ReviewQueueAction.AddPending(entry))
             }
         onStateChange(nextState)
-        billSyncResult = result
         onContinuousMonitoringStateChange(
             reduceContinuousMonitoringState(
                 continuousMonitoringState,
                 ContinuousMonitoringAction.MarkBillSyncCompleted
             )
         )
+        handledBillSyncSessionId = billSyncSessionState.sessionId
     }
 
     val lastAction = state.lastAction
@@ -188,7 +210,7 @@ fun ReviewQueueScreen(
             onEdit = { editingEntry = it },
             onShowIgnoredList = { showIgnoredList = true },
             onStartBillSync = {
-                billSyncResult = null
+                billSyncSessionController.reset()
                 showBillSyncDialog = true
             },
             showPostBillSyncMonitoringPrompt = showPostBillSyncMonitoringPrompt &&
@@ -290,14 +312,17 @@ fun ReviewQueueScreen(
 
     if (showBillSyncDialog) {
         BillSyncDialog(
-            result = billSyncResult,
+            sessionState = billSyncSessionState,
             onSourceSelected = ::startBillSync,
+            onCancel = {
+                billSyncSessionController.cancel()
+                showBillSyncDialog = false
+            },
             onDismiss = {
-                if (billSyncResult != null) {
+                if (billSyncSessionState.phase == BillSyncSessionPhase.Completed) {
                     showPostBillSyncMonitoringPrompt = true
                 }
                 showBillSyncDialog = false
-                billSyncResult = null
             }
         )
     }
@@ -597,17 +622,21 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
 
 @Composable
 private fun BillSyncDialog(
-    result: BillSyncResult?,
+    sessionState: BillSyncSessionState,
     onSourceSelected: (BillSyncSource) -> Unit,
+    onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val sourceSelection = sessionState.phase == BillSyncSessionPhase.Idle
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (sessionState.isActive) onCancel() else onDismiss()
+        },
         title = {
-            Text(if (result == null) "选择同步来源" else "账单同步进度")
+            Text(if (sourceSelection) "选择同步来源" else "账单同步进度")
         },
         text = {
-            if (result == null) {
+            if (sourceSelection) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("选择后会读取当前账单页，并把新交易加入待确认队列。")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -621,36 +650,41 @@ private fun BillSyncDialog(
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    result.steps.forEach { step ->
+                    sessionState.steps.forEach { step ->
                         Text(syncStepDisplayLabel(step.label))
                     }
-                    result.errorMessage?.let { message ->
+                    sessionState.message?.let { message ->
                         Text(message)
                     }
-                    Text(result.summary, fontWeight = FontWeight.SemiBold)
+                    sessionState.result?.summary?.let { summary ->
+                        Text(summary, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         },
         confirmButton = {
-            if (result != null) {
+            if (
+                sessionState.phase == BillSyncSessionPhase.Completed ||
+                sessionState.phase == BillSyncSessionPhase.Failed ||
+                sessionState.phase == BillSyncSessionPhase.Cancelled
+            ) {
                 Button(onClick = onDismiss) {
-                    Text("完成")
+                    Text("关闭")
                 }
             }
         },
         dismissButton = {
-            if (result == null) {
-                TextButton(onClick = onDismiss) {
+            if (sourceSelection) {
+                TextButton(onClick = onCancel) {
                     Text("取消")
+                }
+            } else if (sessionState.isActive) {
+                TextButton(onClick = onCancel) {
+                    Text("取消同步")
                 }
             }
         }
     )
-}
-
-private fun sampleBillPageText(source: BillSyncSource): String = when (source) {
-    BillSyncSource.WeChat -> "2026-07-08 18:30 晚餐 支出 ¥42.50 微信零钱"
-    BillSyncSource.Alipay -> "2026-07-08 18:30 晚餐 支出 42.50元 支付宝余额"
 }
 
 private fun syncStepDisplayLabel(label: String): String =

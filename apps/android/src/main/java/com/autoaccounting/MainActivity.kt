@@ -28,6 +28,8 @@ import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.billsync.BillSyncPermission
+import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
@@ -48,13 +50,17 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
+    private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             AutoAccountingApp(
                 notificationListenerAccessGranted = notificationListenerAccessGranted.value,
-                onOpenNotificationListenerSettings = ::openNotificationListenerSettings
+                onOpenNotificationListenerSettings = ::openNotificationListenerSettings,
+                billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
+                onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
+                onLaunchBillSyncSource = ::launchBillSyncSource
             )
         }
     }
@@ -63,6 +69,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         notificationListenerAccessGranted.value =
             NotificationListenerPermission.isGranted(this)
+        billSyncAccessibilityAccessGranted.value = BillSyncPermission.isGranted(this)
     }
 
     private fun openNotificationListenerSettings() {
@@ -72,12 +79,32 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
+
+    private fun openBillSyncAccessibilitySettings() {
+        runCatching {
+            startActivity(BillSyncPermission.settingsIntent())
+        }.getOrElse {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    private fun launchBillSyncSource(source: BillSyncSource): Boolean {
+        val launchIntent = packageManager.getLaunchIntentForPackage(source.packageName)
+            ?: return false
+        return runCatching {
+            startActivity(launchIntent)
+            true
+        }.getOrDefault(false)
+    }
 }
 
 @Composable
 fun AutoAccountingApp(
     notificationListenerAccessGranted: Boolean = false,
-    onOpenNotificationListenerSettings: () -> Unit = {}
+    onOpenNotificationListenerSettings: () -> Unit = {},
+    billSyncAccessibilityAccessGranted: Boolean = false,
+    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
+    onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false }
 ) {
     val context = LocalContext.current
     val database = remember {
@@ -205,7 +232,6 @@ fun AutoAccountingApp(
                         onCategorizationRuleRequested = { rule ->
                             persistCategorizationRules(categorizationRules.upsert(rule))
                         },
-                        categorizationRules = categorizationRules,
                         accountSession = accountSession,
                         aiSettings = if (accountDeletionState.cloudWritesAllowed) {
                             aiSettings
@@ -213,6 +239,9 @@ fun AutoAccountingApp(
                             AiCategorizationSettings()
                         },
                         aiCategorizationGateway = DemoAiCategorizationGateway,
+                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                        onLaunchBillSyncSource = onLaunchBillSyncSource,
                         continuousMonitoringState = continuousMonitoringState,
                         onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                     )
@@ -258,6 +287,8 @@ fun AutoAccountingApp(
                         },
                         notificationListenerAccessGranted = notificationListenerAccessGranted,
                         onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                         accountSession = accountSession,
                         accountDeletionState = accountDeletionState,
                         onAccountDeletionStateChange = { next ->

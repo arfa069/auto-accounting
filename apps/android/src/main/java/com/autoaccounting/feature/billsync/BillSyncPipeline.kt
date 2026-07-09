@@ -15,7 +15,8 @@ enum class BillSyncStep(val label: String) {
     Deduplicate("去重"),
     CreatePendingEntries("创建待确认"),
     Completed("完成"),
-    Failed("同步失败")
+    Failed("同步失败"),
+    Cancelled("已取消")
 }
 
 data class BillSyncResult(
@@ -37,7 +38,7 @@ class BillSyncPipeline(
         existingPendingEntries: List<ReviewQueueEntry>,
         capturedAtEpochMillis: Long
     ): BillSyncResult {
-        val steps = listOf(
+        val successSteps = listOf(
             BillSyncStep.OpenSource,
             BillSyncStep.ReadBills,
             BillSyncStep.Parse,
@@ -46,6 +47,20 @@ class BillSyncPipeline(
             BillSyncStep.Completed
         )
         val parsedEntries = parser.parse(source, pageText)
+        if (parsedEntries.isEmpty()) {
+            return BillSyncResult(
+                steps = listOf(
+                    BillSyncStep.OpenSource,
+                    BillSyncStep.ReadBills,
+                    BillSyncStep.Parse,
+                    BillSyncStep.Failed
+                ),
+                createdEntries = emptyList(),
+                duplicateSkippedCount = 0,
+                summary = "未创建待确认记录",
+                errorMessage = "未识别到账单记录，请确认已打开对应账单页面"
+            )
+        }
         val createdEntries = mutableListOf<ReviewQueueEntry>()
         val mergedEntries = mutableListOf<ReviewQueueEntry>()
         var pendingEntries = existingPendingEntries
@@ -72,7 +87,7 @@ class BillSyncPipeline(
         val duplicateSkippedCount = mergedEntries.size
 
         return BillSyncResult(
-            steps = steps,
+            steps = successSteps,
             createdEntries = createdEntries,
             mergedEntries = mergedEntries,
             duplicateSkippedCount = duplicateSkippedCount,

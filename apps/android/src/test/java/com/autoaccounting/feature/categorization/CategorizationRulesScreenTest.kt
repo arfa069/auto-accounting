@@ -93,6 +93,25 @@ class CategorizationRulesScreenTest {
     }
 
     @Test
+    fun profileShowsBillSyncAccessibilityStateAndSettingsLink() {
+        var settingsOpened = false
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                showPermissionCenter = true,
+                billSyncAccessibilityAccessGranted = true,
+                onOpenBillSyncAccessibilitySettings = { settingsOpened = true }
+            )
+        }
+
+        composeRule.onNodeWithText("账单同步权限").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("bill-sync-accessibility-settings")
+            .performScrollTo()
+            .performClick()
+
+        assertTrue(settingsOpened)
+    }
+
+    @Test
     fun profileCanToggleCloudAiConsent() {
         var settings = AiCategorizationSettings()
         composeRule.setContent {

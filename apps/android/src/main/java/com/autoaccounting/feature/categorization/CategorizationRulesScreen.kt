@@ -69,6 +69,8 @@ fun CategorizationRulesScreen(
     onDeleteLocalData: () -> Unit = {},
     notificationListenerAccessGranted: Boolean = false,
     onOpenNotificationListenerSettings: () -> Unit = {},
+    billSyncAccessibilityAccessGranted: Boolean = false,
+    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
@@ -89,6 +91,8 @@ fun CategorizationRulesScreen(
         onDeleteLocalData = onDeleteLocalData,
         notificationListenerAccessGranted = notificationListenerAccessGranted,
         onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
@@ -115,6 +119,8 @@ fun CategorizationRulesScreen(
     onDeleteLocalData: () -> Unit = {},
     notificationListenerAccessGranted: Boolean = false,
     onOpenNotificationListenerSettings: () -> Unit = {},
+    billSyncAccessibilityAccessGranted: Boolean = false,
+    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
@@ -197,6 +203,10 @@ fun CategorizationRulesScreen(
             PermissionCenterNotificationItem(
                 accessGranted = notificationListenerAccessGranted,
                 onOpenSettings = onOpenNotificationListenerSettings
+            )
+            PermissionCenterBillSyncItem(
+                accessGranted = billSyncAccessibilityAccessGranted,
+                onOpenSettings = onOpenBillSyncAccessibilitySettings
             )
             ContinuousMonitoringItem(
                 state = currentContinuousMonitoringState,
@@ -329,6 +339,45 @@ private fun PermissionCenterNotificationItem(
                 modifier = Modifier.testTag("notification-listener-settings")
             ) {
                 Text("打开系统设置")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionCenterBillSyncItem(
+    accessGranted: Boolean,
+    onOpenSettings: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("账单同步权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.AccessibilityBillSync),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (accessGranted) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+            OutlinedButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.testTag("bill-sync-accessibility-settings")
+            ) {
+                Text("打开无障碍设置")
             }
         }
     }

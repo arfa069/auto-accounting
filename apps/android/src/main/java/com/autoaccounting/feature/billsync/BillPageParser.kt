@@ -5,10 +5,11 @@ import java.math.RoundingMode
 
 enum class BillSyncSource(
     val label: String,
-    val defaultFundingAccountLabel: String
+    val defaultFundingAccountLabel: String,
+    val packageName: String
 ) {
-    WeChat("微信", "微信零钱"),
-    Alipay("支付宝", "支付宝余额")
+    WeChat("微信", "微信零钱", "com.tencent.mm"),
+    Alipay("支付宝", "支付宝余额", "com.eg.android.AlipayGphone")
 }
 
 data class ParsedBillEntry(

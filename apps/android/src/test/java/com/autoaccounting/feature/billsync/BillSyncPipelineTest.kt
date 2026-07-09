@@ -62,6 +62,21 @@ class BillSyncPipelineTest {
         assertTrue(result.summary.contains("已去重 1 条"))
     }
 
+    @Test
+    fun unrecognizedPageFailsWithoutCreatingEntries() {
+        val result = BillSyncPipeline(parser = BillPageParser()).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "not a bill page",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW
+        )
+
+        assertEquals(BillSyncStep.Failed, result.steps.last())
+        assertTrue(result.errorMessage != null)
+        assertTrue(result.createdEntries.isEmpty())
+        assertTrue(result.mergedEntries.isEmpty())
+    }
+
     private companion object {
         const val NOW = 1_783_468_800_000L
     }
