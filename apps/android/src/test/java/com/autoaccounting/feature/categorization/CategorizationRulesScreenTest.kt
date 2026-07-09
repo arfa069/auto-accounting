@@ -141,7 +141,10 @@ class CategorizationRulesScreenTest {
                 showPermissionCenter = true,
                 onExportEncryptedBackup = { "backup-1" },
                 onImportEncryptedBackup = { backup, _ -> importedBackup = backup },
-                onDeleteLocalData = { deleted = true }
+                onDeleteLocalData = { deleted = true },
+                onSaveBackupToDownloads = { it },
+                onPickBackupFile = { it(android.net.Uri.parse("file://test")) },
+                onReadBackupFile = { "backup-1" }
             )
         }
 
@@ -151,9 +154,12 @@ class CategorizationRulesScreenTest {
             .performTextInput("test-passphrase")
         composeRule.onNodeWithText("导出 CSV").performScrollTo().performClick()
         composeRule.onNodeWithText("CSV 已生成").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("导出加密备份").performScrollTo().performClick()
-        composeRule.onNodeWithText("加密备份已生成").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("导入加密备份").performScrollTo().performClick()
+        composeRule.onNodeWithText("导出加密备份到文件").performScrollTo().performClick()
+        // Wait for coroutine to finish
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("从文件导入备份").performScrollTo().performClick()
+        composeRule.waitForIdle()
         assertTrue(importedBackup == "backup-1")
 
         composeRule.onNodeWithText("删除本机数据").performScrollTo().performClick()

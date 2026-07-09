@@ -1,5 +1,7 @@
 package com.autoaccounting.feature.categorization
 
+import android.net.Uri
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,7 +82,11 @@ fun CategorizationRulesScreen(
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
+    snackbarHostState: SnackbarHostState = SnackbarHostState(),
+    onSaveBackupToDownloads: (String) -> String = { "" },
+    onPickBackupFile: ((Uri) -> Unit) -> Unit = {},
+    onReadBackupFile: (Uri) -> String = { "" }
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     CategorizationRulesScreen(
@@ -102,7 +109,11 @@ fun CategorizationRulesScreen(
         onAccountDeletionStateChange = onAccountDeletionStateChange,
         continuousMonitoringState = continuousMonitoringState,
         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
+        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange,
+        snackbarHostState = snackbarHostState,
+        onSaveBackupToDownloads = onSaveBackupToDownloads,
+        onPickBackupFile = onPickBackupFile,
+        onReadBackupFile = onReadBackupFile
     )
 }
 
@@ -132,7 +143,11 @@ fun CategorizationRulesScreen(
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
+    snackbarHostState: SnackbarHostState = SnackbarHostState(),
+    onSaveBackupToDownloads: (String) -> String = { "" },
+    onPickBackupFile: ((Uri) -> Unit) -> Unit = {},
+    onReadBackupFile: (Uri) -> String = { "" }
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
     var isCreating by remember { mutableStateOf(false) }
@@ -199,13 +214,15 @@ fun CategorizationRulesScreen(
             )
             LocalDataToolsItem(
                 ledgerEntries = ledgerEntries,
-                exportedBackup = exportedBackup,
                 message = localDataMessage,
                 onMessageChange = { localDataMessage = it },
-                onBackupExported = { exportedBackup = it },
                 onExportEncryptedBackup = onExportEncryptedBackup,
                 onImportEncryptedBackup = onImportEncryptedBackup,
-                onRequestDelete = { showDeleteDialog = true }
+                onRequestDelete = { showDeleteDialog = true },
+                snackbarHostState = snackbarHostState,
+                onSaveBackupToDownloads = onSaveBackupToDownloads,
+                onPickBackupFile = onPickBackupFile,
+                onReadBackupFile = onReadBackupFile
             )
             PermissionCenterNotificationItem(
                 accessGranted = notificationListenerAccessGranted,
@@ -674,16 +691,19 @@ private fun AiConsentItem(
 @Composable
 private fun LocalDataToolsItem(
     ledgerEntries: List<LedgerUiEntry>,
-    exportedBackup: String?,
     message: String?,
     onMessageChange: (String) -> Unit,
-    onBackupExported: (String) -> Unit,
     onExportEncryptedBackup: suspend (String) -> String,
     onImportEncryptedBackup: suspend (String, String) -> Unit,
-    onRequestDelete: () -> Unit
+    onRequestDelete: () -> Unit,
+    snackbarHostState: SnackbarHostState,
+    onSaveBackupToDownloads: (String) -> String,
+    onPickBackupFile: ((Uri) -> Unit) -> Unit,
+    onReadBackupFile: (Uri) -> String
 ) {
     val coroutineScope = rememberCoroutineScope()
     var backupPassphrase by remember { mutableStateOf("") }
+    var isExporting by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -696,7 +716,7 @@ private fun LocalDataToolsItem(
         ) {
             Text("备份和导出", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "CSV 是明文表格；完整迁移请使用加密备份。",
+                "CSV 是明文表格；完整迁移请使用加密备份（保存到 Download 文件夹）。",
                 style = MaterialTheme.typography.bodyMedium
             )
             OutlinedTextField(
@@ -716,41 +736,51 @@ private fun LocalDataToolsItem(
                 }) {
                     Text(if (message == "CSV 已生成") "CSV 已生成" else "导出 CSV")
                 }
-                OutlinedButton(onClick = {
-                    coroutineScope.launch {
-                        runCatching { onExportEncryptedBackup(backupPassphrase) }
-                            .onSuccess { backup ->
-                                onBackupExported(backup)
-                                onMessageChange("加密备份已生成")
+                OutlinedButton(
+                    onClick = {
+                        isExporting = true
+                        coroutineScope.launch {
+                            runCatching {
+                                val backupContent = onExportEncryptedBackup(backupPassphrase)
+                                onSaveBackupToDownloads(backupContent)
                             }
-                            .onFailure {
-                                onMessageChange("加密备份失败")
-                            }
+                                .onSuccess { filename ->
+                                    snackbarHostState.showSnackbar(
+                                        "备份已保存到 Download/$filename"
+                                    )
+                                }
+                                .onFailure {
+                                    snackbarHostState.showSnackbar("加密备份失败")
+                                }
+                            isExporting = false
                         }
-                }, enabled = backupPassphrase.isNotBlank()) {
-                    Text(if (message == "加密备份已生成") "加密备份已生成" else "导出加密备份")
+                    },
+                    enabled = backupPassphrase.isNotBlank() && !isExporting
+                ) {
+                    Text("导出加密备份到文件")
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        exportedBackup?.let { backup ->
+                        onPickBackupFile { uri ->
                             coroutineScope.launch {
                                 runCatching {
-                                    onImportEncryptedBackup(backup, backupPassphrase)
+                                    val backupContent = onReadBackupFile(uri)
+                                    onImportEncryptedBackup(backupContent, backupPassphrase)
                                 }
                                     .onSuccess {
-                                        onMessageChange("备份已恢复")
+                                        snackbarHostState.showSnackbar("备份已恢复成功")
                                     }
                                     .onFailure {
-                                        onMessageChange("备份恢复失败")
+                                        snackbarHostState.showSnackbar("备份恢复失败：密码错误或文件损坏")
                                     }
                             }
-                        } ?: onMessageChange("请先导出加密备份")
+                        }
                     },
                     enabled = backupPassphrase.isNotBlank()
                 ) {
-                    Text("导入加密备份")
+                    Text("从文件导入备份")
                 }
                 OutlinedButton(onClick = onRequestDelete) {
                     Text("删除本机数据")
