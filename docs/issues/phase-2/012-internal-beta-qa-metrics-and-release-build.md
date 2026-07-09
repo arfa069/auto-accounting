@@ -6,11 +6,11 @@ Create the internal beta release package: repeatable build procedure, device mat
 
 ## Acceptance criteria
 
-- [ ] Device matrix covers Android 10-15 and major domestic ROM families targeted for beta.
-- [ ] Manual QA scripts cover account/local mode, notification capture, bill sync, continuous monitoring, review queue, ledger, reports, AI, backup, deletion, and compliance pages.
-- [ ] Capture accuracy, deduplication accuracy, review efficiency, and permission retention measurement plan is documented.
-- [ ] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
-- [ ] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
+- [x] Device matrix covers Android 10-15 and major domestic ROM families targeted for beta.
+- [x] Manual QA scripts cover account/local mode, notification capture, bill sync, continuous monitoring, review queue, ledger, reports, AI, backup, deletion, and compliance pages.
+- [x] Capture accuracy, deduplication accuracy, review efficiency, and permission retention measurement plan is documented.
+- [x] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
+- [x] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
 
 ## Blocked by
 

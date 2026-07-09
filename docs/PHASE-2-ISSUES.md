@@ -219,11 +219,11 @@ Make cloud configuration and AI categorization provider integration durable and 
 
 ## Acceptance criteria
 
-- [ ] Cloud configuration persists AI consent, enhanced AI context preference, feature flags, and device/account settings needed by the app.
-- [ ] AI categorization requests are routed through an environment-configured backend provider seam with safe missing-config behavior.
-- [ ] AI categorization logs are persisted for internal beta without storing full local ledger data.
-- [ ] Android/backend contract tests cover consent/config reads and AI categorization request/response payloads.
-- [ ] Secret scanner or equivalent check confirms provider keys are not committed or shipped in client code.
+- [x] Cloud configuration persists AI consent, enhanced AI context preference, feature flags, and device/account settings needed by the app.
+- [x] AI categorization requests are routed through an environment-configured backend provider seam with safe missing-config behavior.
+- [x] AI categorization logs are persisted for internal beta without storing full local ledger data.
+- [x] Android/backend contract tests cover consent/config reads and AI categorization request/response payloads.
+- [x] Secret scanner or equivalent check confirms provider keys are not committed or shipped in client code.
 
 ## Blocked by
 
@@ -237,11 +237,11 @@ Make account deletion durable end to end: request deletion, enter deletion pendi
 
 ## Acceptance criteria
 
-- [ ] Account deletion requests persist with cooling-off deadline and deletion pending state.
-- [ ] Users can log in and cancel deletion during the cooling-off period.
-- [ ] Cloud AI and device/config writes are paused while deletion is pending.
-- [ ] Scheduled deletion removes account, registered devices, cloud configuration, and AI categorization logs.
-- [ ] Tests cover request, cancel, write blocking, scheduled execution, and idempotent deletion behavior.
+- [x] Account deletion requests persist with cooling-off deadline and deletion pending state.
+- [x] Users can log in and cancel deletion during the cooling-off period.
+- [x] Cloud AI and device/config writes are paused while deletion is pending.
+- [x] Scheduled deletion removes account, registered devices, cloud configuration, and AI categorization logs.
+- [x] Tests cover request, cancel, write blocking, scheduled execution, and idempotent deletion behavior.
 
 ## Blocked by
 
@@ -256,11 +256,11 @@ Create the internal beta release package: repeatable build procedure, device mat
 
 ## Acceptance criteria
 
-- [ ] Device matrix covers Android 10-15 and major domestic ROM families targeted for beta.
-- [ ] Manual QA scripts cover account/local mode, notification capture, bill sync, continuous monitoring, review queue, ledger, reports, AI, backup, deletion, and compliance pages.
-- [ ] Capture accuracy, deduplication accuracy, review efficiency, and permission retention measurement plan is documented.
-- [ ] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
-- [ ] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
+- [x] Device matrix covers Android 10-15 and major domestic ROM families targeted for beta.
+- [x] Manual QA scripts cover account/local mode, notification capture, bill sync, continuous monitoring, review queue, ledger, reports, AI, backup, deletion, and compliance pages.
+- [x] Capture accuracy, deduplication accuracy, review efficiency, and permission retention measurement plan is documented.
+- [x] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
+- [x] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
 
 ## Blocked by
 
