@@ -5,6 +5,8 @@ import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.accountRoutes
 import com.autoaccounting.backend.ai.AiCategorizationService
 import com.autoaccounting.backend.ai.aiCategorizationRoutes
+import com.autoaccounting.backend.config.CloudConfigService
+import com.autoaccounting.backend.config.cloudConfigRoutes
 import io.ktor.http.ContentType
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -25,7 +27,8 @@ fun main() {
 
 fun Application.module(
     accountService: AccountService = AccountService.fromEnvironment(),
-    aiCategorizationService: AiCategorizationService = AiCategorizationService()
+    aiCategorizationService: AiCategorizationService = AiCategorizationService(),
+    cloudConfigService: CloudConfigService = CloudConfigService(accountService = accountService)
 ) {
     routing {
         get("/health") {
@@ -37,5 +40,6 @@ fun Application.module(
         }
         accountRoutes(accountService)
         aiCategorizationRoutes(aiCategorizationService, accountService)
+        cloudConfigRoutes(cloudConfigService, accountService)
     }
 }

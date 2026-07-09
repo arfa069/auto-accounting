@@ -16,17 +16,13 @@ data class AiCategorizationSuggestion(
     val explanation: String
 )
 
-data class AiCategorizationLog(
-    val accountPhone: String?,
-    val payload: AiCategorizationPayload,
-    val suggestion: AiCategorizationSuggestion
-)
-
-class AiCategorizationService {
-    private val mutableLogs = mutableListOf<AiCategorizationLog>()
-
-    val logs: List<AiCategorizationLog>
-        get() = mutableLogs.toList()
+class AiCategorizationService(
+    private val provider: AiProvider = RuleBasedAiProvider,
+    private val logStore: AiCategorizationLogStore = InMemoryAiCategorizationLogStore()
+) {
+    /** All logs (read-only snapshot). */
+    val logs: List<StoredAiCategorizationLog>
+        get() = logStore.allLogs()
 
     fun suggest(
         accountPhone: String? = null,
@@ -48,28 +44,25 @@ class AiCategorizationService {
             note = note?.trim().takeIf { enhancedContext && !it.isNullOrBlank() },
             rawEvidenceText = rawEvidenceText?.trim().takeIf { enhancedContext && !it.isNullOrBlank() }
         )
-        val suggestion = AiCategorizationSuggestion(
-            category = suggestCategory(payload),
-            confidenceLabel = "中",
-            explanation = "基于商户标题、交易类型和来源生成分类建议"
+        val suggestion = provider.suggest(payload)
+        logStore.insertLog(
+            StoredAiCategorizationLog(
+                accountPhone = accountPhone,
+                merchantTitle = payload.merchantTitle,
+                sourceLabel = payload.sourceLabel,
+                transactionKind = payload.transactionKind,
+                amountRangeLabel = payload.amountRangeLabel,
+                suggestedCategory = suggestion.category,
+                confidenceLabel = suggestion.confidenceLabel,
+                explanation = suggestion.explanation,
+                createdAtMillis = System.currentTimeMillis()
+            )
         )
-        mutableLogs += AiCategorizationLog(accountPhone, payload, suggestion)
         return suggestion
     }
 
     fun deleteLogsForAccount(phone: String) {
-        mutableLogs.removeAll { it.accountPhone == phone }
-    }
-
-    private fun suggestCategory(payload: AiCategorizationPayload): String {
-        val title = payload.merchantTitle.lowercase()
-        return when {
-            payload.categoryCandidates.any { it == "餐饮" } &&
-                (title.contains("餐") || title.contains("咖啡") || title.contains("饭")) -> "餐饮"
-            title.contains("地铁") || title.contains("公交") -> "交通"
-            payload.categoryCandidates.isNotEmpty() -> payload.categoryCandidates.first()
-            else -> "未分类"
-        }
+        logStore.deleteLogsForAccount(phone)
     }
 
     private fun amountRangeLabel(amountMinor: Long): String {

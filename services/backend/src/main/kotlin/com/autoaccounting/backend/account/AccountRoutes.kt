@@ -86,15 +86,6 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
         call.respondAccountResult(result)
     }
-
-    post("/account/cloud-config") {
-        val parameters = call.receiveParameters()
-        val result = when (val verified = accountService.verifyToken(parameters["token"].orEmpty())) {
-            is AccountResult.Failure -> verified
-            is AccountResult.Success -> accountService.writeCloudConfiguration(verified.value.phone)
-        }
-        call.respondAccountResult(result)
-    }
 }
 
 private suspend fun ApplicationCall.respondAccountResult(result: AccountResult<*>) {

@@ -130,7 +130,7 @@ class AccountRoutesTest {
         )
 
         val unauthenticatedConfigWrite = client.submitForm(
-            url = "/account/cloud-config",
+            url = "/account/cloud-config/write",
             formParameters = Parameters.build {
                 append("phone", "13800138000")
             }
@@ -139,9 +139,10 @@ class AccountRoutesTest {
         assertTrue(unauthenticatedConfigWrite.bodyAsText().contains("TOKEN_INVALID"))
 
         val configWrite = client.submitForm(
-            url = "/account/cloud-config",
+            url = "/account/cloud-config/write",
             formParameters = Parameters.build {
                 append("token", "token-1")
+                append("aiConsentGranted", "true")
             }
         )
         assertEquals(HttpStatusCode.Conflict, configWrite.status)

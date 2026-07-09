@@ -41,13 +41,12 @@ class AiCategorizationRoutesTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains(""""category":"餐饮""""))
         val log = aiService.logs.single()
-        assertEquals("0-50", log.payload.amountRangeLabel)
-        assertEquals(null, log.payload.note)
-        assertEquals(null, log.payload.rawEvidenceText)
+        assertEquals("0-50", log.amountRangeLabel)
+        // Note and rawEvidenceText are never stored in the log — they are stripped at the service level
     }
 
     @Test
-    fun enhancedContextIsLoggedOnlyWhenExplicitlyRequested() = testApplication {
+    fun enhancedContextDoesNotLeakToPersistedLog() = testApplication {
         val aiService = AiCategorizationService()
         application {
             module(
@@ -63,6 +62,7 @@ class AiCategorizationRoutesTest {
                 append("sourceLabel", "微信")
                 append("transactionKind", "支出")
                 append("amountMinor", "3590")
+                append("categoryCandidates", "餐饮,交通")
                 append("note", "客户会议")
                 append("rawEvidenceText", "微信支付收款凭证 午餐 35.90")
                 append("enhancedContext", "true")
@@ -70,9 +70,9 @@ class AiCategorizationRoutesTest {
         )
 
         val log = aiService.logs.single()
-        assertEquals("客户会议", log.payload.note)
-        assertTrue(log.payload.rawEvidenceText.orEmpty().contains("午餐"))
-        assertFalse(log.payload.rawEvidenceText.orEmpty().contains("token"))
+        // Persisted log does not contain note or rawEvidenceText
+        assertEquals("午餐", log.merchantTitle)
+        assertEquals("餐饮", log.suggestedCategory)
     }
 
     @Test
@@ -98,9 +98,9 @@ class AiCategorizationRoutesTest {
             url = "/ai/categorize",
             formParameters = Parameters.build {
                 append("accountPhone", "13800138000")
-                append("merchantTitle", "鍗堥")
-                append("sourceLabel", "寰俊")
-                append("transactionKind", "鏀嚭")
+                append("merchantTitle", "午餐")
+                append("sourceLabel", "微信")
+                append("transactionKind", "支出")
                 append("amountMinor", "3590")
             }
         )
@@ -108,5 +108,32 @@ class AiCategorizationRoutesTest {
         assertEquals(HttpStatusCode.Conflict, response.status)
         assertTrue(response.bodyAsText().contains("ACCOUNT_DELETION_PENDING"))
         assertTrue(aiService.logs.isEmpty())
+    }
+
+    @Test
+    fun missingAiProviderReturnsSafeDefault() = testApplication {
+        val aiService = AiCategorizationService(provider = MissingAiProvider)
+        application {
+            module(
+                accountService = AccountService(),
+                aiCategorizationService = aiService
+            )
+        }
+
+        val response = client.submitForm(
+            url = "/ai/categorize",
+            formParameters = Parameters.build {
+                append("merchantTitle", "午餐")
+                append("sourceLabel", "微信")
+                append("transactionKind", "支出")
+                append("amountMinor", "3590")
+            }
+        )
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains(""""category":"未分类""""))
+        assertTrue(body.contains(""""confidence":"低""""))
+        assertTrue(body.contains("AI服务未配置"))
     }
 }
