@@ -1,7 +1,9 @@
 package com.autoaccounting.backend.ai
 
 import com.autoaccounting.backend.account.AccountError
+import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
+import com.autoaccounting.backend.account.AccountToken
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -17,7 +19,18 @@ fun Route.aiCategorizationRoutes(
     post("/ai/categorize") {
         val parameters = call.receiveParameters()
         val accountPhone = parameters["accountPhone"]?.takeIf { it.isNotBlank() }
-        if (accountPhone != null && accountService?.canWriteCloudData(accountPhone) == false) {
+        val token = parameters["token"]?.takeIf { it.isNotBlank() }
+        val resolvedPhone = if (token != null) {
+            when (val verified = accountService?.verifyToken(token)) {
+                is AccountResult.Success -> verified.value.phone
+                else -> null
+            }
+        } else {
+            null
+        }
+        val finalPhone = accountPhone ?: resolvedPhone
+
+        if (finalPhone != null && accountService?.canWriteCloudData(finalPhone) == false) {
             call.respondText(
                 text = """{"ok":false,"error":"${AccountError.ACCOUNT_DELETION_PENDING.name}","message":"${AccountError.ACCOUNT_DELETION_PENDING.message}"}""",
                 contentType = ContentType.Application.Json,
@@ -26,7 +39,7 @@ fun Route.aiCategorizationRoutes(
             return@post
         }
         val suggestion = aiCategorizationService.suggest(
-            accountPhone = accountPhone,
+            accountPhone = finalPhone,
             merchantTitle = parameters["merchantTitle"].orEmpty(),
             sourceLabel = parameters["sourceLabel"].orEmpty(),
             transactionKind = parameters["transactionKind"].orEmpty(),

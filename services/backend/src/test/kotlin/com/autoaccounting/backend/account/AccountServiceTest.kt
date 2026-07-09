@@ -207,6 +207,35 @@ class AccountServiceTest {
         assertTrue(aiService.logs.isEmpty())
     }
 
+    @Test
+    fun deviceWritesArePausedWhileAccountDeletionIsPending() {
+        val service = accountService()
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.register("13800138000", "123456", "Aa123456!")
+
+        // Verify initial device registered
+        assertEquals(1, service.registeredDevices("13800138000").size)
+        assertEquals("device-a", service.registeredDevices("13800138000").first().deviceId)
+
+        // Request account deletion -> enters pending state
+        service.requestAccountDeletion("13800138000")
+
+        // Try to log in with new device during cooling-off -> should NOT write the new device
+        service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
+        val devicesDuringPending = service.registeredDevices("13800138000")
+        assertEquals(1, devicesDuringPending.size)
+        assertEquals("device-a", devicesDuringPending.first().deviceId)
+
+        // Cancel deletion -> writes allowed again
+        service.cancelAccountDeletion("13800138000")
+
+        // Log in again -> should write the new device
+        service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
+        val devicesAfterCancel = service.registeredDevices("13800138000")
+        assertEquals(2, devicesAfterCancel.size)
+        assertEquals(listOf("device-a", "device-b"), devicesAfterCancel.map { it.deviceId })
+    }
+
     private fun accountService(startMillis: Long? = null): AccountService = AccountService(
         smsCodeGenerator = { "123456" },
         tokenGenerator = { "token-1" },

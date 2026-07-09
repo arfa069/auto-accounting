@@ -10,11 +10,15 @@ import com.autoaccounting.backend.config.cloudConfigRoutes
 import io.ktor.http.ContentType
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
+import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 fun main() {
     embeddedServer(
@@ -30,6 +34,21 @@ fun Application.module(
     aiCategorizationService: AiCategorizationService = AiCategorizationService(),
     cloudConfigService: CloudConfigService = CloudConfigService(accountService = accountService)
 ) {
+    val deletionJob = AccountDeletionJob(
+        accountService = accountService,
+        aiCategorizationService = aiCategorizationService,
+        cloudConfigService = cloudConfigService
+    )
+    launch {
+        while (isActive) {
+            try {
+                deletionJob.runDueDeletion()
+            } catch (e: Exception) {
+                log.error("Failed to run account deletion job", e)
+            }
+            delay(3600_000) // Run every hour
+        }
+    }
     routing {
         get("/health") {
             val response = HealthResponse(status = "ok")

@@ -136,4 +136,39 @@ class AiCategorizationRoutesTest {
         assertTrue(body.contains(""""confidence":"低""""))
         assertTrue(body.contains("AI服务未配置"))
     }
+
+    @Test
+    fun deletionPendingAccountCannotWriteAiLogsViaToken() = testApplication {
+        val aiService = AiCategorizationService()
+        val accountService = AccountService(
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-user-1" },
+            clock = MutableClock(0)
+        )
+        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.requestAccountDeletion("13800138000")
+
+        application {
+            module(
+                accountService = accountService,
+                aiCategorizationService = aiService
+            )
+        }
+
+        val response = client.submitForm(
+            url = "/ai/categorize",
+            formParameters = Parameters.build {
+                append("token", "token-user-1")
+                append("merchantTitle", "午餐")
+                append("sourceLabel", "微信")
+                append("transactionKind", "支出")
+                append("amountMinor", "3590")
+            }
+        )
+
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        assertTrue(response.bodyAsText().contains("ACCOUNT_DELETION_PENDING"))
+        assertTrue(aiService.logs.isEmpty())
+    }
 }

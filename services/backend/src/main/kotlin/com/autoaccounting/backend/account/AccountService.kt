@@ -321,6 +321,7 @@ class AccountService(
         now: Long
     ) {
         if (deviceId.isBlank()) return
+        if (!canWriteCloudData(phone)) return
         store.upsertRegisteredDevice(
             StoredRegisteredDevice(
                 phone = phone,
