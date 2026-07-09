@@ -1,5 +1,7 @@
 package com.autoaccounting.backend.ai
 
+import com.autoaccounting.api.AiCategorizationResponseContract
+import com.autoaccounting.api.ApiJsonContracts
 import com.autoaccounting.backend.account.AccountError
 import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
@@ -53,7 +55,14 @@ fun Route.aiCategorizationRoutes(
             enhancedContext = parameters["enhancedContext"].toBoolean()
         )
         call.respondText(
-            text = """{"ok":true,"category":"${suggestion.category}","confidence":"${suggestion.confidenceLabel}","explanation":"${suggestion.explanation}"}""",
+            text = ApiJsonContracts.encodeAiCategorizationResponse(
+                AiCategorizationResponseContract(
+                    ok = true,
+                    category = suggestion.category,
+                    confidence = suggestion.confidenceLabel,
+                    explanation = suggestion.explanation
+                )
+            ),
             contentType = ContentType.Application.Json,
             status = HttpStatusCode.OK
         )

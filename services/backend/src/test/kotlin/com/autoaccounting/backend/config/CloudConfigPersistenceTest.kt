@@ -23,7 +23,7 @@ class CloudConfigPersistenceTest {
                 phone = "13800138000",
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                featureFlags = """{"beta":true}""",
+                featureFlags = mapOf("beta" to true),
                 updatedAtMillis = 1000
             )
         )
@@ -33,7 +33,7 @@ class CloudConfigPersistenceTest {
 
         assertTrue(config.aiConsentGranted)
         assertTrue(config.enhancedContextGranted)
-        assertEquals("""{"beta":true}""", config.featureFlags)
+        assertEquals(mapOf("beta" to true), config.featureFlags)
         assertEquals(1000L, config.updatedAtMillis)
     }
 
@@ -82,14 +82,15 @@ class CloudConfigPersistenceTest {
                 phone = "13800138000",
                 aiConsentGranted = true,
                 enhancedContextGranted = false,
-                featureFlags = "{}",
+                featureFlags = emptyMap(),
                 updatedAtMillis = 1000
             )
         )
 
         accountService.requestAccountDeletion("13800138000")
         clock.advanceBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
-        accountService.deleteDueAccounts()
+        assertEquals(listOf("13800138000"), accountService.deleteDueAccounts())
+        assertTrue(accountService.deleteDueAccounts().isEmpty())
 
         assertEquals(null, configStore.findConfig("13800138000"))
     }

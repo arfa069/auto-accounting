@@ -1,5 +1,6 @@
 package com.autoaccounting.backend.config
 
+import com.autoaccounting.api.ApiJsonContracts
 import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.MutableClock
 import com.autoaccounting.backend.module
@@ -38,10 +39,11 @@ class CloudConfigRoutesTest {
         )
 
         assertEquals(HttpStatusCode.OK, response.status)
-        val body = response.bodyAsText()
-        assertTrue(body.contains(""""ok":true"""))
-        assertTrue(body.contains(""""aiConsentGranted":false"""))
-        assertTrue(body.contains(""""enhancedContextGranted":false"""))
+        val contract = ApiJsonContracts.parseCloudConfigResponse(response.bodyAsText())
+        assertTrue(contract.ok)
+        assertTrue(!contract.aiConsentGranted)
+        assertTrue(!contract.enhancedContextGranted)
+        assertEquals(emptyMap<String, Boolean>(), contract.featureFlags)
     }
 
     @Test
@@ -67,7 +69,7 @@ class CloudConfigRoutesTest {
                 append("token", "token-1")
                 append("aiConsentGranted", "true")
                 append("enhancedContextGranted", "true")
-                append("featureFlags", """{"beta":true}""")
+                append("featureFlags", ApiJsonContracts.encodeFeatureFlags(mapOf("beta" to true)))
             }
         )
         assertEquals(HttpStatusCode.OK, writeResponse.status)
@@ -80,10 +82,10 @@ class CloudConfigRoutesTest {
             }
         )
         assertEquals(HttpStatusCode.OK, readResponse.status)
-        val body = readResponse.bodyAsText()
-        assertTrue(body.contains(""""aiConsentGranted":true"""))
-        assertTrue(body.contains(""""enhancedContextGranted":true"""))
-        assertTrue(body.contains(""""beta":true"""))
+        val contract = ApiJsonContracts.parseCloudConfigResponse(readResponse.bodyAsText())
+        assertTrue(contract.aiConsentGranted)
+        assertTrue(contract.enhancedContextGranted)
+        assertEquals(mapOf("beta" to true), contract.featureFlags)
     }
 
     @Test
@@ -145,5 +147,83 @@ class CloudConfigRoutesTest {
 
         assertEquals(HttpStatusCode.Conflict, response.status)
         assertTrue(response.bodyAsText().contains("ACCOUNT_DELETION_PENDING"))
+    }
+
+    @Test
+    fun partialWritePreservesExistingFields() = testApplication {
+        val accountService = AccountService(
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-1" },
+            clock = MutableClock(0)
+        )
+        application {
+            module(
+                accountService = accountService,
+                cloudConfigService = CloudConfigService(accountService = accountService)
+            )
+        }
+
+        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        accountService.register("13800138000", "123456", "Aa123456!")
+
+        client.submitForm(
+            url = "/account/cloud-config/write",
+            formParameters = Parameters.build {
+                append("token", "token-1")
+                append("aiConsentGranted", "true")
+                append("enhancedContextGranted", "true")
+                append("featureFlags", ApiJsonContracts.encodeFeatureFlags(mapOf("beta" to true)))
+            }
+        )
+
+        val partialWrite = client.submitForm(
+            url = "/account/cloud-config/write",
+            formParameters = Parameters.build {
+                append("token", "token-1")
+                append("aiConsentGranted", "false")
+            }
+        )
+
+        assertEquals(HttpStatusCode.OK, partialWrite.status)
+
+        val readResponse = client.submitForm(
+            url = "/account/cloud-config/read",
+            formParameters = Parameters.build {
+                append("token", "token-1")
+            }
+        )
+        val contract = ApiJsonContracts.parseCloudConfigResponse(readResponse.bodyAsText())
+        assertTrue(!contract.aiConsentGranted)
+        assertTrue(contract.enhancedContextGranted)
+        assertEquals(mapOf("beta" to true), contract.featureFlags)
+    }
+
+    @Test
+    fun invalidFeatureFlagsJsonReturnsBadRequest() = testApplication {
+        val accountService = AccountService(
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-1" },
+            clock = MutableClock(0)
+        )
+        application {
+            module(
+                accountService = accountService,
+                cloudConfigService = CloudConfigService(accountService = accountService)
+            )
+        }
+
+        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        accountService.register("13800138000", "123456", "Aa123456!")
+
+        val response = client.submitForm(
+            url = "/account/cloud-config/write",
+            formParameters = Parameters.build {
+                append("token", "token-1")
+                append("featureFlags", """{"beta":"yes"}""")
+            }
+        )
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertTrue(response.bodyAsText().contains("INVALID_REQUEST"))
     }
 }

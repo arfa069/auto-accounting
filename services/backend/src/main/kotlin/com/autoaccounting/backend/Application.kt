@@ -30,14 +30,28 @@ fun main() {
 }
 
 fun Application.module(
-    accountService: AccountService = AccountService.fromEnvironment(),
-    aiCategorizationService: AiCategorizationService = AiCategorizationService(),
-    cloudConfigService: CloudConfigService = CloudConfigService(accountService = accountService)
+    env: Map<String, String>? = null,
+    accountService: AccountService? = null,
+    aiCategorizationService: AiCategorizationService? = null,
+    cloudConfigService: CloudConfigService? = null
 ) {
+    val resolvedEnv = env ?: System.getenv()
+    val resolvedAccountService = accountService ?: AccountService.fromEnvironment(resolvedEnv)
+    val shouldUseEnvironmentDefaults = env != null || accountService == null
+    val resolvedAiCategorizationService = aiCategorizationService ?: if (shouldUseEnvironmentDefaults) {
+        AiCategorizationService.fromEnvironment(resolvedEnv)
+    } else {
+        AiCategorizationService()
+    }
+    val resolvedCloudConfigService = cloudConfigService ?: if (shouldUseEnvironmentDefaults) {
+        CloudConfigService.fromEnvironment(resolvedAccountService, resolvedEnv)
+    } else {
+        CloudConfigService(accountService = resolvedAccountService)
+    }
     val deletionJob = AccountDeletionJob(
-        accountService = accountService,
-        aiCategorizationService = aiCategorizationService,
-        cloudConfigService = cloudConfigService
+        accountService = resolvedAccountService,
+        aiCategorizationService = resolvedAiCategorizationService,
+        cloudConfigService = resolvedCloudConfigService
     )
     launch {
         while (isActive) {
@@ -57,8 +71,8 @@ fun Application.module(
                 contentType = ContentType.Application.Json
             )
         }
-        accountRoutes(accountService)
-        aiCategorizationRoutes(aiCategorizationService, accountService)
-        cloudConfigRoutes(cloudConfigService, accountService)
+        accountRoutes(resolvedAccountService)
+        aiCategorizationRoutes(resolvedAiCategorizationService, resolvedAccountService)
+        cloudConfigRoutes(resolvedCloudConfigService, resolvedAccountService)
     }
 }

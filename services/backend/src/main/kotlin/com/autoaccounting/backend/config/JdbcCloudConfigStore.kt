@@ -3,6 +3,7 @@ package com.autoaccounting.backend.config
 import com.autoaccounting.backend.Migration
 import com.autoaccounting.backend.jdbcConnection
 import com.autoaccounting.backend.runMigrations
+import com.autoaccounting.api.ApiJsonContracts
 
 class JdbcCloudConfigStore(
     private val jdbcUrl: String,
@@ -29,7 +30,9 @@ class JdbcCloudConfigStore(
                         phone = rs.getString("phone"),
                         aiConsentGranted = rs.getBoolean("ai_consent_granted"),
                         enhancedContextGranted = rs.getBoolean("enhanced_context_granted"),
-                        featureFlags = rs.getString("feature_flags").orEmpty().ifBlank { "{}" },
+                        featureFlags = ApiJsonContracts.parseFeatureFlags(
+                            rs.getString("feature_flags").orEmpty().ifBlank { "{}" }
+                        ),
                         updatedAtMillis = rs.getLong("updated_at_millis")
                     )
                 } else {
@@ -51,7 +54,7 @@ class JdbcCloudConfigStore(
             ).use { statement ->
                 statement.setBoolean(1, config.aiConsentGranted)
                 statement.setBoolean(2, config.enhancedContextGranted)
-                statement.setString(3, config.featureFlags)
+                statement.setString(3, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
                 statement.setLong(4, config.updatedAtMillis)
                 statement.setString(5, config.phone)
                 statement.executeUpdate()
@@ -68,7 +71,7 @@ class JdbcCloudConfigStore(
                     statement.setString(1, config.phone)
                     statement.setBoolean(2, config.aiConsentGranted)
                     statement.setBoolean(3, config.enhancedContextGranted)
-                    statement.setString(4, config.featureFlags)
+                    statement.setString(4, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
                     statement.setLong(5, config.updatedAtMillis)
                     statement.executeUpdate()
                 }

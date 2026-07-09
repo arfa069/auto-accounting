@@ -2,6 +2,9 @@ package com.autoaccounting.backend.account
 
 import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.ai.AiCategorizationService
+import com.autoaccounting.backend.config.CloudConfigService
+import com.autoaccounting.backend.config.InMemoryCloudConfigStore
+import com.autoaccounting.backend.config.StoredCloudConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -178,13 +181,18 @@ class AccountServiceTest {
 
         service.advanceTimeBy(1)
         assertEquals(listOf("13800138000"), service.deleteDueAccounts())
+        assertTrue(service.deleteDueAccounts().isEmpty())
         assertEquals(AccountError.PHONE_NOT_REGISTERED, service.requestAccountDeletion("13800138000").error)
     }
 
     @Test
-    fun finalDeletionJobPurgesAiLogsForDeletedAccount() {
+    fun finalDeletionJobPurgesAiLogsAndCloudConfigForDeletedAccount() {
         val accountService = accountService(startMillis = 0)
         val aiService = AiCategorizationService()
+        val cloudConfigService = CloudConfigService(
+            store = InMemoryCloudConfigStore(),
+            accountService = accountService
+        )
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
         accountService.register("13800138000", "123456", "Aa123456!")
         aiService.suggest(
@@ -198,13 +206,25 @@ class AccountServiceTest {
             rawEvidenceText = null,
             enhancedContext = false
         )
+        cloudConfigService.writeConfig(
+            StoredCloudConfig(
+                phone = "13800138000",
+                aiConsentGranted = true,
+                enhancedContextGranted = true,
+                featureFlags = mapOf("beta" to true),
+                updatedAtMillis = 1000
+            )
+        )
 
         accountService.requestAccountDeletion("13800138000")
         accountService.advanceTimeBy(604_800_000)
-        val deletedPhones = AccountDeletionJob(accountService, aiService).runDueDeletion()
+        val deletionJob = AccountDeletionJob(accountService, aiService, cloudConfigService)
+        val deletedPhones = deletionJob.runDueDeletion()
 
         assertEquals(listOf("13800138000"), deletedPhones)
         assertTrue(aiService.logs.isEmpty())
+        assertEquals(emptyMap<String, Boolean>(), cloudConfigService.readConfig("13800138000").featureFlags)
+        assertTrue(deletionJob.runDueDeletion().isEmpty())
     }
 
     @Test

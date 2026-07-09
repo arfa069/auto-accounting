@@ -4,7 +4,7 @@ data class StoredCloudConfig(
     val phone: String,
     val aiConsentGranted: Boolean = false,
     val enhancedContextGranted: Boolean = false,
-    val featureFlags: String = "{}",
+    val featureFlags: Map<String, Boolean> = emptyMap(),
     val updatedAtMillis: Long
 )
 

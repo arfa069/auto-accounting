@@ -1,15 +1,15 @@
 package com.autoaccounting.backend.ai
 
-import com.autoaccounting.backend.module
+import com.autoaccounting.api.ApiJsonContracts
 import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.MutableClock
+import com.autoaccounting.backend.module
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.server.testing.testApplication
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,10 +39,10 @@ class AiCategorizationRoutesTest {
         )
 
         assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(response.bodyAsText().contains(""""category":"餐饮""""))
+        val contract = ApiJsonContracts.parseAiCategorizationResponse(response.bodyAsText())
+        assertEquals("餐饮", contract.category)
         val log = aiService.logs.single()
         assertEquals("0-50", log.amountRangeLabel)
-        // Note and rawEvidenceText are never stored in the log — they are stripped at the service level
     }
 
     @Test
@@ -70,7 +70,6 @@ class AiCategorizationRoutesTest {
         )
 
         val log = aiService.logs.single()
-        // Persisted log does not contain note or rawEvidenceText
         assertEquals("午餐", log.merchantTitle)
         assertEquals("餐饮", log.suggestedCategory)
     }
@@ -131,10 +130,10 @@ class AiCategorizationRoutesTest {
         )
 
         assertEquals(HttpStatusCode.OK, response.status)
-        val body = response.bodyAsText()
-        assertTrue(body.contains(""""category":"未分类""""))
-        assertTrue(body.contains(""""confidence":"低""""))
-        assertTrue(body.contains("AI服务未配置"))
+        val contract = ApiJsonContracts.parseAiCategorizationResponse(response.bodyAsText())
+        assertEquals("未分类", contract.category)
+        assertEquals("低", contract.confidence)
+        assertTrue(contract.explanation.contains("AI服务未配置"))
     }
 
     @Test

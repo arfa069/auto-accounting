@@ -13,6 +13,7 @@ junit = "4.13.2"
 robolectric = "4.15.1"
 postgres = "42.7.4"
 h2 = "2.2.224"
+kotlinxSerializationJson = "1.9.0"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -45,3 +46,4 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgres" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }

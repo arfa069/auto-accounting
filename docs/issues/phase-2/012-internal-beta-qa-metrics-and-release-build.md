@@ -12,6 +12,14 @@ Create the internal beta release package: repeatable build procedure, device mat
 - [x] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
 - [x] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
 
+## Verification
+
+- `.\gradlew.bat --no-daemon :services:backend:test`
+- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
+- Release artifact generated at `apps/android/build/outputs/apk/release/android-release-unsigned.apk`.
+- Signed beta distribution APK remains blocked by local signing material, and that blocker is explicitly recorded in [docs/INTERNAL-BETA-RELEASE.md](../../INTERNAL-BETA-RELEASE.md).
+
 ## Blocked by
 
 - Issue 2: Persist Review Queue And Ignored Entries

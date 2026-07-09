@@ -19,7 +19,7 @@ class CloudConfigServiceTest {
         assertEquals("13800138000", config.phone)
         assertFalse(config.aiConsentGranted)
         assertFalse(config.enhancedContextGranted)
-        assertEquals("{}", config.featureFlags)
+        assertEquals(emptyMap<String, Boolean>(), config.featureFlags)
     }
 
     @Test
@@ -33,7 +33,7 @@ class CloudConfigServiceTest {
                 phone = "13800138000",
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                featureFlags = """{"beta_reports":true}""",
+                featureFlags = mapOf("beta_reports" to true),
                 updatedAtMillis = 1000
             )
         )
@@ -42,7 +42,7 @@ class CloudConfigServiceTest {
         val config = service.configService.readConfig("13800138000")
         assertTrue(config.aiConsentGranted)
         assertTrue(config.enhancedContextGranted)
-        assertEquals("""{"beta_reports":true}""", config.featureFlags)
+        assertEquals(mapOf("beta_reports" to true), config.featureFlags)
     }
 
     @Test
@@ -57,7 +57,7 @@ class CloudConfigServiceTest {
                 phone = "13800138000",
                 aiConsentGranted = true,
                 enhancedContextGranted = false,
-                featureFlags = "{}",
+                featureFlags = emptyMap(),
                 updatedAtMillis = 1000
             )
         )
@@ -75,7 +75,7 @@ class CloudConfigServiceTest {
                 phone = "13800138000",
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                featureFlags = "{}",
+                featureFlags = emptyMap(),
                 updatedAtMillis = 1000
             )
         )
@@ -84,6 +84,35 @@ class CloudConfigServiceTest {
 
         val config = service.configService.readConfig("13800138000")
         assertFalse(config.aiConsentGranted)
+    }
+
+    @Test
+    fun mergeAndWriteConfigDoesNotClearMissingFields() {
+        val service = cloudConfigService()
+        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.accountService.register("13800138000", "123456", "Aa123456!")
+        service.configService.writeConfig(
+            StoredCloudConfig(
+                phone = "13800138000",
+                aiConsentGranted = true,
+                enhancedContextGranted = true,
+                featureFlags = mapOf("beta_reports" to true),
+                updatedAtMillis = 1000
+            )
+        )
+
+        val result = service.configService.mergeAndWriteConfig(
+            phone = "13800138000",
+            update = CloudConfigUpdate(aiConsentGranted = false),
+            now = 2000
+        )
+
+        assertEquals(CloudConfigResult.Written, result)
+        val config = service.configService.readConfig("13800138000")
+        assertFalse(config.aiConsentGranted)
+        assertTrue(config.enhancedContextGranted)
+        assertEquals(mapOf("beta_reports" to true), config.featureFlags)
+        assertEquals(2000L, config.updatedAtMillis)
     }
 
     private fun cloudConfigService(): CloudConfigTestHarness {

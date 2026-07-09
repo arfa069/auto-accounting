@@ -1,5 +1,7 @@
 package com.autoaccounting.backend.ai
 
+import com.autoaccounting.backend.account.JdbcAccountStore
+
 data class AiCategorizationPayload(
     val merchantTitle: String,
     val sourceLabel: String,
@@ -73,6 +75,21 @@ class AiCategorizationService(
             yuan < 500 -> "200-500"
             yuan < 1000 -> "500-1000"
             else -> "1000+"
+        }
+    }
+
+    companion object {
+        fun fromEnvironment(env: Map<String, String> = System.getenv()): AiCategorizationService {
+            val jdbcConfig = JdbcAccountStore.configFromEnvironment(env)
+                ?: error("AUTO_ACCOUNTING_DATABASE_URL is required for backend AI persistence.")
+            return AiCategorizationService(
+                provider = aiProviderFromEnvironment(env),
+                logStore = JdbcAiCategorizationLogStore(
+                    jdbcUrl = jdbcConfig.jdbcUrl,
+                    username = jdbcConfig.username,
+                    password = jdbcConfig.password
+                )
+            )
         }
     }
 }
