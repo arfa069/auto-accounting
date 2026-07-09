@@ -44,6 +44,8 @@ import com.autoaccounting.feature.compliance.PermissionExplanationId
 import com.autoaccounting.feature.compliance.permissionPurpose
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringBlockReason
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.feature.settings.DELETE_LOCAL_DATA_PHRASE
@@ -75,6 +77,8 @@ fun CategorizationRulesScreen(
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
+        ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
@@ -97,6 +101,7 @@ fun CategorizationRulesScreen(
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
         continuousMonitoringState = continuousMonitoringState,
+        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
         onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
     )
 }
@@ -125,6 +130,8 @@ fun CategorizationRulesScreen(
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
+        ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
@@ -210,6 +217,9 @@ fun CategorizationRulesScreen(
             )
             ContinuousMonitoringItem(
                 state = currentContinuousMonitoringState,
+                permissionHealth = continuousMonitoringPermissionHealth,
+                onOpenNotificationSettings = onOpenNotificationListenerSettings,
+                onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                 onStateChange = ::updateContinuousMonitoringState
             )
             AiConsentItem(
@@ -359,7 +369,7 @@ private fun PermissionCenterBillSyncItem(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("账单同步权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("账单同步与监控权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.AccessibilityBillSync),
                 style = MaterialTheme.typography.bodyMedium
@@ -438,8 +448,23 @@ private fun InternalBetaReadinessItem(
 @Composable
 private fun ContinuousMonitoringItem(
     state: ContinuousMonitoringState,
+    permissionHealth: ContinuousMonitoringPermissionHealth,
+    onOpenNotificationSettings: () -> Unit,
+    onOpenBillSyncAccessibilitySettings: () -> Unit,
     onStateChange: (ContinuousMonitoringState) -> Unit
 ) {
+    val startBlockReason = when {
+        !state.billSyncCompleted -> ContinuousMonitoringBlockReason.RequiresBillSyncFirst
+        else -> permissionHealth.firstBlockReason
+    }
+    val canStartMonitoring = startBlockReason == null
+    val statusText = when {
+        state.enabled && permissionHealth.isHealthy -> "当前状态：已开启"
+        state.enabled -> "当前状态：权限不完整，监控已暂停"
+        startBlockReason == null -> "当前状态：可开启"
+        else -> "当前状态：${continuousMonitoringBlockReasonLabel(startBlockReason)}"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -457,13 +482,15 @@ private fun ContinuousMonitoringItem(
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                if (state.enabled) {
-                    "当前状态：已开启"
-                } else if (state.billSyncCompleted) {
-                    "当前状态：可开启"
-                } else {
-                    "当前状态：请先完成一次手动账单同步"
-                },
+                "只处理账单/支付记录，不处理聊天、消息、付款发起或转账。",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                "后台保活和自启动受手机系统限制，本应用只提示你检查，不保证一定可靠。",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                statusText,
                 style = MaterialTheme.typography.bodySmall
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -486,18 +513,42 @@ private fun ContinuousMonitoringItem(
                             onStateChange(
                                 reduceContinuousMonitoringState(
                                     state,
-                                    ContinuousMonitoringAction.Enable
+                                    ContinuousMonitoringAction.Enable(permissionHealth)
                                 )
                             )
                         },
-                        enabled = state.billSyncCompleted
+                        enabled = canStartMonitoring
                     ) {
                         Text("开启连续监控")
                     }
                 }
             }
+            if (!permissionHealth.notificationListenerGranted) {
+                OutlinedButton(
+                    onClick = onOpenNotificationSettings,
+                    modifier = Modifier.testTag("continuous-monitoring-notification-settings")
+                ) {
+                    Text("打开通知监听设置")
+                }
+            }
+            if (!permissionHealth.billSyncAccessibilityGranted) {
+                OutlinedButton(
+                    onClick = onOpenBillSyncAccessibilitySettings,
+                    modifier = Modifier.testTag("continuous-monitoring-accessibility-settings")
+                ) {
+                    Text("打开无障碍设置")
+                }
+            }
         }
     }
+}
+
+private fun continuousMonitoringBlockReasonLabel(
+    reason: ContinuousMonitoringBlockReason
+): String = when (reason) {
+    ContinuousMonitoringBlockReason.RequiresBillSyncFirst -> "请先完成一次手动账单同步"
+    ContinuousMonitoringBlockReason.RequiresNotificationListenerPermission -> "需要开启通知监听"
+    ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission -> "需要开启账单同步无障碍权限"
 }
 
 @Composable

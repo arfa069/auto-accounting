@@ -65,6 +65,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 
@@ -83,6 +84,8 @@ fun ReviewQueueScreen(
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
     billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
+        ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
     var state by remember { mutableStateOf(initialState) }
@@ -99,6 +102,7 @@ fun ReviewQueueScreen(
         onLaunchBillSyncSource = onLaunchBillSyncSource,
         billSyncSessionController = billSyncSessionController,
         continuousMonitoringState = continuousMonitoringState,
+        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
         onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
     )
 }
@@ -117,6 +121,8 @@ fun ReviewQueueScreen(
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
     billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
+    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
+        ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
 ) {
     var editingEntry by remember { mutableStateOf<ReviewQueueEntry?>(null) }
@@ -216,13 +222,16 @@ fun ReviewQueueScreen(
             showPostBillSyncMonitoringPrompt = showPostBillSyncMonitoringPrompt &&
                 !continuousMonitoringState.enabled,
             onEnableContinuousMonitoring = {
-                onContinuousMonitoringStateChange(
-                    reduceContinuousMonitoringState(
-                        continuousMonitoringState.copy(billSyncCompleted = true),
-                        ContinuousMonitoringAction.Enable
-                    )
+                val nextMonitoringState = reduceContinuousMonitoringState(
+                    continuousMonitoringState.copy(billSyncCompleted = true),
+                    ContinuousMonitoringAction.Enable(continuousMonitoringPermissionHealth)
                 )
-                showPostBillSyncMonitoringPrompt = false
+                onContinuousMonitoringStateChange(nextMonitoringState)
+                if (nextMonitoringState.enabled) {
+                    showPostBillSyncMonitoringPrompt = false
+                } else {
+                    syncMessage = "请先完成连续监控所需权限"
+                }
             },
             onDismissContinuousMonitoringPrompt = {
                 showPostBillSyncMonitoringPrompt = false

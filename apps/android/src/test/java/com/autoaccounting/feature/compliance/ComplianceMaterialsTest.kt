@@ -23,13 +23,25 @@ class ComplianceMaterialsTest {
             "用于识别微信、支付宝的收付款通知，生成待确认账目。",
             copies.getValue(PermissionExplanationId.NotificationListening).purpose
         )
+        val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
+        assertEquals("无障碍账单与监控", accessibilityCopy.title)
         assertEquals(
-            "仅在你手动同步时读取微信、支付宝账单页面，补充漏记或历史账目。",
-            copies.getValue(PermissionExplanationId.AccessibilityBillSync).purpose
+            "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录。",
+            accessibilityCopy.purpose
+        )
+        assertEquals(
+            "不读取聊天、消息，不发送消息，不发起付款或转账。",
+            accessibilityCopy.boundary
         )
         assertEquals(
             "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文。",
             copies.getValue(PermissionExplanationId.CloudAi).purpose
+        )
+
+        val storeNotes = AUTO_ACCOUNTING_COMPLIANCE.storeReviewNotes.associateBy { it.title }
+        assertEquals(
+            "无障碍服务用于用户手动账单同步，或在用户开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发送消息，不发起付款或转账。",
+            storeNotes.getValue("无障碍审核说明").body
         )
     }
 

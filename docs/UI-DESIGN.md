@@ -220,7 +220,7 @@ Each item:
 
 Fixed copy:
 - Notification listening: "用于识别微信、支付宝的收付款通知，生成待确认账目".
-- Accessibility bill sync: "仅在你手动同步时读取微信、支付宝账单页，补充漏记或历史账目".
+- Accessibility bill sync: "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发起付款或转账".
 - Continuous monitoring: "开启后会持续观察支付相关页面，提高自动捕获完整度；可随时关闭".
 - Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
 - Background keep-alive: "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同".

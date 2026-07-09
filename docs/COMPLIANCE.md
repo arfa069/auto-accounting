@@ -41,7 +41,7 @@ Suggested rows:
 - Password hash: password login; required for account mode.
 - Device information: registered-device security, fraud prevention, SMS rate limits, configuration; required for account mode and SMS risk control.
 - Notification content from WeChat/Alipay payment notifications: create pending entries; required only after notification permission is enabled.
-- Bill page content from WeChat/Alipay: manual bill sync; required only when user starts bill sync.
+- Bill page content from WeChat/Alipay: manual bill sync, or continuous monitoring after explicit opt-in.
 - Continuous monitoring observations: improve capture completeness; optional advanced mode.
 - Ledger and pending-entry data: local bookkeeping; required for core bookkeeping.
 - AI categorization payload: cloud AI suggestions; optional.
@@ -61,8 +61,8 @@ Notification listening:
 - It must not process unrelated notifications beyond what is necessary to identify payment activity.
 
 Accessibility bill sync:
-- Purpose: read WeChat and Alipay bill pages only during user-started bill sync.
-- The privacy policy must state that the app does not read chat content, send messages, initiate payments, or initiate transfers.
+- Purpose: read WeChat and Alipay bill pages during user-started bill sync, and observe bill/payment-record pages when continuous monitoring is explicitly enabled.
+- The privacy policy must state that the app does not read chat/messages, send messages, initiate payments, or initiate transfers.
 
 Continuous monitoring:
 - Advanced opt-in.

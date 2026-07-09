@@ -9,7 +9,12 @@ enum class BillSyncSource(
     val packageName: String
 ) {
     WeChat("微信", "微信零钱", "com.tencent.mm"),
-    Alipay("支付宝", "支付宝余额", "com.eg.android.AlipayGphone")
+    Alipay("支付宝", "支付宝余额", "com.eg.android.AlipayGphone");
+
+    companion object {
+        fun fromPackageName(packageName: String): BillSyncSource? =
+            entries.firstOrNull { it.packageName == packageName }
+    }
 }
 
 data class ParsedBillEntry(

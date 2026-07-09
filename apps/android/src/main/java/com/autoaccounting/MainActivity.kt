@@ -41,7 +41,10 @@ import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
@@ -51,6 +54,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
     private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
+    private val permissionStateLoaded = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,7 +64,8 @@ class MainActivity : ComponentActivity() {
                 onOpenNotificationListenerSettings = ::openNotificationListenerSettings,
                 billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
                 onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
-                onLaunchBillSyncSource = ::launchBillSyncSource
+                onLaunchBillSyncSource = ::launchBillSyncSource,
+                permissionStateLoaded = permissionStateLoaded.value
             )
         }
     }
@@ -70,6 +75,7 @@ class MainActivity : ComponentActivity() {
         notificationListenerAccessGranted.value =
             NotificationListenerPermission.isGranted(this)
         billSyncAccessibilityAccessGranted.value = BillSyncPermission.isGranted(this)
+        permissionStateLoaded.value = true
     }
 
     private fun openNotificationListenerSettings() {
@@ -104,7 +110,8 @@ fun AutoAccountingApp(
     onOpenNotificationListenerSettings: () -> Unit = {},
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
-    onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false }
+    onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
+    permissionStateLoaded: Boolean = false
 ) {
     val context = LocalContext.current
     val database = remember {
@@ -137,6 +144,10 @@ fun AutoAccountingApp(
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
+    val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
+        notificationListenerGranted = notificationListenerAccessGranted,
+        billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted
+    )
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
         reviewState = nextState
@@ -167,6 +178,25 @@ fun AutoAccountingApp(
         continuousMonitoringState = nextState
         coroutineScope.launch {
             localPreferencesRepository.updateContinuousMonitoringState(nextState)
+        }
+    }
+
+    LaunchedEffect(
+        permissionStateLoaded,
+        continuousMonitoringPermissionHealth,
+        continuousMonitoringState.enabled
+    ) {
+        if (!permissionStateLoaded || !continuousMonitoringState.enabled) {
+            return@LaunchedEffect
+        }
+        val refreshedState = reduceContinuousMonitoringState(
+            continuousMonitoringState,
+            ContinuousMonitoringAction.RefreshPermissionHealth(
+                continuousMonitoringPermissionHealth
+            )
+        )
+        if (refreshedState != continuousMonitoringState) {
+            persistContinuousMonitoringState(refreshedState)
         }
     }
 
@@ -243,6 +273,7 @@ fun AutoAccountingApp(
                         onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                         onLaunchBillSyncSource = onLaunchBillSyncSource,
                         continuousMonitoringState = continuousMonitoringState,
+                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                         onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                     )
 
@@ -295,6 +326,7 @@ fun AutoAccountingApp(
                             accountDeletionState = next
                         },
                         continuousMonitoringState = continuousMonitoringState,
+                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                         onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                     )
                 }

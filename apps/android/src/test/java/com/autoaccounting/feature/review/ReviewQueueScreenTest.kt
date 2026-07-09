@@ -20,6 +20,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -279,6 +280,7 @@ class ReviewQueueScreenTest {
                 onLaunchBillSyncSource = { true },
                 billSyncSessionController = sessionController,
                 continuousMonitoringState = monitoringState,
+                continuousMonitoringPermissionHealth = healthyPermissions,
                 onContinuousMonitoringStateChange = { monitoringState = it }
             )
         }
@@ -346,6 +348,10 @@ class ReviewQueueScreenTest {
 
     private companion object {
         const val NOW = 1_783_468_800_000L
+        val healthyPermissions = ContinuousMonitoringPermissionHealth(
+            notificationListenerGranted = true,
+            billSyncAccessibilityGranted = true
+        )
     }
 
     private class FixedAiCategorizationGateway(

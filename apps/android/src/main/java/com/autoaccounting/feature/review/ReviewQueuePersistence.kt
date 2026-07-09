@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.review
 
 import com.autoaccounting.data.local.LocalLedgerRepository
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -21,10 +22,10 @@ class ReviewQueuePersistence(
                 pendingEntries = pendingEntries.map { it.toReviewEntry(zoneId) },
                 ignoredEntries = ignoredEntries.map { it.toReviewIgnoredEntry(zoneId) },
                 nowEpochMillis = nowEpochMillis,
-                todayStartEpochMillis = LocalDate.now(zoneId)
-                    .atStartOfDay(zoneId)
-                    .toInstant()
-                    .toEpochMilli()
+                todayStartEpochMillis = todayStartEpochMillis(
+                    nowEpochMillis = nowEpochMillis,
+                    zoneId = zoneId
+                )
             )
         }
     }
@@ -98,3 +99,13 @@ class ReviewQueuePersistence(
         }
     }
 }
+
+private fun todayStartEpochMillis(
+    nowEpochMillis: Long,
+    zoneId: ZoneId
+): Long = LocalDate.from(
+    Instant.ofEpochMilli(nowEpochMillis).atZone(zoneId)
+)
+    .atStartOfDay(zoneId)
+    .toInstant()
+    .toEpochMilli()

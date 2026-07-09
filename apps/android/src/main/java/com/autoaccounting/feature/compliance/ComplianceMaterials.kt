@@ -83,8 +83,8 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         PersonalInformationItem(
             name = "微信/支付宝账单页内容",
-            purpose = "手动账单同步，补充漏记或历史账目",
-            requiredState = "仅用户发起同步时使用",
+            purpose = "手动账单同步，或用户开启连续监控后补充漏记账目",
+            requiredState = "仅用户发起同步或开启连续监控后使用",
             processingMethod = "通过无障碍服务在设备上读取并解析"
         ),
         PersonalInformationItem(
@@ -139,9 +139,9 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         PermissionExplanation(
             id = PermissionExplanationId.AccessibilityBillSync,
-            title = "无障碍账单同步",
-            purpose = "仅在你手动同步时读取微信、支付宝账单页面，补充漏记或历史账目。",
-            boundary = "不读取聊天内容，不发送消息，不发起付款或转账。"
+            title = "无障碍账单与监控",
+            purpose = "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录。",
+            boundary = "不读取聊天、消息，不发送消息，不发起付款或转账。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.ContinuousMonitoring,
@@ -169,7 +169,7 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         StoreReviewNote(
             title = "无障碍审核说明",
-            body = "无障碍服务只在用户手动账单同步时读取账单页，不读取聊天，不发送消息，不发起付款或转账。"
+            body = "无障碍服务用于用户手动账单同步，或在用户开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发送消息，不发起付款或转账。"
         ),
         StoreReviewNote(
             title = "连续监控审核说明",
