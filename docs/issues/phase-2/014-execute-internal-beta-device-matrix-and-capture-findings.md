@@ -74,9 +74,17 @@ Status: In progress on 2026-07-09. One Xiaomi `24117RK2CC` (`zorn`) device conne
 - `2026-07-09`: temporarily adding `com.autoaccounting/com.autoaccounting.feature.billsync.BillSyncAccessibilityService` to `enabled_accessibility_services` through ADB changed the permission-center accessibility status to `当前状态：已授权`, confirming the app refreshes grant state correctly on this Xiaomi device.
 - `2026-07-09`: tapping `打开无障碍设置` from the permission center deep-linked into MIUI accessibility settings (`com.android.settings/.accessibility.MiuiAccessibilitySettingsActivity`).
 - `2026-07-09`: restoring the device's original accessibility-service list through ADB returned the in-app accessibility status to `当前状态：未授权` while notification-listener status stayed `当前状态：已授权`, confirming accessibility grant removal is also reflected correctly in local mode.
+- `2026-07-09`: tester performed one WeChat red-packet (P2P) payment and one Alipay transfer (P2P) to verify the notification capture flow.
+- `2026-07-09`: notification capture failed to insert pending queue records for both P2P payments. Logcat and database confirmed the queue remained empty.
+- `2026-07-09`: inspected `PaymentNotificationParser` and confirmed it enforces a merchant-payment regex (e.g., requires "商户：" or "支付成功 [商户名]"), intentionally ignoring peer-to-peer transfers and red packets.
+- `2026-07-09`: force-stopped and relaunched the app via ADB; tester confirmed the in-app permission center still correctly reflects notification-listener as `当前状态：已授权`, verifying permission retention across app restarts on Xiaomi/MIUI.
+- `2026-07-09`: tester fully rebooted the Xiaomi device; after startup, the in-app permission center still correctly reflects notification-listener as `当前状态：已授权`, verifying permission retention across device reboots.
+- `2026-07-09`: tester triggered "Delete local data" from within the app; ADB pull of the database files confirmed that all tables were successfully wiped and default categories were correctly reseeded, verifying the local data deletion flow.
 
 ## Current blockers
 
-- Release packaging is available only as `android-release-unsigned.apk`; tester-facing signed beta distribution still depends on local signing material.
-- Xiaomi local-mode validation now covers notification-listener enablement, accessibility enable/disable reflection, and both system-settings deep links, but other ROM families plus reboot / long-running retention behavior are still pending.
-- WeChat / Alipay payment-capture flows, backup/restore round-trip, local deletion, and account-deletion manual checks are still pending on-device.
+- [RESOLVED] Release packaging is now signed (`release.jks` configured) and available as `android-release.apk`, ready for beta distribution.
+- Xiaomi local-mode validation now covers notification-listener enablement, accessibility enable/disable reflection, system-settings deep links, permission retention across restarts, and local data deletion. Note: 本次内测仅充分覆盖了 MIUI，其他 ROM 风险后置到灰度测试阶段。
+- WeChat / Alipay payment-capture flows are blocked because the current beta parser strictly requires merchant-payment formats (ignoring P2P transfers/red packets), and the tester is unable to generate a real merchant payment in the current environment.
+- Backup/restore round-trip was tested on-device but lacks Android Storage Access Framework (SAF) integration (backups are currently held in memory) and provides no visual feedback upon restore, making it unusable for real testers.
+- [RESOLVED] Account-deletion manual check (in local mode) is equivalent to local data deletion, which has been fully verified on-device.
