@@ -92,6 +92,9 @@ Includes:
 - Regression checklist for account, local mode, notification capture, bill sync, AI, backup, deletion, and compliance.
 - Known risks and beta exit criteria.
 
+Resolved during beta validation:
+- Phase 2 Issue 15 persists the non-sensitive local-mode confirmation across force-stop/relaunch without storing account credentials.
+
 Verification:
 - `.\gradlew.bat --no-daemon test` passes.
 - `.\gradlew.bat --no-daemon build` passes.

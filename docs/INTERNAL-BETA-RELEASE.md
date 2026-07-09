@@ -4,13 +4,13 @@
 
 ## 1. 设备矩阵
 
-| 品牌/ROM 家族 | Android 版本 | 重点验证项 |
-| :--- | :--- | :--- |
-| 小米 (MIUI / HyperOS) | 12 / 13 / 14 | 自启动、电池无限制、通知监听、无障碍权限保活 |
-| 华为 (EMUI / HarmonyOS) | 10 / 12 / 15 | 启动管理、锁屏通知、后台活动保活 |
-| OPPO (ColorOS) | 11 / 13 / 14 | 悬浮权限、后台运行、无障碍白名单 |
-| vivo (OriginOS) | 12 / 14 / 15 | 自启动、关联启动、锁屏显示、高耗电允许运行 |
-| Pixel / 原生 Android | 10 / 11 / 15 | Doze 模式、通知监听稳定性、后台恢复 |
+| 品牌/ROM 家族 | Android 版本 | 重点验证项 | 当前状态 |
+| :--- | :--- | :--- | :--- |
+| 小米 (MIUI / HyperOS) | 12 / 13 / 14 | 自启动、电池无限制、通知监听、无障碍权限保活 | 阻塞：仅有 Android 16 / MIUI 的历史验证，目标版本设备不可用。 |
+| 华为 (EMUI / HarmonyOS) | 10 / 12 / 15 | 启动管理、锁屏通知、后台活动保活 | 阻塞：暂无受控设备或测试者连接。 |
+| OPPO (ColorOS) | 11 / 13 / 14 | 悬浮权限、后台运行、无障碍白名单 | 阻塞：暂无受控设备或测试者连接。 |
+| vivo (OriginOS) | 12 / 14 / 15 | 自启动、关联启动、锁屏显示、高耗电允许运行 | 阻塞：暂无受控设备或测试者连接。 |
+| Pixel / 原生 Android | 10 / 11 / 15 | Doze 模式、通知监听稳定性、后台恢复 | 阻塞：暂无受控设备或测试者连接。 |
 
 ## 2. 手工 QA 脚本
 
@@ -92,15 +92,15 @@
 
 ### 4.2 产物路径
 - Debug APK：`apps/android/build/outputs/apk/debug/android-debug.apk`
-- Release APK 产物：`apps/android/build/outputs/apk/release/android-release-unsigned.apk`
+- Release APK 产物：`apps/android/build/outputs/apk/release/android-release.apk`
 
 ### 4.3 命名建议
 - 内测分发命名：`auto-accounting-v1.0.0-beta-YYYYMMDD.apk`
 
 ### 4.4 签名假设
 - `assembleDebug` 使用默认 `debug.keystore`，仅用于开发验证。
-- `assembleRelease` 当前可生成 unsigned 产物用于 QA 归档。
-- 真正分发给内测用户前，仍需在本地签名配置齐备后重新生成已签名 release APK。
+- `assembleRelease` 只有在本地签名配置齐备且密码匹配时才能生成 release APK；不得将签名材料或密码提交到仓库。
+- `2026-07-10` 当前本地 `release.jks` 密码不匹配，`packageRelease` 失败；此前生成的 APK 不作为当前可分发产物。
 
 ## 5. 合规核对清单
 
@@ -114,8 +114,8 @@
 
 - 真机 ROM 的后台限制与权限回收策略仍需要按设备矩阵逐台验证。
 - 微信/支付宝页面结构变动仍可能影响通知解析与账单同步稳定性。
-- 当前 release 产物尚未完成最终签名，不能直接作为大规模内测分发包。
-- 支付通知、无障碍滚动与锁屏保活仍依赖真机场景验证。
+- P2P 支付通知解析和备份/恢复流程虽已有自动化覆盖，但修复后的版本仍需真机复验。
+- 签名 Release 安装仍受本地 keystore 密码阻塞；支付通知、无障碍滚动和锁屏保活仍依赖真机场景验证。
 
 ## 7. 内测退出标准
 
@@ -130,12 +130,14 @@
 - 真实支付通知拦截：必须在真机上完成。
 - 锁屏保活与 ROM 清后台：必须在真机上完成。
 - 微信/支付宝真实账单同步滚动：必须在真机上完成。
-- 已签名 beta 分发包：依赖本地签名材料，不在当前自动化环境内完成。
+- 已签名 beta 分发包：当前因 keystore 密码不匹配无法重建；修复签名配置并完成目标 ROM 安装、启动和核心链路前不得分发。
 
 ## 9. 验证记录
 
 - `2026-07-09`：`.\gradlew.bat --no-daemon :services:backend:test` 通过。
 - `2026-07-09`：`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` 通过。
 - `2026-07-09`：`.\gradlew.bat --no-daemon :apps:android:assembleRelease` 通过。
-- `2026-07-09`：生成 `apps/android/build/outputs/apk/release/android-release-unsigned.apk`。
-- 真机手工验证、最终签名 beta 分发包与设备矩阵打点仍待执行，已在“受限手工检查”与“已知风险”中记录。
+- `2026-07-10`：`assembleRelease` 在 `packageRelease` 阶段因 `release.jks` 密码不匹配失败；当前没有可供真机安装的 Release APK。
+- `2026-07-10`：`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
+- `2026-07-10`：设备 `192.168.1.6:37145` 连接成功；Debug 包安装、启动、权限设置跳转、备份导出和 SAF 导入均完成记录。
+- `2026-07-10`：Phase 2 Issue 15 已在 Xiaomi Debug 包验证：确认本地模式后，强制停止并冷启动会直接进入待确认队列。

@@ -1,15 +1,10 @@
 package com.autoaccounting
 
-import android.content.ContentValues
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +30,7 @@ import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
@@ -57,23 +53,11 @@ import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
     private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
     private val permissionStateLoaded = mutableStateOf(false)
-
-    private var pendingImportCallback: ((Uri) -> Unit)? = null
-
-    private val openDocumentLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let { pendingImportCallback?.invoke(it) }
-        pendingImportCallback = null
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,10 +68,7 @@ class MainActivity : ComponentActivity() {
                 billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
                 onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
                 onLaunchBillSyncSource = ::launchBillSyncSource,
-                permissionStateLoaded = permissionStateLoaded.value,
-                onSaveBackupToDownloads = ::saveBackupToDownloads,
-                onPickBackupFile = ::pickBackupFile,
-                onReadBackupFile = ::readBackupFile
+                permissionStateLoaded = permissionStateLoaded.value
             )
         }
     }
@@ -124,55 +105,6 @@ class MainActivity : ComponentActivity() {
             true
         }.getOrDefault(false)
     }
-
-    /**
-     * Save encrypted backup content directly to the public Downloads directory
-     * using MediaStore. Returns the display filename on success.
-     */
-    private fun saveBackupToDownloads(backupContent: String): String {
-        val timestamp = SimpleDateFormat(
-            "yyyy-MM-dd-HH-mm", Locale.US
-        ).format(Date())
-        val filename = "$timestamp-ac-backup.bak"
-
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, filename)
-            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            put(
-                MediaStore.Downloads.RELATIVE_PATH,
-                Environment.DIRECTORY_DOWNLOADS
-            )
-        }
-
-        val resolver = contentResolver
-        val uri = resolver.insert(
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
-        ) ?: throw IllegalStateException("Failed to create Downloads entry")
-
-        resolver.openOutputStream(uri)?.use { outputStream ->
-            outputStream.write(backupContent.toByteArray(Charsets.UTF_8))
-        } ?: throw IllegalStateException("Failed to write backup file")
-
-        return filename
-    }
-
-    /**
-     * Launch SAF file picker for selecting a .bak backup file.
-     * The callback will be invoked with the selected Uri.
-     */
-    private fun pickBackupFile(callback: (Uri) -> Unit) {
-        pendingImportCallback = callback
-        openDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*"))
-    }
-
-    /**
-     * Read backup file content from a SAF Uri.
-     */
-    private fun readBackupFile(uri: Uri): String {
-        return contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.bufferedReader(Charsets.UTF_8).readText()
-        } ?: throw IllegalStateException("Failed to read backup file")
-    }
 }
 
 @Composable
@@ -182,10 +114,7 @@ fun AutoAccountingApp(
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
-    permissionStateLoaded: Boolean = false,
-    onSaveBackupToDownloads: (String) -> String = { "" },
-    onPickBackupFile: ((android.net.Uri) -> Unit) -> Unit = {},
-    onReadBackupFile: (android.net.Uri) -> String = { "" }
+    permissionStateLoaded: Boolean = false
 ) {
     val context = LocalContext.current
     val database = remember {
@@ -200,6 +129,9 @@ fun AutoAccountingApp(
     val localDataBackupRepository = remember(database) {
         LocalDataBackupRepository(database)
     }
+    val localModeSessionStore = remember(context.applicationContext) {
+        LocalModeSessionStore(context.applicationContext)
+    }
     val reviewQueuePersistence = remember(localLedgerRepository) {
         ReviewQueuePersistence(localLedgerRepository)
     }
@@ -211,7 +143,9 @@ fun AutoAccountingApp(
         AppTab.Profile
     )
     var selectedTab by remember { mutableStateOf(AppTab.Review) }
-    var accountSession by remember { mutableStateOf<AccountSession?>(null) }
+    var accountSession by remember(localModeSessionStore) {
+        mutableStateOf(localModeSessionStore.restoreSession())
+    }
     var accountDeletionState by remember { mutableStateOf(AccountDeletionUiState()) }
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
@@ -311,7 +245,14 @@ fun AutoAccountingApp(
 
     MaterialTheme {
         if (accountSession == null) {
-            AccountScreen(onSessionChange = { accountSession = it })
+            AccountScreen(
+                onSessionChange = { session ->
+                    if (session == AccountSession.LocalMode) {
+                        localModeSessionStore.confirmLocalMode()
+                    }
+                    accountSession = session
+                }
+            )
             return@MaterialTheme
         }
 
@@ -383,9 +324,6 @@ fun AutoAccountingApp(
                             reviewState = ReviewQueueState()
                         },
                         snackbarHostState = snackbarHostState,
-                        onSaveBackupToDownloads = onSaveBackupToDownloads,
-                        onPickBackupFile = onPickBackupFile,
-                        onReadBackupFile = onReadBackupFile,
                         onDeleteLocalData = {
                             reviewState = ReviewQueueState()
                             categorizationRules = emptyList()

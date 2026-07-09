@@ -1,7 +1,11 @@
 package com.autoaccounting.feature.categorization
 
+import android.content.ContentValues
 import android.net.Uri
-
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,6 +61,9 @@ import com.autoaccounting.feature.settings.LocalDataDeletionState
 import com.autoaccounting.feature.settings.exportLedgerCsv
 import com.autoaccounting.feature.settings.reduceLocalDataDeletionState
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun CategorizationRulesScreen(
@@ -83,10 +90,7 @@ fun CategorizationRulesScreen(
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
-    snackbarHostState: SnackbarHostState = SnackbarHostState(),
-    onSaveBackupToDownloads: (String) -> String = { "" },
-    onPickBackupFile: ((Uri) -> Unit) -> Unit = {},
-    onReadBackupFile: (Uri) -> String = { "" }
+    snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     CategorizationRulesScreen(
@@ -110,10 +114,7 @@ fun CategorizationRulesScreen(
         continuousMonitoringState = continuousMonitoringState,
         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
         onContinuousMonitoringStateChange = onContinuousMonitoringStateChange,
-        snackbarHostState = snackbarHostState,
-        onSaveBackupToDownloads = onSaveBackupToDownloads,
-        onPickBackupFile = onPickBackupFile,
-        onReadBackupFile = onReadBackupFile
+        snackbarHostState = snackbarHostState
     )
 }
 
@@ -144,10 +145,7 @@ fun CategorizationRulesScreen(
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
-    snackbarHostState: SnackbarHostState = SnackbarHostState(),
-    onSaveBackupToDownloads: (String) -> String = { "" },
-    onPickBackupFile: ((Uri) -> Unit) -> Unit = {},
-    onReadBackupFile: (Uri) -> String = { "" }
+    snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
     var isCreating by remember { mutableStateOf(false) }
@@ -219,10 +217,7 @@ fun CategorizationRulesScreen(
                 onExportEncryptedBackup = onExportEncryptedBackup,
                 onImportEncryptedBackup = onImportEncryptedBackup,
                 onRequestDelete = { showDeleteDialog = true },
-                snackbarHostState = snackbarHostState,
-                onSaveBackupToDownloads = onSaveBackupToDownloads,
-                onPickBackupFile = onPickBackupFile,
-                onReadBackupFile = onReadBackupFile
+                snackbarHostState = snackbarHostState
             )
             PermissionCenterNotificationItem(
                 accessGranted = notificationListenerAccessGranted,
@@ -696,14 +691,32 @@ private fun LocalDataToolsItem(
     onExportEncryptedBackup: suspend (String) -> String,
     onImportEncryptedBackup: suspend (String, String) -> Unit,
     onRequestDelete: () -> Unit,
-    snackbarHostState: SnackbarHostState,
-    onSaveBackupToDownloads: (String) -> String,
-    onPickBackupFile: ((Uri) -> Unit) -> Unit,
-    onReadBackupFile: (Uri) -> String
+    snackbarHostState: SnackbarHostState
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var backupPassphrase by remember { mutableStateOf("") }
     var isExporting by remember { mutableStateOf(false) }
+
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            runCatching {
+                val backupContent = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    inputStream.bufferedReader(Charsets.UTF_8).readText()
+                } ?: throw IllegalStateException("Failed to read backup file")
+                onImportEncryptedBackup(backupContent, backupPassphrase)
+            }
+                .onSuccess {
+                    snackbarHostState.showSnackbar("备份已恢复成功")
+                }
+                .onFailure {
+                    snackbarHostState.showSnackbar("备份恢复失败：密码错误或文件损坏")
+                }
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -742,7 +755,20 @@ private fun LocalDataToolsItem(
                         coroutineScope.launch {
                             runCatching {
                                 val backupContent = onExportEncryptedBackup(backupPassphrase)
-                                onSaveBackupToDownloads(backupContent)
+                                val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
+                                val filename = "$timestamp-ac-backup.bak"
+                                val values = ContentValues().apply {
+                                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                                    put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                                }
+                                val resolver = context.contentResolver
+                                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                                    ?: throw IllegalStateException("Failed to create Downloads entry")
+                                resolver.openOutputStream(uri)?.use { outputStream ->
+                                    outputStream.write(backupContent.toByteArray(Charsets.UTF_8))
+                                } ?: throw IllegalStateException("Failed to write backup file")
+                                filename
                             }
                                 .onSuccess { filename ->
                                     snackbarHostState.showSnackbar(
@@ -763,20 +789,7 @@ private fun LocalDataToolsItem(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        onPickBackupFile { uri ->
-                            coroutineScope.launch {
-                                runCatching {
-                                    val backupContent = onReadBackupFile(uri)
-                                    onImportEncryptedBackup(backupContent, backupPassphrase)
-                                }
-                                    .onSuccess {
-                                        snackbarHostState.showSnackbar("备份已恢复成功")
-                                    }
-                                    .onFailure {
-                                        snackbarHostState.showSnackbar("备份恢复失败：密码错误或文件损坏")
-                                    }
-                            }
-                        }
+                        openDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*"))
                     },
                     enabled = backupPassphrase.isNotBlank()
                 ) {

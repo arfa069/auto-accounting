@@ -32,17 +32,40 @@ Run the manual beta checklist from the existing release package on a controlled 
 
 - [x] `.\gradlew.bat --no-daemon :services:backend:test`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- [x] `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
+- [ ] `.\gradlew.bat --no-daemon :apps:android:assembleRelease` (historical 2026-07-09 pass; current 2026-07-10 run blocked during signing)
 
 ## Device verification
 
-Status: In progress on 2026-07-09. One Xiaomi `24117RK2CC` (`zorn`) device connected through ADB over Wi-Fi on Android 16 / SDK 36 / MIUI `V816`. The unsigned release artifact is still not directly installable, but the debug build now installs and launches so local-mode smoke validation can continue on-device. On this Xiaomi device, notification-listener enablement, accessibility enable/disable reflection, and the accessibility-settings deep link have now been verified in local mode.
+Status: In progress. One Xiaomi `24117RK2CC` (`zorn`) device was validated through ADB over Wi-Fi on Android 16 / SDK 36 / MIUI `V816`. This is useful MIUI evidence, but it is outside the planned Android 12-14 Xiaomi range. On 2026-07-10 the latest Debug build installed and launched successfully; the signed Release rebuild then failed because the local `release.jks` password did not match the configured value. The current device run therefore uses Debug and does not clear the signed-package distribution blocker.
 
 - [ ] Run the release artifact on the target Android 10-15 device matrix and record install / launch outcome.
 - [ ] Verify notification listener permission, accessibility permission, and continuous monitoring enable/disable behavior on each available ROM family.
 - [ ] Complete one WeChat and one Alipay payment capture flow per available device and record capture accuracy, duplicate behavior, and review ergonomics.
 - [ ] Exercise backup/restore, local data deletion, and account deletion flows where the backend and tester setup allow it.
 - [ ] Record screenshots, notes, or blocker reasons for any failed or skipped device scenario instead of leaving blanks.
+
+### Matrix status on 2026-07-10
+
+| ROM family | Planned Android versions | Status | Evidence or blocker |
+| :--- | :--- | :--- | :--- |
+| Xiaomi (MIUI / HyperOS) | 12 / 13 / 14 | Blocked | Android 16 / MIUI evidence exists, but no target-version device was available. The prior ADB Wi-Fi endpoint refused connections on 2026-07-10. |
+| Huawei (EMUI / HarmonyOS) | 10 / 12 / 15 | Blocked | No controlled device or tester connection is available. |
+| OPPO (ColorOS) | 11 / 13 / 14 | Blocked | No controlled device or tester connection is available. |
+| vivo (OriginOS) | 12 / 14 / 15 | Blocked | No controlled device or tester connection is available. |
+| Pixel / stock Android | 10 / 11 / 15 | Blocked | No controlled device or tester connection is available. |
+
+### Manual-flow status
+
+| Flow | Status | Evidence or blocker |
+| :--- | :--- | :--- |
+| Local mode, compliance, notification/accessibility deep links, permission retention, local data deletion | Pass on Android 16 / MIUI only | Recorded in the 2026-07-09 and 2026-07-10 device evidence below; not a substitute for the planned matrix. |
+| WeChat / Alipay P2P notification capture | Blocked | The initial real-device run failed; the parser follow-up has unit coverage, but a real WeChat and Alipay payment has not yet been repeated on the connected Debug build. |
+| Backup / restore | Pass with caveat on Android 16 / MIUI Debug | Export created `Download/2026-07-10-02-50-ac-backup.bak`; SAF import restored a copied test payload successfully. `LocalDataBackupRepositoryTest` covers wrong-password failure before persisted data changes. Direct `.bak` selection and delete-then-restore remain unrecorded on-device. |
+| Bill sync, continuous monitoring, review queue, ledger, reports, AI, account deletion | Blocked | No connected test device and, where applicable, no signed-in tester/backend scenario are available for this run. |
+
+### Beta decision
+
+**No-go for controlled beta distribution.** The current Release build is blocked by a local keystore-password mismatch; the planned ROM/Android matrix is also untested. P2P capture lacks a post-fix real-device result, while backup/restore has only a Debug-device partial pass. Capture accuracy, deduplication accuracy, and review efficiency cannot be calculated from the available evidence; permission retention has only Android 16 / MIUI restart and reboot evidence.
 
 ## Rollback or safety notes
 
@@ -80,11 +103,25 @@ Status: In progress on 2026-07-09. One Xiaomi `24117RK2CC` (`zorn`) device conne
 - `2026-07-09`: force-stopped and relaunched the app via ADB; tester confirmed the in-app permission center still correctly reflects notification-listener as `当前状态：已授权`, verifying permission retention across app restarts on Xiaomi/MIUI.
 - `2026-07-09`: tester fully rebooted the Xiaomi device; after startup, the in-app permission center still correctly reflects notification-listener as `当前状态：已授权`, verifying permission retention across device reboots.
 - `2026-07-09`: tester triggered "Delete local data" from within the app; ADB pull of the database files confirmed that all tables were successfully wiped and default categories were correctly reseeded, verifying the local data deletion flow.
+- `2026-07-10`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` passed; the current debug APK was generated at `apps/android/build/outputs/apk/debug/android-debug.apk`.
+- `2026-07-10`: the focused `CategorizationRulesScreenTest` passed, including the MediaStore export and SAF import flow exercised through the Compose activity-result launcher.
+- `2026-07-10`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.PaymentNotificationParserTest"` passed.
+- `2026-07-10`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"` passed, including wrong-passphrase failure before persisted data changes.
+- `2026-07-10`: an earlier Release APK passed `apksigner verify --verbose` with one v2 signer; the latest rebuild failed at signing and no current Release APK remains available.
+- `2026-07-10`: the Xiaomi endpoint `192.168.1.6:37145` connected over ADB Wi-Fi; device reported Android 16 / SDK 36 / MIUI `V816`.
+- `2026-07-10`: latest `android-debug.apk` installed with `adb install -r`, launched successfully, and rendered readable onboarding/local-mode UI.
+- `2026-07-10`: permission center showed notification listener `当前状态：已授权` and accessibility `当前状态：未授权`; notification settings opened `NotificationAccessSettingsActivity`, and accessibility settings opened MIUI `MiuiAccessibilitySettingsActivity`.
+- `2026-07-10`: encrypted backup export created `Download/2026-07-10-02-50-ac-backup.bak` (626 bytes) and showed the success Snackbar.
+- `2026-07-10`: SAF selected a copied test payload containing the exported backup; import completed with `备份已恢复成功`.
+- `2026-07-10`: `:apps:android:assembleRelease` failed during `packageRelease` because `release.jks` could not be opened with the configured password; no current signed Release APK is available for installation.
+- `2026-07-10`: after confirming local mode, force-stopping and cold-starting the app returned to the onboarding screen instead of the pending-review queue. This is tracked by Issue 15.
+- `2026-07-10`: after implementing Issue 15, the latest Debug build retained local mode across force-stop and cold start on the Xiaomi device; the pending-review queue opened directly.
 
 ## Current blockers
 
-- [RESOLVED] Release packaging is now signed (`release.jks` configured) and available as `android-release.apk`, ready for beta distribution.
-- Xiaomi local-mode validation now covers notification-listener enablement, accessibility enable/disable reflection, system-settings deep links, permission retention across restarts, and local data deletion. Note: 本次内测仅充分覆盖了 MIUI，其他 ROM 风险后置到灰度测试阶段。
-- [RESOLVED] WeChat / Alipay payment-capture: `PaymentNotificationParser` has been expanded to support P2P red packets and transfers in both directions (send/receive). See ADR 0049.
-- [RESOLVED] Backup/restore: Encrypted backups are now saved directly to `/Download` as `.bak` files; import uses SAF file picker; both export and restore show Snackbar feedback. See ADR 0048.
+- [BLOCKED] Release packaging requires a matching local `release.jks` password; the latest `assembleRelease` failed during `packageRelease`, so no current signed APK is available for installation.
+- Xiaomi local-mode validation covers notification-listener enablement, accessibility enable/disable reflection, system-settings deep links, permission retention across restarts, and local data deletion on Android 16 / MIUI only. The device is connected again, but planned Android 12-14 Xiaomi coverage is still blocked.
+- [IMPLEMENTED, AWAITING REAL PAYMENT] WeChat / Alipay P2P capture: `PaymentNotificationParser` supports P2P red packets and transfers in both directions (send/receive). See ADR 0049.
+- [IMPLEMENTED, PARTIALLY VERIFIED] Backup/restore: encrypted backups are saved to `/Download` as `.bak` files; Debug-device export and SAF import succeeded, wrong-password safety has repository coverage, but direct `.bak` selection and delete-then-restore remain open. See ADR 0048.
 - [RESOLVED] Account-deletion manual check (in local mode) is equivalent to local data deletion, which has been fully verified on-device.
+- [RESOLVED] Local-mode confirmation now survives force-stop and cold start on the Xiaomi Debug build. See Issue 15.
