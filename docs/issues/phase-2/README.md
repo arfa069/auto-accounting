@@ -19,6 +19,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 11. [Persist Account Deletion And Scheduled Cloud Cleanup](./011-account-deletion-and-scheduled-cloud-cleanup.md)
 12. [Package Internal Beta QA Metrics And Release Build](./012-internal-beta-qa-metrics-and-release-build.md)
 13. [Correct Tester-Facing Android Copy Encoding](./013-correct-tester-facing-android-copy-encoding.md)
+14. [Execute Internal Beta Device Matrix And Capture Findings](./014-execute-internal-beta-device-matrix-and-capture-findings.md)
 
 ## Dependency Shape
 
@@ -27,4 +28,5 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 - Issues 6 and 7 unblock Issue 8.
 - Issue 9 unblocks Issues 10 and 11.
 - Issues 2-11 and Issue 13 unblock Issue 12.
+- Issue 12 unblocks Issue 14.
 - Issue 13 can start after Issue 1 and must finish before any internal tester build.
