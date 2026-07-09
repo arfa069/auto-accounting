@@ -30,11 +30,13 @@ Run the manual beta checklist from the existing release package on a controlled 
 
 ## Acceptance tests
 
-- [ ] `.\gradlew.bat --no-daemon :services:backend:test`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
+- [x] `.\gradlew.bat --no-daemon :services:backend:test`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
 
 ## Device verification
+
+Status: In progress on 2026-07-09. One Xiaomi `24117RK2CC` (`zorn`) device connected through ADB over Wi-Fi on Android 16 / SDK 36 / MIUI `V816`. The unsigned release artifact is still not directly installable, but the debug build now installs and launches so local-mode smoke validation can continue on-device. On this Xiaomi device, notification-listener enablement, accessibility enable/disable reflection, and the accessibility-settings deep link have now been verified in local mode.
 
 - [ ] Run the release artifact on the target Android 10-15 device matrix and record install / launch outcome.
 - [ ] Verify notification listener permission, accessibility permission, and continuous monitoring enable/disable behavior on each available ROM family.
@@ -51,3 +53,30 @@ Run the manual beta checklist from the existing release package on a controlled 
 
 - Issue 12: Package Internal Beta QA Metrics And Release Build
 - Issue 13: Correct Tester-Facing Android Copy Encoding
+
+## Verification record
+
+- `2026-07-09`: `.\gradlew.bat --no-daemon :services:backend:test` passed.
+- `2026-07-09`: `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` passed.
+- `2026-07-09`: `.\gradlew.bat --no-daemon :apps:android:assembleRelease` passed.
+- `2026-07-09`: release artifact confirmed at `apps/android/build/outputs/apk/release/android-release-unsigned.apk`.
+- `2026-07-09`: `adb` was not on `PATH`; local SDK path from `local.properties` resolved to `C:\Users\Arfa\AppData\Local\Android\Sdk`, and `platform-tools\adb.exe devices -l` returned no attached devices.
+- `2026-07-09`: device `192.168.1.6:44399` connected over ADB Wi-Fi and reported `product=zorn`, `model=24117RK2CC`, Android `16`, SDK `36`, manufacturer `Xiaomi`, MIUI `V816`.
+- `2026-07-09`: installing `apps/android/build/outputs/apk/release/android-release-unsigned.apk` failed with `INSTALL_PARSE_FAILED_NO_CERTIFICATES`, confirming the release artifact is not directly installable without signing.
+- `2026-07-09`: after device-side approval, `apps/android/build/outputs/apk/debug/android-debug.apk` installed successfully over ADB Wi-Fi.
+- `2026-07-09`: `com.autoaccounting/.MainActivity` launched successfully on-device; `am start -W` reported `Status: ok`, cold start `768 ms`, and the activity stayed focused without an Android crash dialog.
+- `2026-07-09`: the onboarding screen rendered readable Chinese copy on-device, including local-mode, login, account creation, and privacy/compliance entry text.
+- `2026-07-09`: local-mode onboarding advanced into the local-mode confirmation screen and then into the pending-review home screen, confirming the app can enter a usable local-first path on this Xiaomi device.
+- `2026-07-09`: the profile (`My`) page became reachable in local mode and rendered readable compliance plus backup/export sections, including local-only account-deletion messaging.
+- `2026-07-09`: the advanced-monitoring / categorization page was reachable on-device and rendered readable notification-listener, accessibility, continuous-monitoring, and cloud-AI controls.
+- `2026-07-09`: tapping the notification-listener settings button deep-linked into the Android notification access settings page (`com.android.settings/.Settings$NotificationAccessSettingsActivity`), where `Auto Accounting` appeared in the listener list.
+- `2026-07-09`: after notification access was enabled on-device, the profile permission-center page showed notification-listener status as `当前状态：已授权` while accessibility remained `当前状态：未授权`.
+- `2026-07-09`: temporarily adding `com.autoaccounting/com.autoaccounting.feature.billsync.BillSyncAccessibilityService` to `enabled_accessibility_services` through ADB changed the permission-center accessibility status to `当前状态：已授权`, confirming the app refreshes grant state correctly on this Xiaomi device.
+- `2026-07-09`: tapping `打开无障碍设置` from the permission center deep-linked into MIUI accessibility settings (`com.android.settings/.accessibility.MiuiAccessibilitySettingsActivity`).
+- `2026-07-09`: restoring the device's original accessibility-service list through ADB returned the in-app accessibility status to `当前状态：未授权` while notification-listener status stayed `当前状态：已授权`, confirming accessibility grant removal is also reflected correctly in local mode.
+
+## Current blockers
+
+- Release packaging is available only as `android-release-unsigned.apk`; tester-facing signed beta distribution still depends on local signing material.
+- Xiaomi local-mode validation now covers notification-listener enablement, accessibility enable/disable reflection, and both system-settings deep links, but other ROM families plus reboot / long-running retention behavior are still pending.
+- WeChat / Alipay payment-capture flows, backup/restore round-trip, local deletion, and account-deletion manual checks are still pending on-device.
