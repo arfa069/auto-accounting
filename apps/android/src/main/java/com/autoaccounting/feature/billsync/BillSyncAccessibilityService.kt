@@ -64,7 +64,9 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private var continuousMonitoringState = ContinuousMonitoringState()
     private var automaticCaptureJob: Job? = null
     private var wechatOcrCaptureJob: Job? = null
+    private var wechatOcrGuardResetJob: Job? = null
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
+    private val ocrSessionGuard = PaymentScreenOcrSessionGuard()
     private var lastWechatOcrAttemptAtElapsedMillis = 0L
 
     override fun onServiceConnected() {
@@ -93,6 +95,8 @@ class BillSyncAccessibilityService : AccessibilityService() {
         val activeRoot = rootInActiveWindow ?: event.source
         val pageText = activeRoot?.collectVisibleText().orEmpty()
         if (pageText.isBlank()) {
+            wechatOcrGuardResetJob?.cancel()
+            wechatOcrGuardResetJob = null
             if (
                 shouldConsiderContinuousMonitoring &&
                 shouldAttemptWechatOcrFallback(packageName, pageText, Build.VERSION.SDK_INT)
@@ -100,6 +104,10 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 captureWechatOcrFallback(packageName)
             }
             return
+        }
+
+        if (packageName == BillSyncSource.WeChat.packageName) {
+            scheduleWechatOcrGuardReset(packageName)
         }
 
         if (manualBillSyncAcceptsPackage) {
@@ -164,7 +172,9 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 val permissionHealth = currentContinuousMonitoringPermissionHealth()
                 if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return@launch
 
-                val screenshot = captureScreenBitmap(requireNotNull(activeRoot).windowId) ?: return@launch
+                val windowId = requireNotNull(activeRoot).windowId
+                if (!ocrSessionGuard.shouldAttempt()) return@launch
+                val screenshot = captureScreenBitmap(windowId) ?: return@launch
                 try {
                     if (rootInActiveWindow?.packageName?.toString() != packageName) return@launch
                     if (
@@ -176,10 +186,13 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         return@launch
                     }
                     val pageText = ocrRecognizer.recognize(screenshot)
-                    captureOcrPaymentResult(
+                    val processed = captureOcrPaymentResult(
                         packageName = packageName,
                         pageText = pageText
                     )
+                    if (processed) {
+                        ocrSessionGuard.markProcessed()
+                    }
                 } finally {
                     screenshot.recycle()
                 }
@@ -193,13 +206,28 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun scheduleWechatOcrGuardReset(packageName: String) {
+        if (wechatOcrGuardResetJob?.isActive == true) return
+        wechatOcrGuardResetJob = serviceScope.launch {
+            delay(OCR_SESSION_RESET_SETTLE_MILLIS)
+            val settledRoot = rootInActiveWindow
+            if (
+                settledRoot?.packageName?.toString() == packageName &&
+                settledRoot.collectVisibleText().isNotBlank()
+            ) {
+                ocrSessionGuard.reset()
+            }
+            wechatOcrGuardResetJob = null
+        }
+    }
+
     private suspend fun captureOcrPaymentResult(
         packageName: String,
         pageText: String
-    ) {
-        if (pageText.isBlank()) return
+    ): Boolean {
+        if (pageText.isBlank()) return false
         val permissionHealth = currentContinuousMonitoringPermissionHealth()
-        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return
+        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return false
         val decision = decideContinuousMonitoringCapture(
             state = continuousMonitoringState,
             event = ContinuousMonitoringEvent(
@@ -208,11 +236,11 @@ class BillSyncAccessibilityService : AccessibilityService() {
             ),
             permissionHealth = permissionHealth
         )
-        if (!decision.shouldCapture) return
-        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) return
+        if (!decision.shouldCapture) return false
+        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) return false
 
-        val source = BillSyncSource.fromPackageName(packageName) ?: return
-        runCatching {
+        val source = BillSyncSource.fromPackageName(packageName) ?: return false
+        val outcome = runCatching {
             processor.processAutomatic(
                 source = source,
                 pageText = pageText,
@@ -223,6 +251,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }.onFailure { error ->
             Log.w(TAG, "Automatic OCR payment capture failed", error)
         }
+        return outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
     }
 
     private suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
@@ -325,6 +354,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         const val TAG = "BillSyncService"
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
+        const val OCR_SESSION_RESET_SETTLE_MILLIS = 3_000L
     }
 }
 
@@ -340,6 +370,23 @@ internal fun isScreenReadyForWechatOcr(
     screenInteractive: Boolean,
     keyguardLocked: Boolean
 ): Boolean = screenInteractive && !keyguardLocked
+
+internal class PaymentScreenOcrSessionGuard {
+    private var processed = false
+
+    @Synchronized
+    fun shouldAttempt(): Boolean = !processed
+
+    @Synchronized
+    fun markProcessed() {
+        processed = true
+    }
+
+    @Synchronized
+    fun reset() {
+        processed = false
+    }
+}
 
 private fun AccessibilityNodeInfo.collectVisibleText(): String {
     val lines = mutableListOf<String>()

@@ -67,15 +67,30 @@ internal fun selectProminentPaymentAmountLine(
     }
 }
 
-private fun normalizeOcrAmountLine(text: String): String? {
-    val match = OCR_AMOUNT_LINE_REGEX.matchEntire(text.trim()) ?: return null
-    return "¥${match.groupValues[1]}"
+internal fun normalizeOcrAmountLine(text: String): String? {
+    val normalizedText = text.trim()
+    if (OCR_NON_PAYMENT_AMOUNT_LINE_REGEX.containsMatchIn(normalizedText)) return null
+    val match = OCR_AMOUNT_LINE_REGEX.matchEntire(normalizedText)
+        ?: OCR_DECIMAL_TOKEN_REGEX.find(normalizedText)
+        ?: return null
+    val yuan = match.groupValues[1].normalizeOcrDigits()
+    val cents = match.groupValues[2].normalizeOcrDigits()
+    return if (cents.isBlank()) "¥$yuan" else "¥$yuan.$cents"
 }
+
+private fun String.normalizeOcrDigits(): String = replace('O', '0').replace('o', '0')
 
 private fun Int?.orZero(): Int = this ?: 0
 
 private const val MINIMUM_AMOUNT_HEIGHT_RATIO = 0.018
 private const val MINIMUM_PROMINENCE_RATIO = 1.5
 private val OCR_AMOUNT_LINE_REGEX = Regex(
-    pattern = """(?:[¥￥Yy]\s*)?(\d+(?:\.\d{1,2})?)"""
+    pattern = """(?:[¥￥Yy]\s*)?([0-9Oo]+)(?:\s*[.．,，]\s*([0-9Oo]{1,2}))?"""
+)
+private val OCR_DECIMAL_TOKEN_REGEX = Regex(
+    pattern = """([0-9Oo]+)\s*[.．,，]\s*([0-9Oo]{1,2})"""
+)
+private val OCR_NON_PAYMENT_AMOUNT_LINE_REGEX = Regex(
+    pattern = """(?:KB/s|MB/s|GB/s|Mbps|%|网速|电量)""",
+    option = RegexOption.IGNORE_CASE
 )

@@ -96,4 +96,25 @@ class PaymentScreenOcrFallbackTest {
             )
         )
     }
+
+    @Test
+    fun amountNormalizationRepairsLetterOAndDecimalSpacing() {
+        assertEquals("¥0.05", normalizeOcrAmountLine("￥ O . O5"))
+        assertEquals("¥0.05", normalizeOcrAmountLine("未知符号 O . O5"))
+        assertEquals("¥20", normalizeOcrAmountLine("2O"))
+        assertEquals(null, normalizeOcrAmountLine("3.58 KB/s"))
+        assertEquals(null, normalizeOcrAmountLine("100%"))
+    }
+
+    @Test
+    fun successfulOcrSurfaceIsProcessedOnceUntilAStableWechatPageResetsIt() {
+        val guard = PaymentScreenOcrSessionGuard()
+
+        assertTrue(guard.shouldAttempt())
+        guard.markProcessed()
+        assertFalse(guard.shouldAttempt())
+
+        guard.reset()
+        assertTrue(guard.shouldAttempt())
+    }
 }

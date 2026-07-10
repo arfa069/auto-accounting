@@ -169,6 +169,24 @@ class BillPageParserTest {
     }
 
     @Test
+    fun parsesWechatTransferSuccessWaitingForRecipient() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                支付成功
+                待测试对象确认收款
+                ¥0.05
+                完成
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-10 20:31"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("测试对象", entries.single().merchantTitle)
+        assertEquals("支出", entries.single().transactionKindLabel)
+    }
+
+    @Test
     fun ignoresUnsupportedOrPaymentInitiationSurfaces() {
         val chat = BillPageParser().parse(
             source = BillSyncSource.WeChat,

@@ -336,6 +336,7 @@ private fun extractMerchantTitle(
 
 private fun extractP2pTitle(windowText: String): String? {
     val p2pPatterns = listOf(
+        Regex("""待(.+?)确认收款"""),
         Regex("""收到(.+?)的红包"""),
         Regex("""收到(.+?)的转账"""),
         Regex("""([^\s]+?)向你转账"""),
