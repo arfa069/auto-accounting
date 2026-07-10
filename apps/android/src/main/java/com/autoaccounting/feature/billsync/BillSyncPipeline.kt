@@ -5,6 +5,9 @@ import com.autoaccounting.feature.dedupe.DedupeEngine
 import com.autoaccounting.feature.dedupe.DedupeMatchLevel
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
 
@@ -38,7 +41,8 @@ class BillSyncPipeline(
         existingPendingEntries: List<ReviewQueueEntry>,
         existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
         capturedAtEpochMillis: Long,
-        captureReasonLabel: String = "账单同步"
+        captureReasonLabel: String = "账单同步",
+        retainRawEvidence: Boolean = true
     ): BillSyncResult {
         val successSteps = listOf(
             BillSyncStep.OpenSource,
@@ -84,9 +88,15 @@ class BillSyncPipeline(
 
         parsedEntries
             .map { parsed ->
-                parsed.toPendingEntry(
+                val candidate = parsed.toPendingEntry(
                     capturedAtEpochMillis = capturedAtEpochMillis,
-                    captureReasonLabel = captureReasonLabel
+                    captureReasonLabel = captureReasonLabel,
+                    retainRawEvidence = retainRawEvidence
+                )
+                candidate.correlateWithUniqueRecentNotification(
+                    transactionTimeFromFallback = parsed.transactionTimeFromFallback,
+                    captureReasonLabel = captureReasonLabel,
+                    existingPendingEntries = existingPendingEntries
                 )
             }
             .forEach { candidate ->
@@ -139,7 +149,8 @@ class BillSyncPipeline(
 
     private fun ParsedBillEntry.toPendingEntry(
         capturedAtEpochMillis: Long,
-        captureReasonLabel: String
+        captureReasonLabel: String,
+        retainRawEvidence: Boolean
     ): ReviewQueueEntry =
         ReviewQueueEntry(
             id = stableId(),
@@ -154,12 +165,65 @@ class BillSyncPipeline(
             confidence = ConfidenceState.HIGH,
             capturedAtEpochMillis = capturedAtEpochMillis,
             captureTimeText = captureTimeFormatter(capturedAtEpochMillis),
-            rawEvidenceText = rawLine,
+            rawEvidenceText = rawLine.takeIf { retainRawEvidence }.orEmpty(),
             parsedFields = parsedFields
         )
 
     private fun ParsedBillEntry.stableId(): String =
         "bill-${sourceLabel}-${transactionTimeText}-${amountMinor}-${rawLine.hashCode()}"
+
+    private fun ReviewQueueEntry.correlateWithUniqueRecentNotification(
+        transactionTimeFromFallback: Boolean,
+        captureReasonLabel: String,
+        existingPendingEntries: List<ReviewQueueEntry>
+    ): ReviewQueueEntry {
+        if (!transactionTimeFromFallback || captureReasonLabel != AUTOMATIC_CAPTURE_REASON) {
+            return this
+        }
+
+        val matchingNotifications = existingPendingEntries.filter { existing ->
+            existing.hasNotificationCaptureEvidence &&
+                existing.sourceLabel == sourceLabel &&
+                existing.amountMinor == amountMinor &&
+                existing.kindLabel == kindLabel &&
+                transactionTimeText.minutesFrom(existing.transactionTimeText)
+                    ?.let { it <= RECENT_NOTIFICATION_WINDOW_MINUTES } == true
+        }
+        if (matchingNotifications.size > 1) {
+            return copy(
+                confidence = ConfidenceState.DUPLICATE_SUSPECT,
+                note = "存在多条近期相同通知，请人工确认",
+                parsedFields = (parsedFields + "关联结果=近期通知候选不唯一").distinct()
+            )
+        }
+        val uniqueNotification = matchingNotifications.singleOrNull() ?: return this
+        return copy(
+            transactionTimeText = uniqueNotification.transactionTimeText,
+            parsedFields = (parsedFields + "交易时间=关联近期唯一通知").distinct()
+        )
+    }
+
+    private val ReviewQueueEntry.hasNotificationCaptureEvidence: Boolean
+        get() = captureReasonLabel == NOTIFICATION_CAPTURE_REASON ||
+            parsedFields.contains("证据来源=$NOTIFICATION_CAPTURE_REASON")
+
+    private fun String.minutesFrom(other: String): Long? {
+        val first = parseTransactionTime(this) ?: return null
+        val second = parseTransactionTime(other) ?: return null
+        return kotlin.math.abs(ChronoUnit.MINUTES.between(first, second))
+    }
+
+    private fun parseTransactionTime(text: String): LocalDateTime? = runCatching {
+        LocalDateTime.parse(text.trim(), TRANSACTION_TIME_FORMATTER)
+    }.getOrNull()
+
+    private companion object {
+        const val AUTOMATIC_CAPTURE_REASON = "支付结果自动捕获"
+        const val NOTIFICATION_CAPTURE_REASON = "通知捕获"
+        const val RECENT_NOTIFICATION_WINDOW_MINUTES = 60
+        val TRANSACTION_TIME_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    }
 }
 
 private fun formatCaptureTime(epochMillis: Long): String =

@@ -83,10 +83,10 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             processingMethod = "在设备上解析为待确认账目"
         ),
         PersonalInformationItem(
-            name = "微信/支付宝账单页内容",
+            name = "微信/支付宝支付结果与账单页内容",
             purpose = "开启自动记账后识别支付结果，或手动补充历史账目",
             requiredState = "仅用户开启自动记账或发起手动同步后使用",
-            processingMethod = "通过无障碍服务在设备上读取并解析"
+            processingMethod = "优先读取无障碍节点；微信空节点支付结果页可在设备本地瞬时截图 OCR，图片和 OCR 原文不保存、不上传"
         ),
         PersonalInformationItem(
             name = "账本和待确认账目",
@@ -129,6 +129,13 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             personalInformationCategory = "应用分发统计信息",
             processingMethod = "由目标应用商店提供",
             declarationTokens = setOf("analytics", "distribution")
+        ),
+        ThirdPartyService(
+            name = "Google ML Kit Chinese Text Recognition（捆绑模型）",
+            purpose = "在微信支付结果页不提供可读无障碍节点时进行本地文字识别",
+            personalInformationCategory = "瞬时支付结果页像素和识别文本",
+            processingMethod = "模型随应用安装并仅在设备本地处理；截图处理后立即释放，图片和 OCR 原文不保存、不上传",
+            declarationTokens = setOf("mlkit", "text-recognition")
         )
     ),
     permissionExplanations = listOf(
@@ -147,14 +154,14 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         PermissionExplanation(
             id = PermissionExplanationId.AccessibilityBillSync,
             title = "自动记账无障碍服务",
-            purpose = "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目。",
-            boundary = "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
+            purpose = "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，也可手动补充历史账目。",
+            boundary = "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片和原文不保存、不上传。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.ContinuousMonitoring,
             title = "自动记账",
-            purpose = "开启后会在支付完成时观察受支持的结果页并生成待确认记录；可随时关闭。",
-            boundary = "必须由用户明确开启，只观察支付结果和支付记录。"
+            purpose = "开启后会在支付完成时观察受支持的结果页，必要时在本机瞬时 OCR，并生成待确认记录；可随时关闭。",
+            boundary = "必须由用户明确开启，只处理支付结果和支付记录；截图和 OCR 原文不留存。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.CloudAi,
@@ -176,7 +183,7 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         StoreReviewNote(
             title = "无障碍审核说明",
-            body = "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
+            body = "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
         ),
         StoreReviewNote(
             title = "自动记账审核说明",
@@ -208,6 +215,7 @@ fun findUnlistedSdkOrNetworkServices(
         "facebook",
         "wechat-sdk",
         "alipay-sdk",
+        "mlkit",
         "okhttp",
         "retrofit"
     )

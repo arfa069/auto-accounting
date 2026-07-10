@@ -231,6 +231,26 @@ class BillPageParserTest {
     }
 
     @Test
+    fun completedPaymentResultIgnoresPromotionalAmountsBelowPrimaryAmount() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                支付成功
+                测试商户
+                ¥12.34
+                摇一摇，有优惠
+                打车券 2元 免费领
+                缴费券 1元 免费领
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-10 14:05"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals(1_234L, entries.single().amountMinor)
+        assertEquals("测试商户", entries.single().merchantTitle)
+    }
+
+    @Test
     fun observesSupportedPaymentRecordsAndBlockedPaymentInitiation() {
         assertEquals(
             BillSyncPageObservation.PaymentResult,

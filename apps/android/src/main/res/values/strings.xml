@@ -2,5 +2,5 @@
     <string name="app_name">Auto Accounting</string>
     <string name="notification_listener_label">自动记账通知捕获</string>
     <string name="bill_sync_accessibility_label">自动记账无障碍服务</string>
-    <string name="bill_sync_accessibility_description">用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目；不读取聊天或普通消息，不发起付款、转账或退款</string>
+    <string name="bill_sync_accessibility_description">用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发起付款、转账或退款</string>
 </resources>

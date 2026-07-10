@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    implementation(libs.mlkit.text.recognition.chinese)
 
     kapt(libs.androidx.room.compiler)
 

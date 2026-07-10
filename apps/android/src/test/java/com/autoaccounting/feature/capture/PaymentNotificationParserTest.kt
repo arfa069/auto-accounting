@@ -25,6 +25,23 @@ class PaymentNotificationParserTest {
     }
 
     @Test
+    fun parsesWechatPaidNotificationWording() {
+        val parsed = PaymentNotificationParser().parse(
+            PaymentNotificationEvent(
+                packageName = "com.tencent.mm",
+                title = "微信支付",
+                text = "已支付 ¥1.23",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertNotNull(parsed)
+        assertEquals("微信", parsed!!.sourceLabel)
+        assertEquals(123L, parsed.amountMinor)
+        assertEquals("支出", parsed.transactionKindLabel)
+    }
+
+    @Test
     fun parsesAlipayPaymentNotification() {
         val parsed = PaymentNotificationParser().parse(
             PaymentNotificationEvent(

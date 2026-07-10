@@ -31,6 +31,8 @@ class DedupeEngineTest {
         assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
         assertTrue(merged.rawEvidenceText.contains("微信账单"))
         assertTrue(merged.parsedFields.contains("匹配原因=来源、金额、时间、类型、标题一致"))
+        assertTrue(merged.parsedFields.contains("证据来源=通知捕获"))
+        assertTrue(merged.parsedFields.contains("证据来源=账单同步"))
     }
 
     @Test

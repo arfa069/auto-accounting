@@ -42,7 +42,7 @@ Suggested rows:
 - Device information: registered-device security, fraud prevention, SMS rate limits, configuration; required for account mode and SMS risk control.
 - Notification content from WeChat/Alipay payment notifications: create pending entries; required only after notification permission is enabled.
 - Payment-result and payment-record page content from WeChat/Alipay: automatic capture after explicit opt-in, or user-started history backfill.
-- Automatic accessibility observations: create pending entries after payment completion; optional and user-controlled.
+- Automatic accessibility observations: create pending entries after payment completion; optional and user-controlled. Accessibility nodes are preferred; blank WeChat payment-result surfaces may use transient on-device screenshot OCR on Android 11 or later.
 - Ledger and pending-entry data: local bookkeeping; required for core bookkeeping.
 - AI categorization payload: cloud AI suggestions; optional.
 - Enhanced AI context: improve cloud AI accuracy; optional.
@@ -63,6 +63,7 @@ Notification listening:
 Automatic-bookkeeping accessibility service:
 - Purpose: observe allowlisted WeChat and Alipay payment-result/payment-record pages after explicit opt-in, and read bill pages during user-started history backfill.
 - The privacy policy must state that the app does not read chats or ordinary messages, send messages, or initiate payments, transfers, or refunds.
+- For a blank WeChat accessibility surface, the app may take one transient screenshot for bundled on-device OCR. Android 14 or later limits capture to the active app window; Android 11-13 uses the display screenshot API. The image and raw OCR text must not be persisted, uploaded, or written to logs.
 
 Automatic capture:
 - Explicit opt-in.
@@ -89,6 +90,7 @@ First-version third-party categories:
 - Cloud AI provider.
 - Crash/log provider.
 - App distribution statistics provider.
+- Google ML Kit Chinese Text Recognition bundled model: on-device OCR only; transient payment-screen pixels and recognized text are not sent by the app to a cloud OCR service.
 
 Excluded in first version:
 - Advertising SDKs.
@@ -151,6 +153,7 @@ High-risk areas:
 - Notification listening.
 - Accessibility service.
 - Automatic accessibility capture.
+- Transient accessibility screenshot and local OCR fallback.
 - Cloud AI uploads.
 - AI categorization logs.
 - Account deletion and data deletion.
@@ -160,6 +163,7 @@ Mitigations:
 - Use clear permission copy.
 - Provide structured privacy materials.
 - Keep automatic capture behind a clear user-controlled switch.
+- Restrict local OCR to blank WeChat surfaces on Android 11 or later, require payment-completion plus currency evidence before persistence, and release the screenshot and raw OCR text immediately after parsing.
 - Show stepwise bill sync progress.
 - Default to local rules and keep cloud AI off.
 - Do not include ad or marketing tracking SDKs.

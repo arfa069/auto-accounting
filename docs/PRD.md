@@ -202,8 +202,8 @@ Each permission item shows:
 Permission copy:
 - Notification listening: "用于识别微信、支付宝的收付款通知，生成待确认账目".
 - Bookkeeping result notifications: "用于通知待确认、分类建议、重复合并或识别失败结果；未授权不影响本地采集".
-- Automatic-bookkeeping accessibility service: "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目；不读取聊天或普通消息，不发起付款、转账或退款".
-- Automatic capture: "开启后会在支付完成时观察受支持的结果页并生成待确认记录；可随时关闭".
+- Automatic-bookkeeping accessibility service: "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发起付款、转账或退款".
+- Automatic capture: "开启后会在支付完成时观察受支持的结果页，必要时在本机瞬时 OCR，并生成待确认记录；可随时关闭".
 - Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
 - Background keep-alive: "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同".
 

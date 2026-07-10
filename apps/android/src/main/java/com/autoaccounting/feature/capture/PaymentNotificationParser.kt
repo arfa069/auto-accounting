@@ -77,7 +77,10 @@ private fun String.transactionKindLabel(): String? = when {
     Regex("向(?!你).*转账").containsMatchIn(this) -> "支出"
     // Merchant payment keywords (original)
     contains("收款") || contains("收款到账") || contains("到账") -> "收入"
-    contains("付款") || contains("支付成功") || contains("付款成功") -> "支出"
+    contains("付款") ||
+        contains("支付成功") ||
+        contains("付款成功") ||
+        contains("已支付") -> "支出"
     contains("支出") && contains("交易") -> "支出"
     else -> null
 }

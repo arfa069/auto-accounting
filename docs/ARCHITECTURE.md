@@ -9,7 +9,7 @@ The Android app owns ledger truth. The first backend must not sync or store the 
 ```mermaid
 flowchart LR
   WeChat["WeChat / Alipay"] --> Notify["Notification Listener"]
-  WeChat --> A11y["Accessibility Auto Capture / Bill Sync"]
+  WeChat --> A11y["Accessibility Nodes / Restricted Local OCR"]
   Notify --> Capture["Capture Pipeline"]
   A11y --> Capture
   Capture --> Dedupe["Deduplication"]
@@ -173,6 +173,7 @@ Permission center tracks:
 Important boundaries:
 - Notification listener only creates pending entries from WeChat/Alipay payment notifications.
 - Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual sync or notification-listener access.
+- Automatic capture reads accessibility nodes first. A blank WeChat accessibility surface may use one transient screenshot with bundled local OCR: Android 14 or later captures only the active app window, while Android 11-13 uses the display screenshot API. The bitmap and raw OCR text are released after parsing and are not persisted, uploaded, or logged.
 - Manual bill sync remains user-started and is not part of the normal payment flow.
 - Result notification permission is independent; denial must not prevent local capture or persistence.
 - The app must not read chat content, send messages, initiate payments, or initiate transfers.

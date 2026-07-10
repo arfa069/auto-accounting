@@ -30,11 +30,11 @@ class ComplianceMaterialsTest {
         val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
         assertEquals("自动记账无障碍服务", accessibilityCopy.title)
         assertEquals(
-            "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目。",
+            "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，也可手动补充历史账目。",
             accessibilityCopy.purpose
         )
         assertEquals(
-            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
+            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片和原文不保存、不上传。",
             accessibilityCopy.boundary
         )
         assertEquals(
@@ -44,8 +44,13 @@ class ComplianceMaterialsTest {
 
         val storeNotes = AUTO_ACCOUNTING_COMPLIANCE.storeReviewNotes.associateBy { it.title }
         assertEquals(
-            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
+            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
             storeNotes.getValue("无障碍审核说明").body
+        )
+        assertTrue(
+            AUTO_ACCOUNTING_COMPLIANCE.thirdPartyServices.any { service ->
+                service.name.contains("ML Kit") && service.processingMethod.contains("不保存、不上传")
+            }
         )
     }
 

@@ -1,7 +1,13 @@
 package com.autoaccounting.feature.billsync
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
@@ -16,6 +22,7 @@ import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
 import com.autoaccounting.feature.monitoring.isContinuousMonitoringPackageAllowed
 import com.autoaccounting.feature.review.ReviewQueuePersistence
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +30,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class BillSyncAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -46,11 +55,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
     }
 
     private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
+    private val ocrRecognizerDelegate = lazy { PaymentScreenOcrRecognizer() }
+    private val ocrRecognizer by ocrRecognizerDelegate
+    private val powerManager by lazy { getSystemService(PowerManager::class.java) }
+    private val keyguardManager by lazy { getSystemService(KeyguardManager::class.java) }
 
     @Volatile
     private var continuousMonitoringState = ContinuousMonitoringState()
     private var automaticCaptureJob: Job? = null
+    private var wechatOcrCaptureJob: Job? = null
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
+    private var lastWechatOcrAttemptAtElapsedMillis = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -75,10 +90,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
             isContinuousMonitoringPackageAllowed(packageName)
         if (!manualBillSyncAcceptsPackage && !shouldConsiderContinuousMonitoring) return
 
-        val pageText = (rootInActiveWindow ?: event.source)
-            ?.collectVisibleText()
-            .orEmpty()
-        if (pageText.isBlank()) return
+        val activeRoot = rootInActiveWindow ?: event.source
+        val pageText = activeRoot?.collectVisibleText().orEmpty()
+        if (pageText.isBlank()) {
+            if (
+                shouldConsiderContinuousMonitoring &&
+                shouldAttemptWechatOcrFallback(packageName, pageText, Build.VERSION.SDK_INT)
+            ) {
+                captureWechatOcrFallback(packageName)
+            }
+            return
+        }
 
         if (manualBillSyncAcceptsPackage) {
             captureManualBillSync(packageName, pageText)
@@ -113,6 +135,128 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun captureWechatOcrFallback(packageName: String) {
+        if (!isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)) {
+            return
+        }
+        if (wechatOcrCaptureJob?.isActive == true) return
+        val nowElapsedMillis = SystemClock.elapsedRealtime()
+        if (nowElapsedMillis - lastWechatOcrAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS) {
+            return
+        }
+        lastWechatOcrAttemptAtElapsedMillis = nowElapsedMillis
+
+        wechatOcrCaptureJob = serviceScope.launch {
+            try {
+                delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+                val activeRoot = rootInActiveWindow
+                val activePackageName = activeRoot?.packageName?.toString()
+                if (activePackageName != packageName) return@launch
+                if (
+                    !isScreenReadyForWechatOcr(
+                        powerManager.isInteractive,
+                        keyguardManager.isKeyguardLocked
+                    )
+                ) {
+                    return@launch
+                }
+
+                val permissionHealth = currentContinuousMonitoringPermissionHealth()
+                if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return@launch
+
+                val screenshot = captureScreenBitmap(requireNotNull(activeRoot).windowId) ?: return@launch
+                try {
+                    if (rootInActiveWindow?.packageName?.toString() != packageName) return@launch
+                    if (
+                        !isScreenReadyForWechatOcr(
+                            powerManager.isInteractive,
+                            keyguardManager.isKeyguardLocked
+                        )
+                    ) {
+                        return@launch
+                    }
+                    val pageText = ocrRecognizer.recognize(screenshot)
+                    captureOcrPaymentResult(
+                        packageName = packageName,
+                        pageText = pageText
+                    )
+                } finally {
+                    screenshot.recycle()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.w(TAG, "Local OCR payment capture failed", error)
+            } finally {
+                wechatOcrCaptureJob = null
+            }
+        }
+    }
+
+    private suspend fun captureOcrPaymentResult(
+        packageName: String,
+        pageText: String
+    ) {
+        if (pageText.isBlank()) return
+        val permissionHealth = currentContinuousMonitoringPermissionHealth()
+        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return
+        val decision = decideContinuousMonitoringCapture(
+            state = continuousMonitoringState,
+            event = ContinuousMonitoringEvent(
+                packageName = packageName,
+                screenText = pageText
+            ),
+            permissionHealth = permissionHealth
+        )
+        if (!decision.shouldCapture) return
+        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) return
+
+        val source = BillSyncSource.fromPackageName(packageName) ?: return
+        runCatching {
+            processor.processAutomatic(
+                source = source,
+                pageText = pageText,
+                retainRawEvidence = false
+            )
+        }.onSuccess { result ->
+            result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
+        }.onFailure { error ->
+            Log.w(TAG, "Automatic OCR payment capture failed", error)
+        }
+    }
+
+    private suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
+        suspendCoroutine { continuation ->
+            val callback = object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    val hardwareBuffer = screenshot.hardwareBuffer
+                    val softwareBitmap = try {
+                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(
+                            hardwareBuffer,
+                            screenshot.colorSpace
+                        )
+                        try {
+                            hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                        } finally {
+                            hardwareBitmap?.recycle()
+                        }
+                    } finally {
+                        hardwareBuffer.close()
+                    }
+                    continuation.resume(softwareBitmap)
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    continuation.resume(null)
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                takeScreenshotOfWindow(windowId, mainExecutor, callback)
+            } else {
+                takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
+            }
+        }
+
     private fun captureContinuousMonitoring(
         packageName: String,
         pageText: String,
@@ -128,7 +272,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
         if (!decision.shouldCapture) return
 
-        automaticCaptureJob?.cancel()
+        if (automaticCaptureJob?.isActive == true) return
         automaticCaptureJob = serviceScope.launch {
             delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
             automaticCaptureJob = null
@@ -171,14 +315,31 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        if (ocrRecognizerDelegate.isInitialized()) {
+            ocrRecognizer.close()
+        }
         super.onDestroy()
     }
 
     private companion object {
         const val TAG = "BillSyncService"
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
+        const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
     }
 }
+
+internal fun shouldAttemptWechatOcrFallback(
+    packageName: String,
+    pageText: String,
+    sdkInt: Int
+): Boolean = packageName == BillSyncSource.WeChat.packageName &&
+    pageText.isBlank() &&
+    sdkInt >= Build.VERSION_CODES.R
+
+internal fun isScreenReadyForWechatOcr(
+    screenInteractive: Boolean,
+    keyguardLocked: Boolean
+): Boolean = screenInteractive && !keyguardLocked
 
 private fun AccessibilityNodeInfo.collectVisibleText(): String {
     val lines = mutableListOf<String>()

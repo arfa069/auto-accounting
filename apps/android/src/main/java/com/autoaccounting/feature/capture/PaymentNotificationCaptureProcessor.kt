@@ -5,12 +5,11 @@ import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
 import com.autoaccounting.feature.dedupe.DedupeEngine
 import com.autoaccounting.feature.dedupe.DedupeMatchLevel
 import com.autoaccounting.feature.review.ReviewQueueAction
+import com.autoaccounting.feature.review.ReviewQueueCaptureCoordinator
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.review.reduceReviewQueue
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 data class PaymentNotificationProcessResult(
     val state: ReviewQueueState,
@@ -20,18 +19,18 @@ data class PaymentNotificationProcessResult(
 class PaymentNotificationCaptureProcessor(
     private val pipeline: NotificationCapturePipeline,
     private val reviewQueuePersistence: ReviewQueuePersistence,
-    private val preferencesRepository: LocalPreferencesRepository
+    private val preferencesRepository: LocalPreferencesRepository,
+    private val captureCoordinator: ReviewQueueCaptureCoordinator =
+        ReviewQueueCaptureCoordinator.Shared
 ) {
-    private val captureMutex = Mutex()
-
     suspend fun process(event: PaymentNotificationEvent): ReviewQueueState? =
         processWithResult(event)?.state
 
     suspend fun processWithResult(
         event: PaymentNotificationEvent
-    ): PaymentNotificationProcessResult? = captureMutex.withLock {
+    ): PaymentNotificationProcessResult? = captureCoordinator.serialize {
         reviewQueuePersistence.ensureSystemCategories()
-        val entry = pipeline.capture(event) ?: return@withLock null
+        val entry = pipeline.capture(event) ?: return@serialize null
         val rules = preferencesRepository.categorizationRules.first()
         val categorizedEntry = entry.applyCategorizationSuggestion(rules)
         val previousState = reviewQueuePersistence.observeState().first()
@@ -40,7 +39,7 @@ class PaymentNotificationCaptureProcessor(
             categorizedEntry
         )
         if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
-            return@withLock PaymentNotificationProcessResult(
+            return@serialize PaymentNotificationProcessResult(
                 state = previousState,
                 notification = BookkeepingResultNotification.DuplicateMerged(categorizedEntry.id)
             )
@@ -58,7 +57,7 @@ class PaymentNotificationCaptureProcessor(
         )
         val entryToPersist = when (dedupeResult.matchLevel) {
             DedupeMatchLevel.HIGH_CONFIDENCE -> {
-                val matchedId = dedupeResult.matchedEntry?.id ?: return@withLock null
+                val matchedId = dedupeResult.matchedEntry?.id ?: return@serialize null
                 dedupeResult.pendingEntries.first { it.id == matchedId }
             }
 

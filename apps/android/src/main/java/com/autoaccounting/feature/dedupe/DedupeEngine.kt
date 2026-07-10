@@ -94,6 +94,10 @@ class DedupeEngine {
                 .joinToString(separator = "\n---\n"),
             parsedFields = (
                 parsedFields + candidate.parsedFields +
+                    listOf(
+                        "证据来源=$captureReasonLabel",
+                        "证据来源=${candidate.captureReasonLabel}"
+                    ) +
                     if (normalizedTitle == candidate.normalizedTitle) {
                         "匹配原因=来源、金额、时间、类型、标题一致"
                     } else {

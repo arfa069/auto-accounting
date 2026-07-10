@@ -25,7 +25,8 @@ data class ParsedBillEntry(
     val fundingAccountLabel: String,
     val transactionTimeText: String,
     val rawLine: String,
-    val parsedFields: List<String>
+    val parsedFields: List<String>,
+    val transactionTimeFromFallback: Boolean = false
 )
 
 enum class BillSyncPageObservation {
@@ -126,22 +127,29 @@ class BillPageParser {
         }
         if (pageText.hasPaymentInitiationKeyword()) return emptyList()
 
-        val entries = mutableListOf<ParsedBillEntry>()
+        val amountMatches = mutableListOf<Pair<Int, MatchResult>>()
         lines.forEachIndexed { amountLineIndex, line ->
             if (line.isNonTransactionAmountLine()) return@forEachIndexed
             explicitPaymentAmountRegex.findAll(line).forEach { match ->
                 if (match.isNonTransactionAmountMatch(line)) return@forEach
-                val amountText = match.amountText() ?: return@forEach
-                parsePaymentRecordWindow(
-                    source = source,
-                    lines = lines,
-                    amountLineIndex = amountLineIndex,
-                    amountText = amountText,
-                    fallbackTransactionTimeText = fallbackTransactionTimeText
-                )?.let(entries::add)
+                amountMatches += amountLineIndex to match
             }
         }
-        return entries.distinctBy { entry ->
+        val selectedMatches = if (pageText.isCompletedPaymentResultSurface()) {
+            amountMatches.take(1)
+        } else {
+            amountMatches
+        }
+        return selectedMatches.mapNotNull { (amountLineIndex, match) ->
+            val amountText = match.amountText() ?: return@mapNotNull null
+            parsePaymentRecordWindow(
+                source = source,
+                lines = lines,
+                amountLineIndex = amountLineIndex,
+                amountText = amountText,
+                fallbackTransactionTimeText = fallbackTransactionTimeText
+            )
+        }.distinctBy { entry ->
             "${entry.transactionTimeText}|${entry.amountMinor}|${entry.transactionKindLabel}|${entry.merchantTitle}"
         }
     }
@@ -162,8 +170,14 @@ class BillPageParser {
 
         val amountMinor = parseAmountMinor(amountText) ?: return null
         val isCompletedPaymentResult = windowText.isCompletedPaymentResultSurface()
-        val transactionTimeText = windowLines.firstNotNullOfOrNull { it.extractTransactionTimeText() }
-            ?: fallbackTransactionTimeText.takeIf { isCompletedPaymentResult }
+        val explicitTransactionTimeText = windowLines.firstNotNullOfOrNull {
+            it.extractTransactionTimeText()
+        }
+        val fallbackTimeText = fallbackTransactionTimeText.takeIf {
+            explicitTransactionTimeText == null && isCompletedPaymentResult
+        }
+        val transactionTimeText = explicitTransactionTimeText
+            ?: fallbackTimeText
             ?: return null
         val transactionKindLabel = windowText.inferTransactionKindLabel() ?: return null
         val merchantTitle = extractMerchantTitle(
@@ -189,7 +203,8 @@ class BillPageParser {
                 "商户=$merchantTitle",
                 "金额=${amountMinorToText(amountMinor)}",
                 "类型=$transactionKindLabel"
-            )
+            ),
+            transactionTimeFromFallback = fallbackTimeText != null
         )
     }
 

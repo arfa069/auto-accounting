@@ -130,6 +130,161 @@ class BillSyncPipelineTest {
         assertEquals(2_000L, result.createdEntries.single().amountMinor)
     }
 
+    @Test
+    fun transientOcrEvidenceIsNotStoredWithPendingEntry() {
+        val result = BillSyncPipeline(parser = BillPageParser()).sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n测试商户\n¥12.34",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        assertEquals("", result.createdEntries.single().rawEvidenceText)
+        assertTrue(result.createdEntries.single().parsedFields.isNotEmpty())
+    }
+
+    @Test
+    fun paymentResultWithoutTimeMergesWithUniqueRecentNotification() {
+        val notification = notificationEntry(
+            id = "notification-1",
+            transactionTimeText = "2026-07-08 12:20"
+        )
+
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 13:10" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n¥35.90",
+            existingPendingEntries = listOf(notification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertEquals(1, result.mergedEntries.size)
+        assertEquals("notification-1", result.mergedEntries.single().id)
+        assertEquals("重复合并", result.mergedEntries.single().captureReasonLabel)
+    }
+
+    @Test
+    fun repeatedPaymentResultUsesPreviouslyMergedNotificationEvidence() {
+        val previouslyMergedNotification = notificationEntry(
+            id = "notification-1",
+            transactionTimeText = "2026-07-08 12:20"
+        ).copy(
+            captureReasonLabel = "重复合并",
+            parsedFields = listOf("证据来源=通知捕获", "证据来源=支付结果自动捕获")
+        )
+
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 13:10" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n¥35.90",
+            existingPendingEntries = listOf(previouslyMergedNotification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertEquals(1, result.mergedEntries.size)
+        assertEquals("notification-1", result.mergedEntries.single().id)
+        assertTrue(result.mergedEntries.single().parsedFields.contains("证据来源=通知捕获"))
+    }
+
+    @Test
+    fun paymentResultWithoutTimeStaysSuspectWhenRecentNotificationsAreAmbiguous() {
+        val notifications = listOf(
+            notificationEntry(
+                id = "notification-1",
+                transactionTimeText = "2026-07-08 12:20"
+            ),
+            notificationEntry(
+                id = "notification-2",
+                transactionTimeText = "2026-07-08 12:22"
+            )
+        )
+
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 13:10" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n¥35.90",
+            existingPendingEntries = notifications,
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        assertTrue(result.mergedEntries.isEmpty())
+        assertEquals(ConfidenceState.DUPLICATE_SUSPECT, result.createdEntries.single().confidence)
+    }
+
+    @Test
+    fun paymentResultOutsideRecentNotificationWindowIsNotAutoMerged() {
+        val notification = notificationEntry(
+            id = "notification-1",
+            transactionTimeText = "2026-07-08 12:20"
+        )
+
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 13:21" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n¥35.90",
+            existingPendingEntries = listOf(notification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        assertTrue(result.mergedEntries.isEmpty())
+    }
+
+    @Test
+    fun explicitPaymentTimeIsNotReplacedByRecentNotificationTime() {
+        val notification = notificationEntry(
+            id = "notification-1",
+            transactionTimeText = "2026-07-08 12:20"
+        )
+
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 12:25" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n交易时间 2026-07-08 12:25\n¥35.90",
+            existingPendingEntries = listOf(notification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        assertTrue(result.mergedEntries.isEmpty())
+        assertEquals("2026-07-08 12:25", result.createdEntries.single().transactionTimeText)
+        assertEquals(ConfidenceState.DUPLICATE_SUSPECT, result.createdEntries.single().confidence)
+    }
+
+    private fun notificationEntry(
+        id: String,
+        transactionTimeText: String
+    ): ReviewQueueEntry = ReviewQueueEntry(
+        id = id,
+        title = "未知来源",
+        amountMinor = 3_590,
+        transactionTimeText = transactionTimeText,
+        sourceLabel = "支付宝",
+        kindLabel = "支出",
+        captureReasonLabel = "通知捕获"
+    )
+
     private companion object {
         const val NOW = 1_783_468_800_000L
     }
