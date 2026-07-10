@@ -23,6 +23,10 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 15. [Persist Local-Mode Session Across App Restarts](./015-persist-local-mode-session-across-restarts.md)
 16. [实时捕获微信/支付宝支付结果并反馈记账状态](./016-cover-in-app-payment-message-capture-paths.md)
 
+## Supporting Lists
+
+- [可选真机验证清单](./OPTIONAL-VALIDATIONS.md)：记录因隐私或范围影响而默认不执行、需产品负责人另行决定的验证。
+
 ## Dependency Shape
 
 - Issue 1 unblocks all Phase 2 implementation work.
