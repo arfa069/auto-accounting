@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.billsync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BillPageParserTest {
@@ -35,5 +36,227 @@ class BillPageParserTest {
         assertEquals("地铁出行", entries[0].merchantTitle)
         assertEquals(600L, entries[0].amountMinor)
         assertEquals("支付宝余额", entries[0].fundingAccountLabel)
+    }
+
+    @Test
+    fun parsesAlipayPaymentMessageBoxRecord() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付信息
+                消息盒子
+                支付成功
+                商户：便利店
+                金额
+                ¥20.00
+                付款方式
+                支付宝余额
+                交易时间
+                2026-07-10 09:12
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("支付宝", entries.single().sourceLabel)
+        assertEquals("便利店", entries.single().merchantTitle)
+        assertEquals(2000L, entries.single().amountMinor)
+        assertEquals("支出", entries.single().transactionKindLabel)
+        assertEquals("支付宝余额", entries.single().fundingAccountLabel)
+        assertEquals("2026-07-10 09:12", entries.single().transactionTimeText)
+    }
+
+    @Test
+    fun parsesWechatPaymentRecordSurface() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                微信支付
+                账单详情
+                当前状态
+                支付成功
+                收款方
+                早餐店
+                金额
+                ¥7.50
+                付款方式
+                零钱
+                交易时间
+                2026年7月10日 08:05
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("早餐店", entries.single().merchantTitle)
+        assertEquals(750L, entries.single().amountMinor)
+        assertEquals("支出", entries.single().transactionKindLabel)
+        assertEquals("零钱", entries.single().fundingAccountLabel)
+        assertEquals("2026-07-10 08:05", entries.single().transactionTimeText)
+    }
+
+    @Test
+    fun parsesMerchantQrPaymentRecordSurface() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                账单详情
+                扫码支付
+                交易成功
+                收款方：门店
+                交易金额
+                ¥12.34
+                交易时间
+                2026-07-10 11:12
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("门店", entries.single().merchantTitle)
+        assertEquals(1234L, entries.single().amountMinor)
+        assertEquals("支出", entries.single().transactionKindLabel)
+    }
+
+    @Test
+    fun parsesAlipayBillDetailHeaderAsMerchant() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                账单详情
+                便利店订单
+                支出 ¥20.00
+                交易成功
+                支付时间
+                2026-07-10 09:12
+                付款方式
+                支付宝余额
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("便利店订单", entries.single().merchantTitle)
+        assertEquals(2000L, entries.single().amountMinor)
+        assertEquals("支出", entries.single().transactionKindLabel)
+    }
+
+    @Test
+    fun parsesWechatTransferAndRedPacketRecordSurfaces() {
+        val transfer = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                转账记录
+                转账给测试对象 ¥0.01
+                付款方式 零钱
+                交易时间 2026-07-10 10:01
+            """.trimIndent()
+        )
+        val redPacket = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                红包记录
+                收到测试对象的红包
+                ¥0.66
+                交易时间 2026-07-10 10:02
+            """.trimIndent()
+        )
+
+        assertEquals(1, transfer.size)
+        assertEquals("测试对象", transfer.single().merchantTitle)
+        assertEquals(1L, transfer.single().amountMinor)
+        assertEquals("支出", transfer.single().transactionKindLabel)
+        assertEquals(1, redPacket.size)
+        assertEquals("测试对象", redPacket.single().merchantTitle)
+        assertEquals(66L, redPacket.single().amountMinor)
+        assertEquals("收入", redPacket.single().transactionKindLabel)
+    }
+
+    @Test
+    fun ignoresUnsupportedOrPaymentInitiationSurfaces() {
+        val chat = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = "聊天\n消息\n微信支付助手\n今晚吃什么\n¥20.00\n2026-07-10 12:00"
+        )
+        val cashier = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = "支付宝\n收银台\n立即付款\n确认支付\n¥20.00\n2026-07-10 12:00"
+        )
+
+        assertTrue(chat.isEmpty())
+        assertTrue(cashier.isEmpty())
+    }
+
+    @Test
+    fun ignoresBalanceAmountWhenTransactionAmountIsAlsoVisible() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付信息
+                支付成功
+                商户：便利店
+                金额 ¥0.01
+                余额 ¥5.00
+                交易时间 2026-07-10 09:12
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals(1L, entries.single().amountMinor)
+    }
+
+    @Test
+    fun completedPaymentResultUsesSafeSourceTitleWhenCounterpartyIsMissing() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付信息
+                支付成功
+                金额 ¥20.00
+                交易时间 2026-07-10 09:12
+            """.trimIndent()
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("支付宝支付", entries.single().merchantTitle)
+    }
+
+    @Test
+    fun completedPaymentResultUsesCaptureTimeWhenPageHasNoTransactionTime() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n收款方：测试门店\n¥0.01",
+            fallbackTransactionTimeText = "2026-07-10 12:34"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals(1L, entries.single().amountMinor)
+        assertEquals("2026-07-10 12:34", entries.single().transactionTimeText)
+    }
+
+    @Test
+    fun observesSupportedPaymentRecordsAndBlockedPaymentInitiation() {
+        assertEquals(
+            BillSyncPageObservation.PaymentResult,
+            observeBillSyncPage(
+                source = BillSyncSource.Alipay,
+                pageText = """
+                    支付信息
+                    支付成功
+                    交易时间 2026-07-10 09:12
+                    金额 ¥20.00
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            BillSyncPageObservation.BlockedPaymentInitiation,
+            observeBillSyncPage(
+                source = BillSyncSource.Alipay,
+                pageText = "收银台\n立即付款\n确认支付\n¥20.00"
+            )
+        )
+        assertEquals(
+            BillSyncPageObservation.Ignored,
+            observeBillSyncPage(
+                source = BillSyncSource.WeChat,
+                pageText = "聊天\n消息\n微信支付助手\n今晚吃什么\n¥20.00"
+            )
+        )
     }
 }

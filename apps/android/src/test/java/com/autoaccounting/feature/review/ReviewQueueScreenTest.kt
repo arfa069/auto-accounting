@@ -37,6 +37,19 @@ class ReviewQueueScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun pendingNotificationNavigationOpensMatchingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                openPendingEntryId = "pending-lunch",
+                openPendingEntryRequestId = 1
+            )
+        }
+
+        composeRule.onNodeWithText("编辑待确认记录").assertIsDisplayed()
+    }
+
+    @Test
     fun confirmShowsUndoAndRestoresEntry() {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
@@ -291,9 +304,10 @@ class ReviewQueueScreenTest {
         completeBillSync(sessionController, BillSyncSource.WeChat)
         composeRule.onNodeWithText("关闭").performClick()
 
-        composeRule.onNodeWithText("试试连续监控").assertIsDisplayed()
-        composeRule.onNodeWithText("只观察支付相关页面，可随时关闭。").assertIsDisplayed()
-        composeRule.onNodeWithText("开启连续监控").performClick()
+        composeRule.onAllNodesWithText("开启自动记账").assertCountEquals(2)
+        composeRule.onNodeWithText("支付完成后自动识别结果页并生成待确认记录，可随时关闭。")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("enable-automatic-capture-after-sync").performClick()
 
         assertTrue(monitoringState.enabled)
     }
@@ -349,7 +363,6 @@ class ReviewQueueScreenTest {
     private companion object {
         const val NOW = 1_783_468_800_000L
         val healthyPermissions = ContinuousMonitoringPermissionHealth(
-            notificationListenerGranted = true,
             billSyncAccessibilityGranted = true
         )
     }

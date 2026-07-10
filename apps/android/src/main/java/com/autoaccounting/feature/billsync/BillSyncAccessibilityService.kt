@@ -7,17 +7,21 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
-import com.autoaccounting.feature.capture.NotificationListenerPermission
+import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.toBookkeepingResultNotification
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
 import com.autoaccounting.feature.monitoring.isContinuousMonitoringPackageAllowed
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class BillSyncAccessibilityService : AccessibilityService() {
@@ -41,8 +45,12 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
     }
 
+    private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
+
     @Volatile
     private var continuousMonitoringState = ContinuousMonitoringState()
+    private var automaticCaptureJob: Job? = null
+    private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -87,6 +95,10 @@ class BillSyncAccessibilityService : AccessibilityService() {
         packageName: String,
         pageText: String
     ) {
+        val source = BillSyncSource.fromPackageName(packageName) ?: return
+        val observation = observeBillSyncPage(source, pageText)
+        if (observation == BillSyncPageObservation.Ignored) return
+
         serviceScope.launch {
             runCatching {
                 BillSyncSessions.controller.submitBillPage(
@@ -116,19 +128,40 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
         if (!decision.shouldCapture) return
 
-        val source = BillSyncSource.fromPackageName(packageName) ?: return
-        serviceScope.launch {
+        automaticCaptureJob?.cancel()
+        automaticCaptureJob = serviceScope.launch {
+            delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+            automaticCaptureJob = null
+            val settledPageText = rootInActiveWindow
+                ?.takeIf { it.packageName?.toString() == packageName }
+                ?.collectVisibleText()
+                ?.takeIf { it.isNotBlank() }
+                ?: pageText
+            val refreshedPermissionHealth = currentContinuousMonitoringPermissionHealth()
+            val refreshedDecision = decideContinuousMonitoringCapture(
+                state = continuousMonitoringState,
+                event = ContinuousMonitoringEvent(
+                    packageName = packageName,
+                    screenText = settledPageText
+                ),
+                permissionHealth = refreshedPermissionHealth
+            )
+            if (!refreshedDecision.shouldCapture) return@launch
+            if (!automaticCaptureDebouncer.shouldProcess(packageName, settledPageText)) return@launch
+
+            val source = BillSyncSource.fromPackageName(packageName) ?: return@launch
             runCatching {
-                processor.process(source = source, pageText = pageText)
+                processor.processAutomatic(source = source, pageText = settledPageText)
+            }.onSuccess { result ->
+                result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
             }.onFailure { error ->
-                Log.w(TAG, "Continuous monitoring capture failed", error)
+                Log.w(TAG, "Automatic payment capture failed", error)
             }
         }
     }
 
     private fun currentContinuousMonitoringPermissionHealth(): ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(
-            notificationListenerGranted = NotificationListenerPermission.isGranted(this),
             billSyncAccessibilityGranted = BillSyncPermission.isGranted(this)
         )
 
@@ -143,6 +176,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     private companion object {
         const val TAG = "BillSyncService"
+        const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
     }
 }
 

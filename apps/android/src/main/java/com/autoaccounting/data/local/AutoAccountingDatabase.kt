@@ -30,7 +30,7 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun localSettingsDao(): LocalSettingsDao
 
     companion object {
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -84,6 +84,12 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                DefaultCategorizationRules.insertMissing(db)
             }
         }
     }

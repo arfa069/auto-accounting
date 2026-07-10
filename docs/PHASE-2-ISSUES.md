@@ -51,9 +51,9 @@ These issues are written as independently grabbable tracer bullets. Each issue s
 15. Persist local-mode session across app restarts
     - Blocked by: 14
     - User stories covered: local-only onboarding, restart resilience
-16. Cover in-app payment message capture paths
-    - Blocked by: 7, 8
-    - User stories covered: capture payment records that do not post usable system notifications
+16. Capture WeChat/Alipay payment results automatically and report bookkeeping status
+    - Builds on: 6, 8
+    - User stories covered: capture supported payment-result screens without manual bill sync, apply category suggestions, deduplicate sources, and create pending entries
 
 ## Issue 1: Baseline Audit And Phase 2 Risk Map
 

@@ -55,6 +55,69 @@ class DedupeEngineTest {
     }
 
     @Test
+    fun notificationAndAutomaticCaptureWithinTwoMinutesMerge() {
+        val notification = entry(
+            transactionTimeText = "2026-07-08 12:20",
+            captureReason = "通知捕获"
+        )
+        val automatic = entry(
+            id = "automatic-1",
+            transactionTimeText = "2026-07-08 12:22",
+            captureReason = "支付结果自动捕获"
+        )
+
+        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
+
+        assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
+        assertEquals(1, result.pendingEntries.size)
+    }
+
+    @Test
+    fun genericAutomaticTitleMergesWithNotificationFromSameTransaction() {
+        val notification = entry(
+            title = "午餐",
+            transactionTimeText = "2026-07-08 12:20",
+            captureReason = "通知捕获"
+        )
+        val automatic = entry(
+            id = "automatic-1",
+            title = "微信支付",
+            transactionTimeText = "2026-07-08 12:21",
+            captureReason = "支付结果自动捕获"
+        )
+
+        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
+
+        assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
+        assertEquals(1, result.pendingEntries.size)
+        assertTrue(
+            result.pendingEntries.single().parsedFields.contains(
+                "匹配原因=来源、金额、时间、类型一致且一方标题为通用占位"
+            )
+        )
+    }
+
+    @Test
+    fun differentSpecificTitlesStayDuplicateSuspectsAcrossCaptureSources() {
+        val notification = entry(
+            title = "午餐",
+            transactionTimeText = "2026-07-08 12:20",
+            captureReason = "通知捕获"
+        )
+        val automatic = entry(
+            id = "automatic-1",
+            title = "便利店",
+            transactionTimeText = "2026-07-08 12:21",
+            captureReason = "支付结果自动捕获"
+        )
+
+        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
+
+        assertEquals(DedupeMatchLevel.LOW_CONFIDENCE, result.matchLevel)
+        assertEquals(2, result.pendingEntries.size)
+    }
+
+    @Test
     fun differentAmountAndTimeAvoidsFalsePositive() {
         val existing = entry(amountMinor = 3590, transactionTimeText = "2026-07-08 12:20")
         val candidate = entry(

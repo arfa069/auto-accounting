@@ -27,6 +27,82 @@ class LocalPreferencesRepositoryTest {
     val instantTaskExecutorRule = InstantTaskExecutorRule()
 
     @Test
+    fun newDatabaseStartsWithEditableDefaultRules() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "default-rules-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(
+            context,
+            AutoAccountingDatabase::class.java,
+            databaseName
+        )
+            .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
+            .allowMainThreadQueries()
+            .build()
+
+        val rules = runBlocking { database.categorizationRuleDao().listRules() }
+
+        assertEquals(
+            DefaultCategorizationRules.rules.map { it.id }.toSet(),
+            rules.map { it.id }.toSet()
+        )
+        database.close()
+        context.deleteDatabase(databaseName)
+    }
+
+    @Test
+    fun editedAndDeletedDefaultRulesAreNotRestoredOnReopen() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "edited-default-rules-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val database = openDatabaseWithDefaults(context, databaseName)
+        val repository = LocalPreferencesRepository(database)
+        runBlocking {
+            val rules = repository.categorizationRules.first()
+                .filterNot { it.id == "default-shopping" }
+                .map { rule ->
+                    if (rule.id == "default-food") rule.copy(category = "购物") else rule
+                }
+            repository.replaceCategorizationRules(rules)
+        }
+        database.close()
+
+        val reopened = openDatabaseWithDefaults(context, databaseName)
+        val persistedRules = runBlocking {
+            LocalPreferencesRepository(reopened).categorizationRules.first()
+        }
+
+        assertFalse(persistedRules.any { it.id == "default-shopping" })
+        assertEquals("购物", persistedRules.first { it.id == "default-food" }.category)
+        reopened.close()
+        context.deleteDatabase(databaseName)
+    }
+
+    @Test
+    fun migrationSeedDoesNotOverwriteEditedRuleWithStableId() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            AutoAccountingDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val edited = DefaultCategorizationRules.rules
+            .first { it.id == "default-food" }
+            .copy(category = "购物", updatedAtEpochMillis = 99)
+
+        runBlocking {
+            database.categorizationRuleDao().upsertAll(listOf(edited))
+            DefaultCategorizationRules.insertMissing(database.openHelper.writableDatabase)
+            val rules = database.categorizationRuleDao().listRules()
+
+            assertEquals(7, rules.size)
+            assertEquals("购物", rules.first { it.id == "default-food" }.category)
+            assertEquals(99, rules.first { it.id == "default-food" }.updatedAtEpochMillis)
+        }
+
+        database.close()
+    }
+
+    @Test
     fun rulesAndSettingsSurviveDatabaseReopen() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "preferences-reopen-${System.nanoTime()}.db"
@@ -54,7 +130,6 @@ class LocalPreferencesRepositoryTest {
             )
             repository.updateContinuousMonitoringState(
                 ContinuousMonitoringState(
-                    billSyncCompleted = true,
                     enabled = true
                 )
             )
@@ -75,7 +150,6 @@ class LocalPreferencesRepositoryTest {
         assertEquals(20, persistedRule.updatedAtEpochMillis)
         assertTrue(persistedPreferences.aiSettings.aiConsentGranted)
         assertTrue(persistedPreferences.aiSettings.enhancedContextGranted)
-        assertTrue(persistedPreferences.continuousMonitoringState.billSyncCompleted)
         assertTrue(persistedPreferences.continuousMonitoringState.enabled)
 
         reopenedDatabase.close()
@@ -125,7 +199,7 @@ class LocalPreferencesRepositoryTest {
     }
 
     @Test
-    fun clearLocalDataDeletesRulesAndSettings() {
+    fun clearLocalDataRestoresDefaultRulesAndDeletesSettings() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -139,7 +213,10 @@ class LocalPreferencesRepositoryTest {
 
             repository.clearLocalData()
 
-            assertTrue(repository.categorizationRules.first().isEmpty())
+            assertEquals(
+                DefaultCategorizationRules.rules.map { it.id }.toSet(),
+                repository.categorizationRules.first().map { it.id }.toSet()
+            )
             assertFalse(repository.userPreferences.first().aiSettings.aiConsentGranted)
         }
 
@@ -147,7 +224,7 @@ class LocalPreferencesRepositoryTest {
     }
 
     @Test
-    fun monitoringPreferenceDoesNotEnableWithoutCompletedBillSync() {
+    fun monitoringPreferenceNoLongerRequiresCompletedBillSync() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -167,7 +244,7 @@ class LocalPreferencesRepositoryTest {
             repository.userPreferences.first()
         }
 
-        assertFalse(preferences.continuousMonitoringState.enabled)
+        assertTrue(preferences.continuousMonitoringState.enabled)
 
         database.close()
     }
@@ -180,6 +257,18 @@ class LocalPreferencesRepositoryTest {
         AutoAccountingDatabase::class.java,
         databaseName
     ).allowMainThreadQueries().build()
+
+    private fun openDatabaseWithDefaults(
+        context: Context,
+        databaseName: String
+    ): AutoAccountingDatabase = Room.databaseBuilder(
+        context,
+        AutoAccountingDatabase::class.java,
+        databaseName
+    )
+        .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
+        .allowMainThreadQueries()
+        .build()
 
     private fun sampleRule(
         id: String = "rule-1",

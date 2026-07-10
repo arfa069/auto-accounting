@@ -36,7 +36,9 @@ class BillSyncPipeline(
         source: BillSyncSource,
         pageText: String,
         existingPendingEntries: List<ReviewQueueEntry>,
-        capturedAtEpochMillis: Long
+        existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
+        capturedAtEpochMillis: Long,
+        captureReasonLabel: String = "账单同步"
     ): BillSyncResult {
         val successSteps = listOf(
             BillSyncStep.OpenSource,
@@ -46,8 +48,22 @@ class BillSyncPipeline(
             BillSyncStep.CreatePendingEntries,
             BillSyncStep.Completed
         )
-        val parsedEntries = parser.parse(source, pageText)
+        val parsedEntries = parser.parse(
+            source = source,
+            pageText = pageText,
+            fallbackTransactionTimeText = captureTimeFormatter(capturedAtEpochMillis)
+        )
         if (parsedEntries.isEmpty()) {
+            val errorMessage = when (observeBillSyncPage(source, pageText)) {
+                BillSyncPageObservation.PaymentResult ->
+                    "识别到支付结果页，但缺少明确金额或交易类型，未创建待确认记录"
+                BillSyncPageObservation.BlockedPaymentInitiation ->
+                    "当前页面像是付款或转账发起页，出于安全保护未采集；请打开账单、交易详情或支付信息页面"
+                BillSyncPageObservation.PaymentRecord ->
+                    "识别到支付记录页面，但缺少金额、时间、类型或对象，请打开完整交易详情页"
+                BillSyncPageObservation.Ignored ->
+                    "未识别到账单记录，请确认已打开对应账单页面"
+            }
             return BillSyncResult(
                 steps = listOf(
                     BillSyncStep.OpenSource,
@@ -58,22 +74,48 @@ class BillSyncPipeline(
                 createdEntries = emptyList(),
                 duplicateSkippedCount = 0,
                 summary = "未创建待确认记录",
-                errorMessage = "未识别到账单记录，请确认已打开对应账单页面"
+                errorMessage = errorMessage
             )
         }
         val createdEntries = mutableListOf<ReviewQueueEntry>()
         val mergedEntries = mutableListOf<ReviewQueueEntry>()
         var pendingEntries = existingPendingEntries
+        var ledgerDuplicateCount = 0
 
         parsedEntries
-            .map { parsed -> parsed.toPendingEntry(capturedAtEpochMillis) }
+            .map { parsed ->
+                parsed.toPendingEntry(
+                    capturedAtEpochMillis = capturedAtEpochMillis,
+                    captureReasonLabel = captureReasonLabel
+                )
+            }
             .forEach { candidate ->
-                val dedupeResult = DedupeEngine().addCandidate(pendingEntries, candidate)
+                val ledgerDedupeResult = DedupeEngine().addCandidate(
+                    existingLedgerEntries,
+                    candidate
+                )
+                if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
+                    ledgerDuplicateCount += 1
+                    return@forEach
+                }
+                val candidateAfterLedgerCheck = if (
+                    ledgerDedupeResult.matchLevel == DedupeMatchLevel.LOW_CONFIDENCE
+                ) {
+                    ledgerDedupeResult.pendingEntries.first { it.id == candidate.id }
+                } else {
+                    candidate
+                }
+                val dedupeResult = DedupeEngine().addCandidate(
+                    pendingEntries,
+                    candidateAfterLedgerCheck
+                )
                 pendingEntries = dedupeResult.pendingEntries
                 when (dedupeResult.matchLevel) {
                     DedupeMatchLevel.NONE,
                     DedupeMatchLevel.LOW_CONFIDENCE -> {
-                        createdEntries += dedupeResult.pendingEntries.first { it.id == candidate.id }
+                        createdEntries += dedupeResult.pendingEntries.first {
+                            it.id == candidateAfterLedgerCheck.id
+                        }
                     }
 
                     DedupeMatchLevel.HIGH_CONFIDENCE -> {
@@ -84,7 +126,7 @@ class BillSyncPipeline(
                     }
                 }
             }
-        val duplicateSkippedCount = mergedEntries.size
+        val duplicateSkippedCount = mergedEntries.size + ledgerDuplicateCount
 
         return BillSyncResult(
             steps = successSteps,
@@ -95,7 +137,10 @@ class BillSyncPipeline(
         )
     }
 
-    private fun ParsedBillEntry.toPendingEntry(capturedAtEpochMillis: Long): ReviewQueueEntry =
+    private fun ParsedBillEntry.toPendingEntry(
+        capturedAtEpochMillis: Long,
+        captureReasonLabel: String
+    ): ReviewQueueEntry =
         ReviewQueueEntry(
             id = stableId(),
             title = merchantTitle,
@@ -105,7 +150,7 @@ class BillSyncPipeline(
             fundingAccountLabel = fundingAccountLabel,
             sourceLabel = sourceLabel,
             kindLabel = transactionKindLabel,
-            captureReasonLabel = "账单同步",
+            captureReasonLabel = captureReasonLabel,
             confidence = ConfidenceState.HIGH,
             capturedAtEpochMillis = capturedAtEpochMillis,
             captureTimeText = captureTimeFormatter(capturedAtEpochMillis),

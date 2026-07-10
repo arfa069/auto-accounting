@@ -55,12 +55,26 @@ class DedupeEngine {
         )
     }
 
-    private fun ReviewQueueEntry.isHighConfidenceDuplicateOf(other: ReviewQueueEntry): Boolean =
-        sourceLabel == other.sourceLabel &&
-            amountMinor == other.amountMinor &&
-            kindLabel == other.kindLabel &&
-            transactionTimeText == other.transactionTimeText &&
-            normalizedTitle == other.normalizedTitle
+    private fun ReviewQueueEntry.isHighConfidenceDuplicateOf(other: ReviewQueueEntry): Boolean {
+        if (
+            sourceLabel != other.sourceLabel ||
+            amountMinor != other.amountMinor ||
+            kindLabel != other.kindLabel
+        ) {
+            return false
+        }
+
+        val exactTitleMatch = normalizedTitle == other.normalizedTitle
+        if (exactTitleMatch && transactionTimeText == other.transactionTimeText) {
+            return true
+        }
+
+        val isCrossCaptureMatch = captureReasonLabel != other.captureReasonLabel &&
+            transactionTimeText.minutesFrom(other.transactionTimeText)
+                ?.let { it <= CROSS_CAPTURE_WINDOW_MINUTES } == true
+        return isCrossCaptureMatch &&
+            (exactTitleMatch || hasGenericTitle || other.hasGenericTitle)
+    }
 
     private fun ReviewQueueEntry.isLowConfidenceDuplicateOf(other: ReviewQueueEntry): Boolean =
         sourceLabel == other.sourceLabel &&
@@ -78,7 +92,14 @@ class DedupeEngine {
             rawEvidenceText = listOf(rawEvidenceText, candidate.rawEvidenceText)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = "\n---\n"),
-            parsedFields = (parsedFields + candidate.parsedFields + "匹配原因=来源、金额、时间、类型、标题一致")
+            parsedFields = (
+                parsedFields + candidate.parsedFields +
+                    if (normalizedTitle == candidate.normalizedTitle) {
+                        "匹配原因=来源、金额、时间、类型、标题一致"
+                    } else {
+                        "匹配原因=来源、金额、时间、类型一致且一方标题为通用占位"
+                    }
+                )
                 .distinct()
         )
 
@@ -92,6 +113,9 @@ class DedupeEngine {
     private val ReviewQueueEntry.normalizedTitle: String
         get() = title.trim().lowercase()
 
+    private val ReviewQueueEntry.hasGenericTitle: Boolean
+        get() = normalizedTitle in GENERIC_TITLES
+
     private fun String.minutesFrom(other: String): Long? {
         val first = parseTransactionTime(this) ?: return null
         val second = parseTransactionTime(other) ?: return null
@@ -104,6 +128,8 @@ class DedupeEngine {
 
     private companion object {
         const val LOW_CONFIDENCE_WINDOW_MINUTES = 10
+        const val CROSS_CAPTURE_WINDOW_MINUTES = 2
+        val GENERIC_TITLES = setOf("未知来源", "微信支付", "支付宝支付")
         val transactionTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }

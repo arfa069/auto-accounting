@@ -19,6 +19,7 @@ enum class TransactionKind {
 
 enum class CaptureReason {
     NOTIFICATION,
+    ACCESSIBILITY_AUTO,
     BILL_SYNC,
     DUPLICATE_MERGE,
     MANUAL_SAMPLE

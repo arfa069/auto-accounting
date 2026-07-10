@@ -82,6 +82,8 @@ fun ReviewQueueScreen(
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
+    openPendingEntryId: String? = null,
+    openPendingEntryRequestId: Long = 0,
     billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
@@ -100,6 +102,8 @@ fun ReviewQueueScreen(
         billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
         onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
         onLaunchBillSyncSource = onLaunchBillSyncSource,
+        openPendingEntryId = openPendingEntryId,
+        openPendingEntryRequestId = openPendingEntryRequestId,
         billSyncSessionController = billSyncSessionController,
         continuousMonitoringState = continuousMonitoringState,
         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
@@ -119,6 +123,8 @@ fun ReviewQueueScreen(
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
+    openPendingEntryId: String? = null,
+    openPendingEntryRequestId: Long = 0,
     billSyncSessionController: BillSyncSessionController = BillSyncSessions.controller,
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
@@ -134,6 +140,12 @@ fun ReviewQueueScreen(
     var showPostBillSyncMonitoringPrompt by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(openPendingEntryRequestId, openPendingEntryId, state.pendingEntries) {
+        if (openPendingEntryRequestId > 0 && openPendingEntryId != null) {
+            editingEntry = state.pendingEntries.firstOrNull { it.id == openPendingEntryId }
+        }
+    }
 
     fun dispatch(action: ReviewQueueAction) {
         onStateChange(reduceReviewQueue(state, action))
@@ -171,12 +183,6 @@ fun ReviewQueueScreen(
                 reduceReviewQueue(currentState, ReviewQueueAction.AddPending(entry))
             }
         onStateChange(nextState)
-        onContinuousMonitoringStateChange(
-            reduceContinuousMonitoringState(
-                continuousMonitoringState,
-                ContinuousMonitoringAction.MarkBillSyncCompleted
-            )
-        )
         handledBillSyncSessionId = billSyncSessionState.sessionId
     }
 
@@ -223,14 +229,14 @@ fun ReviewQueueScreen(
                 !continuousMonitoringState.enabled,
             onEnableContinuousMonitoring = {
                 val nextMonitoringState = reduceContinuousMonitoringState(
-                    continuousMonitoringState.copy(billSyncCompleted = true),
+                    continuousMonitoringState,
                     ContinuousMonitoringAction.Enable(continuousMonitoringPermissionHealth)
                 )
                 onContinuousMonitoringStateChange(nextMonitoringState)
                 if (nextMonitoringState.enabled) {
                     showPostBillSyncMonitoringPrompt = false
                 } else {
-                    syncMessage = "请先完成连续监控所需权限"
+                    syncMessage = "请先授权自动记账无障碍服务"
                 }
             },
             onDismissContinuousMonitoringPrompt = {
@@ -425,11 +431,14 @@ private fun PostBillSyncMonitoringPrompt(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("试试连续监控", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("只观察支付相关页面，可随时关闭。", style = MaterialTheme.typography.bodyMedium)
+            Text("开启自动记账", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("支付完成后自动识别结果页并生成待确认记录，可随时关闭。", style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onEnable) {
-                    Text("开启连续监控")
+                Button(
+                    onClick = onEnable,
+                    modifier = Modifier.testTag("enable-automatic-capture-after-sync")
+                ) {
+                    Text("开启自动记账")
                 }
                 OutlinedButton(onClick = onDismiss) {
                     Text("暂不开启")

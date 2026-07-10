@@ -23,14 +23,18 @@ class ComplianceMaterialsTest {
             "用于识别微信、支付宝的收付款通知，生成待确认账目。",
             copies.getValue(PermissionExplanationId.NotificationListening).purpose
         )
-        val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
-        assertEquals("无障碍账单与监控", accessibilityCopy.title)
         assertEquals(
-            "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录。",
+            "用于通知待确认、分类建议、重复合并或识别失败结果。",
+            copies.getValue(PermissionExplanationId.ResultNotifications).purpose
+        )
+        val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
+        assertEquals("自动记账无障碍服务", accessibilityCopy.title)
+        assertEquals(
+            "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目。",
             accessibilityCopy.purpose
         )
         assertEquals(
-            "不读取聊天、消息，不发送消息，不发起付款或转账。",
+            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
             accessibilityCopy.boundary
         )
         assertEquals(
@@ -40,7 +44,7 @@ class ComplianceMaterialsTest {
 
         val storeNotes = AUTO_ACCOUNTING_COMPLIANCE.storeReviewNotes.associateBy { it.title }
         assertEquals(
-            "无障碍服务用于用户手动账单同步，或在用户开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发送消息，不发起付款或转账。",
+            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
             storeNotes.getValue("无障碍审核说明").body
         )
     }
@@ -72,7 +76,8 @@ class ComplianceMaterialsTest {
     }
 
     private fun projectRoot(): File {
-        return generateSequence(File(System.getProperty("user.dir"))) { current ->
+        val userDirectory = requireNotNull(System.getProperty("user.dir"))
+        return generateSequence(File(userDirectory)) { current ->
             current.parentFile?.absoluteFile
         }
             .first { it.resolve("settings.gradle.kts").exists() }

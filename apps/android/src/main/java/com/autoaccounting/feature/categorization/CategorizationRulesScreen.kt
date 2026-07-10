@@ -81,6 +81,8 @@ fun CategorizationRulesScreen(
     onDeleteLocalData: () -> Unit = {},
     notificationListenerAccessGranted: Boolean = false,
     onOpenNotificationListenerSettings: () -> Unit = {},
+    resultNotificationPermissionGranted: Boolean = false,
+    onRequestResultNotificationPermission: () -> Unit = {},
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
@@ -106,6 +108,8 @@ fun CategorizationRulesScreen(
         onDeleteLocalData = onDeleteLocalData,
         notificationListenerAccessGranted = notificationListenerAccessGranted,
         onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+        resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+        onRequestResultNotificationPermission = onRequestResultNotificationPermission,
         billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
         onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
         accountSession = accountSession,
@@ -136,6 +140,8 @@ fun CategorizationRulesScreen(
     onDeleteLocalData: () -> Unit = {},
     notificationListenerAccessGranted: Boolean = false,
     onOpenNotificationListenerSettings: () -> Unit = {},
+    resultNotificationPermissionGranted: Boolean = false,
+    onRequestResultNotificationPermission: () -> Unit = {},
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
@@ -223,6 +229,10 @@ fun CategorizationRulesScreen(
                 accessGranted = notificationListenerAccessGranted,
                 onOpenSettings = onOpenNotificationListenerSettings
             )
+            PermissionCenterResultNotificationItem(
+                accessGranted = resultNotificationPermissionGranted,
+                onRequestPermission = onRequestResultNotificationPermission
+            )
             PermissionCenterBillSyncItem(
                 accessGranted = billSyncAccessibilityAccessGranted,
                 onOpenSettings = onOpenBillSyncAccessibilitySettings
@@ -230,7 +240,6 @@ fun CategorizationRulesScreen(
             ContinuousMonitoringItem(
                 state = currentContinuousMonitoringState,
                 permissionHealth = continuousMonitoringPermissionHealth,
-                onOpenNotificationSettings = onOpenNotificationListenerSettings,
                 onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                 onStateChange = ::updateContinuousMonitoringState
             )
@@ -367,6 +376,48 @@ private fun PermissionCenterNotificationItem(
 }
 
 @Composable
+private fun PermissionCenterResultNotificationItem(
+    accessGranted: Boolean,
+    onRequestPermission: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("记账结果通知", fontWeight = FontWeight.SemiBold)
+            Text(
+                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(
+                    PermissionExplanationId.ResultNotifications
+                )
+            )
+            Text(
+                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (accessGranted) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+            if (!accessGranted) {
+                OutlinedButton(
+                    onClick = onRequestPermission,
+                    modifier = Modifier.testTag("result-notification-permission")
+                ) {
+                    Text("授权结果通知")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PermissionCenterBillSyncItem(
     accessGranted: Boolean,
     onOpenSettings: () -> Unit
@@ -461,14 +512,10 @@ private fun InternalBetaReadinessItem(
 private fun ContinuousMonitoringItem(
     state: ContinuousMonitoringState,
     permissionHealth: ContinuousMonitoringPermissionHealth,
-    onOpenNotificationSettings: () -> Unit,
     onOpenBillSyncAccessibilitySettings: () -> Unit,
     onStateChange: (ContinuousMonitoringState) -> Unit
 ) {
-    val startBlockReason = when {
-        !state.billSyncCompleted -> ContinuousMonitoringBlockReason.RequiresBillSyncFirst
-        else -> permissionHealth.firstBlockReason
-    }
+    val startBlockReason = permissionHealth.firstBlockReason
     val canStartMonitoring = startBlockReason == null
     val statusText = when {
         state.enabled && permissionHealth.isHealthy -> "当前状态：已开启"
@@ -487,14 +534,14 @@ private fun ContinuousMonitoringItem(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("高级监控", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("连续监控", fontWeight = FontWeight.SemiBold)
+            Text("自动记账", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("支付结果自动捕获", fontWeight = FontWeight.SemiBold)
             Text(
                 AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.ContinuousMonitoring),
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                "只处理账单/支付记录，不处理聊天、消息、付款发起或转账。",
+                "只处理支付结果和支付记录，不处理聊天、普通消息、付款发起或转账发送。",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -517,7 +564,7 @@ private fun ContinuousMonitoringItem(
                             )
                         }
                     ) {
-                        Text("关闭连续监控")
+                        Text("关闭自动记账")
                     }
                 } else {
                     Button(
@@ -531,16 +578,8 @@ private fun ContinuousMonitoringItem(
                         },
                         enabled = canStartMonitoring
                     ) {
-                        Text("开启连续监控")
+                        Text("开启自动记账")
                     }
-                }
-            }
-            if (!permissionHealth.notificationListenerGranted) {
-                OutlinedButton(
-                    onClick = onOpenNotificationSettings,
-                    modifier = Modifier.testTag("continuous-monitoring-notification-settings")
-                ) {
-                    Text("打开通知监听设置")
                 }
             }
             if (!permissionHealth.billSyncAccessibilityGranted) {
@@ -558,9 +597,7 @@ private fun ContinuousMonitoringItem(
 private fun continuousMonitoringBlockReasonLabel(
     reason: ContinuousMonitoringBlockReason
 ): String = when (reason) {
-    ContinuousMonitoringBlockReason.RequiresBillSyncFirst -> "请先完成一次手动账单同步"
-    ContinuousMonitoringBlockReason.RequiresNotificationListenerPermission -> "需要开启通知监听"
-    ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission -> "需要开启账单同步无障碍权限"
+    ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission -> "需要开启自动记账无障碍权限"
 }
 
 @Composable

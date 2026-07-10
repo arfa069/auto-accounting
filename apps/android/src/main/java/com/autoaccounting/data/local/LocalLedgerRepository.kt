@@ -11,6 +11,9 @@ class LocalLedgerRepository(
     val pendingEntries = database.pendingEntryDao().observePendingEntries()
     val ledgerEntries = database.ledgerEntryDao().observeLedgerEntries()
 
+    suspend fun listLedgerEntries(): List<LedgerEntryEntity> =
+        database.ledgerEntryDao().listLedgerEntries()
+
     fun recoverableIgnoredEntries(nowEpochMillis: Long) =
         database.ignoredEntryDao().observeRecoverable(nowEpochMillis)
 

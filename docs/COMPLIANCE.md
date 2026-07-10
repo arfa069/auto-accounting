@@ -41,8 +41,8 @@ Suggested rows:
 - Password hash: password login; required for account mode.
 - Device information: registered-device security, fraud prevention, SMS rate limits, configuration; required for account mode and SMS risk control.
 - Notification content from WeChat/Alipay payment notifications: create pending entries; required only after notification permission is enabled.
-- Bill page content from WeChat/Alipay: manual bill sync, or continuous monitoring after explicit opt-in.
-- Continuous monitoring observations: improve capture completeness; optional advanced mode.
+- Payment-result and payment-record page content from WeChat/Alipay: automatic capture after explicit opt-in, or user-started history backfill.
+- Automatic accessibility observations: create pending entries after payment completion; optional and user-controlled.
 - Ledger and pending-entry data: local bookkeeping; required for core bookkeeping.
 - AI categorization payload: cloud AI suggestions; optional.
 - Enhanced AI context: improve cloud AI accuracy; optional.
@@ -60,15 +60,20 @@ Notification listening:
 - Purpose: identify WeChat and Alipay payment notifications and generate pending entries.
 - It must not process unrelated notifications beyond what is necessary to identify payment activity.
 
-Accessibility bill sync:
-- Purpose: read WeChat and Alipay bill pages during user-started bill sync, and observe bill/payment-record pages when continuous monitoring is explicitly enabled.
-- The privacy policy must state that the app does not read chat/messages, send messages, initiate payments, or initiate transfers.
+Automatic-bookkeeping accessibility service:
+- Purpose: observe allowlisted WeChat and Alipay payment-result/payment-record pages after explicit opt-in, and read bill pages during user-started history backfill.
+- The privacy policy must state that the app does not read chats or ordinary messages, send messages, or initiate payments, transfers, or refunds.
 
-Continuous monitoring:
-- Advanced opt-in.
-- Purpose: observe payment-related pages to improve capture completeness.
+Automatic capture:
+- Explicit opt-in.
+- Purpose: observe supported payment-result and payment-record pages and create pending entries.
 - Must be closable at any time.
-- Must not be part of the default onboarding path.
+- Notification-listener access is not a prerequisite.
+
+Bookkeeping result notifications:
+- Purpose: report pending, categorization, dedupe, or failure outcomes after local processing.
+- Denial must not block local capture or persistence.
+- Lock-screen public content must omit amount, merchant, counterparty, and raw evidence.
 
 Cloud AI:
 - Disabled by default.
@@ -145,7 +150,7 @@ Local data deletion:
 High-risk areas:
 - Notification listening.
 - Accessibility service.
-- Continuous monitoring.
+- Automatic accessibility capture.
 - Cloud AI uploads.
 - AI categorization logs.
 - Account deletion and data deletion.
@@ -154,7 +159,7 @@ High-risk areas:
 Mitigations:
 - Use clear permission copy.
 - Provide structured privacy materials.
-- Keep continuous monitoring in advanced settings.
+- Keep automatic capture behind a clear user-controlled switch.
 - Show stepwise bill sync progress.
 - Default to local rules and keep cloud AI off.
 - Do not include ad or marketing tracking SDKs.

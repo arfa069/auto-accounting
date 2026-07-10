@@ -30,6 +30,7 @@ data class ThirdPartyService(
 
 enum class PermissionExplanationId {
     NotificationListening,
+    ResultNotifications,
     AccessibilityBillSync,
     ContinuousMonitoring,
     CloudAi,
@@ -83,8 +84,8 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         PersonalInformationItem(
             name = "微信/支付宝账单页内容",
-            purpose = "手动账单同步，或用户开启连续监控后补充漏记账目",
-            requiredState = "仅用户发起同步或开启连续监控后使用",
+            purpose = "开启自动记账后识别支付结果，或手动补充历史账目",
+            requiredState = "仅用户开启自动记账或发起手动同步后使用",
             processingMethod = "通过无障碍服务在设备上读取并解析"
         ),
         PersonalInformationItem(
@@ -138,16 +139,22 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             boundary = "只处理支付相关通知，不读取无关通知内容。"
         ),
         PermissionExplanation(
+            id = PermissionExplanationId.ResultNotifications,
+            title = "记账结果通知",
+            purpose = "用于通知待确认、分类建议、重复合并或识别失败结果。",
+            boundary = "未授权不影响本地采集；锁屏默认隐藏金额、商户和交易对方。"
+        ),
+        PermissionExplanation(
             id = PermissionExplanationId.AccessibilityBillSync,
-            title = "无障碍账单与监控",
-            purpose = "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录。",
-            boundary = "不读取聊天、消息，不发送消息，不发起付款或转账。"
+            title = "自动记账无障碍服务",
+            purpose = "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目。",
+            boundary = "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.ContinuousMonitoring,
-            title = "连续监控",
-            purpose = "开启后会持续观察支付相关页面，提高自动捕获完整度；可随时关闭。",
-            boundary = "高级可选模式，不进入首次默认引导。"
+            title = "自动记账",
+            purpose = "开启后会在支付完成时观察受支持的结果页并生成待确认记录；可随时关闭。",
+            boundary = "必须由用户明确开启，只观察支付结果和支付记录。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.CloudAi,
@@ -169,11 +176,11 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         StoreReviewNote(
             title = "无障碍审核说明",
-            body = "无障碍服务用于用户手动账单同步，或在用户开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发送消息，不发起付款或转账。"
+            body = "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
         ),
         StoreReviewNote(
-            title = "连续监控审核说明",
-            body = "连续监控是高级可选功能，用户可随时关闭，默认引导不强制开启。"
+            title = "自动记账审核说明",
+            body = "自动记账由用户明确开启，可随时关闭；所有捕获结果先进入待确认队列。"
         )
     )
 )

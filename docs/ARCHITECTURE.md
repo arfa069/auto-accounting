@@ -9,7 +9,7 @@ The Android app owns ledger truth. The first backend must not sync or store the 
 ```mermaid
 flowchart LR
   WeChat["WeChat / Alipay"] --> Notify["Notification Listener"]
-  WeChat --> A11y["Accessibility Bill Sync"]
+  WeChat --> A11y["Accessibility Auto Capture / Bill Sync"]
   Notify --> Capture["Capture Pipeline"]
   A11y --> Capture
   Capture --> Dedupe["Deduplication"]
@@ -36,7 +36,7 @@ Recommended modules:
 - `feature:ledger`: ledger list, search, filters, entry detail.
 - `feature:reports`: monthly overview, category share, category trend.
 - `feature:capture-notification`: notification listener integration.
-- `feature:capture-accessibility`: bill sync and continuous monitoring.
+- `feature:capture-accessibility`: automatic payment-result capture and manual bill sync.
 - `feature:categorization`: local rules and AI categorization client.
 - `feature:account`: login, registration, recovery, local mode, deletion.
 - `feature:settings`: profile, permission center, backup/export, compliance pages.
@@ -64,7 +64,7 @@ Sensitive local data:
 ## 4. Capture Pipeline
 
 Pipeline stages:
-1. Source event arrives from notification listener, manual bill sync, or continuous monitoring.
+1. Source event arrives from notification listener, automatic accessibility capture, or manual bill sync.
 2. Parser extracts candidate fields and raw evidence.
 3. Normalizer maps source-specific text into transaction kind, merchant/title, amount, time, funding account, and source.
 4. Deduplication compares against pending entries and ledger entries.
@@ -74,6 +74,7 @@ Pipeline stages:
 
 Key rule:
 - The capture pipeline never writes directly to confirmed ledger entries.
+- Initial local rules are seeded as editable Room records; migrations and first-install callbacks must not overwrite later user edits.
 
 ## 5. Deduplication
 
@@ -163,15 +164,17 @@ Account deletion:
 
 Permission center tracks:
 - Notification listener state.
-- Accessibility service state for bill sync.
-- Continuous monitoring state.
+- Bookkeeping result notification permission.
+- Accessibility service state for automatic capture and bill sync.
+- Automatic capture enabled state.
 - Cloud AI consent state.
 - Background keep-alive / auto-start guidance.
 
 Important boundaries:
 - Notification listener only creates pending entries from WeChat/Alipay payment notifications.
-- Accessibility bill sync only reads WeChat/Alipay bill pages when user starts sync.
-- Continuous monitoring is advanced opt-in and observes payment-related activity only.
+- Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual sync or notification-listener access.
+- Manual bill sync remains user-started and is not part of the normal payment flow.
+- Result notification permission is independent; denial must not prevent local capture or persistence.
 - The app must not read chat content, send messages, initiate payments, or initiate transfers.
 
 ## 10. Build And Verification Targets
@@ -190,6 +193,6 @@ Backend checks:
 Manual beta checks:
 - WeChat/Alipay notification capture on several domestic Android ROMs.
 - Manual bill sync with clear stepwise progress.
-- Continuous monitoring opt-in/off switch.
+- Automatic payment-result capture opt-in/off switch and result notifications.
 - Backup export/import.
 - Account deletion cooling-off and cancel flow.

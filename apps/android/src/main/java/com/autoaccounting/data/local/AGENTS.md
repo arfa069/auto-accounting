@@ -9,6 +9,7 @@
 - `pending_entries`、`ignored_entries` 与 `ledger_entries` 表示不同生命周期状态；状态转换应通过 Repository 完整执行，禁止只改 UI 状态。
 - 金额使用最小货币单位的整数；持久化枚举值视为稳定数据，重命名时必须考虑旧数据迁移。
 - Entity、DAO、Converter 和 Repository 的字段语义必须一致。删除或恢复数据时检查关联的分类、资金账户、规则与设置。
+- 初始分类规则必须作为 `categorization_rules` 真实记录初始化；升级不得覆盖用户编辑，也不得复活用户已删除的规则。
 - schema 变化必须递增 `SCHEMA_VERSION`、补充连续 Migration、在 Provider 注册，并提交新的 Room schema JSON。禁止用破坏性迁移绕过升级。
 
 ## 验证

@@ -222,7 +222,7 @@ class LocalLedgerRepositoryTest {
 
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(3, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(4, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
@@ -272,6 +272,7 @@ class LocalLedgerRepositoryTest {
         )
             .addMigrations(AutoAccountingDatabase.MIGRATION_1_2)
             .addMigrations(AutoAccountingDatabase.MIGRATION_2_3)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
 
@@ -294,7 +295,10 @@ class LocalLedgerRepositoryTest {
         assertNull(pending?.suggestedCategoryLabel)
 
         runBlocking {
-            assertTrue(migratedDatabase.categorizationRuleDao().listRules().isEmpty())
+            assertEquals(
+                DefaultCategorizationRules.rules.map { it.id }.toSet(),
+                migratedDatabase.categorizationRuleDao().listRules().map { it.id }.toSet()
+            )
             assertNull(migratedDatabase.localSettingsDao().getById())
         }
 

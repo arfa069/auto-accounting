@@ -110,6 +110,48 @@ class BillSyncCaptureProcessorTest {
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
     }
 
+    @Test
+    fun inAppPaymentRecordPersistsAsPendingReviewEntry() = runBlocking {
+        val result = processor.process(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付信息
+                消息盒子
+                支付成功
+                商户：便利店
+                金额 ¥20.00
+                付款方式 支付宝余额
+                交易时间 2026-07-10 09:12
+            """.trimIndent()
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entries = database.pendingEntryDao().listPendingEntries()
+        assertEquals(1, entries.size)
+        val entry = entries.single()
+        assertEquals("便利店", entry.merchantTitle)
+        assertEquals(2000L, entry.amountMinor)
+        assertEquals(CaptureReason.BILL_SYNC, entry.captureReason)
+        assertEquals(ConfidenceState.HIGH, entry.confidence)
+        assertTrue(entry.evidenceSummary.orEmpty().contains("支付信息"))
+    }
+
+    @Test
+    fun automaticPaymentResultAppliesDefaultRuleAndStaysPending() = runBlocking {
+        LocalPreferencesRepository(database).seedDefaultCategorizationRules()
+
+        val result = processor.processAutomatic(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n收款方：餐饮\n¥20.00"
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals(CaptureReason.ACCESSIBILITY_AUTO, entry.captureReason)
+        assertEquals("food", entry.suggestedCategoryId)
+        assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
+    }
+
     private companion object {
         const val NOW = 1_783_468_800_000L
     }

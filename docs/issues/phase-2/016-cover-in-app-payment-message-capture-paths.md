@@ -1,74 +1,195 @@
-# Cover In-App Payment Message Capture Paths
+# 实时捕获微信/支付宝支付结果并反馈记账状态
 
-## What to build
+## 当前状态
 
-Design and implement a controlled capture path for payment records that WeChat or Alipay keep inside in-app message centers or bill pages instead of posting to the Android notification shade.
+实现完成，等待真机支付场景验收。
 
-## Scope
+Issue 16 原方案把“用户点击账单同步，再手动打开交易详情”作为主要路径，只能补录历史账单，不符合自动记账的核心流程。此前已经完成的页面解析、去重和安全过滤可作为实现基础，但不能视为本 Issue 的功能验收结果。
 
-- Investigate the currently observable Alipay paths such as `消息 -> 消息盒子 -> 支付信息` and bill/detail pages for merchant QR / tap-to-pay payments.
-- Investigate the currently observable WeChat paths for red packets, transfers, QR payments, payment messages, and wallet/bill records.
-- Prefer the existing user-started bill-sync and continuous-monitoring boundaries before adding new permissions or surfaces.
-- Route parsed results through the existing review queue, dedupe, evidence, and confirmation flow.
-- Keep all payment records as pending entries; do not auto-confirm or initiate any payment, transfer, refund, or message action.
+## 目标
 
-## Non-goals
+用户一次性开启“自动记账”并授予无障碍权限后，正常使用微信或支付宝完成支付。支付成功页、交易结果页或随后自然出现的支付记录页包含可访问的交易信息时，应用应在后台被动读取当前页面，完成解析、去重、分类和持久化，并通过本应用的系统通知告知处理结果。
 
-- Do not bypass Android permission prompts, app security boundaries, or WeChat/Alipay account protections.
-- Do not scrape chats or unrelated messages.
-- Do not treat notification capture as complete coverage for payment methods that only appear inside the source app.
-- Do not upload raw payment evidence off-device unless the existing explicit AI/context consent path permits the exact payload.
+主流程不得要求用户返回本应用、点击“账单同步”或再次进入账单详情。
 
-## Target files or modules
+## 用户主流程
+
+1. 用户在本应用中明确开启“自动记账”，按引导授予无障碍权限；结果通知权限单独申请。
+2. 用户正常使用微信或支付宝付款，本应用不参与、不点击也不改变付款流程。
+3. 来源应用显示支付成功页、交易结果页或其他受支持的支付记录页面。
+4. 无障碍服务收到允许包名的窗口事件，等待页面内容短暂稳定后读取可访问节点文本和内容描述。
+5. 本地流水线依次执行页面识别、字段解析、标准化、去重和分类建议。
+6. 处理结果只能是以下之一：
+   - 信息完整且命中本地规则：创建一条带分类建议的待确认记录。
+   - 信息完整但未命中规则：创建一条未分类的待确认记录。
+   - 命中已有交易：合并证据或标记重复，不创建第二条待确认记录。
+   - 页面不受支持、字段不足或状态不明确：不猜测、不创建部分账目，记录脱敏失败原因。
+7. 本应用发布结果通知，例如“识别到 1 笔账目，待确认”或“已归类为餐饮，待确认”；点击通知进入对应待确认项。
+
+## 分类规则约束
+
+当前通知采集和无障碍账单采集在识别成功后都会读取本地分类规则，并在创建待确认记录前应用分类建议：
+
+- App 首次安装后必须在 `categorization_rules` 表中写入一组可见、可编辑的初始规则，不能以空规则表作为正常首次使用状态。
+- 规则可按商户/标题包含文本、来源应用和交易类型进行匹配。
+- 只使用已启用且分类非空的规则；多条规则命中时，优先级更高者优先，优先级相同时使用最近更新者。
+- 命中规则只预填待确认记录的分类，不执行确认入账。
+- 未命中规则时仍创建待确认记录，由用户补充或修改分类。
+- AI 分类仍只提供建议，不能绕过待确认队列。
+
+Issue 16 继续遵守现有 PRD 约束：所有自动捕获交易必须先进入待确认队列，只有用户确认后才能写入账本。
+
+## 初始规则初始化
+
+- 初始规则与用户新建规则存放在同一张 `categorization_rules` 表中，界面展示真实数据库记录，不维护不可见的硬编码规则副本。
+- 初始规则使用稳定 ID，并记录初始化版本；首次安装和现有用户升级时各执行一次幂等初始化。
+- 用户可以编辑、停用或删除初始规则；应用重启或普通版本升级不得覆盖用户修改，也不得复活用户已删除的规则。
+- “清除本地数据”属于恢复出厂状态，完成后应重新生成当前版本的初始规则。
+- 初始规则只提供分类建议，因此可以覆盖常见的餐饮、交通、购物、居住、医疗健康、工资和退款场景，但必须采用明确关键词或交易类型，避免一条过宽规则匹配全部支出或收入。
+- 当前已安装版本尚未实现规则初始化；界面显示“还没有分类规则”是现有实现缺口，不是目标产品行为。
+
+## 采集边界
+
+优先支持：
+
+- 微信、支付宝原生支付成功页和交易结果页。
+- 用户付款后来源应用自动展示的交易详情或支付凭证页。
+- 用户之后自然打开的支付宝 `消息 -> 消息盒子 -> 支付信息`、账单详情，以及微信支付记录、钱包账单、转账或红包记录页。
+- 已有系统支付通知采集作为独立并行来源，所有来源进入同一去重语义。
+
+默认不使用截图、录屏或 OCR。本 Issue 只读取 Android 无障碍节点树中当前可见且来源明确的字段；若 WebView、Canvas 或来源应用限制导致关键字段不可访问，应安全失败并记录为暂不支持，不扩大读取范围。
+
+## 权限与开关
+
+- “自动记账”是用户可随时关闭的持久化开关；关闭后无障碍事件不得进入解析流水线。
+- 无障碍权限是实时页面采集的必要条件，但不应要求用户先完成一次手动账单同步。
+- 通知监听权限只负责读取来源应用实际发布的支付通知，不应成为无障碍实时采集的前置条件。
+- 本应用发布处理结果需要独立的通知权限和通知渠道；Android 13 及以上未授权时，账目仍应正确持久化，只是不发布结果通知。
+- 权限被撤销、服务断开或 ROM 阻止后台运行时，应用应显示真实状态，不得仍显示“自动记账运行中”。
+
+## 安全护栏
+
+- 只接受 `com.tencent.mm` 和 `com.eg.android.AlipayGphone`。
+- 必须同时满足受支持页面特征、完成/成功状态和必要交易字段，不能只凭金额或“支付”单个关键词入账。
+- 明确排除聊天、普通消息、通讯录、付款发起、收银台、密码输入、转账发送、红包发送、退款发起等页面。
+- 服务只能被动观察，不执行点击、滚动、输入、返回、跳转、付款、转账、退款或发送消息。
+- 原始页面文本、金额、商户、对方和账号信息不得写入日志；失败诊断只记录来源、页面类型和缺失字段类别。
+- 页面连续刷新产生的多次事件必须经过稳定窗口、会话内防抖和持久化去重，不能重复通知或重复记账。
+
+## 结果通知
+
+- 建立低打扰的“记账结果”通知渠道，区分未分类待确认、已分类待确认、重复合并和识别失败。
+- 锁屏默认只显示通用结果，不显示金额、商户或交易对方；敏感详情只在用户解锁并进入应用后展示。
+- 结果通知点击后打开对应待确认项；任何结果通知都不能直接确认入账。
+- 同一交易被通知监听与无障碍先后识别时，只更新既有记录，避免重复成功通知。
+- 短时间内多笔交易可合并通知，防止页面事件抖动造成通知轰炸。
+
+## 非目标
+
+- 不自动操作微信或支付宝，也不绕过权限、账号保护或支付安全页面。
+- 不读取聊天、普通消息或与交易无关的页面。
+- 不把手动“账单同步”作为实时自动记账的必经步骤；它只保留为历史补录和故障兜底能力。
+- 不在本 Issue 中引入截图、OCR、悬浮窗或 VPN/网络抓包。
+- 不自动确认或写入账本，本地规则和 AI 都只能提供分类建议。
+- 不上传原始支付页面内容；现有明确授权的 AI 分类路径仍只发送其允许的最小字段。
+
+## 目标文件或模块
 
 - `apps/android/src/main/java/com/autoaccounting/feature/billsync`
 - `apps/android/src/main/java/com/autoaccounting/feature/monitoring`
+- `apps/android/src/main/java/com/autoaccounting/feature/capture`
+- `apps/android/src/main/java/com/autoaccounting/feature/categorization`
 - `apps/android/src/main/java/com/autoaccounting/feature/review`
+- `apps/android/src/main/java/com/autoaccounting/data/local`
+- `apps/android/src/main/AndroidManifest.xml`
+- `apps/android/schemas`
+- `apps/android/src/test/java/com/autoaccounting/data/local`
 - `apps/android/src/test/java/com/autoaccounting/feature/billsync`
 - `apps/android/src/test/java/com/autoaccounting/feature/monitoring`
+- `apps/android/src/test/java/com/autoaccounting/feature/review`
+- `docs/PRD.md`
+- `docs/ARCHITECTURE.md`
+- `docs/COMPLIANCE.md`
 - `docs/INTERNAL-BETA-RELEASE.md`
-- `docs/issues/phase-2/014-execute-internal-beta-device-matrix-and-capture-findings.md`
 
-## Acceptance criteria
+## 验收标准
 
-- [ ] Alipay merchant QR / tap-to-pay records visible in the in-app message or bill surface can be captured into the pending queue after explicit user action or opt-in monitoring.
-- [ ] WeChat red packet, transfer, and QR payment records visible in supported in-app payment surfaces can be captured into the pending queue after explicit user action or opt-in monitoring.
-- [ ] Unsupported, hidden, or account-protected surfaces fail with a clear in-app status and do not create partial or guessed entries.
-- [ ] Capture guardrails exclude chats, unrelated messages, payment initiation screens, and transfer-send flows.
-- [ ] Dedupe behavior handles overlap between notification capture and in-app bill/message capture without creating duplicate confirmed ledger entries.
-- [ ] Tests cover parser samples, unsupported-page failure, guardrail filtering, dedupe handoff, and review queue persistence.
+- [ ] 用户开启自动记账并授予无障碍权限后，将本应用留在后台即可完成受支持支付结果页的采集；过程中不需要点击“账单同步”。
+- [ ] 支付结果页稳定后，页面事件在合理时间内完成解析、去重、分类和持久化，并发布对应结果通知。
+- [ ] 支付宝商户扫码/碰一碰、转账，以及微信扫码支付、转账、红包等受支持结果页至少各有一条脱敏真机证据；不可访问的页面明确记录为不支持。
+- [ ] 所有识别成功的交易先进入待确认队列；命中本地规则时预填建议分类，未命中时保持未分类。
+- [ ] 全新安装及现有数据库首次升级后，分类规则页面能看到同一组初始规则；初始化重复执行不会创建重复规则。
+- [ ] 用户编辑、停用或删除初始规则后，App 重启和后续普通启动不会覆盖或重新创建这些规则。
+- [ ] 清除本地数据后恢复当前版本的初始规则，不保留清除前的用户修改。
+- [ ] 通知监听、支付结果页、消息盒子和账单详情对同一交易的重复采集不会生成第二条待确认记录或账本记录。
+- [ ] 聊天、普通消息、付款发起、密码输入和转账/红包发送页面不会创建、修改或确认任何账目。
+- [ ] 页面字段不足、状态不明、解析异常、权限撤销和服务中断均安全失败，不产生猜测记录。
+- [ ] 关闭自动记账后，后续微信/支付宝无障碍事件不再进入采集流水线。
+- [ ] Android 13 及以上拒绝结果通知权限时，采集和持久化仍正常，应用内可见通知未授权状态。
+- [ ] 锁屏通知默认不泄露金额、商户、交易对方或原始证据。
 
-## Acceptance tests
+## 验收测试
 
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.*"`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.review.*"`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.review.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
 
-## Manual verification
+测试至少覆盖页面稳定与防抖、成功/失败页面识别、字段缺失、初始规则首次写入与升级补齐、初始化幂等性、规则编辑/停用/删除持久化、规则命中与未命中、规则优先级、待确认持久化、跨来源去重、通知权限拒绝、通知脱敏、开关关闭和服务重建。
 
-1. On a controlled Android test device, grant only the permissions needed by the selected user-started sync or monitoring path.
-2. Complete one Alipay merchant QR or tap-to-pay transaction that appears in `消息盒子 -> 支付信息` but not the system notification shade.
-3. Run the supported capture path and verify exactly one pending entry is created with the correct amount and source.
-4. Complete one WeChat payment flow that does not post a usable system notification, then verify the supported in-app path can capture it or records a clear unsupported status.
-5. Open unrelated chat/message pages and verify no entries are created.
-6. Repeat a transaction already captured from notification and verify dedupe marks or merges it instead of producing a second confirmed ledger item.
+## 手工验证
 
-## Rollback or safety notes
+1. 全新安装后先确认分类规则页面已展示可编辑的初始规则，再开启自动记账、无障碍权限和结果通知权限，然后把本应用退到后台。
+2. 完成一笔支付宝商户扫码或碰一碰支付，不返回本应用，确认支付结果页自然触发一条正确的待确认通知。
+3. 分别验证支付宝转账、微信扫码支付、微信转账和微信红包的实际结果页；只记录脱敏后的来源、页面类型和处理状态。
+4. 打开同一交易的来源通知、消息盒子或账单详情，确认只合并证据，不重复记账或重复通知。
+5. 打开聊天、普通消息、付款发起、密码和转账/红包发送页，确认待确认数和账本数均不变化。
+6. 关闭自动记账后重复打开支付记录页，确认不再采集；重新开启后恢复受支持页面采集。
+7. 分别拒绝结果通知权限、撤销无障碍权限、锁屏和重启设备，验证持久化、状态提示与 MIUI 后台行为符合预期。
 
-- Keep any new accessibility or monitoring behavior behind explicit user action or opt-in settings.
-- Prefer narrow page/surface allowlists over broad text scanning.
-- If app UI structure changes or a source app blocks the observed path, fail closed and keep the issue status partial rather than weakening guardrails.
+## 回滚或安全说明
 
-## Verification record
+- 实时采集必须受持久化功能开关控制；出现误采集时可通过关闭开关立即停止，不影响已有账本。
+- 新页面识别采用窄白名单和完整字段校验；来源应用 UI 变化时宁可漏记，不得放宽到聊天或普通消息。
+- 分类规则异常或匹配错误只允许影响待确认项的建议分类，不能直接改变账本。
+- 若真机证明支付结果页关键字段不可通过无障碍访问，应保留通知监听和手动历史补录兜底，并另行评估 OCR，不在本 Issue 中静默扩大权限。
 
-- `2026-07-10`: Issue 14 real-device validation found that Alipay transfers can post system notifications, but Alipay merchant QR / tap-to-pay and observed WeChat payment flows may keep payment records only inside app message or bill surfaces. This issue tracks the follow-up non-notification capture path.
+## 产品决策
 
-## Discovered by
+已确认：所有自动捕获交易必须先进入待确认队列，本地规则和 AI 只提供分类建议。
+
+已确认：App 首次安装后应在本地数据库中存在可见、可编辑的初始分类规则，不能要求用户从空规则表开始。
+
+Issue 16 采用以下推荐默认值：
+
+1. **通知隐私**：锁屏默认隐藏金额和商户，解锁后点击通知查看详情。
+2. **手动账单同步定位**：保留为历史补录/故障兜底，但从自动记账主流程和连续监控前置条件中移除。
+3. **权限关系**：通知监听和无障碍实时采集互相独立，任一来源可单独工作，再由统一去重处理重叠交易。
+
+以上流程保持现有 PRD 和架构中的待确认约束，不引入自动确认入账能力。
+
+## 验证记录
+
+- `2026-07-10`：Issue 14 真机验证确认支付宝转账可能发布系统通知，但支付宝商户扫码/碰一碰及已观察到的微信支付流程可能只在应用内展示支付信息，因此需要非通知来源的实时采集。
+- `2026-07-10`：旧方案已完成账单详情/消息盒子解析样本、去重、安全过滤、单元测试和 Release 构建，并安装到 Xiaomi 真机；这些结果仅作为解析基础保留。
+- `2026-07-10`：真机操作暴露旧方案仍要求用户点击“账单同步”并手动进入交易详情，与自动记账主流程冲突；Issue 16 据此重新规划，旧方案不再作为验收路径，真机验收暂停到产品决策确认之后。
+- `2026-07-10`：确认继续采用现有 PRD 的待确认边界；本地分类规则只预填建议分类，所有自动捕获交易均需用户确认后才能进入账本。
+- `2026-07-10`：确认分类规则不应以空表开始；初始规则必须作为本地数据库记录随首次安装初始化，并允许用户查看、编辑、停用和删除。
+- `2026-07-10`：完成 Room `3 -> 4` 迁移和新库初始化，七条初始规则作为 `categorization_rules` 真实记录写入；初始化使用稳定 ID 和 `INSERT OR IGNORE`，普通启动不会覆盖或复活用户修改、停用或删除的规则，清除本地数据会恢复当前默认规则。
+- `2026-07-10`：完成无障碍支付结果自动捕获链路。自动记账只依赖用户开关和无障碍权限，不再要求先执行手动账单同步或开启通知监听；页面稳定后重新读取当前节点树，再执行解析、分类建议、待确认持久化和防抖。
+- `2026-07-10`：完成独立的“记账结果”通知权限、低打扰通知渠道、锁屏脱敏内容和待确认项导航；拒绝通知权限不会阻断本地采集。通知监听、无障碍捕获和已入账记录采用统一去重，通用页面标题只在跨采集来源且金额、时间、类型一致时合并。
+- `2026-07-10`：`.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` 与签名 `.\gradlew.bat --no-daemon :apps:android:assembleRelease` 通过，Release APK 通过单签名 v2 校验，并使用 `adb install -r` 成功覆盖安装到 Xiaomi 设备且保留现有数据。真机已确认七条初始规则可见、自动记账可开启且无障碍服务保持绑定；结果通知系统授权和真实支付结果页仍待逐项验收。
+- `2026-07-10`：Xiaomi 系统结果通知权限已由用户选择“始终允许”，`POST_NOTIFICATIONS` 状态复核为已授权；真实微信/支付宝支付结果页仍待验收。
+
+## 来源
 
 - Issue 14: Execute Internal Beta Device Matrix And Capture Findings
 
-## Blocked by
+## 依赖
 
-- Issue 7: Wire User Started Bill Sync Permission And Service Path
-- Issue 8: Wire Continuous Monitoring Service Boundary And Guardrails
+- 基于 Issue 6 已有的支付通知采集和 Issue 8 已有的持续监控服务边界。
+- 本 Issue 将修正 Issue 8 中“必须先完成手动账单同步”和“通知监听必须健康”的启动前置条件。
+- 保持现有 PRD、架构和模块规则中的“采集结果只进入待确认队列”约束。
+- 初始规则初始化需要补充数据库初始化版本状态；实现时必须处理现有用户的一次性升级，并避免覆盖用户规则。

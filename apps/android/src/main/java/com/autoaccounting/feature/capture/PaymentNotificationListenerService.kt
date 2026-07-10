@@ -32,11 +32,15 @@ class PaymentNotificationListenerService : NotificationListenerService() {
             preferencesRepository = LocalPreferencesRepository(database)
         )
     }
+    private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val event = sbn.toPaymentNotificationEvent()
         serviceScope.launch {
-            runCatching { processor.process(event) }
+            runCatching { processor.processWithResult(event) }
+                .onSuccess { result ->
+                    result?.notification?.let(resultNotifier::notify)
+                }
                 .onFailure { error ->
                     Log.w(TAG, "Payment notification capture failed", error)
                 }

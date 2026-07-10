@@ -1,8 +1,10 @@
 package com.autoaccounting.feature.review
 
 import com.autoaccounting.data.local.CaptureReason
+import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.IgnoreReason
 import com.autoaccounting.data.local.IgnoredEntryEntity
+import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
@@ -27,6 +29,20 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     rawEvidenceText = evidenceSummary.orEmpty(),
     parsedFields = parsedFieldsText.decodeParsedFields()
 )
+
+internal fun LedgerEntryEntity.toReviewEntryForDedupe(zoneId: ZoneId): ReviewQueueEntry =
+    ReviewQueueEntry(
+        id = id,
+        title = merchantTitle,
+        amountMinor = amountMinor,
+        transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
+        sourceLabel = source.toLabel(),
+        kindLabel = transactionKind.toLabel(),
+        captureReasonLabel = "已入账",
+        confidence = ConfidenceState.HIGH,
+        capturedAtEpochMillis = confirmedAtEpochMillis,
+        captureTimeText = formatReviewDateTime(confirmedAtEpochMillis, zoneId)
+    )
 
 internal fun IgnoredEntryEntity.toReviewIgnoredEntry(zoneId: ZoneId): ReviewQueueIgnoredEntry =
     ReviewQueueIgnoredEntry(
@@ -153,12 +169,14 @@ private fun String.toTransactionKind(): TransactionKind = when (trim()) {
 
 private fun CaptureReason.toLabel(): String = when (this) {
     CaptureReason.NOTIFICATION -> "通知捕获"
+    CaptureReason.ACCESSIBILITY_AUTO -> "支付结果自动捕获"
     CaptureReason.BILL_SYNC -> "账单同步"
     CaptureReason.DUPLICATE_MERGE -> "重复合并"
     CaptureReason.MANUAL_SAMPLE -> "手动样例"
 }
 
 private fun String.toCaptureReason(): CaptureReason = when (trim()) {
+    "支付结果自动捕获" -> CaptureReason.ACCESSIBILITY_AUTO
     "账单同步" -> CaptureReason.BILL_SYNC
     "重复合并" -> CaptureReason.DUPLICATE_MERGE
     "手动样例" -> CaptureReason.MANUAL_SAMPLE

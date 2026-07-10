@@ -7,171 +7,179 @@ import org.junit.Test
 
 class ContinuousMonitoringStateTest {
     @Test
-    fun monitoringCannotBeEnabledUntilBillSyncAndPermissionsAreHealthy() {
-        val blocked = reduceContinuousMonitoringState(
+    fun automaticCaptureRequiresAccessibilityButNotBillSyncOrNotificationListener() {
+        val enabled = reduceContinuousMonitoringState(
             ContinuousMonitoringState(),
-            ContinuousMonitoringAction.Enable(healthyPermissions)
-        )
-
-        assertFalse(blocked.enabled)
-        assertEquals(ContinuousMonitoringBlockReason.RequiresBillSyncFirst, blocked.blockReason)
-
-        val missingNotification = reduceContinuousMonitoringState(
-            ContinuousMonitoringState(billSyncCompleted = true),
             ContinuousMonitoringAction.Enable(
                 ContinuousMonitoringPermissionHealth(
-                    notificationListenerGranted = false,
                     billSyncAccessibilityGranted = true
                 )
             )
-        )
-        assertFalse(missingNotification.enabled)
-        assertEquals(
-            ContinuousMonitoringBlockReason.RequiresNotificationListenerPermission,
-            missingNotification.blockReason
-        )
-
-        val missingAccessibility = reduceContinuousMonitoringState(
-            ContinuousMonitoringState(billSyncCompleted = true),
-            ContinuousMonitoringAction.Enable(
-                ContinuousMonitoringPermissionHealth(
-                    notificationListenerGranted = true,
-                    billSyncAccessibilityGranted = false
-                )
-            )
-        )
-        assertFalse(missingAccessibility.enabled)
-        assertEquals(
-            ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission,
-            missingAccessibility.blockReason
-        )
-
-        val enabled = reduceContinuousMonitoringState(
-            ContinuousMonitoringState(billSyncCompleted = true),
-            ContinuousMonitoringAction.Enable(healthyPermissions)
         )
 
         assertTrue(enabled.enabled)
         assertEquals(null, enabled.blockReason)
-    }
 
-    @Test
-    fun monitoringCanBeDisabledAtAnyTime() {
-        val enabled = ContinuousMonitoringState(
-            billSyncCompleted = true,
-            enabled = true
-        )
-
-        val disabled = reduceContinuousMonitoringState(enabled, ContinuousMonitoringAction.Disable)
-
-        assertFalse(disabled.enabled)
-    }
-
-    @Test
-    fun monitoringStopsWhenPermissionHealthBecomesUnhealthy() {
-        val enabled = ContinuousMonitoringState(
-            billSyncCompleted = true,
-            enabled = true
-        )
-
-        val disabled = reduceContinuousMonitoringState(
-            enabled,
-            ContinuousMonitoringAction.RefreshPermissionHealth(
+        val blocked = reduceContinuousMonitoringState(
+            ContinuousMonitoringState(),
+            ContinuousMonitoringAction.Enable(
                 ContinuousMonitoringPermissionHealth(
-                    notificationListenerGranted = false,
-                    billSyncAccessibilityGranted = true
+                    billSyncAccessibilityGranted = false
                 )
             )
         )
 
-        assertFalse(disabled.enabled)
+        assertFalse(blocked.enabled)
         assertEquals(
-            ContinuousMonitoringBlockReason.RequiresNotificationListenerPermission,
-            disabled.blockReason
+            ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission,
+            blocked.blockReason
         )
     }
 
     @Test
-    fun monitoringOnlyKeepsPaymentHistorySurfaces() {
-        val state = ContinuousMonitoringState(billSyncCompleted = true, enabled = true)
+    fun automaticCaptureCanBeDisabledAndStopsWhenAccessibilityIsRevoked() {
+        val enabled = ContinuousMonitoringState(enabled = true)
 
-        val payment = decideContinuousMonitoringCapture(
-            state = state,
-            event = ContinuousMonitoringEvent(
-                packageName = "com.tencent.mm",
-                screenText = "微信支付 账单 2026-07-08 12:20 午餐 支出 ¥35.90"
-            ),
-            permissionHealth = healthyPermissions
-        )
-        val chat = decideContinuousMonitoringCapture(
-            state = state,
-            event = ContinuousMonitoringEvent(
-                packageName = "com.tencent.mm",
-                screenText = "聊天 消息 微信支付助手"
-            ),
-            permissionHealth = healthyPermissions
-        )
-        val paymentInitiation = decideContinuousMonitoringCapture(
-            state = state,
-            event = ContinuousMonitoringEvent(
-                packageName = "com.eg.android.AlipayGphone",
-                screenText = "支付宝 收银台 立即付款 确认支付"
-            ),
-            permissionHealth = healthyPermissions
-        )
-        val transfer = decideContinuousMonitoringCapture(
-            state = state,
-            event = ContinuousMonitoringEvent(
-                packageName = "com.tencent.mm",
-                screenText = "转账给 小明 ¥20.00"
-            ),
-            permissionHealth = healthyPermissions
-        )
-        val otherPackage = decideContinuousMonitoringCapture(
-            state = state,
-            event = ContinuousMonitoringEvent(
-                packageName = "com.example.chat",
-                screenText = "账单 2026-07-08 12:20 午餐 支出 ¥35.90"
-            ),
-            permissionHealth = healthyPermissions
+        assertFalse(
+            reduceContinuousMonitoringState(enabled, ContinuousMonitoringAction.Disable).enabled
         )
 
-        assertEquals(ContinuousMonitoringObservation.PaymentRelated, payment.observation)
-        assertEquals("com.tencent.mm", payment.packageName)
+        val revoked = reduceContinuousMonitoringState(
+            enabled,
+            ContinuousMonitoringAction.RefreshPermissionHealth(
+                ContinuousMonitoringPermissionHealth(
+                    billSyncAccessibilityGranted = false
+                )
+            )
+        )
+        assertFalse(revoked.enabled)
+        assertEquals(
+            ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission,
+            revoked.blockReason
+        )
+    }
+
+    @Test
+    fun monitoringAllowsPaymentHistoryAndResultSurfacesWithoutManualSync() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val history = decide(
+            state,
+            "com.tencent.mm",
+            "微信支付 账单 2026-07-08 12:20 午餐 支出 ¥35.90"
+        )
+        val result = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            "支付成功 ¥12.34 收款方 测试门店"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, history.observation)
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, result.observation)
+    }
+
+    @Test
+    fun monitoringKeepsChatsAndPaymentInitiationSurfacesDenied() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val chat = decide(state, "com.tencent.mm", "聊天 消息 微信支付助手")
+        val cashier = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            "支付宝 收银台 立即付款 ¥20.00 确认支付"
+        )
+        val transferSend = decide(
+            state,
+            "com.tencent.mm",
+            "转账给 测试对象 转账金额 ¥20.00 添加转账说明"
+        )
+
         assertEquals(ContinuousMonitoringObservation.Ignored, chat.observation)
-        assertEquals(ContinuousMonitoringObservation.Ignored, paymentInitiation.observation)
-        assertEquals(ContinuousMonitoringObservation.Ignored, transfer.observation)
-        assertEquals(ContinuousMonitoringObservation.Ignored, otherPackage.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, cashier.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, transferSend.observation)
     }
 
     @Test
-    fun monitoringDecisionIsDisabledWhenStateOrPermissionsAreUnhealthy() {
-        val event = ContinuousMonitoringEvent(
-            packageName = "com.tencent.mm",
-            screenText = "微信支付 账单 2026-07-08 12:20 午餐 支出 ¥35.90"
+    fun monitoringAllowsPaymentMessageCenterAndCompletedTransfer() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val paymentMessage = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            "消息 消息盒子 支付信息 支付成功 商户 金额 ¥20.00 交易时间 2026-07-10 09:12"
+        )
+        val transferResult = decide(
+            state,
+            "com.tencent.mm",
+            "转账成功 ¥0.01 对方 测试对象"
+        )
+        val genericMessage = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            "消息 朋友消息提醒 你收到一条聊天消息"
+        )
+        val resultWithNavigationChrome = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            "支付成功 ¥20.00 首页 消息 我的"
+        )
+        val completedTransferInsideChat = decide(
+            state,
+            "com.tencent.mm",
+            "聊天记录 转账成功 ¥20.00 发送消息"
         )
 
-        val disabledState = decideContinuousMonitoringCapture(
-            state = ContinuousMonitoringState(billSyncCompleted = true, enabled = false),
-            event = event,
-            permissionHealth = healthyPermissions
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, paymentMessage.observation)
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, transferResult.observation)
+        assertEquals(
+            ContinuousMonitoringObservation.PaymentRelated,
+            resultWithNavigationChrome.observation
+        )
+        assertEquals(ContinuousMonitoringObservation.Ignored, genericMessage.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, completedTransferInsideChat.observation)
+    }
+
+    @Test
+    fun monitoringRejectsOtherPackagesAndMissingAccessibility() {
+        val eventText = "支付成功 ¥12.34"
+        val otherPackage = decide(
+            ContinuousMonitoringState(enabled = true),
+            "com.example.chat",
+            eventText
         )
         val missingPermission = decideContinuousMonitoringCapture(
-            state = ContinuousMonitoringState(billSyncCompleted = true, enabled = true),
-            event = event,
+            state = ContinuousMonitoringState(enabled = true),
+            event = ContinuousMonitoringEvent("com.tencent.mm", eventText),
             permissionHealth = ContinuousMonitoringPermissionHealth(
-                notificationListenerGranted = true,
                 billSyncAccessibilityGranted = false
             )
         )
 
-        assertEquals(ContinuousMonitoringObservation.Disabled, disabledState.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, otherPackage.observation)
         assertEquals(ContinuousMonitoringObservation.Disabled, missingPermission.observation)
     }
 
+    @Test
+    fun screenDebouncerSuppressesImmediateDuplicateSnapshots() {
+        var now = 1_000L
+        val debouncer = PaymentScreenCaptureDebouncer(clock = { now })
+
+        assertTrue(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))
+        assertFalse(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))
+
+        now += 30_001
+        assertTrue(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))
+    }
+
+    private fun decide(
+        state: ContinuousMonitoringState,
+        packageName: String,
+        screenText: String
+    ): ContinuousMonitoringCaptureDecision = decideContinuousMonitoringCapture(
+        state = state,
+        event = ContinuousMonitoringEvent(packageName, screenText),
+        permissionHealth = healthyPermissions
+    )
+
     private companion object {
         val healthyPermissions = ContinuousMonitoringPermissionHealth(
-            notificationListenerGranted = true,
             billSyncAccessibilityGranted = true
         )
     }

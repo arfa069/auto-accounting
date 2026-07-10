@@ -16,8 +16,8 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 ## 3. Core Decisions
 
-- Observe WeChat and Alipay through notification listening and accessibility-based bill-page reading.
-- Default to user-started bill sync; continuous monitoring is an advanced opt-in mode.
+- Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
+- Automatic capture is the primary flow after explicit opt-in; user-started bill sync remains a history backfill and fallback path.
 - All automatically captured transactions first become pending entries.
 - The ledger is local-first; future cloud sync is reserved but not implemented in the first backend.
 - The first backend supports account, registered device, cloud configuration, AI categorization proxy, and AI categorization logs.
@@ -49,9 +49,9 @@ Core jobs:
 Sources:
 - WeChat notifications.
 - Alipay notifications.
-- WeChat bill pages through accessibility bill sync.
-- Alipay bill pages through accessibility bill sync.
-- Optional continuous monitoring of payment-related pages.
+- WeChat payment-result and payment-record pages after automatic capture is enabled.
+- Alipay payment-result and payment-record pages after automatic capture is enabled.
+- User-started accessibility bill sync for history backfill.
 
 Capture output:
 - Pending entries only.
@@ -123,6 +123,7 @@ Charts:
 
 Rules:
 - Local categorization rules run before AI.
+- A new installation starts with visible, editable local rules for common high-confidence categories; these records are stored in the same local rules table as user-created rules.
 - Users can save a correction as a rule when confirming a pending entry.
 - The app asks before saving a correction as a durable rule.
 - Rule management page includes rule list and simple rule form:
@@ -185,8 +186,9 @@ Backend limits:
 
 Permission center first screen shows:
 - Notification listening.
-- Accessibility bill sync.
-- Continuous monitoring.
+- Bookkeeping result notifications.
+- Automatic-bookkeeping accessibility service.
+- Automatic capture switch.
 - Cloud AI authorization.
 - Background keep-alive / auto-start suggestion.
 
@@ -199,8 +201,9 @@ Each permission item shows:
 
 Permission copy:
 - Notification listening: "用于识别微信、支付宝的收付款通知，生成待确认账目".
-- Accessibility bill sync: "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发起付款或转账".
-- Continuous monitoring: "开启后会持续观察支付相关页面，提高自动捕获完整度；可随时关闭".
+- Bookkeeping result notifications: "用于通知待确认、分类建议、重复合并或识别失败结果；未授权不影响本地采集".
+- Automatic-bookkeeping accessibility service: "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目；不读取聊天或普通消息，不发起付款、转账或退款".
+- Automatic capture: "开启后会在支付完成时观察受支持的结果页并生成待确认记录；可随时关闭".
 - Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
 - Background keep-alive: "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同".
 
@@ -217,7 +220,7 @@ Main navigation:
 
 Onboarding:
 - Progressive onboarding.
-- Users are introduced to account setup, notification access, bill sync, continuous monitoring, and cloud AI only when relevant.
+- Users are introduced to account setup, payment notification access, result notifications, automatic capture, manual history backfill, and cloud AI only when relevant.
 
 Login first screen:
 - Cat companion.
@@ -286,6 +289,7 @@ Core metrics:
 Supporting metrics:
 - Review queue completion rate.
 - Manual bill sync completion and failure reasons.
+- Automatic payment-result capture success, failure, and dedupe outcomes.
 - Swipe confirm/ignore undo rate.
 - AI categorization opt-in rate.
 - AI suggestion acceptance rate.

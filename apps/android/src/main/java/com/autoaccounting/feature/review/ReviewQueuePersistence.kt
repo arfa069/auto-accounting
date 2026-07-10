@@ -30,6 +30,13 @@ class ReviewQueuePersistence(
         }
     }
 
+    suspend fun ledgerEntriesForDedupe(): List<ReviewQueueEntry> =
+        repository.listLedgerEntries().map { it.toReviewEntryForDedupe(zoneId) }
+
+    suspend fun ensureSystemCategories() {
+        repository.seedSystemCategories()
+    }
+
     suspend fun persistTransition(previous: ReviewQueueState, next: ReviewQueueState) {
         val previousPendingIds = previous.pendingEntries.map { it.id }.toSet()
         val nextPendingIds = next.pendingEntries.map { it.id }.toSet()

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
+import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
@@ -57,20 +59,39 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
     private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
+    private val resultNotificationPermissionGranted = mutableStateOf(false)
     private val permissionStateLoaded = mutableStateOf(false)
+    private val reviewNavigationRequest = mutableStateOf(0L)
+    private val pendingEntryNavigationId = mutableStateOf<String?>(null)
+    private val requestResultNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        resultNotificationPermissionGranted.value = granted
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleNavigationIntent(intent)
         setContent {
             AutoAccountingApp(
                 notificationListenerAccessGranted = notificationListenerAccessGranted.value,
                 onOpenNotificationListenerSettings = ::openNotificationListenerSettings,
                 billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
                 onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
+                resultNotificationPermissionGranted = resultNotificationPermissionGranted.value,
+                onRequestResultNotificationPermission = ::requestResultNotificationPermission,
                 onLaunchBillSyncSource = ::launchBillSyncSource,
-                permissionStateLoaded = permissionStateLoaded.value
+                permissionStateLoaded = permissionStateLoaded.value,
+                reviewNavigationRequest = reviewNavigationRequest.value,
+                pendingEntryNavigationId = pendingEntryNavigationId.value
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNavigationIntent(intent)
     }
 
     override fun onResume() {
@@ -78,6 +99,8 @@ class MainActivity : ComponentActivity() {
         notificationListenerAccessGranted.value =
             NotificationListenerPermission.isGranted(this)
         billSyncAccessibilityAccessGranted.value = BillSyncPermission.isGranted(this)
+        resultNotificationPermissionGranted.value =
+            BookkeepingResultNotificationPermission.isGranted(this)
         permissionStateLoaded.value = true
     }
 
@@ -97,6 +120,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestResultNotificationPermission() {
+        requestResultNotificationPermission.launch(
+            BookkeepingResultNotificationPermission.permission
+        )
+    }
+
+    private fun handleNavigationIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_REVIEW, false) == true) {
+            pendingEntryNavigationId.value = intent.getStringExtra(EXTRA_PENDING_ENTRY_ID)
+            reviewNavigationRequest.value += 1
+        }
+    }
+
     private fun launchBillSyncSource(source: BillSyncSource): Boolean {
         val launchIntent = packageManager.getLaunchIntentForPackage(source.packageName)
             ?: return false
@@ -104,6 +140,11 @@ class MainActivity : ComponentActivity() {
             startActivity(launchIntent)
             true
         }.getOrDefault(false)
+    }
+
+    companion object {
+        const val EXTRA_OPEN_REVIEW = "com.autoaccounting.extra.OPEN_REVIEW"
+        const val EXTRA_PENDING_ENTRY_ID = "com.autoaccounting.extra.PENDING_ENTRY_ID"
     }
 }
 
@@ -113,8 +154,12 @@ fun AutoAccountingApp(
     onOpenNotificationListenerSettings: () -> Unit = {},
     billSyncAccessibilityAccessGranted: Boolean = false,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
+    resultNotificationPermissionGranted: Boolean = false,
+    onRequestResultNotificationPermission: () -> Unit = {},
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
-    permissionStateLoaded: Boolean = false
+    permissionStateLoaded: Boolean = false,
+    reviewNavigationRequest: Long = 0,
+    pendingEntryNavigationId: String? = null
 ) {
     val context = LocalContext.current
     val database = remember {
@@ -153,9 +198,14 @@ fun AutoAccountingApp(
     var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-        notificationListenerGranted = notificationListenerAccessGranted,
         billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted
     )
+
+    LaunchedEffect(reviewNavigationRequest) {
+        if (reviewNavigationRequest > 0) {
+            selectedTab = AppTab.Review
+        }
+    }
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
         reviewState = nextState
@@ -290,6 +340,8 @@ fun AutoAccountingApp(
                         billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
                         onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                         onLaunchBillSyncSource = onLaunchBillSyncSource,
+                        openPendingEntryId = pendingEntryNavigationId,
+                        openPendingEntryRequestId = reviewNavigationRequest,
                         continuousMonitoringState = continuousMonitoringState,
                         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                         onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
@@ -339,6 +391,8 @@ fun AutoAccountingApp(
                         onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
                         billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
                         onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                        resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+                        onRequestResultNotificationPermission = onRequestResultNotificationPermission,
                         accountSession = accountSession,
                         accountDeletionState = accountDeletionState,
                         onAccountDeletionStateChange = { next ->

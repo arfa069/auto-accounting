@@ -206,8 +206,9 @@ Fixed copy:
 
 First screen items:
 - Notification listening.
-- Accessibility bill sync.
-- Continuous monitoring.
+- Bookkeeping result notifications.
+- Automatic-bookkeeping accessibility service.
+- Automatic capture.
 - Cloud AI authorization.
 - Background keep-alive / auto-start suggestion.
 
@@ -220,8 +221,9 @@ Each item:
 
 Fixed copy:
 - Notification listening: "用于识别微信、支付宝的收付款通知，生成待确认账目".
-- Accessibility bill sync: "用于手动账单同步，或在你开启连续监控后观察微信、支付宝账单和支付记录；不读取聊天、消息，不发起付款或转账".
-- Continuous monitoring: "开启后会持续观察支付相关页面，提高自动捕获完整度；可随时关闭".
+- Bookkeeping result notifications: "用于通知待确认、分类建议、重复合并或识别失败结果；未授权不影响本地采集".
+- Automatic-bookkeeping accessibility service: "用于开启自动记账后观察微信、支付宝支付结果和支付记录，也可手动补充历史账目；不读取聊天或普通消息，不发起付款、转账或退款".
+- Automatic capture: "开启后会在支付完成时观察受支持的结果页并生成待确认记录；可随时关闭".
 - Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
 - Background keep-alive: "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同".
 

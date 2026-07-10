@@ -145,7 +145,7 @@ fun buildInternalBetaReadinessReport(): InternalBetaReadinessReport = InternalBe
     knownRisks = listOf(
         "通知监听和无障碍权限在不同 ROM 上的保活行为需要真机验证。",
         "AI 分类日志保留策略在公开发布前需要重新复核。",
-        "连续监控属于高级敏感能力，商店审核材料需要附录屏说明。"
+        "自动记账无障碍服务属于敏感能力，商店审核材料需要附录屏说明。"
     )
 )
 

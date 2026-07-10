@@ -30,6 +30,10 @@ class LocalPreferencesRepository(
         database.categorizationRuleDao().upsertAll(rules.map { it.toEntity() })
     }
 
+    suspend fun seedDefaultCategorizationRules() = database.withTransaction {
+        database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
+    }
+
     suspend fun updateAiSettings(aiSettings: AiCategorizationSettings) = database.withTransaction {
         val current = currentSettingsEntity()
         database.localSettingsDao().upsert(
@@ -46,7 +50,7 @@ class LocalPreferencesRepository(
         val current = currentSettingsEntity()
         database.localSettingsDao().upsert(
             current.copy(
-                continuousBillSyncCompleted = state.billSyncCompleted,
+                continuousBillSyncCompleted = true,
                 continuousMonitoringEnabled = state.enabled
             )
         )
@@ -54,6 +58,7 @@ class LocalPreferencesRepository(
 
     suspend fun clearLocalData() = database.withTransaction {
         database.categorizationRuleDao().deleteAll()
+        database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
         database.localSettingsDao().deleteAll()
     }
 
@@ -96,7 +101,6 @@ private fun LocalSettingsEntity.toDomain(): LocalUserPreferences = LocalUserPref
         enhancedContextGranted = enhancedContextGranted
     ),
     continuousMonitoringState = ContinuousMonitoringState(
-        billSyncCompleted = continuousBillSyncCompleted,
-        enabled = continuousMonitoringEnabled && continuousBillSyncCompleted
+        enabled = continuousMonitoringEnabled
     )
 )

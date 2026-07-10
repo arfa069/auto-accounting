@@ -157,6 +157,9 @@ interface IgnoredEntryDao {
 
 @Dao
 interface CategorizationRuleDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(rules: List<CategorizationRuleEntity>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rules: List<CategorizationRuleEntity>)
 
