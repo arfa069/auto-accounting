@@ -1,11 +1,16 @@
 package com.autoaccounting.data.local
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.autoaccounting.feature.ledger.categoryExpenseTotals
+import com.autoaccounting.feature.ledger.monthlySummary
+import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import java.time.ZoneOffset
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -26,16 +31,18 @@ class LocalLedgerRepositoryTest {
     private lateinit var database: AutoAccountingDatabase
     private lateinit var repository: LocalLedgerRepository
     private var nextId = 0
+    private var currentTime = NOW
 
     @Before
     fun setUp() {
+        currentTime = NOW
         database = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext<Context>(),
             AutoAccountingDatabase::class.java
         ).allowMainThreadQueries().build()
         repository = LocalLedgerRepository(
             database = database,
-            clock = { NOW },
+            clock = { currentTime },
             idGenerator = { "generated-${++nextId}" }
         )
     }
@@ -102,6 +109,57 @@ class LocalLedgerRepositoryTest {
         assertEquals("uncategorized", created.categoryId)
         assertEquals(created, repository.getLedgerEntry(created.id))
         assertTrue(repository.pendingEntries.first().isEmpty())
+    }
+
+    @Test
+    fun editingManualEntryUpdatesAllUserFieldsAndTimestamp() = runBlocking {
+        repository.seedSystemCategories()
+        val created = repository.createManualEntry(
+            LedgerEntryInput(
+                flowDirection = FlowDirection.OUTFLOW,
+                transactionKind = TransactionKind.EXPENSE,
+                amountMinor = 1_000,
+                transactionTimeEpochMillis = NOW - 120_000,
+                merchantTitle = "旧标题",
+                categoryId = null,
+                fundingAccountId = null,
+                newFundingAccountLabel = null,
+                note = null,
+                paymentSource = PaymentSource.WECHAT
+            )
+        )
+        val fundingAccount = repository.ensureFundingAccount(PaymentSource.ALIPAY, "余额")
+        currentTime = NOW + 1_000
+
+        val updated = repository.updateLedgerEntry(
+            created.id,
+            LedgerEntryInput(
+                flowDirection = FlowDirection.INFLOW,
+                transactionKind = TransactionKind.REFUND,
+                amountMinor = 2_345,
+                transactionTimeEpochMillis = NOW - 60_000,
+                merchantTitle = "退款到账",
+                categoryId = "food",
+                fundingAccountId = fundingAccount.id,
+                newFundingAccountLabel = null,
+                note = "  已核对  ",
+                paymentSource = PaymentSource.ALIPAY
+            )
+        )
+
+        assertEquals(FlowDirection.INFLOW, updated.flowDirection)
+        assertEquals(TransactionKind.REFUND, updated.transactionKind)
+        assertEquals(2_345, updated.amountMinor)
+        assertEquals(NOW - 60_000, updated.transactionTimeEpochMillis)
+        assertEquals("退款到账", updated.merchantTitle)
+        assertEquals("food", updated.categoryId)
+        assertEquals(fundingAccount.id, updated.fundingAccountId)
+        assertEquals("已核对", updated.note)
+        assertEquals(PaymentSource.ALIPAY, updated.paymentSource)
+        assertEquals(currentTime, updated.updatedAtEpochMillis)
+        assertEquals(created.entryOrigin, updated.entryOrigin)
+        assertEquals(created.confirmedAtEpochMillis, updated.confirmedAtEpochMillis)
+        assertEquals(updated, repository.getLedgerEntry(created.id))
     }
 
     @Test
@@ -325,15 +383,18 @@ class LocalLedgerRepositoryTest {
         repository.seedSystemCategories()
         val fundingAccount = repository.ensureFundingAccount(PaymentSource.ALIPAY, "余额")
         repository.upsertPending(samplePending(id = "pending-clear", fundingAccountId = fundingAccount.id))
-        repository.confirmPending("pending-clear", categoryId = "food")
+        val deletedLedger = repository.confirmPending("pending-clear", categoryId = "food")
+        repository.moveLedgerEntryToDeleted(deletedLedger.id)
         repository.upsertPending(samplePending(id = "pending-left"))
         repository.upsertIgnored(sampleIgnored(id = "ignored-left", originalPendingEntryId = "ignored-source"))
 
         repository.clearLocalData()
 
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
+        assertTrue(database.ledgerEntryDao().listAllLedgerEntries().isEmpty())
         assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
         assertTrue(database.ignoredEntryDao().listRecoverable(NOW).isEmpty())
+        assertTrue(database.ignoredEntryDao().listAll().isEmpty())
         assertTrue(database.fundingAccountDao().getAllFundingAccounts().isEmpty())
         val categories = database.categoryDao().getAllCategories()
         assertTrue(categories.any { it.id == "food" && it.name == "餐饮" })
@@ -458,6 +519,163 @@ class LocalLedgerRepositoryTest {
         context.deleteDatabase(databaseName)
     }
 
+    @Test
+    fun migrationFromFourToFiveRetainsLedgerFundingAndReportSemantics() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "migration-4-5-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val versionFour = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+        createVersionFourSchema(versionFour)
+        versionFour.execSQL(
+            "INSERT INTO categories (id, name, kind, sort_order, is_system, created_at_epoch_millis) VALUES " +
+                "('food', '餐饮', 'EXPENSE', 1, 1, $NOW), " +
+                "('salary', '工资', 'INCOME', 2, 1, $NOW)"
+        )
+        versionFour.execSQL(
+            "INSERT INTO funding_accounts (id, source, label, created_at_epoch_millis) VALUES " +
+                "(7, 'ALIPAY', '支付宝余额', $NOW), " +
+                "(8, 'WECHAT', '微信零钱', $NOW)"
+        )
+        insertVersionFourLedger(
+            database = versionFour,
+            id = "legacy-income",
+            source = "WECHAT",
+            kind = "INCOME",
+            amountMinor = 1_000,
+            title = "工资",
+            categoryId = "salary",
+            fundingAccountId = 8
+        )
+        insertVersionFourLedger(
+            database = versionFour,
+            id = "legacy-refund",
+            source = "ALIPAY",
+            kind = "REFUND",
+            amountMinor = 250,
+            title = "退款",
+            categoryId = "food",
+            fundingAccountId = 7
+        )
+        insertVersionFourLedger(
+            database = versionFour,
+            id = "legacy-expense",
+            source = "ALIPAY",
+            kind = "EXPENSE",
+            amountMinor = 1_000,
+            title = "午餐",
+            categoryId = "food",
+            fundingAccountId = 7
+        )
+        insertVersionFourLedger(
+            database = versionFour,
+            id = "legacy-transfer",
+            source = "WECHAT",
+            kind = "TRANSFER",
+            amountMinor = 2_000,
+            title = "账户转账",
+            categoryId = null,
+            fundingAccountId = 8
+        )
+        versionFour.execSQL("PRAGMA user_version = 4")
+        versionFour.close()
+
+        val migrated = Room.databaseBuilder(context, AutoAccountingDatabase::class.java, databaseName)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+
+        val ledgerEntries = migrated.ledgerEntryDao().listLedgerEntries().sortedBy { it.id }
+        val fundingAccounts = migrated.fundingAccountDao().getAllFundingAccounts().sortedBy { it.id }
+        val byId = ledgerEntries.associateBy { it.id }
+        val reportEntries = ledgerEntries.map { it.toLedgerUiEntry(ZoneOffset.UTC) }
+        val summary = monthlySummary(reportEntries, "2024-12")
+
+        assertEquals(setOf("legacy-income", "legacy-refund", "legacy-expense", "legacy-transfer"), byId.keys)
+        assertEquals(FlowDirection.INFLOW, byId.getValue("legacy-income").flowDirection)
+        assertEquals(FlowDirection.INFLOW, byId.getValue("legacy-refund").flowDirection)
+        assertEquals(FlowDirection.OUTFLOW, byId.getValue("legacy-expense").flowDirection)
+        assertEquals(FlowDirection.OUTFLOW, byId.getValue("legacy-transfer").flowDirection)
+        assertEquals(PaymentSource.ALIPAY, byId.getValue("legacy-expense").paymentSource)
+        assertEquals(PaymentSource.ALIPAY, byId.getValue("legacy-expense").originalCaptureSource)
+        assertEquals(EntryOrigin.LEGACY_CAPTURE, byId.getValue("legacy-expense").entryOrigin)
+        assertEquals("午餐", byId.getValue("legacy-expense").merchantTitle)
+        assertEquals("旧账目", byId.getValue("legacy-expense").note)
+        assertEquals(NOW, byId.getValue("legacy-expense").confirmedAtEpochMillis)
+        assertEquals(NOW, byId.getValue("legacy-expense").updatedAtEpochMillis)
+        assertEquals(3_000, summary.expenseMinor)
+        assertEquals(1_250, summary.incomeMinor)
+        assertEquals(-1_750, summary.netMinor)
+        assertEquals(
+            1_000,
+            categoryExpenseTotals(reportEntries, "2024-12").single { it.category == "餐饮" }.amountMinor
+        )
+        assertEquals(
+            listOf(
+                FundingAccountSourceScope.ALIPAY to PaymentSource.ALIPAY,
+                FundingAccountSourceScope.WECHAT to PaymentSource.WECHAT
+            ),
+            fundingAccounts.map { it.sourceScope to it.paymentSource }
+        )
+
+        migrated.close()
+        context.deleteDatabase(databaseName)
+        Unit
+    }
+
+    private fun createVersionFourSchema(database: SQLiteDatabase) {
+        database.execSQL(LEGACY_CREATE_CATEGORIES)
+        database.execSQL(LEGACY_CREATE_FUNDING_ACCOUNTS)
+        database.execSQL(LEGACY_CREATE_PENDING_ENTRIES)
+        database.execSQL(LEGACY_CREATE_LEDGER_ENTRIES)
+        database.execSQL(LEGACY_CREATE_IGNORED_ENTRIES)
+        database.execSQL("ALTER TABLE pending_entries ADD COLUMN funding_account_label TEXT")
+        database.execSQL("ALTER TABLE pending_entries ADD COLUMN parsed_fields_text TEXT")
+        database.execSQL("ALTER TABLE pending_entries ADD COLUMN suggested_category_label TEXT")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN capture_reason TEXT NOT NULL DEFAULT 'NOTIFICATION'")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN confidence TEXT NOT NULL DEFAULT 'NEEDS_REVIEW'")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN captured_at_epoch_millis INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN funding_account_label TEXT")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN note TEXT")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN evidence_summary TEXT")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN parsed_fields_text TEXT")
+        database.execSQL("ALTER TABLE ignored_entries ADD COLUMN suggested_category_label TEXT")
+        database.execSQL(CREATE_CATEGORIZATION_RULES)
+        database.execSQL(CREATE_LOCAL_SETTINGS)
+        LEGACY_INDEXES.forEach(database::execSQL)
+    }
+
+    private fun insertVersionFourLedger(
+        database: SQLiteDatabase,
+        id: String,
+        source: String,
+        kind: String,
+        amountMinor: Long,
+        title: String,
+        categoryId: String?,
+        fundingAccountId: Long
+    ) {
+        database.execSQL(
+            """
+            INSERT INTO ledger_entries (
+                id, source, origin_pending_entry_id, transaction_kind, amount_minor, currency,
+                merchant_title, transaction_time_epoch_millis, category_id, funding_account_id, note,
+                confirmed_at_epoch_millis
+            ) VALUES (?, ?, NULL, ?, ?, 'CNY', ?, ?, ?, ?, '旧账目', ?)
+            """.trimIndent(),
+            arrayOf<Any?>(
+                id,
+                source,
+                kind,
+                amountMinor,
+                title,
+                NOW - 60_000,
+                categoryId,
+                fundingAccountId,
+                NOW
+            )
+        )
+    }
+
     private fun samplePending(
         id: String = "pending-1",
         confidence: ConfidenceState = ConfidenceState.NEEDS_REVIEW,
@@ -535,6 +753,10 @@ class LocalLedgerRepositoryTest {
             "CREATE TABLE IF NOT EXISTS `ledger_entries` (`id` TEXT NOT NULL, `source` TEXT NOT NULL, `origin_pending_entry_id` TEXT, `transaction_kind` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant_title` TEXT NOT NULL, `transaction_time_epoch_millis` INTEGER NOT NULL, `category_id` TEXT, `funding_account_id` INTEGER, `note` TEXT, `confirmed_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`category_id`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`funding_account_id`) REFERENCES `funding_accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )"
         const val LEGACY_CREATE_IGNORED_ENTRIES =
             "CREATE TABLE IF NOT EXISTS `ignored_entries` (`id` TEXT NOT NULL, `original_pending_entry_id` TEXT NOT NULL, `source` TEXT NOT NULL, `transaction_kind` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant_title` TEXT NOT NULL, `transaction_time_epoch_millis` INTEGER NOT NULL, `suggested_category_id` TEXT, `funding_account_id` INTEGER, `ignored_at_epoch_millis` INTEGER NOT NULL, `expires_at_epoch_millis` INTEGER NOT NULL, `reason` TEXT NOT NULL, PRIMARY KEY(`id`))"
+        const val CREATE_CATEGORIZATION_RULES =
+            "CREATE TABLE IF NOT EXISTS `categorization_rules` (`id` TEXT NOT NULL, `merchant_contains` TEXT NOT NULL, `title_contains` TEXT NOT NULL, `source_label` TEXT NOT NULL, `transaction_kind` TEXT NOT NULL, `category` TEXT NOT NULL, `priority` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+        const val CREATE_LOCAL_SETTINGS =
+            "CREATE TABLE IF NOT EXISTS `local_settings` (`id` TEXT NOT NULL, `ai_consent_granted` INTEGER NOT NULL, `enhanced_context_granted` INTEGER NOT NULL, `continuous_bill_sync_completed` INTEGER NOT NULL, `continuous_monitoring_enabled` INTEGER NOT NULL, PRIMARY KEY(`id`))"
         val LEGACY_INDEXES = listOf(
             "CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `categories` (`name`)",
             "CREATE UNIQUE INDEX IF NOT EXISTS `index_funding_accounts_source_label` ON `funding_accounts` (`source`, `label`)",

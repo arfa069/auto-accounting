@@ -130,6 +130,21 @@ class LocalDataBackupRepositoryTest {
     }
 
     @Test
+    fun unsupportedBackupVersionFailsBeforeChangingPersistedData() = runBlocking {
+        populateDatabase()
+        val original = readSnapshot()
+        val unsupportedVersion = backupRepository.exportEncryptedBackup(PASSPHRASE)
+            .replaceFirst("AUTO_ACCOUNTING_BACKUP_V3:", "AUTO_ACCOUNTING_BACKUP_V4:")
+
+        val failure = runCatching {
+            backupRepository.importEncryptedBackup(unsupportedVersion, PASSPHRASE)
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(original, readSnapshot())
+    }
+
+    @Test
     fun versionTwoBackupImportsWithLegacyLedgerSemantics() = runBlocking {
         backupRepository.importEncryptedBackup(V2_BACKUP_FIXTURE, PASSPHRASE)
 
