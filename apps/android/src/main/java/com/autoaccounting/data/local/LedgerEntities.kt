@@ -29,7 +29,8 @@ data class CategoryEntity(
 )
 data class FundingAccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val source: PaymentSource,
+    @ColumnInfo(name = "source") val sourceScope: FundingAccountSourceScope,
+    @ColumnInfo(name = "payment_source") val paymentSource: PaymentSource?,
     val label: String,
     @ColumnInfo(name = "created_at_epoch_millis") val createdAtEpochMillis: Long
 )
@@ -95,18 +96,25 @@ data class PendingEntryEntity(
         )
     ],
     indices = [
-        Index(value = ["source"]),
+        Index(value = ["payment_source"]),
+        Index(value = ["original_capture_source"]),
+        Index(value = ["entry_origin"]),
+        Index(value = ["flow_direction"]),
         Index(value = ["transaction_kind"]),
         Index(value = ["transaction_time_epoch_millis"]),
         Index(value = ["category_id"]),
         Index(value = ["funding_account_id"]),
-        Index(value = ["origin_pending_entry_id"])
+        Index(value = ["origin_pending_entry_id"]),
+        Index(value = ["deleted_at_epoch_millis"])
     ]
 )
 data class LedgerEntryEntity(
     @PrimaryKey val id: String,
-    val source: PaymentSource,
+    @ColumnInfo(name = "payment_source") val paymentSource: PaymentSource?,
+    @ColumnInfo(name = "original_capture_source") val originalCaptureSource: PaymentSource?,
+    @ColumnInfo(name = "entry_origin") val entryOrigin: EntryOrigin,
     @ColumnInfo(name = "origin_pending_entry_id") val originPendingEntryId: String?,
+    @ColumnInfo(name = "flow_direction") val flowDirection: FlowDirection,
     @ColumnInfo(name = "transaction_kind") val transactionKind: TransactionKind,
     @ColumnInfo(name = "amount_minor") val amountMinor: Long,
     val currency: String,
@@ -115,7 +123,11 @@ data class LedgerEntryEntity(
     @ColumnInfo(name = "category_id") val categoryId: String?,
     @ColumnInfo(name = "funding_account_id") val fundingAccountId: Long?,
     val note: String?,
-    @ColumnInfo(name = "confirmed_at_epoch_millis") val confirmedAtEpochMillis: Long
+    @ColumnInfo(name = "evidence_summary") val evidenceSummary: String?,
+    @ColumnInfo(name = "parsed_fields_text") val parsedFieldsText: String?,
+    @ColumnInfo(name = "confirmed_at_epoch_millis") val confirmedAtEpochMillis: Long,
+    @ColumnInfo(name = "updated_at_epoch_millis") val updatedAtEpochMillis: Long,
+    @ColumnInfo(name = "deleted_at_epoch_millis") val deletedAtEpochMillis: Long?
 )
 
 @Entity(

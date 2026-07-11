@@ -1,39 +1,212 @@
 package com.autoaccounting.feature.ledger
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.autoaccounting.data.local.CategoryEntity
+import com.autoaccounting.data.local.EntryOrigin
+import com.autoaccounting.data.local.FlowDirection
+import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.LedgerEntryInput
+import com.autoaccounting.data.local.LocalLedgerRepository
+import com.autoaccounting.data.local.PaymentSource
+import com.autoaccounting.data.local.TransactionKind
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlin.math.max
+import kotlinx.coroutines.launch
 
 @Composable
 fun LedgerScreen(
     entries: List<LedgerUiEntry>,
+    deletedEntries: List<LedgerUiEntry> = emptyList(),
+    categories: List<CategoryEntity> = emptyList(),
+    fundingAccounts: List<FundingAccountEntity> = emptyList(),
+    onCreateEntry: suspend (LedgerEntryInput) -> Unit = {},
+    onUpdateEntry: suspend (String, LedgerEntryInput) -> Unit = { _, _ -> },
+    onDeleteEntry: suspend (String) -> Unit = {},
+    onRestoreEntry: suspend (String) -> Unit = {},
+    onPermanentlyDeleteEntry: suspend (String) -> Unit = {},
+    onPurgeExpiredEntries: suspend () -> Unit = {},
     modifier: Modifier = Modifier
+) {
+    var view by remember { mutableStateOf(LedgerView.LIST) }
+    var selectedEntryId by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val selectedEntry = entries.firstOrNull { it.id == selectedEntryId }
+
+    BackHandler(enabled = view == LedgerView.DETAIL || view == LedgerView.DELETED) {
+        view = LedgerView.LIST
+        selectedEntryId = null
+    }
+
+    LaunchedEffect(view) {
+        if (view == LedgerView.DELETED) {
+            onPurgeExpiredEntries()
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        when (view) {
+            LedgerView.LIST -> LedgerList(
+                entries = entries,
+                onEntryClick = {
+                    selectedEntryId = it
+                    view = LedgerView.DETAIL
+                },
+                onCreateClick = { view = LedgerView.CREATE },
+                onRecentlyDeletedClick = { view = LedgerView.DELETED }
+            )
+
+            LedgerView.DETAIL -> {
+                if (selectedEntry == null) {
+                    view = LedgerView.LIST
+                } else {
+                    LedgerEntryDetail(
+                        entry = selectedEntry,
+                        fundingAccountLabel = fundingAccounts
+                            .firstOrNull { it.id == selectedEntry.fundingAccountId }
+                            ?.label,
+                        onBack = {
+                            selectedEntryId = null
+                            view = LedgerView.LIST
+                        },
+                        onEdit = { view = LedgerView.EDIT },
+                        onDelete = {
+                            scope.launch {
+                                runCatching { onDeleteEntry(selectedEntry.id) }
+                                    .onSuccess {
+                                        selectedEntryId = null
+                                        view = LedgerView.LIST
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "已移入最近删除",
+                                            actionLabel = "撤销"
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            onRestoreEntry(selectedEntry.id)
+                                        }
+                                    }
+                                    .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                            }
+                        }
+                    )
+                }
+            }
+
+            LedgerView.CREATE -> LedgerEntryForm(
+                title = "新增一笔",
+                initial = LedgerEntryFormState.newEntry(),
+                categories = categories,
+                fundingAccounts = fundingAccounts,
+                onExit = { view = LedgerView.LIST },
+                onSave = { input ->
+                    onCreateEntry(input)
+                    view = LedgerView.LIST
+                },
+                snackbarHostState = snackbarHostState
+            )
+
+            LedgerView.EDIT -> {
+                if (selectedEntry == null) {
+                    view = LedgerView.LIST
+                } else {
+                    LedgerEntryForm(
+                        title = "编辑账目",
+                        initial = LedgerEntryFormState.from(selectedEntry),
+                        categories = categories,
+                        fundingAccounts = fundingAccounts,
+                        onExit = { view = LedgerView.DETAIL },
+                        onSave = { input ->
+                            onUpdateEntry(selectedEntry.id, input)
+                            view = LedgerView.DETAIL
+                        },
+                        snackbarHostState = snackbarHostState
+                    )
+                }
+            }
+
+            LedgerView.DELETED -> RecentlyDeletedScreen(
+                entries = deletedEntries,
+                onBack = { view = LedgerView.LIST },
+                onRestore = { id ->
+                    scope.launch {
+                        runCatching { onRestoreEntry(id) }
+                            .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                    }
+                },
+                onPermanentlyDelete = { id ->
+                    scope.launch {
+                        runCatching { onPermanentlyDeleteEntry(id) }
+                            .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                    }
+                }
+            )
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+}
+
+@Composable
+private fun LedgerList(
+    entries: List<LedgerUiEntry>,
+    onEntryClick: (String) -> Unit,
+    onCreateClick: () -> Unit,
+    onRecentlyDeletedClick: () -> Unit
 ) {
     var searchText by remember { mutableStateOf("") }
     var showFilters by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     var sourceFilter by remember { mutableStateOf("") }
     var categoryFilter by remember { mutableStateOf("") }
     var kindFilter by remember { mutableStateOf("") }
@@ -49,61 +222,84 @@ fun LedgerScreen(
         .filter { sourceFilter.isBlank() || it.sourceLabel.contains(sourceFilter.trim()) }
         .filter { categoryFilter.isBlank() || it.category.contains(categoryFilter.trim()) }
         .filter { kindFilter.isBlank() || it.kindLabel.contains(kindFilter.trim()) }
-        .sortedByDescending { it.transactionTimeText }
+        .sortedByDescending { it.transactionTimeEpochMillis }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text("本地账本", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        LedgerSummary(summary)
-
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = { searchText = it },
-            label = { Text("搜索商户或备注") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedButton(onClick = { showFilters = !showFilters }) {
-            Text("筛选")
-        }
-
-        if (showFilters) {
-            FilterPanel(
-                sourceFilter = sourceFilter,
-                categoryFilter = categoryFilter,
-                kindFilter = kindFilter,
-                onSourceChange = { sourceFilter = it },
-                onCategoryChange = { categoryFilter = it },
-                onKindChange = { kindFilter = it }
-            )
-        }
-
-        Text("$monthKey 明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (filteredEntries.isEmpty()) {
-            Text("当前没有已确认账目")
-        } else {
-            filteredEntries.forEach { entry ->
-                LedgerEntryRow(entry)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("本地账本", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Box {
+                    TextButton(onClick = { showMenu = true }) { Text("更多") }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("最近删除") },
+                            onClick = {
+                                showMenu = false
+                                onRecentlyDeletedClick()
+                            }
+                        )
+                    }
+                }
             }
+            LedgerSummary(summary)
+            OutlinedTextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                label = { Text("搜索商户或备注") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedButton(onClick = { showFilters = !showFilters }) { Text("筛选") }
+            if (showFilters) {
+                FilterPanel(
+                    sourceFilter = sourceFilter,
+                    categoryFilter = categoryFilter,
+                    kindFilter = kindFilter,
+                    onSourceChange = { sourceFilter = it },
+                    onCategoryChange = { categoryFilter = it },
+                    onKindChange = { kindFilter = it }
+                )
+            }
+            Text("$monthKey 明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (filteredEntries.isEmpty()) {
+                Text("当前没有已确认账目")
+            } else {
+                filteredEntries.forEach { entry -> LedgerEntryRow(entry) { onEntryClick(entry.id) } }
+            }
+            Spacer(Modifier.size(72.dp))
         }
+        FloatingActionButton(
+            onClick = onCreateClick,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+        ) { Text("+") }
     }
 }
 
 @Composable
 private fun LedgerSummary(summary: MonthlySummary) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SummaryChip("本月支出 ${formatMoney(summary.expenseMinor)}", Modifier.weight(1f))
         SummaryChip("本月收入 ${formatMoney(summary.incomeMinor)}", Modifier.weight(1f))
         SummaryChip("净额 ${formatSignedMoney(summary.netMinor)}", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SummaryChip(text: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Text(text, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -117,74 +313,237 @@ private fun FilterPanel(
     onKindChange: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = sourceFilter,
-            onValueChange = onSourceChange,
-            label = { Text("来源") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = categoryFilter,
-            onValueChange = onCategoryChange,
-            label = { Text("分类") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = kindFilter,
-            onValueChange = onKindChange,
-            label = { Text("交易类型") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        OutlinedTextField(sourceFilter, onSourceChange, label = { Text("来源") }, singleLine = true)
+        OutlinedTextField(categoryFilter, onCategoryChange, label = { Text("分类") }, singleLine = true)
+        OutlinedTextField(kindFilter, onKindChange, label = { Text("交易类型") }, singleLine = true)
     }
 }
 
 @Composable
-private fun LedgerEntryRow(entry: LedgerUiEntry) {
+private fun LedgerEntryRow(entry: LedgerUiEntry, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(entry.title, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${entry.category} · ${entry.transactionTimeText} · ${entry.sourceLabel}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                entry.note?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall)
-                }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(entry.title.ifBlank { "未填写标题" }, fontWeight = FontWeight.SemiBold)
+                Text("${entry.category} · ${entry.sourceLabel} · ${entry.transactionTimeText}")
             }
-            Text(
-                text = formatMoney(entry.amountMinor),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Spacer(Modifier.width(12.dp))
+            val signedAmount = when (entry.flowType) {
+                LedgerFlowType.INCOME -> "+${formatMoney(entry.amountMinor)}"
+                LedgerFlowType.EXPENSE -> "-${formatMoney(entry.amountMinor)}"
+                LedgerFlowType.NEUTRAL -> formatMoney(entry.amountMinor)
+            }
+            Text(signedAmount, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun SummaryChip(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelMedium
+internal fun DetailLine(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(16.dp))
+        Text(value)
+    }
+}
+
+@Composable
+internal fun <T> SelectionMenu(
+    label: String,
+    selected: T,
+    options: List<T>,
+    itemLabel: (T) -> String,
+    onSelected: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }) { Text("$label：${itemLabel(selected)}") }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(itemLabel(option)) },
+                    onClick = {
+                        expanded = false
+                        onSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+private enum class LedgerView {
+    LIST,
+    DETAIL,
+    CREATE,
+    EDIT,
+    DELETED
+}
+
+internal data class LedgerEntryFormState(
+    val flowDirection: FlowDirection,
+    val transactionKind: TransactionKind,
+    val amountText: String,
+    val transactionTimeEpochMillis: Long,
+    val merchantTitle: String,
+    val categoryId: String,
+    val fundingAccountId: Long?,
+    val creatingFundingAccount: Boolean,
+    val newFundingAccountLabel: String,
+    val note: String,
+    val paymentSource: PaymentSource?
+) {
+    fun toInput(nowEpochMillis: Long): LedgerEntryInput {
+        val normalizedAmount = amountText.trim()
+        require(AMOUNT_PATTERN.matches(normalizedAmount)) {
+            "金额必须大于 0，且最多保留两位小数"
+        }
+        val amountMinor = try {
+            BigDecimal(normalizedAmount).movePointRight(2).longValueExact()
+        } catch (_: ArithmeticException) {
+            throw IllegalArgumentException("金额超出支持范围")
+        }
+        require(amountMinor > 0) { "金额必须大于 0" }
+        require(transactionTimeEpochMillis <= nowEpochMillis) { "交易时间不能晚于当前时间" }
+        if (creatingFundingAccount) {
+            require(newFundingAccountLabel.isNotBlank()) { "请输入资金账户名称" }
+        }
+        return LedgerEntryInput(
+            flowDirection = flowDirection,
+            transactionKind = transactionKind,
+            amountMinor = amountMinor,
+            transactionTimeEpochMillis = transactionTimeEpochMillis,
+            merchantTitle = merchantTitle,
+            categoryId = categoryId,
+            fundingAccountId = if (creatingFundingAccount) null else fundingAccountId,
+            newFundingAccountLabel = if (creatingFundingAccount) newFundingAccountLabel else null,
+            note = note,
+            paymentSource = paymentSource
+        )
+    }
+
+    companion object {
+        fun newEntry(nowEpochMillis: Long = System.currentTimeMillis()): LedgerEntryFormState =
+            LedgerEntryFormState(
+                flowDirection = FlowDirection.OUTFLOW,
+                transactionKind = TransactionKind.EXPENSE,
+                amountText = "",
+                transactionTimeEpochMillis = nowEpochMillis,
+                merchantTitle = "",
+                categoryId = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
+                fundingAccountId = null,
+                creatingFundingAccount = false,
+                newFundingAccountLabel = "",
+                note = "",
+                paymentSource = null
+            )
+
+        fun from(entry: LedgerUiEntry): LedgerEntryFormState = LedgerEntryFormState(
+            flowDirection = entry.flowDirection,
+            transactionKind = entry.transactionKind,
+            amountText = BigDecimal(entry.amountMinor).movePointLeft(2).toPlainString(),
+            transactionTimeEpochMillis = entry.transactionTimeEpochMillis,
+            merchantTitle = entry.title,
+            categoryId = entry.categoryId ?: LocalLedgerRepository.DEFAULT_CATEGORY_ID,
+            fundingAccountId = entry.fundingAccountId,
+            creatingFundingAccount = false,
+            newFundingAccountLabel = "",
+            note = entry.note.orEmpty(),
+            paymentSource = entry.paymentSource
         )
     }
 }
+
+internal fun showDateTimePicker(
+    context: android.content.Context,
+    currentEpochMillis: Long,
+    onSelected: (Long) -> Unit
+) {
+    val zoneId = ZoneId.systemDefault()
+    val current = Instant.ofEpochMilli(currentEpochMillis).atZone(zoneId)
+    val dateDialog = DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    onSelected(
+                        LocalDateTime.of(year, month + 1, day, hour, minute)
+                            .atZone(zoneId)
+                            .toInstant()
+                            .toEpochMilli()
+                    )
+                },
+                current.hour,
+                current.minute,
+                true
+            ).show()
+        },
+        current.year,
+        current.monthValue - 1,
+        current.dayOfMonth
+    )
+    dateDialog.datePicker.maxDate = System.currentTimeMillis()
+    dateDialog.show()
+}
+
+internal fun LedgerUiEntry.remainingRetentionDays(nowEpochMillis: Long): Long {
+    val deletedAt = deletedAtEpochMillis ?: return 0
+    val remaining = deletedAt + LocalLedgerRepository.DELETED_RETENTION_MILLIS - nowEpochMillis
+    return max(0, (remaining + MILLIS_PER_DAY - 1) / MILLIS_PER_DAY)
+}
+
+internal fun formatLedgerEpoch(epochMillis: Long): String =
+    if (epochMillis <= 0) "—" else LEDGER_DATE_TIME_FORMATTER.format(Instant.ofEpochMilli(epochMillis))
+
+internal fun PaymentSource?.labelOrNone(): String = when (this) {
+    PaymentSource.WECHAT -> "微信"
+    PaymentSource.ALIPAY -> "支付宝"
+    null -> "未指定"
+}
+
+internal fun FlowDirection.label(): String = when (this) {
+    FlowDirection.INFLOW -> "流入"
+    FlowDirection.OUTFLOW -> "流出"
+    FlowDirection.NEUTRAL -> "不计收支"
+}
+
+internal fun TransactionKind.label(): String = when (this) {
+    TransactionKind.EXPENSE -> "支出"
+    TransactionKind.INCOME -> "收入"
+    TransactionKind.REFUND -> "退款"
+    TransactionKind.TRANSFER -> "转账"
+    TransactionKind.RED_PACKET -> "红包"
+    TransactionKind.REPAYMENT -> "还款"
+    TransactionKind.INVESTMENT -> "理财"
+    TransactionKind.FEE -> "手续费"
+    TransactionKind.OTHER -> "其他"
+}
+
+internal fun EntryOrigin.label(): String = when (this) {
+    EntryOrigin.MANUAL -> "手动录入"
+    EntryOrigin.NOTIFICATION -> "通知捕获"
+    EntryOrigin.ACCESSIBILITY_AUTO -> "自动记账"
+    EntryOrigin.BILL_SYNC -> "账单同步"
+    EntryOrigin.DUPLICATE_MERGE -> "重复合并"
+    EntryOrigin.LEGACY_CAPTURE -> "旧版采集（方式未知）"
+}
+
+internal fun Throwable.userMessage(): String = message?.takeIf { it.isNotBlank() } ?: "操作失败，请重试"
+
+private val AMOUNT_PATTERN = Regex("^\\d+(\\.\\d{1,2})?$")
+private val LEDGER_DATE_TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L

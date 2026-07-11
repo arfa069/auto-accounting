@@ -111,9 +111,39 @@ Top monthly summary:
 - Monthly income.
 - Net amount.
 
+Primary action:
+- A prominent floating add button on the ledger screen opens the manual-entry form.
+- Manual entry is not duplicated on the review-queue screen.
+- The ledger overflow menu contains a Recently Deleted entry.
+
 List:
 - Grouped by month.
 - Row fields: merchant/title, category, time, amount, source marker.
+- Tapping a row opens a read-only ledger-entry detail screen rather than editing immediately.
+
+Ledger-entry detail:
+- Show the current transaction fields first.
+- Show flow direction separately from transaction kind and amount.
+- Display currency as CNY without offering a currency selector in the first version.
+- Amount input accepts a positive value with at most two decimal places; flow direction controls the displayed sign.
+- The date-time picker does not allow a value later than the current device time.
+- The funding-account selector lists existing accounts and ends with a New Funding Account action.
+- Inline funding-account creation requires a name, allows payment source to remain empty, and selects the new account immediately.
+- The category selector uses existing categories and Uncategorized without an inline category-creation action.
+- Show original capture source, entry origin, and capture evidence separately when available.
+- Show creation or first-confirmation time and last-modified time without presenting a version-history timeline.
+- Editing begins through an explicit edit action.
+- Manual creation and editing reuse the same transaction form.
+- Form changes remain local until the user taps Save.
+- Navigating back with unsaved changes opens a choice to discard changes or continue editing.
+- The overflow menu contains Delete; confirmation explains that the entry moves to Recently Deleted for 30 days.
+- After deletion, return to the ledger and show a "Moved to Recently Deleted" Snackbar with Undo.
+
+Recently deleted:
+- Show deletion time and the number of retention days remaining for each entry.
+- Each entry offers Restore and Permanently Delete actions.
+- Permanent deletion requires a confirmation that clearly states the entry cannot be recovered.
+- Entries are removed automatically after 30 days.
 
 Search and filtering:
 - Search icon.
@@ -130,6 +160,7 @@ First screen:
 Category share:
 - Illustrated donut chart.
 - Category ranking list.
+- Include outflow entries only; neutral entries do not contribute to income, expense, or net totals.
 - Values and percentages must be readable without relying only on color.
 
 Category trend:

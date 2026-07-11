@@ -16,6 +16,7 @@ flowchart LR
   Dedupe --> Pending["Pending Entries"]
   Pending --> Review["Review Queue"]
   Review --> Ledger["Local Ledger (Room)"]
+  Manual["Manual Entry"] --> Ledger
   Ledger --> Reports["Reports"]
   Ledger --> Export["CSV / Encrypted Backup"]
   App["Android App"] --> Backend["Ktor Backend"]
@@ -47,12 +48,12 @@ Keep capture parsing and deduplication testable without Android UI.
 
 Core tables:
 - `pending_entries`: captured candidates awaiting review.
-- `ledger_entries`: confirmed ledger entries.
+- `ledger_entries`: active and soft-deleted ledger entries with flow direction, current user fields, immutable capture provenance where available, and lifecycle timestamps.
 - `capture_events`: source evidence, capture reason, confidence state, raw text reference or encrypted raw text.
 - `dedupe_links`: relationships between duplicate candidates and merged entries.
 - `categories`: user categories.
 - `categorization_rules`: merchant/title/source/kind matching rules.
-- `funding_accounts`: source-reported funding account labels.
+- `funding_accounts`: reusable source-reported or user-created funding accounts; payment source may be absent for manual accounts.
 - `ignored_entries`: ignored pending entries with 30-day retention.
 - `settings`: local mode, permission flags, feature flags, AI consent cache.
 - `backup_metadata`: backup timestamps and restore history.
@@ -60,6 +61,13 @@ Core tables:
 Sensitive local data:
 - Treat ledger, raw evidence, merchant/title, amount, category, funding account, and AI request payloads as sensitive transaction information.
 - Use encryption for backups and for any raw evidence stored outside ordinary app-private database guarantees.
+
+Ledger lifecycle invariants:
+- Automatically captured candidates still enter the review queue before the ledger; a user-authored manual entry may be written directly to the ledger after form validation.
+- Amounts remain positive minor-unit integers. Independent flow direction determines inflow, outflow, or neutral reporting behavior.
+- Editing changes current user-visible fields without overwriting original capture source, entry origin, pending-entry reference, first confirmation time, or retained capture evidence.
+- Soft-deleted entries are excluded from active queries, CSV, and reports, remain recoverable for 30 days, and are then permanently removed.
+- Room migrations and encrypted-backup format upgrades must preserve existing ledger data and support importing the prior backup version.
 
 ## 4. Capture Pipeline
 

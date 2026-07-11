@@ -1,5 +1,7 @@
 package com.autoaccounting.feature.ledger
 
+import com.autoaccounting.data.local.EntryOrigin
+import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
@@ -9,7 +11,8 @@ import java.time.format.DateTimeFormatter
 
 enum class LedgerFlowType {
     EXPENSE,
-    INCOME
+    INCOME,
+    NEUTRAL
 }
 
 data class LedgerUiEntry(
@@ -22,7 +25,21 @@ data class LedgerUiEntry(
     val sourceLabel: String,
     val kindLabel: String,
     val flowType: LedgerFlowType,
-    val note: String? = null
+    val note: String? = null,
+    val paymentSource: PaymentSource? = null,
+    val originalCaptureSource: PaymentSource? = null,
+    val entryOrigin: EntryOrigin = EntryOrigin.LEGACY_CAPTURE,
+    val originPendingEntryId: String? = null,
+    val flowDirection: FlowDirection = FlowDirection.OUTFLOW,
+    val transactionKind: TransactionKind = TransactionKind.OTHER,
+    val transactionTimeEpochMillis: Long = 0,
+    val categoryId: String? = null,
+    val fundingAccountId: Long? = null,
+    val evidenceSummary: String? = null,
+    val parsedFieldsText: String? = null,
+    val confirmedAtEpochMillis: Long = 0,
+    val updatedAtEpochMillis: Long = 0,
+    val deletedAtEpochMillis: Long? = null
 )
 
 data class MonthlySummary(
@@ -53,16 +70,28 @@ fun LedgerEntryEntity.toLedgerUiEntry(
         monthKey = transactionTimeText.take(7),
         transactionTimeText = transactionTimeText,
         category = categoryId?.toCategoryLabel() ?: "未分类",
-        sourceLabel = source.toLabel(),
+        sourceLabel = paymentSource?.toLabel() ?: "未指定",
         kindLabel = kind,
-        flowType = if (transactionKind == TransactionKind.INCOME ||
-            transactionKind == TransactionKind.REFUND
-        ) {
-            LedgerFlowType.INCOME
-        } else {
-            LedgerFlowType.EXPENSE
+        flowType = when (flowDirection) {
+            FlowDirection.INFLOW -> LedgerFlowType.INCOME
+            FlowDirection.OUTFLOW -> LedgerFlowType.EXPENSE
+            FlowDirection.NEUTRAL -> LedgerFlowType.NEUTRAL
         },
-        note = note
+        note = note,
+        paymentSource = paymentSource,
+        originalCaptureSource = originalCaptureSource,
+        entryOrigin = entryOrigin,
+        originPendingEntryId = originPendingEntryId,
+        flowDirection = flowDirection,
+        transactionKind = transactionKind,
+        transactionTimeEpochMillis = transactionTimeEpochMillis,
+        categoryId = categoryId,
+        fundingAccountId = fundingAccountId,
+        evidenceSummary = evidenceSummary,
+        parsedFieldsText = parsedFieldsText,
+        confirmedAtEpochMillis = confirmedAtEpochMillis,
+        updatedAtEpochMillis = updatedAtEpochMillis,
+        deletedAtEpochMillis = deletedAtEpochMillis
     )
 }
 

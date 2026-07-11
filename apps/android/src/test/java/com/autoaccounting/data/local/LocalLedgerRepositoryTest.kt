@@ -76,6 +76,125 @@ class LocalLedgerRepositoryTest {
     }
 
     @Test
+    fun manualEntryIsWrittenDirectlyToTheLedger() = runBlocking {
+        repository.seedSystemCategories()
+
+        val created = repository.createManualEntry(
+            LedgerEntryInput(
+                flowDirection = FlowDirection.NEUTRAL,
+                transactionKind = TransactionKind.TRANSFER,
+                amountMinor = 20_000,
+                transactionTimeEpochMillis = NOW - 60_000,
+                merchantTitle = "账户间转账",
+                categoryId = null,
+                fundingAccountId = null,
+                newFundingAccountLabel = null,
+                note = "不计收支",
+                paymentSource = null
+            )
+        )
+
+        assertEquals("generated-1", created.id)
+        assertEquals(EntryOrigin.MANUAL, created.entryOrigin)
+        assertEquals(FlowDirection.NEUTRAL, created.flowDirection)
+        assertNull(created.paymentSource)
+        assertNull(created.originalCaptureSource)
+        assertEquals("uncategorized", created.categoryId)
+        assertEquals(created, repository.getLedgerEntry(created.id))
+        assertTrue(repository.pendingEntries.first().isEmpty())
+    }
+
+    @Test
+    fun editingCapturedEntryPreservesOriginalCaptureProvenance() = runBlocking {
+        repository.seedSystemCategories()
+        repository.upsertPending(samplePending())
+        val confirmed = repository.confirmPending("pending-1", categoryId = "food")
+
+        val updated = repository.updateLedgerEntry(
+            confirmed.id,
+            LedgerEntryInput(
+                flowDirection = FlowDirection.INFLOW,
+                transactionKind = TransactionKind.REFUND,
+                amountMinor = 1_200,
+                transactionTimeEpochMillis = NOW - 30_000,
+                merchantTitle = "退款到账",
+                categoryId = "refund",
+                fundingAccountId = null,
+                newFundingAccountLabel = null,
+                note = "已核对",
+                paymentSource = PaymentSource.ALIPAY
+            )
+        )
+
+        assertEquals(PaymentSource.ALIPAY, updated.paymentSource)
+        assertEquals(PaymentSource.WECHAT, updated.originalCaptureSource)
+        assertEquals(EntryOrigin.NOTIFICATION, updated.entryOrigin)
+        assertEquals("pending-1", updated.originPendingEntryId)
+        assertEquals("微信支付收款凭证", updated.evidenceSummary)
+        assertEquals(confirmed.confirmedAtEpochMillis, updated.confirmedAtEpochMillis)
+        assertEquals(NOW, updated.updatedAtEpochMillis)
+    }
+
+    @Test
+    fun deletedEntryLeavesActiveLedgerAndCanBeRestoredWithSameId() = runBlocking {
+        repository.seedSystemCategories()
+        val created = repository.createManualEntry(sampleLedgerInput())
+
+        val deleted = repository.moveLedgerEntryToDeleted(created.id)
+
+        assertEquals(NOW, deleted.deletedAtEpochMillis)
+        assertTrue(repository.listLedgerEntries().isEmpty())
+        assertEquals(listOf(created.id), repository.deletedLedgerEntries.first().map { it.id })
+
+        val restored = repository.restoreDeletedLedgerEntry(created.id)
+
+        assertEquals(created.id, restored.id)
+        assertNull(restored.deletedAtEpochMillis)
+        assertEquals(listOf(created.id), repository.listLedgerEntries().map { it.id })
+    }
+
+    @Test
+    fun expiredDeletedEntryCannotBeRestored() = runBlocking {
+        repository.seedSystemCategories()
+        val created = repository.createManualEntry(sampleLedgerInput())
+        database.ledgerEntryDao().upsert(
+            created.copy(
+                deletedAtEpochMillis = NOW - LocalLedgerRepository.DELETED_RETENTION_MILLIS
+            )
+        )
+
+        val failure = runCatching {
+            repository.restoreDeletedLedgerEntry(created.id)
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(
+            NOW - LocalLedgerRepository.DELETED_RETENTION_MILLIS,
+            repository.getLedgerEntry(created.id)?.deletedAtEpochMillis
+        )
+    }
+
+    @Test
+    fun permanentAndExpiredDeletionOnlyRemoveDeletedEntries() = runBlocking {
+        repository.seedSystemCategories()
+        val permanent = repository.createManualEntry(sampleLedgerInput())
+        val expired = repository.createManualEntry(sampleLedgerInput())
+        val active = repository.createManualEntry(sampleLedgerInput())
+        repository.moveLedgerEntryToDeleted(permanent.id)
+        repository.moveLedgerEntryToDeleted(expired.id)
+
+        repository.permanentlyDeleteLedgerEntry(permanent.id)
+        val purged = repository.purgeExpiredDeletedLedgerEntries(
+            nowEpochMillis = NOW + LocalLedgerRepository.DELETED_RETENTION_MILLIS
+        )
+
+        assertEquals(1, purged)
+        assertNull(repository.getLedgerEntry(permanent.id))
+        assertNull(repository.getLedgerEntry(expired.id))
+        assertEquals(active.id, repository.getLedgerEntry(active.id)?.id)
+    }
+
+    @Test
     fun confirmedLedgerEntriesCanBeObservedAfterDatabaseReopen() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "ledger-reopen-${System.nanoTime()}.db"
@@ -222,7 +341,7 @@ class LocalLedgerRepositoryTest {
 
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(4, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(5, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
@@ -262,6 +381,24 @@ class LocalLedgerRepositoryTest {
             )
             """.trimIndent()
         )
+        legacyDatabase.execSQL(
+            """
+            INSERT INTO funding_accounts (id, source, label, created_at_epoch_millis)
+            VALUES (7, 'ALIPAY', '余额', $NOW)
+            """.trimIndent()
+        )
+        legacyDatabase.execSQL(
+            """
+            INSERT INTO ledger_entries (
+                id, source, origin_pending_entry_id, transaction_kind, amount_minor,
+                currency, merchant_title, transaction_time_epoch_millis, category_id,
+                funding_account_id, note, confirmed_at_epoch_millis
+            ) VALUES (
+                'ledger-legacy', 'ALIPAY', 'pending-confirmed', 'TRANSFER', 20000,
+                'CNY', '账户间转账', ${NOW - 30_000}, NULL, 7, '旧账目', $NOW
+            )
+            """.trimIndent()
+        )
         legacyDatabase.execSQL("PRAGMA user_version = 1")
         legacyDatabase.close()
 
@@ -273,6 +410,7 @@ class LocalLedgerRepositoryTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_1_2)
             .addMigrations(AutoAccountingDatabase.MIGRATION_2_3)
             .addMigrations(AutoAccountingDatabase.MIGRATION_3_4)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
@@ -281,6 +419,12 @@ class LocalLedgerRepositoryTest {
         }
         val pending = runBlocking {
             migratedDatabase.pendingEntryDao().getById("pending-legacy")
+        }
+        val ledger = runBlocking {
+            migratedDatabase.ledgerEntryDao().getById("ledger-legacy")
+        }
+        val fundingAccount = runBlocking {
+            migratedDatabase.fundingAccountDao().getAllFundingAccounts().single()
         }
 
         assertEquals(CaptureReason.NOTIFICATION, ignored.captureReason)
@@ -293,6 +437,14 @@ class LocalLedgerRepositoryTest {
         assertNull(pending?.fundingAccountLabel)
         assertNull(pending?.parsedFieldsText)
         assertNull(pending?.suggestedCategoryLabel)
+        assertEquals(FlowDirection.OUTFLOW, ledger?.flowDirection)
+        assertEquals(PaymentSource.ALIPAY, ledger?.paymentSource)
+        assertEquals(PaymentSource.ALIPAY, ledger?.originalCaptureSource)
+        assertEquals(EntryOrigin.LEGACY_CAPTURE, ledger?.entryOrigin)
+        assertEquals(NOW, ledger?.updatedAtEpochMillis)
+        assertNull(ledger?.deletedAtEpochMillis)
+        assertEquals(FundingAccountSourceScope.ALIPAY, fundingAccount.sourceScope)
+        assertEquals(PaymentSource.ALIPAY, fundingAccount.paymentSource)
 
         runBlocking {
             assertEquals(
@@ -328,6 +480,19 @@ class LocalLedgerRepositoryTest {
         note = null,
         evidenceSummary = "微信支付收款凭证",
         parsedFieldsText = "商户=便利店\n金额=15.90"
+    )
+
+    private fun sampleLedgerInput(): LedgerEntryInput = LedgerEntryInput(
+        flowDirection = FlowDirection.OUTFLOW,
+        transactionKind = TransactionKind.EXPENSE,
+        amountMinor = 1_590,
+        transactionTimeEpochMillis = NOW - 60_000,
+        merchantTitle = "便利店",
+        categoryId = "food",
+        fundingAccountId = null,
+        newFundingAccountLabel = null,
+        note = null,
+        paymentSource = null
     )
 
     private fun sampleIgnored(

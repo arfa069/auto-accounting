@@ -95,6 +95,8 @@ Detail page:
 Ledger tab:
 - Monthly grouped transaction list.
 - Top monthly summary shows monthly expense, monthly income, and net amount.
+- A prominent floating add button opens the manual-entry form.
+- The review queue does not expose manual ledger-entry creation.
 
 Ledger row:
 - Merchant/title.
@@ -102,6 +104,32 @@ Ledger row:
 - Time.
 - Amount.
 - Source marker.
+
+Ledger management:
+- Users can create a manual entry directly in the ledger without passing through the review queue.
+- Manual entry requires flow direction, transaction kind, amount, and transaction time; the first version supports CNY only.
+- Merchant/title, category, funding account, note, and payment source are optional; an omitted category uses the uncategorized category.
+- The funding-account selector lists reusable existing accounts and offers inline creation of a named account with an optional payment source.
+- Creating or selecting a funding account does not introduce account balances or reconciliation.
+- The form can select existing categories or the uncategorized category; creating, editing, or deleting categories is outside this ledger CRUD scope.
+- Users can edit flow direction, transaction kind, amount, transaction time, merchant/title, category, funding account, note, and payment source on both manual and automatically captured ledger entries.
+- Amounts are stored as positive minor-unit values; flow direction independently determines whether an entry is an inflow, outflow, or neutral for reports.
+- Amount input must be greater than zero, use at most two decimal places, and fit safely in the stored minor-unit integer; users do not enter a sign.
+- Transaction time cannot be later than the current device time; future planned transactions are outside the ledger CRUD scope.
+- Editing an automatically captured entry does not overwrite its original capture source, entry origin, original pending-entry reference, first confirmation time, or capture evidence.
+- Editing replaces the current user-visible fields and records the last-modified time; the first version does not keep per-edit versions or provide history rollback.
+- Ledger entries retain their creation or first-confirmation time in addition to the last-modified time.
+- Ledger display, search, and reports use the corrected payment source; provenance views use the original capture source.
+- Tapping a ledger row opens a read-only detail view; editing starts only after an explicit edit action.
+- Manual creation and ledger-entry editing share the same transaction form while keeping their entry points and save actions distinct.
+- Creation and editing keep changes in the form until the user explicitly saves; saving validates and writes the complete entry as one operation.
+- Leaving a dirty form requires the user to choose between discarding changes and continuing editing.
+- Manual creation and ledger-entry editing do not run duplicate detection; valid entries are saved directly even when similar ledger entries already exist.
+- Deleting an entry removes it from the active ledger, search, and reports while keeping it recoverable for 30 days.
+- The ledger overflow menu opens a recently deleted list showing deletion time and remaining retention days.
+- Recently deleted entries can be restored or permanently deleted; permanent deletion requires explicit confirmation and cannot be undone.
+- Entries remaining in recently deleted for 30 days are permanently removed automatically.
+- Deleting from the detail screen first confirms that the entry will remain recoverable for 30 days, then returns to the ledger and offers an immediate undo action.
 
 Search and filters:
 - Search icon.
@@ -113,6 +141,8 @@ Reports first screen:
 - Current-month income and expense overview.
 - Category share.
 - Trend entry point.
+- Inflow entries contribute to income, outflow entries contribute to expense, and neutral entries are excluded from income, expense, and net totals.
+- Reports aggregate CNY entries only; multi-currency entry and exchange-rate conversion are outside the first-version scope.
 
 Charts:
 - Category share uses illustrated donut chart plus category ranking.

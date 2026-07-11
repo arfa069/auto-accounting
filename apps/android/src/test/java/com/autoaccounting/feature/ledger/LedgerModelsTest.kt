@@ -1,8 +1,10 @@
 package com.autoaccounting.feature.ledger
 
+import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.data.local.defaultFlowDirection
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -76,8 +78,11 @@ class LedgerModelsTest {
         transactionTimeEpochMillis: Long = JULY_2026
     ): LedgerEntryEntity = LedgerEntryEntity(
         id = id,
-        source = PaymentSource.ALIPAY,
+        paymentSource = PaymentSource.ALIPAY,
+        originalCaptureSource = PaymentSource.ALIPAY,
+        entryOrigin = EntryOrigin.LEGACY_CAPTURE,
         originPendingEntryId = "pending-$id",
+        flowDirection = transactionKind.defaultFlowDirection(),
         transactionKind = transactionKind,
         amountMinor = amountMinor,
         currency = "CNY",
@@ -86,7 +91,11 @@ class LedgerModelsTest {
         categoryId = categoryId,
         fundingAccountId = null,
         note = "客户会议",
-        confirmedAtEpochMillis = transactionTimeEpochMillis + 60_000
+        evidenceSummary = null,
+        parsedFieldsText = null,
+        confirmedAtEpochMillis = transactionTimeEpochMillis + 60_000,
+        updatedAtEpochMillis = transactionTimeEpochMillis + 60_000,
+        deletedAtEpochMillis = null
     )
 
     private companion object {

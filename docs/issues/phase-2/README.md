@@ -22,6 +22,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 14. [Execute Internal Beta Device Matrix And Capture Findings](./014-execute-internal-beta-device-matrix-and-capture-findings.md)
 15. [Persist Local-Mode Session Across App Restarts](./015-persist-local-mode-session-across-restarts.md)
 16. [实时捕获微信/支付宝支付结果并反馈记账状态](./016-cover-in-app-payment-message-capture-paths.md)
+17. [实现单笔账新增、查看、编辑、删除与恢复](./017-support-ledger-entry-crud-and-recovery.md)
 
 ## Supporting Lists
 
@@ -38,3 +39,4 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 - Issue 13 can start after Issue 1 and must finish before any internal tester build.
 - Issue 14 identified Issue 15; Issue 15 is independently implementable and must complete before beta distribution.
 - Issue 14 identified Issue 16; Issue 16 builds on Issues 6 and 8, removes manual bill sync from the automatic-capture prerequisite, and preserves the pending-only capture boundary.
+- Issue 17 builds on Issues 2, 3, and 5 to complete the persisted ledger-entry lifecycle without changing the pending-only automatic-capture boundary.

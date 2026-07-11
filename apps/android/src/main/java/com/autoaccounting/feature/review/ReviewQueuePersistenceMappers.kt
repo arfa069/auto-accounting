@@ -36,7 +36,7 @@ internal fun LedgerEntryEntity.toReviewEntryForDedupe(zoneId: ZoneId): ReviewQue
         title = merchantTitle,
         amountMinor = amountMinor,
         transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
-        sourceLabel = source.toLabel(),
+        sourceLabel = (paymentSource ?: originalCaptureSource)?.toLabel() ?: "未指定",
         kindLabel = transactionKind.toLabel(),
         captureReasonLabel = "已入账",
         confidence = ConfidenceState.HIGH,

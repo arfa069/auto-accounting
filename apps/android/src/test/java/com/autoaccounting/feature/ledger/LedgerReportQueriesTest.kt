@@ -9,7 +9,8 @@ class LedgerReportQueriesTest {
         val entries = listOf(
             sampleLedgerEntry(id = "food", amountMinor = 3590, flowType = LedgerFlowType.EXPENSE),
             sampleLedgerEntry(id = "ride", amountMinor = 600, flowType = LedgerFlowType.EXPENSE),
-            sampleLedgerEntry(id = "refund", amountMinor = 1290, flowType = LedgerFlowType.INCOME)
+            sampleLedgerEntry(id = "refund", amountMinor = 1290, flowType = LedgerFlowType.INCOME),
+            sampleLedgerEntry(id = "transfer", amountMinor = 20_000, flowType = LedgerFlowType.NEUTRAL)
         )
 
         val summary = monthlySummary(entries, monthKey = "2026-07")

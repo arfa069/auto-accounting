@@ -20,6 +20,9 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY sort_order ASC, name ASC")
     suspend fun getAllCategories(): List<CategoryEntity>
 
+    @Query("SELECT * FROM categories ORDER BY sort_order ASC, name ASC")
+    fun observeCategories(): Flow<List<CategoryEntity>>
+
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getCategory(id: String): CategoryEntity?
 
@@ -35,11 +38,17 @@ interface FundingAccountDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(accounts: List<FundingAccountEntity>)
 
-    @Query("SELECT * FROM funding_accounts WHERE source = :source AND label = :label LIMIT 1")
-    suspend fun findBySourceAndLabel(source: PaymentSource, label: String): FundingAccountEntity?
+    @Query("SELECT * FROM funding_accounts WHERE source = :sourceScope AND label = :label LIMIT 1")
+    suspend fun findByScopeAndLabel(
+        sourceScope: FundingAccountSourceScope,
+        label: String
+    ): FundingAccountEntity?
 
     @Query("SELECT * FROM funding_accounts ORDER BY source ASC, label ASC")
     suspend fun getAllFundingAccounts(): List<FundingAccountEntity>
+
+    @Query("SELECT * FROM funding_accounts ORDER BY source ASC, label ASC")
+    fun observeFundingAccounts(): Flow<List<FundingAccountEntity>>
 
     @Query("DELETE FROM funding_accounts")
     suspend fun deleteAll()
@@ -94,7 +103,8 @@ interface LedgerEntryDao {
     @Query(
         """
         SELECT * FROM ledger_entries
-        WHERE transaction_time_epoch_millis BETWEEN :startEpochMillis AND :endEpochMillis
+        WHERE deleted_at_epoch_millis IS NULL
+          AND transaction_time_epoch_millis BETWEEN :startEpochMillis AND :endEpochMillis
         ORDER BY transaction_time_epoch_millis DESC
         """
     )
@@ -103,11 +113,38 @@ interface LedgerEntryDao {
         endEpochMillis: Long
     ): Flow<List<LedgerEntryEntity>>
 
-    @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
+    @Query(
+        "SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NULL " +
+            "ORDER BY transaction_time_epoch_millis DESC"
+    )
     suspend fun listLedgerEntries(): List<LedgerEntryEntity>
 
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
+    suspend fun listAllLedgerEntries(): List<LedgerEntryEntity>
+
+    @Query(
+        "SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NULL " +
+            "ORDER BY transaction_time_epoch_millis DESC"
+    )
     fun observeLedgerEntries(): Flow<List<LedgerEntryEntity>>
+
+    @Query(
+        "SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NOT NULL " +
+            "ORDER BY deleted_at_epoch_millis DESC"
+    )
+    fun observeDeletedLedgerEntries(): Flow<List<LedgerEntryEntity>>
+
+    @Query("UPDATE ledger_entries SET deleted_at_epoch_millis = :deletedAt WHERE id = :id AND deleted_at_epoch_millis IS NULL")
+    suspend fun moveToDeleted(id: String, deletedAt: Long): Int
+
+    @Query("UPDATE ledger_entries SET deleted_at_epoch_millis = NULL WHERE id = :id AND deleted_at_epoch_millis IS NOT NULL")
+    suspend fun restoreDeleted(id: String): Int
+
+    @Query("DELETE FROM ledger_entries WHERE id = :id AND deleted_at_epoch_millis IS NOT NULL")
+    suspend fun permanentlyDelete(id: String): Int
+
+    @Query("DELETE FROM ledger_entries WHERE deleted_at_epoch_millis IS NOT NULL AND deleted_at_epoch_millis <= :cutoff")
+    suspend fun purgeDeletedBefore(cutoff: Long): Int
 
     @Query("DELETE FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId")
     suspend fun deleteByOriginPendingEntryId(pendingEntryId: String)

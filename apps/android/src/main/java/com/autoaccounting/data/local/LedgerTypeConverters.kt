@@ -10,6 +10,25 @@ class LedgerTypeConverters {
     fun stringToPaymentSource(value: String?): PaymentSource? = value?.let(PaymentSource::valueOf)
 
     @TypeConverter
+    fun fundingAccountSourceScopeToString(value: FundingAccountSourceScope?): String? = value?.name
+
+    @TypeConverter
+    fun stringToFundingAccountSourceScope(value: String?): FundingAccountSourceScope? =
+        value?.let(FundingAccountSourceScope::valueOf)
+
+    @TypeConverter
+    fun flowDirectionToString(value: FlowDirection?): String? = value?.name
+
+    @TypeConverter
+    fun stringToFlowDirection(value: String?): FlowDirection? = value?.let(FlowDirection::valueOf)
+
+    @TypeConverter
+    fun entryOriginToString(value: EntryOrigin?): String? = value?.name
+
+    @TypeConverter
+    fun stringToEntryOrigin(value: String?): EntryOrigin? = value?.let(EntryOrigin::valueOf)
+
+    @TypeConverter
     fun transactionKindToString(value: TransactionKind?): String? = value?.name
 
     @TypeConverter

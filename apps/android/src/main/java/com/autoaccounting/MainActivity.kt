@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
+import com.autoaccounting.data.local.CategoryEntity
+import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -196,6 +198,9 @@ fun AutoAccountingApp(
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
+    var deletedLedgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
+    var ledgerCategories by remember { mutableStateOf(emptyList<CategoryEntity>()) }
+    var fundingAccounts by remember { mutableStateOf(emptyList<FundingAccountEntity>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
         billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted
@@ -273,8 +278,27 @@ fun AutoAccountingApp(
     }
 
     LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.purgeExpiredDeletedLedgerEntries()
         localLedgerRepository.ledgerEntries.collect { entries ->
             ledgerEntries = entries.map { it.toLedgerUiEntry() }
+        }
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.deletedLedgerEntries.collect { entries ->
+            deletedLedgerEntries = entries.map { it.toLedgerUiEntry() }
+        }
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.categories.collect { categories ->
+            ledgerCategories = categories
+        }
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.fundingAccounts.collect { accounts ->
+            fundingAccounts = accounts
         }
     }
 
@@ -349,6 +373,27 @@ fun AutoAccountingApp(
 
                     AppTab.Ledger -> LedgerScreen(
                         entries = ledgerEntries,
+                        deletedEntries = deletedLedgerEntries,
+                        categories = ledgerCategories,
+                        fundingAccounts = fundingAccounts,
+                        onCreateEntry = { input ->
+                            localLedgerRepository.createManualEntry(input)
+                        },
+                        onUpdateEntry = { id, input ->
+                            localLedgerRepository.updateLedgerEntry(id, input)
+                        },
+                        onDeleteEntry = { id ->
+                            localLedgerRepository.moveLedgerEntryToDeleted(id)
+                        },
+                        onRestoreEntry = { id ->
+                            localLedgerRepository.restoreDeletedLedgerEntry(id)
+                        },
+                        onPermanentlyDeleteEntry = { id ->
+                            localLedgerRepository.permanentlyDeleteLedgerEntry(id)
+                        },
+                        onPurgeExpiredEntries = {
+                            localLedgerRepository.purgeExpiredDeletedLedgerEntries()
+                        },
                         modifier = Modifier.padding(innerPadding)
                     )
 
@@ -382,6 +427,9 @@ fun AutoAccountingApp(
                             aiSettings = AiCategorizationSettings()
                             continuousMonitoringState = ContinuousMonitoringState()
                             ledgerEntries = emptyList()
+                            deletedLedgerEntries = emptyList()
+                            ledgerCategories = emptyList()
+                            fundingAccounts = emptyList()
                             coroutineScope.launch {
                                 localLedgerRepository.clearLocalData()
                                 localPreferencesRepository.clearLocalData()

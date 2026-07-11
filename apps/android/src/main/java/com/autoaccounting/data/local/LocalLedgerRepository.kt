@@ -10,9 +10,18 @@ class LocalLedgerRepository(
 ) {
     val pendingEntries = database.pendingEntryDao().observePendingEntries()
     val ledgerEntries = database.ledgerEntryDao().observeLedgerEntries()
+    val deletedLedgerEntries = database.ledgerEntryDao().observeDeletedLedgerEntries()
+    val fundingAccounts = database.fundingAccountDao().observeFundingAccounts()
+    val categories = database.categoryDao().observeCategories()
 
     suspend fun listLedgerEntries(): List<LedgerEntryEntity> =
         database.ledgerEntryDao().listLedgerEntries()
+
+    suspend fun listAllLedgerEntries(): List<LedgerEntryEntity> =
+        database.ledgerEntryDao().listAllLedgerEntries()
+
+    suspend fun getLedgerEntry(id: String): LedgerEntryEntity? =
+        database.ledgerEntryDao().getById(id)
 
     fun recoverableIgnoredEntries(nowEpochMillis: Long) =
         database.ignoredEntryDao().observeRecoverable(nowEpochMillis)
@@ -25,23 +34,117 @@ class LocalLedgerRepository(
         source: PaymentSource,
         label: String
     ): FundingAccountEntity = database.withTransaction {
-        val existing = database.fundingAccountDao().findBySourceAndLabel(source, label)
+        val normalizedLabel = label.trim()
+        require(normalizedLabel.isNotEmpty()) { "Funding account label is required" }
+        val sourceScope = source.toFundingAccountSourceScope()
+        val existing = database.fundingAccountDao().findByScopeAndLabel(sourceScope, normalizedLabel)
         if (existing != null) {
             return@withTransaction existing
         }
 
         val newAccount = FundingAccountEntity(
-            source = source,
-            label = label,
+            sourceScope = sourceScope,
+            paymentSource = source,
+            label = normalizedLabel,
             createdAtEpochMillis = clock()
         )
         val id = database.fundingAccountDao().insertIgnore(newAccount)
         if (id == -1L) {
-            requireNotNull(database.fundingAccountDao().findBySourceAndLabel(source, label))
+            requireNotNull(database.fundingAccountDao().findByScopeAndLabel(sourceScope, normalizedLabel))
         } else {
             newAccount.copy(id = id)
         }
     }
+
+    suspend fun createManualEntry(input: LedgerEntryInput): LedgerEntryEntity = database.withTransaction {
+        val validated = input.validated(clock())
+        val fundingAccountId = resolveFundingAccount(validated)
+        val now = clock()
+        val entry = LedgerEntryEntity(
+            id = idGenerator(),
+            paymentSource = validated.paymentSource,
+            originalCaptureSource = null,
+            entryOrigin = EntryOrigin.MANUAL,
+            originPendingEntryId = null,
+            flowDirection = validated.flowDirection,
+            transactionKind = validated.transactionKind,
+            amountMinor = validated.amountMinor,
+            currency = SUPPORTED_CURRENCY,
+            merchantTitle = validated.merchantTitle.trim(),
+            transactionTimeEpochMillis = validated.transactionTimeEpochMillis,
+            categoryId = validated.categoryId ?: DEFAULT_CATEGORY_ID,
+            fundingAccountId = fundingAccountId,
+            note = validated.note?.trim()?.ifBlank { null },
+            evidenceSummary = null,
+            parsedFieldsText = null,
+            confirmedAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+            deletedAtEpochMillis = null
+        )
+        database.ledgerEntryDao().upsert(entry)
+        entry
+    }
+
+    suspend fun updateLedgerEntry(
+        ledgerEntryId: String,
+        input: LedgerEntryInput
+    ): LedgerEntryEntity = database.withTransaction {
+        val existing = requireNotNull(database.ledgerEntryDao().getById(ledgerEntryId)) {
+            "Ledger entry not found: $ledgerEntryId"
+        }
+        require(existing.deletedAtEpochMillis == null) { "Deleted ledger entry cannot be edited" }
+        val validated = input.validated(clock())
+        val updated = existing.copy(
+            paymentSource = validated.paymentSource,
+            flowDirection = validated.flowDirection,
+            transactionKind = validated.transactionKind,
+            amountMinor = validated.amountMinor,
+            currency = SUPPORTED_CURRENCY,
+            merchantTitle = validated.merchantTitle.trim(),
+            transactionTimeEpochMillis = validated.transactionTimeEpochMillis,
+            categoryId = validated.categoryId ?: DEFAULT_CATEGORY_ID,
+            fundingAccountId = resolveFundingAccount(validated),
+            note = validated.note?.trim()?.ifBlank { null },
+            updatedAtEpochMillis = clock()
+        )
+        database.ledgerEntryDao().upsert(updated)
+        updated
+    }
+
+    suspend fun moveLedgerEntryToDeleted(ledgerEntryId: String): LedgerEntryEntity =
+        database.withTransaction {
+            val existing = requireNotNull(database.ledgerEntryDao().getById(ledgerEntryId)) {
+                "Ledger entry not found: $ledgerEntryId"
+            }
+            require(existing.deletedAtEpochMillis == null) { "Ledger entry is already deleted" }
+            val deletedAt = clock()
+            check(database.ledgerEntryDao().moveToDeleted(ledgerEntryId, deletedAt) == 1)
+            existing.copy(deletedAtEpochMillis = deletedAt)
+        }
+
+    suspend fun restoreDeletedLedgerEntry(ledgerEntryId: String): LedgerEntryEntity =
+        database.withTransaction {
+            val existing = requireNotNull(database.ledgerEntryDao().getById(ledgerEntryId)) {
+                "Ledger entry not found: $ledgerEntryId"
+            }
+            val deletedAt = requireNotNull(existing.deletedAtEpochMillis) { "Ledger entry is not deleted" }
+            require(deletedAt > clock() - DELETED_RETENTION_MILLIS) {
+                "Ledger entry recovery period has expired"
+            }
+            check(database.ledgerEntryDao().restoreDeleted(ledgerEntryId) == 1)
+            existing.copy(deletedAtEpochMillis = null)
+        }
+
+    suspend fun permanentlyDeleteLedgerEntry(ledgerEntryId: String) {
+        check(database.ledgerEntryDao().permanentlyDelete(ledgerEntryId) == 1) {
+            "Only a deleted ledger entry can be permanently deleted"
+        }
+    }
+
+    suspend fun purgeExpiredDeletedLedgerEntries(nowEpochMillis: Long = clock()): Int =
+        database.ledgerEntryDao().purgeDeletedBefore(
+            nowEpochMillis - DELETED_RETENTION_MILLIS
+        )
 
     suspend fun upsertPending(entry: PendingEntryEntity) {
         database.pendingEntryDao().upsert(entry)
@@ -66,8 +169,11 @@ class LocalLedgerRepository(
         }
         val ledgerEntry = LedgerEntryEntity(
             id = idGenerator(),
-            source = pending.source,
+            paymentSource = pending.source,
+            originalCaptureSource = pending.source,
+            entryOrigin = pending.captureReason.toEntryOrigin(),
             originPendingEntryId = pending.id,
+            flowDirection = pending.transactionKind.defaultFlowDirection(),
             transactionKind = pending.transactionKind,
             amountMinor = pending.amountMinor,
             currency = pending.currency,
@@ -76,7 +182,11 @@ class LocalLedgerRepository(
             categoryId = categoryId ?: pending.suggestedCategoryId,
             fundingAccountId = pending.fundingAccountId,
             note = note ?: pending.note,
-            confirmedAtEpochMillis = confirmedAtEpochMillis
+            evidenceSummary = pending.evidenceSummary,
+            parsedFieldsText = pending.parsedFieldsText,
+            confirmedAtEpochMillis = confirmedAtEpochMillis,
+            updatedAtEpochMillis = confirmedAtEpochMillis,
+            deletedAtEpochMillis = null
         )
 
         database.ledgerEntryDao().upsert(ledgerEntry)
@@ -139,6 +249,34 @@ class LocalLedgerRepository(
         database.ledgerEntryDao().deleteByOriginPendingEntryId(pendingEntryId)
     }
 
+    private suspend fun resolveFundingAccount(input: LedgerEntryInput): Long? {
+        require(input.fundingAccountId == null || input.newFundingAccountLabel.isNullOrBlank()) {
+            "Choose an existing funding account or create a new one, not both"
+        }
+        input.fundingAccountId?.let { return it }
+        val label = input.newFundingAccountLabel?.trim().orEmpty()
+        if (label.isEmpty()) {
+            return null
+        }
+        val scope = input.paymentSource?.toFundingAccountSourceScope() ?: FundingAccountSourceScope.USER
+        val existing = database.fundingAccountDao().findByScopeAndLabel(scope, label)
+        if (existing != null) {
+            return existing.id
+        }
+        val account = FundingAccountEntity(
+            sourceScope = scope,
+            paymentSource = input.paymentSource,
+            label = label,
+            createdAtEpochMillis = clock()
+        )
+        val id = database.fundingAccountDao().insertIgnore(account)
+        return if (id == -1L) {
+            requireNotNull(database.fundingAccountDao().findByScopeAndLabel(scope, label)).id
+        } else {
+            id
+        }
+    }
+
     suspend fun clearLocalData() = database.withTransaction {
         database.ledgerEntryDao().deleteAll()
         database.pendingEntryDao().deleteAll()
@@ -150,7 +288,29 @@ class LocalLedgerRepository(
 
     companion object {
         const val IGNORED_RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1000L
+        const val DELETED_RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1000L
+        const val SUPPORTED_CURRENCY = "CNY"
+        const val DEFAULT_CATEGORY_ID = "uncategorized"
     }
+}
+
+data class LedgerEntryInput(
+    val flowDirection: FlowDirection,
+    val transactionKind: TransactionKind,
+    val amountMinor: Long,
+    val transactionTimeEpochMillis: Long,
+    val merchantTitle: String,
+    val categoryId: String?,
+    val fundingAccountId: Long?,
+    val newFundingAccountLabel: String?,
+    val note: String?,
+    val paymentSource: PaymentSource?
+)
+
+private fun LedgerEntryInput.validated(now: Long): LedgerEntryInput {
+    require(amountMinor > 0) { "Amount must be greater than zero" }
+    require(transactionTimeEpochMillis <= now) { "Transaction time cannot be in the future" }
+    return this
 }
 
 private fun IgnoredEntryEntity.toPendingEntry(): PendingEntryEntity = PendingEntryEntity(

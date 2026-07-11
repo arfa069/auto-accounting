@@ -9,12 +9,24 @@ A money movement that should appear in the user's ledger, such as a payment, ref
 _Avoid_: Bill, message, notification
 
 **Payment Source**:
-An external app or channel where payment activity originates before it is captured by this app.
+A user-visible external app or channel assigned to a transaction. It can be corrected after capture, and a manual entry may have no payment source.
 _Avoid_: Platform, provider
 
+**Original Capture Source**:
+The external app or channel recorded when an automatically captured transaction first entered the app, retained as immutable provenance even if its payment source is corrected.
+_Avoid_: Payment source, entry origin
+
+**Entry Origin**:
+The way a transaction entered the app, such as manual entry, notification capture, bill sync, or duplicate merge.
+_Avoid_: Payment source, funding account
+
 **Ledger Entry**:
-A transaction after it has been accepted into the user's ledger, either automatically or after review.
+A transaction after it has been accepted into the user's ledger, either through manual entry or by confirming a pending entry.
 _Avoid_: Record, item
+
+**Manual Entry**:
+A user-authored transaction accepted directly as a ledger entry without passing through the review queue or requiring a payment source.
+_Avoid_: Manual pending entry, draft entry
 
 **Pending Entry**:
 A captured transaction candidate that still needs user confirmation, correction, or deduplication before becoming a ledger entry.
@@ -27,6 +39,10 @@ _Avoid_: Inbox, task list
 **Ignored Entry**:
 A pending entry dismissed from the review queue without becoming a ledger entry, recoverable for a limited time.
 _Avoid_: Deleted entry, archived transaction
+
+**Deleted Ledger Entry**:
+A former ledger entry removed from the active ledger and reports, recoverable for 30 days before permanent deletion.
+_Avoid_: Ignored entry, archived entry
 
 **Ledger**:
 The user's confirmed collection of ledger entries.
@@ -45,15 +61,19 @@ A pending entry or ledger entry formed by combining duplicate candidates that de
 _Avoid_: Deleted duplicate, overwritten record
 
 **Transaction Kind**:
-The financial shape of a transaction, such as expense, income, refund, transfer, red packet, repayment, investment, fee, or another type exposed by a payment source.
-_Avoid_: Category, tag
+The business nature of a transaction, such as purchase, refund, transfer, red packet, repayment, investment, fee, or another type exposed by a payment source. It does not determine whether money flows in or out.
+_Avoid_: Flow direction, category, tag
+
+**Flow Direction**:
+The effect of a transaction on income and expense totals: inflow, outflow, or neutral. Amounts remain positive, and neutral entries do not affect income, expense, or net totals.
+_Avoid_: Transaction kind, signed amount
 
 **Category**:
 The user's purpose-based label for a ledger entry, such as food, transport, shopping, housing, healthcare, or travel.
 _Avoid_: Transaction kind, source type
 
 **Funding Account**:
-The payment method or money account used by a transaction, such as Alipay balance, WeChat balance, a bank card, Huabei, or another source-reported method.
+A reusable payment method or money account used by a transaction, such as cash, Alipay balance, WeChat balance, a bank card, or Huabei. It may be reported by a payment source or created by the user.
 _Avoid_: Balance account, asset account
 
 **Encrypted Backup**:

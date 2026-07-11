@@ -9,7 +9,10 @@ import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.CategorizationRuleEntity
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.EntryOrigin
+import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.FundingAccountSourceScope
 import com.autoaccounting.data.local.IgnoreReason
 import com.autoaccounting.data.local.IgnoredEntryEntity
 import com.autoaccounting.data.local.LedgerEntryEntity
@@ -65,7 +68,7 @@ class LocalDataBackupRepositoryTest {
 
         val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
 
-        assertTrue(backup.startsWith("AUTO_ACCOUNTING_BACKUP_V2:"))
+        assertTrue(backup.startsWith("AUTO_ACCOUNTING_BACKUP_V3:"))
         assertFalse(backup.contains("Coffee Shop"))
 
         LocalLedgerRepository(database).clearLocalData()
@@ -85,6 +88,7 @@ class LocalDataBackupRepositoryTest {
         assertEquals(listOf("pending-1"), reviewState.pendingEntries.map { it.id })
         assertEquals(listOf("ignored-1"), reviewState.ignoredEntries.map { it.id })
         assertEquals(listOf("ledger-1"), ledgerRepository.ledgerEntries.first().map { it.id })
+        assertEquals(listOf("ledger-deleted"), ledgerRepository.deletedLedgerEntries.first().map { it.id })
         assertEquals(listOf("rule-1"), preferencesRepository.categorizationRules.first().map { it.id })
         assertTrue(preferencesRepository.userPreferences.first().aiSettings.aiConsentGranted)
     }
@@ -104,6 +108,44 @@ class LocalDataBackupRepositoryTest {
         assertEquals("rule-1", database.categorizationRuleDao().listRules().single().id)
     }
 
+    @Test
+    fun invalidBackupFieldsFailBeforeChangingPersistedData() = runBlocking {
+        populateDatabase()
+        val original = readSnapshot()
+        val invalid = original.copy(
+            ledgerEntries = original.ledgerEntries.mapIndexed { index, entry ->
+                if (index == 0) entry.copy(amountMinor = -1) else entry
+            }
+        )
+
+        val failure = runCatching {
+            backupRepository.importEncryptedBackup(
+                encryptPersistedLocalData(invalid, PASSPHRASE),
+                PASSPHRASE
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(original, readSnapshot())
+    }
+
+    @Test
+    fun versionTwoBackupImportsWithLegacyLedgerSemantics() = runBlocking {
+        backupRepository.importEncryptedBackup(V2_BACKUP_FIXTURE, PASSPHRASE)
+
+        val fundingAccount = database.fundingAccountDao().getAllFundingAccounts().single()
+        val ledgerEntry = database.ledgerEntryDao().listLedgerEntries().single()
+
+        assertEquals(FundingAccountSourceScope.WECHAT, fundingAccount.sourceScope)
+        assertEquals(PaymentSource.WECHAT, fundingAccount.paymentSource)
+        assertEquals(FlowDirection.INFLOW, ledgerEntry.flowDirection)
+        assertEquals(PaymentSource.ALIPAY, ledgerEntry.paymentSource)
+        assertEquals(PaymentSource.ALIPAY, ledgerEntry.originalCaptureSource)
+        assertEquals(EntryOrigin.LEGACY_CAPTURE, ledgerEntry.entryOrigin)
+        assertEquals(ledgerEntry.confirmedAtEpochMillis, ledgerEntry.updatedAtEpochMillis)
+        assertEquals(null, ledgerEntry.deletedAtEpochMillis)
+    }
+
     private suspend fun populateDatabase() {
         database.categoryDao().upsertAll(
             listOf(
@@ -121,19 +163,21 @@ class LocalDataBackupRepositoryTest {
             listOf(
                 FundingAccountEntity(
                     id = 7,
-                    source = PaymentSource.WECHAT,
+                    sourceScope = FundingAccountSourceScope.WECHAT,
+                    paymentSource = PaymentSource.WECHAT,
                     label = "Wallet",
                     createdAtEpochMillis = NOW
                 )
             )
         )
         database.pendingEntryDao().upsertAll(listOf(samplePending()))
-        database.ledgerEntryDao().upsertAll(
-            listOf(
-                LedgerEntryEntity(
+        val ledgerEntry = LedgerEntryEntity(
                     id = "ledger-1",
-                    source = PaymentSource.ALIPAY,
+                    paymentSource = PaymentSource.ALIPAY,
+                    originalCaptureSource = PaymentSource.ALIPAY,
+                    entryOrigin = EntryOrigin.LEGACY_CAPTURE,
                     originPendingEntryId = "confirmed-source",
+                    flowDirection = FlowDirection.OUTFLOW,
                     transactionKind = TransactionKind.EXPENSE,
                     amountMinor = 2590,
                     currency = "CNY",
@@ -142,7 +186,18 @@ class LocalDataBackupRepositoryTest {
                     categoryId = "food",
                     fundingAccountId = 7,
                     note = "Commute",
-                    confirmedAtEpochMillis = NOW
+                    evidenceSummary = "Alipay receipt",
+                    parsedFieldsText = "amount=25.90",
+                    confirmedAtEpochMillis = NOW,
+                    updatedAtEpochMillis = NOW,
+                    deletedAtEpochMillis = null
+                )
+        database.ledgerEntryDao().upsertAll(
+            listOf(
+                ledgerEntry,
+                ledgerEntry.copy(
+                    id = "ledger-deleted",
+                    deletedAtEpochMillis = NOW + 1_000
                 )
             )
         )
@@ -203,7 +258,7 @@ class LocalDataBackupRepositoryTest {
             categories = database.categoryDao().getAllCategories(),
             fundingAccounts = database.fundingAccountDao().getAllFundingAccounts(),
             pendingEntries = database.pendingEntryDao().listPendingEntries(),
-            ledgerEntries = database.ledgerEntryDao().listLedgerEntries(),
+            ledgerEntries = database.ledgerEntryDao().listAllLedgerEntries().sortedBy { it.id },
             ignoredEntries = database.ignoredEntryDao().listAll(),
             categorizationRules = database.categorizationRuleDao().listRules(),
             settings = database.localSettingsDao().getById()
@@ -232,5 +287,12 @@ class LocalDataBackupRepositoryTest {
     private companion object {
         const val NOW = 1_783_468_800_000L
         const val PASSPHRASE = "Aa123456!"
+        const val V2_BACKUP_FIXTURE =
+            "AUTO_ACCOUNTING_BACKUP_V2:" +
+                "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGwd+ybCCUSB4eWV/jCNk3d+5mIsNnmnR5Rar1Rfo" +
+                "3eq4hqIRfuKYvQPAVpT9E4NW+9N7+9Ab5xVRSsRi9QcDMnIh2tdTJEbhGcvtz0P9sLWRk9FNBSpK" +
+                "feMiF8Jn2/Go4SXEq45NeWLbAig6JZhxlxfUU9BOrsiXPhxVH9LvFB4jPoE3St8BL7NrOay8C0QY" +
+                "qfZE9o5PO/QznRyp2RoYLlwPR4wZqkeD9vgdpgikdYcWNm4xvY0wptd3PXqzSQUbfIXyu+M16Tn" +
+                "yZRS928CX4ZVwfZAx"
     }
 }
