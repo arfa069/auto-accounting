@@ -53,6 +53,7 @@
 
 - 规划阶段：尚未实现或执行验收。
 - `2026-07-12`：新增 `ProfileScreenTest`，覆盖账号状态卡、五项总览入口和已登录账户管理中的退出登录/账号注销边界；专项测试、Android 全量单测与 Debug APK 构建均通过。手工设备验证尚未执行。
+- `2026-07-12`：审查修复后新增 `MainActivityTest`，覆盖 Android 系统返回键从账户管理回到“我的”总览，以及未迁移入口仍可访问既有设置；`LocalModeSessionStoreTest` 覆盖退出登录后重建恢复本地模式。最终 Android 全量单测与 Debug APK 构建通过。
 
 ## 依赖
 

@@ -37,6 +37,15 @@ class LocalModeSessionStoreTest {
         assertEquals(AccountSession.LocalMode, LocalModeSessionStore(context).restoreSession())
     }
 
+    @Test
+    fun signingOutTransitionsToAndPersistsLocalMode() {
+        val initialStore = LocalModeSessionStore(context)
+
+        assertEquals(AccountSession.LocalMode, signOutToLocalMode(initialStore))
+
+        assertEquals(AccountSession.LocalMode, LocalModeSessionStore(context).restoreSession())
+    }
+
     private fun clearPersistedSession() {
         context.getSharedPreferences(
             LOCAL_MODE_SESSION_PREFERENCES,

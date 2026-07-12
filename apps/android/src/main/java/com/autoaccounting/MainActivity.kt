@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.FundingAccountEntity
@@ -34,6 +36,7 @@ import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.account.LocalModeSessionStore
+import com.autoaccounting.feature.account.signOutToLocalMode
 import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
@@ -41,6 +44,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
+import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
@@ -54,10 +58,10 @@ import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.feature.profile.AccountManagementScreen
 import com.autoaccounting.feature.profile.ProfileDestination
 import com.autoaccounting.feature.profile.ProfileOverviewScreen
-import com.autoaccounting.feature.profile.ProfileSecondaryPlaceholderScreen
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
+import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -174,6 +178,9 @@ fun AutoAccountingApp(
     }
     val localPreferencesRepository = remember(database) {
         LocalPreferencesRepository(database)
+    }
+    val localDataBackupRepository = remember(database) {
+        LocalDataBackupRepository(database)
     }
     val localModeSessionStore = remember(context.applicationContext) {
         LocalModeSessionStore(context.applicationContext)
@@ -331,6 +338,12 @@ fun AutoAccountingApp(
             return@MaterialTheme
         }
 
+        BackHandler(
+            enabled = selectedTab == AppTab.Profile && profileDestination != null
+        ) {
+            profileDestination = null
+        }
+
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -343,6 +356,7 @@ fun AutoAccountingApp(
                                     selectedTab = tab
                                     profileDestination = null
                                 },
+                                modifier = Modifier.testTag("app-tab-${tab.name}"),
                                 icon = { Text(tab.symbol) },
                                 label = { Text(tab.label) }
                             )
@@ -421,8 +435,7 @@ fun AutoAccountingApp(
                                 accountSession = null
                             },
                             onSignOut = {
-                                localModeSessionStore.confirmLocalMode()
-                                accountSession = AccountSession.LocalMode
+                                accountSession = signOutToLocalMode(localModeSessionStore)
                                 profileDestination = null
                             },
                             onDeletionStateChange = { accountDeletionState = it },
@@ -430,10 +443,53 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
-                        else -> ProfileSecondaryPlaceholderScreen(
-                            destination = destination,
-                            onBack = { profileDestination = null },
-                            modifier = Modifier.padding(innerPadding)
+                        else -> CategorizationRulesScreen(
+                            rules = categorizationRules,
+                            onRulesChange = ::persistCategorizationRules,
+                            modifier = Modifier.padding(innerPadding),
+                            showPermissionCenter = true,
+                            aiSettings = aiSettings,
+                            onAiSettingsChange = ::persistAiSettings,
+                            ledgerEntries = ledgerEntries,
+                            onExportEncryptedBackup = { passphrase ->
+                                localDataBackupRepository.exportEncryptedBackup(passphrase)
+                            },
+                            onImportEncryptedBackup = { backup, passphrase ->
+                                localDataBackupRepository.importEncryptedBackup(
+                                    backup,
+                                    passphrase
+                                )
+                                reviewState = ReviewQueueState()
+                            },
+                            snackbarHostState = snackbarHostState,
+                            onDeleteLocalData = {
+                                reviewState = ReviewQueueState()
+                                categorizationRules = emptyList()
+                                aiSettings = AiCategorizationSettings()
+                                continuousMonitoringState = ContinuousMonitoringState()
+                                ledgerEntries = emptyList()
+                                deletedLedgerEntries = emptyList()
+                                ledgerCategories = emptyList()
+                                fundingAccounts = emptyList()
+                                coroutineScope.launch {
+                                    localLedgerRepository.clearLocalData()
+                                    localPreferencesRepository.clearLocalData()
+                                }
+                            },
+                            notificationListenerAccessGranted = notificationListenerAccessGranted,
+                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
+                            accountSession = activeAccountSession,
+                            accountDeletionState = accountDeletionState,
+                            onAccountDeletionStateChange = { next ->
+                                accountDeletionState = next
+                            },
+                            continuousMonitoringState = continuousMonitoringState,
+                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
                         )
                     }
                 }

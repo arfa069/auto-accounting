@@ -123,30 +123,6 @@ fun AccountManagementScreen(
 }
 
 @Composable
-fun ProfileSecondaryPlaceholderScreen(
-    destination: ProfileDestination,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Text("返回")
-        }
-        Text(
-            text = destination.title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text("该功能将在后续页面迁移中提供。")
-    }
-}
-
-@Composable
 private fun AccountDeletionCard(
     state: AccountDeletionUiState,
     onStateChange: (AccountDeletionUiState) -> Unit

@@ -23,3 +23,8 @@ internal class LocalModeSessionStore(context: Context) {
         const val LOCAL_MODE_CONFIRMED_KEY = "confirmed"
     }
 }
+
+internal fun signOutToLocalMode(sessionStore: LocalModeSessionStore): AccountSession {
+    sessionStore.confirmLocalMode()
+    return AccountSession.LocalMode
+}
