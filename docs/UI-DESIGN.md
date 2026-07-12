@@ -171,17 +171,43 @@ Category trend:
 ## 8. Profile
 
 Top area:
-- Login/account state.
-- Local mode prompt where relevant.
-- Permission health entry.
+- A compact account-state card links to Account Management.
+- Local mode reads "Local mode · ledger stored on this device".
+- Signed-in mode shows a masked phone number and account state.
+- Do not add avatar, nickname, signature, or other personal-profile fields.
 
-Groups:
-- Account and security.
-- Permissions and monitoring.
-- AI categorization.
-- Backup and export.
-- Categorization rules.
-- About and compliance.
+Overview entries, in order:
+1. Account Management.
+2. Automatic Bookkeeping.
+3. Categorization Rules.
+4. Data and Backup.
+5. Compliance and Privacy.
+
+Each overview row contains one status summary and a navigation affordance only. It never contains switches, permission buttons, or backup-password fields. Selecting a row opens a full secondary page with a title and back action; bottom navigation remains visible, and switching tabs resets the secondary-page stack.
+
+Account Management:
+- In local mode, explain the state and offer sign-in or registration.
+- When signed in, show masked account state, a normal sign-out action, and a visually separated account-deletion danger area.
+- Sign-out keeps the local ledger, while account deletion follows its separate cooling-off flow.
+
+Automatic Bookkeeping:
+- Order sections as state, required permissions, continuous-monitoring health, then user-started bill sync.
+- Overview status is Ready, Needs attention with a specific reason, or Off. Result notifications do not block capture and do not produce Needs attention.
+- Keep the accessibility description explicit: it is limited to payment-result and permitted bill pages, and does not read chats or ordinary messages.
+
+Categorization Rules:
+- Keep local rule management available in every account state.
+- In local mode, describe cloud AI as login-required and do not offer an enable control.
+- After AI is enabled, show enhanced context as a separate opt-in. Turning off AI also turns off enhanced context; enabling AI again starts with minimal fields.
+
+Data and Backup:
+- Keep CSV export and encrypted-backup export/import in the normal area.
+- Place Local Data Deletion at the bottom in a distinct danger area, retaining the backup reminder and typed confirmation.
+- Import first validates the backup and passphrase without changing local data; only a second explicit confirmation permits replacing the local snapshot.
+
+Compliance and Privacy:
+- Show separate rows for Privacy Policy, Personal Information Collection List, Third-Party Service List, and Permission Explanations; each opens its own full document.
+- Do not expose store-review materials, logs, device matrices, permission-retention checks, or quality metrics here. These belong to Debug-build Developer Tools only.
 
 ## 9. Login, Registration, Recovery
 
@@ -233,15 +259,14 @@ Fixed copy:
 - Phone not registered: "该手机号尚未注册，请先创建账号".
 - Password confirmation mismatch: "两次输入的密码不一致".
 
-## 11. Permission Center
+## 11. Automatic Bookkeeping Permission Section
 
 First screen items:
 - Notification listening.
 - Bookkeeping result notifications.
 - Automatic-bookkeeping accessibility service.
-- Automatic capture.
-- Cloud AI authorization.
-- Background keep-alive / auto-start suggestion.
+- Continuous monitoring and background keep-alive / auto-start suggestion.
+- User-started bill sync appears after the permission and health sections, not as a permission.
 
 Each item:
 - Status icon.

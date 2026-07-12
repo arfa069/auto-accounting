@@ -1,0 +1,57 @@
+# 将自动记账迁移为独立页面
+
+## 目标
+
+让用户在“自动记账”中判断持续自动捕获是否可用、修复具体授权或服务问题，并将手动账单同步保留为独立的补录操作。
+
+## 范围
+
+- 从“我的”总览进入自动记账二级页，按状态、必要权限、持续监控与健康状态、手动账单同步的顺序展示。
+- 总览状态仅使用“已就绪”“需要处理（指出具体原因）”“已关闭”。
+- 通知监听和无障碍状态参与自动记账可用性判断；记账结果通知只影响回执展示，不阻断捕获；账单同步不是常驻权限。
+- 保留现有通知监听、无障碍、记账结果通知、持续监控与账单同步的真实系统入口和安全说明。
+
+## 非目标
+
+- 不改变支付结果采集、去重、待确认入队或无障碍页面白名单。
+- 不扩大到聊天、普通消息、支付发起或转账发送页面。
+
+## 目标文件或模块
+
+- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
+- `apps/android/src/main/java/com/autoaccounting/feature/capture`
+- `apps/android/src/main/java/com/autoaccounting/feature/billsync`
+- `apps/android/src/main/java/com/autoaccounting/feature/monitoring`
+- `apps/android/src/test/java/com/autoaccounting/feature`
+
+## 验收标准
+
+- [ ] 自动记账页只包含本 Issue 定义的设置和操作，不再与分类、备份或合规内容混排。
+- [ ] 已开启但缺少必要权限或服务不健康时，总览显示“需要处理”和具体原因；关闭自动记账时显示“已关闭”。
+- [ ] 拒绝记账结果通知不会阻断采集或使总览显示“需要处理”。
+- [ ] 无障碍说明明确其读取范围，不放宽现有隐私边界。
+
+## 验收测试
+
+- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
+- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
+- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+
+## 手工验证
+
+1. 在测试设备上分别授予和撤销通知监听、无障碍和结果通知，确认页面状态与系统状态一致。
+2. 开启后再关闭自动记账，确认关闭时不会新增待确认记录。
+3. 从页面发起手动账单同步，确认其作为补录操作而非权限项出现。
+
+## 回滚或安全说明
+
+- 权限刷新后须重新检查无障碍服务是否仍启用和绑定；不得通过修改系统设置绕过用户授权。
+- 真机验证不检查隐私敏感的微信钱包历史页。
+
+## 验证记录
+
+- 规划阶段：尚未实现或执行验收。
+
+## 依赖
+
+- Issue 18：重构“我的”总览与账户管理。

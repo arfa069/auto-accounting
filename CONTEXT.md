@@ -80,9 +80,17 @@ _Avoid_: Balance account, asset account
 A portable app data backup that is encrypted before it leaves the app sandbox and can later restore the user's ledger and settings.
 _Avoid_: Export, archive
 
+**Data and Backup**:
+A profile-area entry for CSV export and encrypted-backup export or import. Local Data Deletion is a separately protected, destructive action at the bottom of this entry.
+_Avoid_: Account management, cloud sync
+
 **User Account**:
 The user's app identity used for authentication and future cloud-linked product capabilities.
 _Avoid_: Device ID, profile
+
+**Account Management**:
+The first profile-area entry for viewing the current account state, signing in or registering from local mode, and managing account deletion after sign-in.
+_Avoid_: Profile, local-data settings
 
 **Local Mode**:
 An app state where the user can keep a local ledger without signing in, while cloud-linked capabilities remain unavailable.
@@ -115,6 +123,10 @@ _Avoid_: Account deletion, logout
 **Internal Beta**:
 A feature-complete test release for controlled users before public store submission.
 _Avoid_: MVP, prototype, store release
+
+**Developer Tools**:
+Debug-build-only tools for internal-beta checks such as logs, device matrices, permission retention, and quality metrics. They are not available in release builds or the normal user-facing profile area.
+_Avoid_: User settings, hidden release entry
 
 **Store Compliance Package**:
 The permission explanations, privacy policy, review materials, screenshots, videos, and declarations needed for public app-store submission.
@@ -180,9 +192,13 @@ _Avoid_: Abstract assistant, human assistant
 The app's recurring animal companion, using a cat-like personality and visual direction.
 _Avoid_: Generic animal, pet theme
 
+**Auto Bookkeeping**:
+A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, bookkeeping-result notifications, continuous monitoring, user-started bill sync, and their health states.
+_Avoid_: Permission center, permission tab
+
 **Permission Center**:
-A profile-area screen that shows notification access, accessibility access, AI consent, and related setup or troubleshooting actions.
-_Avoid_: Permission tab, setup page
+A section within Auto Bookkeeping that shows notification access, accessibility access, and related setup or troubleshooting actions.
+_Avoid_: Profile-area entry, permission tab
 
 **Permission Health**:
 The user-visible readiness state of permissions and device settings that affect capture, sync, AI categorization, or monitoring.
@@ -207,6 +223,8 @@ _Avoid_: AI setting, smart mode
 **Enhanced AI Context**:
 Additional transaction context that the user may choose to share for better AI categorization accuracy beyond the default minimal fields.
 _Avoid_: Full data upload, accuracy mode
+
+Enhanced AI Context can be enabled only after AI Categorization Consent. Turning off AI Categorization revokes Enhanced AI Context; enabling AI again starts with the default minimal fields.
 
 **AI Categorization Log**:
 A backend-retained record of AI categorization requests and outcomes used to improve categorization quality.

@@ -163,7 +163,9 @@ AI:
 - Disabled by default.
 - Requires login and explicit AI categorization consent.
 - Uses minimal fields by default.
-- Enhanced AI context is optional.
+- Enhanced AI context is optional and can be enabled only after AI categorization consent.
+- Turning off AI categorization revokes enhanced AI context; turning AI back on starts from the minimal-field default and requires a new enhanced-context choice.
+- Local mode keeps local categorization rules available, but shows cloud AI as login-required rather than offering an enable control.
 - Primary UI shows the category only, not whether it came from a rule, AI, manual input, or no source.
 
 ### 5.6 Account
@@ -193,6 +195,7 @@ Account recovery:
 - Flow: phone confirmation -> SMS verification code -> set new password.
 
 Deletion:
+- Signing out removes only the current device's login session. It does not remove the local ledger, encrypted backups, or the cloud account.
 - Account deletion removes cloud account, registered devices, cloud configuration, and AI categorization logs.
 - Local ledger deletion is separate.
 - Account deletion uses a 7-day cooling-off period.
@@ -212,15 +215,24 @@ Backend limits:
 - Verification code validity: 5 minutes.
 - Same code can be tried 3 times; then it is invalidated.
 
-### 5.8 Permissions And Monitoring
+### 5.8 Automatic Bookkeeping
 
-Permission center first screen shows:
+The Automatic Bookkeeping page shows, in order:
+- Automatic-bookkeeping state and its enable or disable action.
 - Notification listening.
 - Bookkeeping result notifications.
 - Automatic-bookkeeping accessibility service.
-- Automatic capture switch.
-- Cloud AI authorization.
-- Background keep-alive / auto-start suggestion.
+- Continuous monitoring and its health state.
+- User-started bill sync as a separate backfill action.
+
+The Automatic Bookkeeping overview status is:
+- Ready when automatic bookkeeping is enabled, notification listening and accessibility are available, and continuous monitoring is healthy.
+- Needs attention when automatic bookkeeping is enabled but a required permission or service is unavailable; it names the specific cause.
+- Off when the user has disabled automatic bookkeeping, regardless of retained permissions.
+
+Bookkeeping result notifications do not block capture and therefore do not make the overview status need attention. Bill sync remains a user-started action and is not a standing permission.
+
+The permission section shows:
 
 Each permission item shows:
 - Status icon.
@@ -242,6 +254,7 @@ Permission copy:
 - CSV export for spreadsheet inspection and external analysis.
 - Encrypted backup export/import for migration and recovery.
 - Complete app backup must be encrypted before leaving the app sandbox.
+- Before importing, validate the selected backup and passphrase without altering local data. After successful validation, require a separate confirmation that the import replaces the current local snapshot before restoring it.
 
 ## 6. UI Scope
 
@@ -261,17 +274,21 @@ Login first screen:
 - Local mode entry shows a one-time limitation explanation: local bookkeeping works, but cloud AI, device configuration, and future sync are unavailable.
 
 Profile top:
-- Login/account state.
-- Local mode prompt where relevant.
-- Permission health entry.
+- A compact, clickable account-state card: local mode states that the ledger remains on the device; signed-in mode shows a masked phone number and account state.
+- The card opens Account Management; the profile does not add avatar, nickname, signature, or other personal-profile fields.
 
-Profile groups:
-- Account and security.
-- Permissions and monitoring.
-- AI categorization.
-- Backup and export.
-- Categorization rules.
-- About and compliance.
+Profile overview:
+- Shows only a one-line status summary and navigation affordance for each entry. It contains no switches, system-permission buttons, backup passphrase inputs, or other detailed controls.
+- Lists entries in this order: Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, Compliance and Privacy.
+- Each entry opens a full in-app secondary page with a title and back action. Bottom navigation remains available; switching tabs does not preserve this secondary-page stack.
+
+Profile entries:
+- Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
+- Automatic Bookkeeping: state, permissions, continuous-monitoring health, and user-started bill sync as defined in section 5.8.
+- Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
+- Data and Backup: normal actions for CSV export and encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
+- Compliance and Privacy: entry points for the privacy policy, personal-information collection list, third-party-service list, and permission explanations. Each document opens separately and is available in local mode.
+- Internal-beta logs, device matrices, retention checks, and quality metrics are not user settings. They appear only in Debug-build Developer Tools and are absent from release builds and the Profile overview.
 
 ## 7. Visual And Copy Direction
 

@@ -1,0 +1,54 @@
+# 迁移数据与备份并保护恢复操作
+
+## 目标
+
+在“数据与备份”中提供导出和恢复能力，并在任何导入会替换本机快照前完成校验和明确确认。
+
+## 范围
+
+- 迁移 CSV 导出、加密备份导出和加密备份导入到“数据与备份”二级页。
+- 将删除本机数据置于页面底部的独立危险区，保留备份提醒和输入确认短语。
+- 导入先选择文件并校验密码、格式和内容，校验成功后才显示“将替换本机现有数据”的第二次确认。
+- 校验失败、取消确认或恢复失败时，当前本地快照保持不变。
+
+## 非目标
+
+- 不改变备份格式、Room schema 或既有备份版本兼容性。
+- 不将 CSV 误称为完整备份或云端同步。
+
+## 目标文件或模块
+
+- `apps/android/src/main/java/com/autoaccounting/feature/settings`
+- `apps/android/src/main/java/com/autoaccounting/data/local`
+- `apps/android/src/test/java/com/autoaccounting/feature/settings`
+
+## 验收标准
+
+- [ ] 数据与备份页将常规导出/导入操作与本机数据删除危险区清晰分开。
+- [ ] 导入在密码、格式或内容校验失败时不改变当前数据。
+- [ ] 有效备份在用户进行第二次确认前不替换当前数据；确认后完整恢复既有支持的数据范围。
+- [ ] 删除本机数据仍必须经过备份提醒和输入确认。
+
+## 验收测试
+
+- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
+- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+
+## 手工验证
+
+1. 使用脱敏测试账本导出并导入加密备份，确认二次确认出现且恢复结果正确。
+2. 使用错误密码和损坏文件，确认当前账本、待确认和设置未变化。
+3. 检查删除本机数据仍不能被导入流程或普通按钮绕过。
+
+## 回滚或安全说明
+
+- 导入必须先完整验证，再在单一事务中替换本地数据。
+- 不以真实用户账本执行破坏性验证。
+
+## 验证记录
+
+- 规划阶段：尚未实现或执行验收。
+
+## 依赖
+
+- Issue 18：重构“我的”总览与账户管理。

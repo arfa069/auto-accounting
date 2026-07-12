@@ -96,6 +96,7 @@ Resolved during beta validation:
 - Phase 2 Issue 15 persists the non-sensitive local-mode confirmation across force-stop/relaunch without storing account credentials.
 - Phase 2 Issue 16 tracks payment records that source apps keep inside in-app message or bill surfaces instead of posting as Android notifications.
 - Phase 2 Issue 17 completes manual ledger-entry creation plus single-entry detail, editing, soft deletion, recovery, migration, and backup compatibility.
+- Phase 2 Issues 18-22 restructure the Profile area into Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, and Compliance and Privacy, with Issue 18 establishing the shared overview navigation.
 
 Verification:
 - `.\gradlew.bat --no-daemon test` passes.

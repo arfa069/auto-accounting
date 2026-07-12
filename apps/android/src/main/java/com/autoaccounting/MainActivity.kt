@@ -41,7 +41,6 @@ import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
-import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
@@ -52,10 +51,13 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
+import com.autoaccounting.feature.profile.AccountManagementScreen
+import com.autoaccounting.feature.profile.ProfileDestination
+import com.autoaccounting.feature.profile.ProfileOverviewScreen
+import com.autoaccounting.feature.profile.ProfileSecondaryPlaceholderScreen
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
-import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -173,9 +175,6 @@ fun AutoAccountingApp(
     val localPreferencesRepository = remember(database) {
         LocalPreferencesRepository(database)
     }
-    val localDataBackupRepository = remember(database) {
-        LocalDataBackupRepository(database)
-    }
     val localModeSessionStore = remember(context.applicationContext) {
         LocalModeSessionStore(context.applicationContext)
     }
@@ -190,6 +189,7 @@ fun AutoAccountingApp(
         AppTab.Profile
     )
     var selectedTab by remember { mutableStateOf(AppTab.Review) }
+    var profileDestination by remember { mutableStateOf<ProfileDestination?>(null) }
     var accountSession by remember(localModeSessionStore) {
         mutableStateOf(localModeSessionStore.restoreSession())
     }
@@ -318,7 +318,8 @@ fun AutoAccountingApp(
     val snackbarHostState = remember { SnackbarHostState() }
 
     MaterialTheme {
-        if (accountSession == null) {
+        val activeAccountSession = accountSession
+        if (activeAccountSession == null) {
             AccountScreen(
                 onSessionChange = { session ->
                     if (session == AccountSession.LocalMode) {
@@ -338,7 +339,10 @@ fun AutoAccountingApp(
                         tabs.forEach { tab ->
                             NavigationBarItem(
                                 selected = selectedTab == tab,
-                                onClick = { selectedTab = tab },
+                                onClick = {
+                                    selectedTab = tab
+                                    profileDestination = null
+                                },
                                 icon = { Text(tab.symbol) },
                                 label = { Text(tab.label) }
                             )
@@ -402,54 +406,36 @@ fun AutoAccountingApp(
                         modifier = Modifier.padding(innerPadding)
                     )
 
-                    AppTab.Profile -> CategorizationRulesScreen(
-                        rules = categorizationRules,
-                        onRulesChange = ::persistCategorizationRules,
-                        modifier = Modifier.padding(innerPadding),
-                        showPermissionCenter = true,
-                        aiSettings = aiSettings,
-                        onAiSettingsChange = ::persistAiSettings,
-                        ledgerEntries = ledgerEntries,
-                        onExportEncryptedBackup = { passphrase ->
-                            localDataBackupRepository.exportEncryptedBackup(passphrase)
-                        },
-                        onImportEncryptedBackup = { backup, passphrase ->
-                            localDataBackupRepository.importEncryptedBackup(
-                                backup,
-                                passphrase
-                            )
-                            reviewState = ReviewQueueState()
-                        },
-                        snackbarHostState = snackbarHostState,
-                        onDeleteLocalData = {
-                            reviewState = ReviewQueueState()
-                            categorizationRules = emptyList()
-                            aiSettings = AiCategorizationSettings()
-                            continuousMonitoringState = ContinuousMonitoringState()
-                            ledgerEntries = emptyList()
-                            deletedLedgerEntries = emptyList()
-                            ledgerCategories = emptyList()
-                            fundingAccounts = emptyList()
-                            coroutineScope.launch {
-                                localLedgerRepository.clearLocalData()
-                                localPreferencesRepository.clearLocalData()
-                            }
-                        },
-                        notificationListenerAccessGranted = notificationListenerAccessGranted,
-                        onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
-                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                        resultNotificationPermissionGranted = resultNotificationPermissionGranted,
-                        onRequestResultNotificationPermission = onRequestResultNotificationPermission,
-                        accountSession = accountSession,
-                        accountDeletionState = accountDeletionState,
-                        onAccountDeletionStateChange = { next ->
-                            accountDeletionState = next
-                        },
-                        continuousMonitoringState = continuousMonitoringState,
-                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
-                    )
+                    AppTab.Profile -> when (val destination = profileDestination) {
+                        null -> ProfileOverviewScreen(
+                            session = activeAccountSession,
+                            onDestinationSelected = { profileDestination = it },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+
+                        ProfileDestination.AccountManagement -> AccountManagementScreen(
+                            session = activeAccountSession,
+                            deletionState = accountDeletionState,
+                            onSignInOrRegister = {
+                                profileDestination = null
+                                accountSession = null
+                            },
+                            onSignOut = {
+                                localModeSessionStore.confirmLocalMode()
+                                accountSession = AccountSession.LocalMode
+                                profileDestination = null
+                            },
+                            onDeletionStateChange = { accountDeletionState = it },
+                            onBack = { profileDestination = null },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+
+                        else -> ProfileSecondaryPlaceholderScreen(
+                            destination = destination,
+                            onBack = { profileDestination = null },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    }
                 }
             }
         }
