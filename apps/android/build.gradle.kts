@@ -12,6 +12,10 @@ android {
     namespace = "com.autoaccounting"
     compileSdk = 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.autoaccounting"
         minSdk = 29
@@ -22,17 +26,28 @@ android {
 
     signingConfigs {
         val keystoreFile = file("release.jks")
-        if (keystoreFile.exists()) {
+        val properties = Properties()
+        val localProperties = project.rootProject.file("local.properties")
+        if (localProperties.exists()) {
+            properties.load(FileInputStream(localProperties))
+        }
+        val storePassword = properties.getProperty("RELEASE_STORE_PASSWORD")
+            ?: System.getenv("RELEASE_STORE_PASSWORD")
+        val keyAlias = properties.getProperty("RELEASE_KEY_ALIAS")
+            ?: System.getenv("RELEASE_KEY_ALIAS")
+        val keyPassword = properties.getProperty("RELEASE_KEY_PASSWORD")
+            ?: System.getenv("RELEASE_KEY_PASSWORD")
+        if (
+            keystoreFile.exists() &&
+            !storePassword.isNullOrBlank() &&
+            !keyAlias.isNullOrBlank() &&
+            !keyPassword.isNullOrBlank()
+        ) {
             create("release") {
                 storeFile = keystoreFile
-                val properties = Properties()
-                val localProperties = project.rootProject.file("local.properties")
-                if (localProperties.exists()) {
-                    properties.load(FileInputStream(localProperties))
-                }
-                storePassword = properties.getProperty("RELEASE_STORE_PASSWORD") ?: System.getenv("RELEASE_STORE_PASSWORD") ?: ""
-                keyAlias = properties.getProperty("RELEASE_KEY_ALIAS") ?: System.getenv("RELEASE_KEY_ALIAS") ?: ""
-                keyPassword = properties.getProperty("RELEASE_KEY_PASSWORD") ?: System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
             }
         }
     }

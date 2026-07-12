@@ -31,30 +31,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.autoaccounting.feature.account.AccountDeletionUiAction
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
-import com.autoaccounting.feature.account.reduceAccountDeletionState
-import com.autoaccounting.feature.beta.InternalBetaReadinessScreen
 import com.autoaccounting.feature.compliance.AUTO_ACCOUNTING_COMPLIANCE
-import com.autoaccounting.feature.compliance.ComplianceMaterialsScreen
 import com.autoaccounting.feature.compliance.PermissionExplanationId
 import com.autoaccounting.feature.compliance.permissionPurpose
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringBlockReason
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 
 @Composable
 fun CategorizationRulesScreen(
     modifier: Modifier = Modifier,
-    showPermissionCenter: Boolean = false,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
-    onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
@@ -62,12 +51,10 @@ fun CategorizationRulesScreen(
         rules = rules,
         onRulesChange = { rules = it },
         modifier = modifier,
-        showPermissionCenter = showPermissionCenter,
         aiSettings = aiSettings,
         onAiSettingsChange = onAiSettingsChange,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
-        onAccountDeletionStateChange = onAccountDeletionStateChange,
         onBack = onBack
     )
 }
@@ -77,46 +64,21 @@ fun CategorizationRulesScreen(
     rules: List<CategorizationRule>,
     onRulesChange: (List<CategorizationRule>) -> Unit,
     modifier: Modifier = Modifier,
-    showPermissionCenter: Boolean = false,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
-    onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
     var isCreating by remember { mutableStateOf(false) }
     var currentAiSettings by remember(aiSettings) { mutableStateOf(aiSettings) }
-    var showComplianceMaterials by remember { mutableStateOf(false) }
-    var showInternalBetaReadiness by remember { mutableStateOf(false) }
-    var currentAccountDeletionState by remember(accountDeletionState) { mutableStateOf(accountDeletionState) }
 
     fun updateAiSettings(next: AiCategorizationSettings) {
         currentAiSettings = next
         onAiSettingsChange(next)
     }
 
-    fun updateAccountDeletionState(next: AccountDeletionUiState) {
-        currentAccountDeletionState = next
-        onAccountDeletionStateChange(next)
-    }
-
-    if (showComplianceMaterials) {
-        ComplianceMaterialsScreen(
-            modifier = modifier,
-            onBack = { showComplianceMaterials = false }
-        )
-        return
-    }
-
-    if (showInternalBetaReadiness) {
-        InternalBetaReadinessScreen(
-            modifier = modifier,
-            onBack = { showInternalBetaReadiness = false }
-        )
-        return
-    }
 
     Column(
         modifier = modifier
@@ -130,32 +92,13 @@ fun CategorizationRulesScreen(
                 Text("返回")
             }
         }
-        if (showPermissionCenter) {
-            AccountDeletionItem(
-                session = accountSession,
-                state = currentAccountDeletionState,
-                onStateChange = ::updateAccountDeletionState
-            )
-            ComplianceMaterialsItem(
-                onOpen = { showComplianceMaterials = true }
-            )
-            InternalBetaReadinessItem(
-                onOpen = { showInternalBetaReadiness = true }
-            )
-            AiConsentItem(
+        when (accountSession) {
+            is AccountSession.SignedIn -> AiConsentItem(
                 settings = currentAiSettings,
-                cloudWritesPaused = currentAccountDeletionState.isPending,
+                cloudWritesPaused = accountDeletionState.isPending,
                 onSettingsChange = ::updateAiSettings
             )
-        } else {
-            when (accountSession) {
-                is AccountSession.SignedIn -> AiConsentItem(
-                    settings = currentAiSettings,
-                    cloudWritesPaused = currentAccountDeletionState.isPending,
-                    onSettingsChange = ::updateAiSettings
-                )
-                else -> Text("智能分类登录后可用；本地分类规则不受影响。")
-            }
+            else -> Text("智能分类登录后可用；本地分类规则不受影响。")
         }
 
         Row(
@@ -231,338 +174,6 @@ fun CategorizationRulesScreen(
         )
     }
 
-}
-
-@Composable
-private fun PermissionCenterNotificationItem(
-    accessGranted: Boolean,
-    onOpenSettings: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text("权限中心", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("通知监听", fontWeight = FontWeight.SemiBold)
-            Text(
-                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.NotificationListening),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (accessGranted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-            OutlinedButton(
-                onClick = onOpenSettings,
-                modifier = Modifier.testTag("notification-listener-settings")
-            ) {
-                Text("打开系统设置")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionCenterResultNotificationItem(
-    accessGranted: Boolean,
-    onRequestPermission: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text("记账结果通知", fontWeight = FontWeight.SemiBold)
-            Text(
-                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(
-                    PermissionExplanationId.ResultNotifications
-                )
-            )
-            Text(
-                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (accessGranted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-            if (!accessGranted) {
-                OutlinedButton(
-                    onClick = onRequestPermission,
-                    modifier = Modifier.testTag("result-notification-permission")
-                ) {
-                    Text("授权结果通知")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionCenterBillSyncItem(
-    accessGranted: Boolean,
-    onOpenSettings: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text("账单同步与监控权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.AccessibilityBillSync),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (accessGranted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-            OutlinedButton(
-                onClick = onOpenSettings,
-                modifier = Modifier.testTag("bill-sync-accessibility-settings")
-            ) {
-                Text("打开无障碍设置")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ComplianceMaterialsItem(
-    onOpen: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("关于与合规", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "查看隐私政策、个人信息收集清单、第三方服务清单、权限说明和商店审核说明。",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            OutlinedButton(onClick = onOpen) {
-                Text("隐私与合规材料")
-            }
-        }
-    }
-}
-
-@Composable
-private fun InternalBetaReadinessItem(
-    onOpen: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("内测准备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "查看崩溃/日志、设备矩阵、权限留存、捕获准确率、去重准确率、复核效率和合规复核。",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            OutlinedButton(onClick = onOpen) {
-                Text("查看内测检查")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ContinuousMonitoringItem(
-    state: ContinuousMonitoringState,
-    permissionHealth: ContinuousMonitoringPermissionHealth,
-    onOpenBillSyncAccessibilitySettings: () -> Unit,
-    onStateChange: (ContinuousMonitoringState) -> Unit
-) {
-    val startBlockReason = permissionHealth.firstBlockReason
-    val canStartMonitoring = startBlockReason == null
-    val statusText = when {
-        state.enabled && permissionHealth.isHealthy -> "当前状态：已开启"
-        state.enabled -> "当前状态：权限不完整，监控已暂停"
-        startBlockReason == null -> "当前状态：可开启"
-        else -> "当前状态：${continuousMonitoringBlockReasonLabel(startBlockReason)}"
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("自动记账", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("支付结果自动捕获", fontWeight = FontWeight.SemiBold)
-            Text(
-                AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.ContinuousMonitoring),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                "只处理支付结果和支付记录，不处理聊天、普通消息、付款发起或转账发送。",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                "后台保活和自启动受手机系统限制，本应用只提示你检查，不保证一定可靠。",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                statusText,
-                style = MaterialTheme.typography.bodySmall
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.enabled) {
-                    OutlinedButton(
-                        onClick = {
-                            onStateChange(
-                                reduceContinuousMonitoringState(
-                                    state,
-                                    ContinuousMonitoringAction.Disable
-                                )
-                            )
-                        }
-                    ) {
-                        Text("关闭自动记账")
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            onStateChange(
-                                reduceContinuousMonitoringState(
-                                    state,
-                                    ContinuousMonitoringAction.Enable(permissionHealth)
-                                )
-                            )
-                        },
-                        enabled = canStartMonitoring
-                    ) {
-                        Text("开启自动记账")
-                    }
-                }
-            }
-            if (!permissionHealth.billSyncAccessibilityGranted) {
-                OutlinedButton(
-                    onClick = onOpenBillSyncAccessibilitySettings,
-                    modifier = Modifier.testTag("continuous-monitoring-accessibility-settings")
-                ) {
-                    Text("打开无障碍设置")
-                }
-            }
-        }
-    }
-}
-
-private fun continuousMonitoringBlockReasonLabel(
-    reason: ContinuousMonitoringBlockReason
-): String = when (reason) {
-    ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission -> "需要开启自动记账无障碍权限"
-    ContinuousMonitoringBlockReason.AccessibilityServiceDisconnected -> "自动记账无障碍服务未连接"
-}
-
-@Composable
-private fun AccountDeletionItem(
-    session: AccountSession?,
-    state: AccountDeletionUiState,
-    onStateChange: (AccountDeletionUiState) -> Unit
-) {
-    val signedIn = session as? AccountSession.SignedIn
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("账号注销", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (signedIn == null) {
-                Text("本地模式没有云端账号可注销。", style = MaterialTheme.typography.bodyMedium)
-                return@Column
-            }
-            Text(
-                if (state.isPending) {
-                    "注销冷静期中"
-                } else {
-                    "注销会移除云端账号、注册设备、云端配置和 AI 分类日志；本机账本需单独删除。"
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (state.isPending) {
-                Text(
-                    "云端 AI 和设备配置写入已暂停",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
-                OutlinedButton(
-                    onClick = {
-                        onStateChange(
-                            reduceAccountDeletionState(
-                                state,
-                                AccountDeletionUiAction.CancelDeletion
-                            )
-                        )
-                    }
-                ) {
-                    Text("取消注销")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        onStateChange(
-                            reduceAccountDeletionState(
-                                state,
-                                AccountDeletionUiAction.RequestDeletion(System.currentTimeMillis())
-                            )
-                        )
-                    }
-                ) {
-                    Text("申请注销账号")
-                }
-            }
-        }
-    }
 }
 
 @Composable

@@ -149,6 +149,37 @@ class MainActivityTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun complianceAndPrivacyEntryOpensDedicatedPageWithDebugTools() {
+        composeRule.setContent { AutoAccountingApp() }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
+            .performScrollTo()
+            .performClick()
+
+        composeRule.onNodeWithText("合规与隐私").assertIsDisplayed()
+        composeRule.onNodeWithTag("compliance-entry-PrivacyPolicy").assertIsDisplayed()
+        composeRule.onNodeWithTag("developer-tools-entry").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackFromComplianceAndPrivacyReturnsToProfileOverview() {
+        composeRule.setContent { AutoAccountingApp() }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun clearPersistedSession() {
         context.getSharedPreferences(
             LOCAL_MODE_SESSION_PREFERENCES,

@@ -1,8 +1,10 @@
 package com.autoaccounting.feature.compliance
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
@@ -27,7 +29,7 @@ class ComplianceMaterialsScreenTest {
         composeRule.onNodeWithText("个人信息收集清单").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("第三方服务清单").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("权限说明").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("商店审核说明").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("商店审核说明").assertCountEquals(0)
     }
 
     @Test

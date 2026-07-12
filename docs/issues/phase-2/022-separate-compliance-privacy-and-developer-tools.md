@@ -24,15 +24,15 @@
 
 ## 验收标准
 
-- [ ] 合规与隐私页显示四个独立、可进入的材料入口，并在本地模式可用。
-- [ ] Release 变体和“我的”总览不显示开发者工具、内测指标、日志或设备矩阵。
-- [ ] Debug 变体可进入开发者工具，且不需要隐藏手势。
-- [ ] 合规入口不把商店审核说明当作普通用户内容展示。
+- [x] 合规与隐私页显示四个独立、可进入的材料入口，并在本地模式可用。
+- [x] Release 变体和“我的”总览不显示开发者工具、内测指标、日志或设备矩阵。
+- [x] Debug 变体可进入开发者工具，且不需要隐藏手势。
+- [x] 合规入口不把商店审核说明当作普通用户内容展示。
 
 ## 验收测试
 
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.compliance.*"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:assembleDebug :apps:android:assembleRelease`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.compliance.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:assembleDebug :apps:android:assembleRelease`
 
 ## 手工验证
 
@@ -46,7 +46,10 @@
 
 ## 验证记录
 
-- 规划阶段：尚未实现或执行验收。
+- 2026-07-13：合规专项、导航回归与完整 Android 单元测试通过；Debug 和 Release 变体均构建通过。
+- 2026-07-13：自动化覆盖四个独立材料入口、商店审核说明隔离，以及 Debug/Release 开发者工具可见性。
+- 2026-07-13：本机未提供完整发布签名属性，因此 Release 产物为未签名 APK；构建脚本仅在 keystore 与三项签名凭据齐全时启用签名。
+- 2026-07-13：未安装双变体到真机执行手工可见性检查。
 
 ## 依赖
 

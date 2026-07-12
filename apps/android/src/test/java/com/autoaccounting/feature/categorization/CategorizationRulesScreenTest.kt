@@ -11,7 +11,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -99,13 +98,13 @@ class CategorizationRulesScreenTest {
     }
 
     @Test
-    fun profileCanToggleCloudAiConsent() {
+    fun signedInUserCanToggleCloudAiConsent() {
         var settings = AiCategorizationSettings()
         composeRule.setContent {
             CategorizationRulesScreen(
-                showPermissionCenter = true,
                 aiSettings = settings,
-                onAiSettingsChange = { settings = it }
+                onAiSettingsChange = { settings = it },
+                accountSession = AccountSession.SignedIn("13800138000", "token-1")
             )
         }
 
@@ -117,54 +116,4 @@ class CategorizationRulesScreenTest {
         assertTrue(settings.enhancedContextGranted)
     }
 
-    @Test
-    fun profileCanRequestAndCancelAccountDeletion() {
-        var deletionState = AccountDeletionUiState()
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                accountSession = AccountSession.SignedIn("13800138000", "token-1"),
-                accountDeletionState = deletionState,
-                onAccountDeletionStateChange = { deletionState = it }
-            )
-        }
-
-        composeRule.onNodeWithText("账号注销").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("申请注销账号").performScrollTo().performClick()
-
-        assertTrue(deletionState.isPending)
-        composeRule.onNodeWithText("注销冷静期中").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("云端 AI 和设备配置写入已暂停").performScrollTo().assertIsDisplayed()
-
-        composeRule.onNodeWithText("取消注销").performScrollTo().performClick()
-
-        assertTrue(deletionState.cloudWritesAllowed)
-    }
-
-    @Test
-    fun complianceMaterialsAreReachableAfterLoginFromProfile() {
-        composeRule.setContent {
-            CategorizationRulesScreen(showPermissionCenter = true)
-        }
-
-        composeRule.onNodeWithText("关于与合规").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("隐私与合规材料").performScrollTo().performClick()
-
-        composeRule.onNodeWithText("隐私政策").assertIsDisplayed()
-        composeRule.onNodeWithText("第三方服务清单").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun internalBetaReadinessIsReachableFromProfile() {
-        composeRule.setContent {
-            CategorizationRulesScreen(showPermissionCenter = true)
-        }
-
-        composeRule.onNodeWithText("内测准备").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("查看内测检查").performScrollTo().performClick()
-
-        composeRule.onNodeWithText("内测准备检查").assertIsDisplayed()
-        composeRule.onNodeWithText("Android 10 baseline").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("无密钥入库").performScrollTo().assertIsDisplayed()
-    }
 }

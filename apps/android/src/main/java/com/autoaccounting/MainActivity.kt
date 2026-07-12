@@ -49,6 +49,7 @@ import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
+import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
@@ -547,19 +548,12 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
-                        else -> CategorizationRulesScreen(
-                            rules = categorizationRules,
-                            onRulesChange = ::persistCategorizationRules,
-                            modifier = Modifier.padding(innerPadding),
-                            showPermissionCenter = true,
-                            aiSettings = aiSettings,
-                            onAiSettingsChange = ::persistAiSettings,
-                            accountSession = activeAccountSession,
-                            accountDeletionState = accountDeletionState,
-                            onAccountDeletionStateChange = { next ->
-                                accountDeletionState = next
-                            }
+                        ProfileDestination.ComplianceAndPrivacy -> ComplianceAndPrivacyScreen(
+                            isDebugBuild = BuildConfig.DEBUG,
+                            onBack = { profileDestination = null },
+                            modifier = Modifier.padding(innerPadding)
                         )
+
                     }
                 }
             }
