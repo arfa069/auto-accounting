@@ -53,7 +53,7 @@
 - 2026-07-12：新增独立“自动记账”页和状态摘要；通知监听、无障碍、结果通知、持续监控健康状态与手动账单同步入口按页面顺序呈现。健康状态同时检查无障碍授权和服务连接心跳，连接心跳超时会显示为需要处理；关闭自动记账会同时停止通知监听处理；手动同步继续复用既有会话、无障碍服务、去重和待确认入队链路。
 - 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*" --tests "com.autoaccounting.feature.monitoring.*" --tests "com.autoaccounting.feature.billsync.BillSyncSessionTest" --tests "com.autoaccounting.feature.categorization.CategorizationRulesScreenTest" --tests "com.autoaccounting.MainActivityTest"` 通过。
 - 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
-- 真机手工验证未执行；仍遵循本 Issue 的隐私边界，不进入微信钱包历史等敏感页面。
+- `2026-07-13`：在 Xiaomi `24117RK2CC`（Android 16，`192.168.1.6:40793`）的已签名 Release 包完成非破坏性检查：二级页依次显示自动记账状态、通知监听、自动记账无障碍权限；向下滚动确认持续监控和健康状态、手动账单同步，系统返回回到“我的”总览。未变更权限、开关或服务状态，未发起手动账单同步，也未进入微信钱包历史等敏感页面。
 
 ## 依赖
 

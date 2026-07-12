@@ -45,3 +45,5 @@ Pull Request 应说明行为变化、列出验证命令并关联对应 issue 或
 ## 安全与配置
 
 禁止提交凭据、令牌、签名材料、`local.properties` 或生产配置。敏感配置应通过环境变量或本地 Gradle 属性提供；输出日志前先脱敏，并保留后端现有的密钥扫描测试。
+
+Android Release 签名使用 `apps/android/release.jks` 与根目录 `local.properties` 中的 `RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。这些文件和值仅限本机，均已被 Git 忽略；不得在终端输出、文档、提交或 PR 中复制其内容。修改本地签名配置后，以 `:apps:android:assembleRelease` 构建，并用 `apksigner verify --verbose` 校验生成的 APK。
