@@ -118,6 +118,37 @@ class MainActivityTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun dataAndBackupEntryOpensDedicatedPage() {
+        composeRule.setContent { AutoAccountingApp() }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-DataAndBackup")
+            .performScrollTo()
+            .performClick()
+
+        composeRule.onNodeWithText("导出与恢复").assertIsDisplayed()
+        composeRule.onNodeWithText("危险区").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackFromDataAndBackupReturnsToProfileOverview() {
+        composeRule.setContent { AutoAccountingApp() }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-DataAndBackup")
+            .performScrollTo()
+            .performClick()
+
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithTag("profile-entry-DataAndBackup")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun clearPersistedSession() {
         context.getSharedPreferences(
             LOCAL_MODE_SESSION_PREFERENCES,

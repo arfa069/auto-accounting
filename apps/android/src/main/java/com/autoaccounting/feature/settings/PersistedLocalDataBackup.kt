@@ -14,6 +14,7 @@ import com.autoaccounting.data.local.IgnoreReason
 import com.autoaccounting.data.local.IgnoredEntryEntity
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.LocalSettingsEntity
+import com.autoaccounting.data.local.LOCAL_SETTINGS_ID
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
@@ -30,6 +31,8 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class PersistedLocalDataSnapshot(
     val categories: List<CategoryEntity>,
@@ -63,7 +66,7 @@ class LocalDataBackupRepository(
         backupText: String,
         passphrase: String
     ) {
-        val snapshot = decryptPersistedLocalData(backupText, passphrase).validated()
+        val snapshot = decodeAndValidate(backupText, passphrase)
         database.withTransaction {
             database.ledgerEntryDao().deleteAll()
             database.pendingEntryDao().deleteAll()
@@ -82,22 +85,46 @@ class LocalDataBackupRepository(
             snapshot.settings?.let { database.localSettingsDao().upsert(it) }
         }
     }
+
+    suspend fun validateEncryptedBackup(
+        backupText: String,
+        passphrase: String
+    ) {
+        decodeAndValidate(backupText, passphrase)
+    }
+
+    private suspend fun decodeAndValidate(
+        backupText: String,
+        passphrase: String
+    ): PersistedLocalDataSnapshot = withContext(Dispatchers.Default) {
+        decryptPersistedLocalData(backupText, passphrase).validated()
+    }
 }
 
 private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot = apply {
+    require(categories.map { it.id }.allDistinct()) { "Backup contains duplicate categories" }
     require(categories.all { it.id.isNotBlank() && it.name.isNotBlank() }) {
         "Backup contains an invalid category"
     }
+    require(fundingAccounts.map { it.id }.allDistinct()) { "Backup contains duplicate funding accounts" }
     require(fundingAccounts.all { it.id >= 0 && it.label.isNotBlank() }) {
         "Backup contains an invalid funding account"
     }
+    val categoryIds = categories.mapTo(mutableSetOf()) { it.id }
+    val fundingAccountIds = fundingAccounts.mapTo(mutableSetOf()) { it.id }
+    fun referencesExist(categoryId: String?, fundingAccountId: Long?): Boolean =
+        (categoryId == null || categoryId in categoryIds) &&
+            (fundingAccountId == null || fundingAccountId in fundingAccountIds)
+    require(pendingEntries.map { it.id }.allDistinct()) { "Backup contains duplicate pending entries" }
     require(pendingEntries.all { entry ->
         entry.id.isNotBlank() &&
             entry.amountMinor > 0 &&
             entry.currency == SUPPORTED_BACKUP_CURRENCY &&
             entry.transactionTimeEpochMillis >= 0 &&
-            entry.capturedAtEpochMillis >= 0
+            entry.capturedAtEpochMillis >= 0 &&
+            referencesExist(entry.suggestedCategoryId, entry.fundingAccountId)
     }) { "Backup contains an invalid pending entry" }
+    require(ledgerEntries.map { it.id }.allDistinct()) { "Backup contains duplicate ledger entries" }
     require(ledgerEntries.all { entry ->
         entry.id.isNotBlank() &&
             entry.amountMinor > 0 &&
@@ -105,12 +132,30 @@ private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot =
             entry.transactionTimeEpochMillis >= 0 &&
             entry.confirmedAtEpochMillis >= 0 &&
             entry.updatedAtEpochMillis >= entry.confirmedAtEpochMillis &&
-            (entry.deletedAtEpochMillis == null || entry.deletedAtEpochMillis >= entry.confirmedAtEpochMillis)
+            (entry.deletedAtEpochMillis == null || entry.deletedAtEpochMillis >= entry.confirmedAtEpochMillis) &&
+            referencesExist(entry.categoryId, entry.fundingAccountId)
     }) { "Backup contains an invalid ledger entry" }
-    require(ignoredEntries.all { it.id.isNotBlank() && it.ignoredAtEpochMillis >= 0 }) {
+    require(ignoredEntries.map { it.id }.allDistinct()) { "Backup contains duplicate ignored entries" }
+    require(ignoredEntries.all {
+        it.id.isNotBlank() &&
+            it.ignoredAtEpochMillis >= 0 &&
+            referencesExist(it.suggestedCategoryId, it.fundingAccountId)
+    }) {
         "Backup contains an invalid ignored entry"
     }
+    require(categorizationRules.map { it.id }.allDistinct()) {
+        "Backup contains duplicate categorization rules"
+    }
+    require(categorizationRules.all {
+        it.id.isNotBlank() && it.category.isNotBlank() && it.updatedAtEpochMillis >= 0
+    }) { "Backup contains an invalid categorization rule" }
+    require(settings == null || (
+        settings.id == LOCAL_SETTINGS_ID &&
+            (settings.aiConsentGranted || !settings.enhancedContextGranted)
+        )) { "Backup contains invalid local settings" }
 }
+
+private fun <T> List<T>.allDistinct(): Boolean = size == toSet().size
 
 internal fun encryptPersistedLocalData(
     snapshot: PersistedLocalDataSnapshot,

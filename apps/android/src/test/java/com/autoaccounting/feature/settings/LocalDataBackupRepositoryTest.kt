@@ -109,6 +109,18 @@ class LocalDataBackupRepositoryTest {
     }
 
     @Test
+    fun validationDoesNotReplaceCurrentSnapshot() = runBlocking {
+        populateDatabase()
+        val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
+        database.pendingEntryDao().deleteAll()
+
+        backupRepository.validateEncryptedBackup(backup, PASSPHRASE)
+
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+        assertEquals("ledger-1", database.ledgerEntryDao().getById("ledger-1")?.id)
+    }
+
+    @Test
     fun invalidBackupFieldsFailBeforeChangingPersistedData() = runBlocking {
         populateDatabase()
         val original = readSnapshot()
@@ -120,6 +132,28 @@ class LocalDataBackupRepositoryTest {
 
         val failure = runCatching {
             backupRepository.importEncryptedBackup(
+                encryptPersistedLocalData(invalid, PASSPHRASE),
+                PASSPHRASE
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(original, readSnapshot())
+    }
+
+    @Test
+    fun invalidRuleAndMissingReferencesFailDuringReadOnlyValidation() = runBlocking {
+        populateDatabase()
+        val original = readSnapshot()
+        val invalid = original.copy(
+            pendingEntries = original.pendingEntries.map {
+                it.copy(suggestedCategoryId = "missing-category")
+            },
+            categorizationRules = original.categorizationRules.map { it.copy(category = "") }
+        )
+
+        val failure = runCatching {
+            backupRepository.validateEncryptedBackup(
                 encryptPersistedLocalData(invalid, PASSPHRASE),
                 PASSPHRASE
             )

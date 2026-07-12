@@ -1,11 +1,5 @@
 package com.autoaccounting.feature.categorization
 
-import android.content.ContentValues
-import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,20 +19,17 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.account.AccountDeletionUiAction
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -49,21 +40,11 @@ import com.autoaccounting.feature.compliance.AUTO_ACCOUNTING_COMPLIANCE
 import com.autoaccounting.feature.compliance.ComplianceMaterialsScreen
 import com.autoaccounting.feature.compliance.PermissionExplanationId
 import com.autoaccounting.feature.compliance.permissionPurpose
-import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringBlockReason
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
-import com.autoaccounting.feature.settings.DELETE_LOCAL_DATA_PHRASE
-import com.autoaccounting.feature.settings.LocalDataDeletionAction
-import com.autoaccounting.feature.settings.LocalDataDeletionState
-import com.autoaccounting.feature.settings.exportLedgerCsv
-import com.autoaccounting.feature.settings.reduceLocalDataDeletionState
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun CategorizationRulesScreen(
@@ -71,19 +52,10 @@ fun CategorizationRulesScreen(
     showPermissionCenter: Boolean = false,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
-    ledgerEntries: List<LedgerUiEntry> = emptyList(),
-    onExportEncryptedBackup: suspend (String) -> String = {
-        error("Backup repository unavailable")
-    },
-    onImportEncryptedBackup: suspend (String, String) -> Unit = { _, _ ->
-        error("Backup repository unavailable")
-    },
-    onDeleteLocalData: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
-    onBack: (() -> Unit)? = null,
-    snackbarHostState: SnackbarHostState = SnackbarHostState()
+    onBack: (() -> Unit)? = null
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     CategorizationRulesScreen(
@@ -93,15 +65,10 @@ fun CategorizationRulesScreen(
         showPermissionCenter = showPermissionCenter,
         aiSettings = aiSettings,
         onAiSettingsChange = onAiSettingsChange,
-        ledgerEntries = ledgerEntries,
-        onExportEncryptedBackup = onExportEncryptedBackup,
-        onImportEncryptedBackup = onImportEncryptedBackup,
-        onDeleteLocalData = onDeleteLocalData,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
-        onBack = onBack,
-        snackbarHostState = snackbarHostState
+        onBack = onBack
     )
 }
 
@@ -113,26 +80,14 @@ fun CategorizationRulesScreen(
     showPermissionCenter: Boolean = false,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
-    ledgerEntries: List<LedgerUiEntry> = emptyList(),
-    onExportEncryptedBackup: suspend (String) -> String = {
-        error("Backup repository unavailable")
-    },
-    onImportEncryptedBackup: suspend (String, String) -> Unit = { _, _ ->
-        error("Backup repository unavailable")
-    },
-    onDeleteLocalData: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
-    onBack: (() -> Unit)? = null,
-    snackbarHostState: SnackbarHostState = SnackbarHostState()
+    onBack: (() -> Unit)? = null
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
     var isCreating by remember { mutableStateOf(false) }
     var currentAiSettings by remember(aiSettings) { mutableStateOf(aiSettings) }
-    var localDataMessage by remember { mutableStateOf<String?>(null) }
-    var exportedBackup by remember { mutableStateOf<String?>(null) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
     var showComplianceMaterials by remember { mutableStateOf(false) }
     var showInternalBetaReadiness by remember { mutableStateOf(false) }
     var currentAccountDeletionState by remember(accountDeletionState) { mutableStateOf(accountDeletionState) }
@@ -186,15 +141,6 @@ fun CategorizationRulesScreen(
             )
             InternalBetaReadinessItem(
                 onOpen = { showInternalBetaReadiness = true }
-            )
-            LocalDataToolsItem(
-                ledgerEntries = ledgerEntries,
-                message = localDataMessage,
-                onMessageChange = { localDataMessage = it },
-                onExportEncryptedBackup = onExportEncryptedBackup,
-                onImportEncryptedBackup = onImportEncryptedBackup,
-                onRequestDelete = { showDeleteDialog = true },
-                snackbarHostState = snackbarHostState
             )
             AiConsentItem(
                 settings = currentAiSettings,
@@ -285,16 +231,6 @@ fun CategorizationRulesScreen(
         )
     }
 
-    if (showDeleteDialog) {
-        LocalDataDeletionDialog(
-            onDismiss = { showDeleteDialog = false },
-            onDelete = {
-                onDeleteLocalData()
-                localDataMessage = "本机数据已删除"
-                showDeleteDialog = false
-            }
-        )
-    }
 }
 
 @Composable
@@ -693,181 +629,6 @@ private fun AiConsentItem(
             }
         }
     }
-}
-
-@Composable
-private fun LocalDataToolsItem(
-    ledgerEntries: List<LedgerUiEntry>,
-    message: String?,
-    onMessageChange: (String) -> Unit,
-    onExportEncryptedBackup: suspend (String) -> String,
-    onImportEncryptedBackup: suspend (String, String) -> Unit,
-    onRequestDelete: () -> Unit,
-    snackbarHostState: SnackbarHostState
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    var backupPassphrase by remember { mutableStateOf("") }
-    var isExporting by remember { mutableStateOf(false) }
-
-    val openDocumentLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        coroutineScope.launch {
-            runCatching {
-                val backupContent = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    inputStream.bufferedReader(Charsets.UTF_8).readText()
-                } ?: throw IllegalStateException("Failed to read backup file")
-                onImportEncryptedBackup(backupContent, backupPassphrase)
-            }
-                .onSuccess {
-                    snackbarHostState.showSnackbar("备份已恢复成功")
-                }
-                .onFailure {
-                    snackbarHostState.showSnackbar("备份恢复失败：密码错误或文件损坏")
-                }
-        }
-    }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("备份和导出", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "CSV 是明文表格；完整迁移请使用加密备份（保存到 Download 文件夹）。",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            OutlinedTextField(
-                value = backupPassphrase,
-                onValueChange = { backupPassphrase = it },
-                label = { Text("备份密码") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("backup-passphrase")
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    exportLedgerCsv(ledgerEntries)
-                    onMessageChange("CSV 已生成")
-                }) {
-                    Text(if (message == "CSV 已生成") "CSV 已生成" else "导出 CSV")
-                }
-                OutlinedButton(
-                    onClick = {
-                        isExporting = true
-                        coroutineScope.launch {
-                            runCatching {
-                                val backupContent = onExportEncryptedBackup(backupPassphrase)
-                                val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
-                                val filename = "$timestamp-ac-backup.bak"
-                                val values = ContentValues().apply {
-                                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                                    put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-                                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                                }
-                                val resolver = context.contentResolver
-                                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                                    ?: throw IllegalStateException("Failed to create Downloads entry")
-                                resolver.openOutputStream(uri)?.use { outputStream ->
-                                    outputStream.write(backupContent.toByteArray(Charsets.UTF_8))
-                                } ?: throw IllegalStateException("Failed to write backup file")
-                                filename
-                            }
-                                .onSuccess { filename ->
-                                    snackbarHostState.showSnackbar(
-                                        "备份已保存到 Download/$filename"
-                                    )
-                                }
-                                .onFailure {
-                                    snackbarHostState.showSnackbar("加密备份失败")
-                                }
-                            isExporting = false
-                        }
-                    },
-                    enabled = backupPassphrase.isNotBlank() && !isExporting
-                ) {
-                    Text("导出加密备份到文件")
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        openDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*"))
-                    },
-                    enabled = backupPassphrase.isNotBlank()
-                ) {
-                    Text("从文件导入备份")
-                }
-                OutlinedButton(onClick = onRequestDelete) {
-                    Text("删除本机数据")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocalDataDeletionDialog(
-    onDismiss: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var deletionState by remember { mutableStateOf(LocalDataDeletionState()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("删除本机数据") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("确认删除前请先导出加密备份。")
-                OutlinedButton(
-                    onClick = {
-                        deletionState = reduceLocalDataDeletionState(
-                            deletionState,
-                            LocalDataDeletionAction.SetBackupReminderAccepted(
-                                !deletionState.backupReminderAccepted
-                            )
-                        )
-                    }
-                ) {
-                    Text("我已了解并完成需要的备份")
-                }
-                OutlinedTextField(
-                    value = deletionState.confirmationText,
-                    onValueChange = {
-                        deletionState = reduceLocalDataDeletionState(
-                            deletionState,
-                            LocalDataDeletionAction.UpdateConfirmationText(it)
-                        )
-                    },
-                    label = { Text("输入 $DELETE_LOCAL_DATA_PHRASE") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDelete,
-                enabled = deletionState.canDelete
-            ) {
-                Text("确认删除")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
 }
 
 @Composable

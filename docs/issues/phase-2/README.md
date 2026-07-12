@@ -26,7 +26,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 18. [重构“我的”总览与账户管理](./018-rebuild-profile-overview-and-account-management.md)
 19. [完成：将自动记账迁移为独立页面](./019-move-automatic-bookkeeping-into-its-own-page.md)
 20. [完成：拆分分类规则与智能分类同意链](./020-separate-categorization-rules-and-ai-consent.md)
-21. [迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
+21. [完成：迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
 22. [拆分合规与隐私并隔离开发者工具](./022-separate-compliance-privacy-and-developer-tools.md)
 
 ## Supporting Lists

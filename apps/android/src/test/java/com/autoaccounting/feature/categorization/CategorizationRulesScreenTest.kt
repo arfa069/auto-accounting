@@ -13,15 +13,6 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.result.ActivityResultRegistry
-import androidx.activity.result.ActivityResultRegistryOwner
-import androidx.activity.result.contract.ActivityResultContract
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.core.app.ActivityOptionsCompat
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
-import java.io.ByteArrayInputStream
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -124,69 +115,6 @@ class CategorizationRulesScreenTest {
 
         composeRule.onNodeWithText("提供更多上下文").performScrollTo().performClick()
         assertTrue(settings.enhancedContextGranted)
-    }
-
-    @Test
-    fun profileCanExportBackupAndConfirmLocalDataDeletion() {
-        var deleted = false
-        var importedBackup: String? = null
-
-        val context = RuntimeEnvironment.getApplication()
-        val uri = android.net.Uri.parse("content://test/backup.bak")
-        val backupContent = "backup-1"
-        shadowOf(context.contentResolver).registerInputStream(
-            uri,
-            ByteArrayInputStream(backupContent.toByteArray(Charsets.UTF_8))
-        )
-
-        val testRegistry = object : ActivityResultRegistry() {
-            override fun <I, O> onLaunch(
-                requestCode: Int,
-                contract: ActivityResultContract<I, O>,
-                input: I,
-                options: ActivityOptionsCompat?
-            ) {
-                dispatchResult(requestCode, uri as O)
-            }
-        }
-        val registryOwner = object : ActivityResultRegistryOwner {
-            override val activityResultRegistry = testRegistry
-        }
-
-        composeRule.setContent {
-            CompositionLocalProvider(
-                LocalActivityResultRegistryOwner provides registryOwner
-            ) {
-                CategorizationRulesScreen(
-                    showPermissionCenter = true,
-                    onExportEncryptedBackup = { "backup-1" },
-                    onImportEncryptedBackup = { backup, _ -> importedBackup = backup },
-                    onDeleteLocalData = { deleted = true }
-                )
-            }
-        }
-
-        composeRule.onNodeWithText("备份和导出").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("backup-passphrase")
-            .performScrollTo()
-            .performTextInput("test-passphrase")
-        composeRule.onNodeWithText("导出 CSV").performScrollTo().performClick()
-        composeRule.onNodeWithText("CSV 已生成").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("导出加密备份到文件").performScrollTo().performClick()
-        // Wait for coroutine to finish
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("从文件导入备份").performScrollTo().performClick()
-        composeRule.waitForIdle()
-        assertTrue(importedBackup == "backup-1")
-
-        composeRule.onNodeWithText("删除本机数据").performScrollTo().performClick()
-        composeRule.onNodeWithText("确认删除前请先导出加密备份。").assertIsDisplayed()
-        composeRule.onNodeWithText("我已了解并完成需要的备份").performClick()
-        composeRule.onNodeWithText("输入 删除本机数据").performTextInput("删除本机数据")
-        composeRule.onNodeWithText("确认删除").performClick()
-
-        assertTrue(deleted)
     }
 
     @Test

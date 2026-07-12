@@ -24,15 +24,15 @@
 
 ## 验收标准
 
-- [ ] 数据与备份页将常规导出/导入操作与本机数据删除危险区清晰分开。
-- [ ] 导入在密码、格式或内容校验失败时不改变当前数据。
-- [ ] 有效备份在用户进行第二次确认前不替换当前数据；确认后完整恢复既有支持的数据范围。
-- [ ] 删除本机数据仍必须经过备份提醒和输入确认。
+- [x] 数据与备份页将常规导出/导入操作与本机数据删除危险区清晰分开。
+- [x] 导入在密码、格式或内容校验失败时不改变当前数据。
+- [x] 有效备份在用户进行第二次确认前不替换当前数据；确认后完整恢复既有支持的数据范围。
+- [x] 删除本机数据仍必须经过备份提醒和输入确认。
 
 ## 验收测试
 
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证
 
@@ -47,7 +47,9 @@
 
 ## 验证记录
 
-- 规划阶段：尚未实现或执行验收。
+- 2026-07-12：设置专项、导航回归和完整 Android 单元测试通过；Debug APK 构建通过。
+- 2026-07-12：自动化覆盖校验零写入、有效备份确认前不恢复、校验失败不提供恢复、危险区删除双重确认。
+- 2026-07-12：未使用真机或真实账本执行破坏性手工验证；测试文件选择器与脱敏备份流程由 Robolectric 覆盖。
 
 ## 依赖
 

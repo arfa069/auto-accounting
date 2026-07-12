@@ -69,6 +69,7 @@ import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
+import com.autoaccounting.feature.settings.DataAndBackupScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -515,25 +516,18 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
-                        else -> CategorizationRulesScreen(
-                            rules = categorizationRules,
-                            onRulesChange = ::persistCategorizationRules,
-                            modifier = Modifier.padding(innerPadding),
-                            showPermissionCenter = true,
-                            aiSettings = aiSettings,
-                            onAiSettingsChange = ::persistAiSettings,
+                        ProfileDestination.DataAndBackup -> DataAndBackupScreen(
                             ledgerEntries = ledgerEntries,
                             onExportEncryptedBackup = { passphrase ->
                                 localDataBackupRepository.exportEncryptedBackup(passphrase)
                             },
+                            onValidateEncryptedBackup = { backup, passphrase ->
+                                localDataBackupRepository.validateEncryptedBackup(backup, passphrase)
+                            },
                             onImportEncryptedBackup = { backup, passphrase ->
-                                localDataBackupRepository.importEncryptedBackup(
-                                    backup,
-                                    passphrase
-                                )
+                                localDataBackupRepository.importEncryptedBackup(backup, passphrase)
                                 reviewState = ReviewQueueState()
                             },
-                            snackbarHostState = snackbarHostState,
                             onDeleteLocalData = {
                                 reviewState = ReviewQueueState()
                                 categorizationRules = emptyList()
@@ -548,6 +542,18 @@ fun AutoAccountingApp(
                                     localPreferencesRepository.clearLocalData()
                                 }
                             },
+                            onBack = { profileDestination = null },
+                            snackbarHostState = snackbarHostState,
+                            modifier = Modifier.padding(innerPadding)
+                        )
+
+                        else -> CategorizationRulesScreen(
+                            rules = categorizationRules,
+                            onRulesChange = ::persistCategorizationRules,
+                            modifier = Modifier.padding(innerPadding),
+                            showPermissionCenter = true,
+                            aiSettings = aiSettings,
+                            onAiSettingsChange = ::persistAiSettings,
                             accountSession = activeAccountSession,
                             accountDeletionState = accountDeletionState,
                             onAccountDeletionStateChange = { next ->
