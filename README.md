@@ -16,6 +16,7 @@
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest
 .\gradlew.bat :apps:android:assembleDebug
+.\gradlew.bat :apps:android:assembleRelease
 .\gradlew.bat :services:backend:test
 .\gradlew.bat build
 ```
@@ -39,13 +40,12 @@
 - Slice 14: 连续监控高级模式、账单同步后提示、可随时关闭的控制项、权限中心状态和支付页面观察边界已建立。
 - Slice 15: 内测崩溃/日志脱敏、核心质量指标计算、设备矩阵、已知风险、合规复核清单和源码密钥扫描已建立。
 
-## Phase 2 baseline
+## 当前 Phase 2 状态
 
-Phase 1 当前是功能面完整的骨架 baseline，不是可直接内测的生产闭环。核心限制见 [Phase 2 Baseline Audit](docs/PHASE-2-BASELINE-AUDIT.md)：
+Phase 2 已将本地账本、待确认队列、规则与 AI 同意、备份恢复、权限服务和“我的”五个二级页接入当前 Android 主流程。五个页面依次为账户管理、自动记账、分类规则、数据与备份、合规与隐私；开发者工具只在 Debug 构建中显示。
 
-- Android 主流程仍主要使用 Compose 内存状态；Room 仓储已建立但未接入主 UI 闭环。
-- 账号、AI、备份、通知捕获、账单同步、连续监控仍存在 mock/demo/in-memory 边界。
-- 后端账号、短信、AI 日志和注销状态仍是进程内存实现，尚未接 PostgreSQL/provider。
-- Phase 2 的可分派 issue 见 [Phase 2 Issues](docs/PHASE-2-ISSUES.md) 和 [issue files](docs/issues/phase-2/)。
+当前仍不具备向更广泛测试者分发的条件：目标 ROM 设备矩阵尚未完成，云端 AI 仍使用本地 `DemoAiCategorizationGateway`，而 Release 只有在本地提供 keystore 与完整签名凭据时才是可安装的已签名 APK。没有签名凭据时，构建会产出未签名的 `android-release-unsigned.apk`，仅用于编译与 lint 验证。
 
-后续切片见 [Development Slices](docs/DEVELOPMENT-SLICES.md)。
+- 当前执行状态与未完成手工验证见 [Phase 2 Issue Files](docs/issues/phase-2/) 和 [可选真机验证清单](docs/issues/phase-2/OPTIONAL-VALIDATIONS.md)。
+- 内测发布、设备矩阵、签名和风险记录见 [Internal Beta Release](docs/INTERNAL-BETA-RELEASE.md)。
+- [Phase 2 Baseline Audit](docs/PHASE-2-BASELINE-AUDIT.md) 是 `cfa42ec` 时的历史审计，不代表当前工作树状态。

@@ -2,6 +2,8 @@
 
 Phase 1 in [Development Slices](./DEVELOPMENT-SLICES.md) produced a feature-complete internal beta skeleton. Phase 2 turns that skeleton into a real-device-testable internal beta.
 
+> Execution status as of 2026-07-13: Issues 18-22 have completed the Profile decomposition. The authoritative completion and blocker record is [the Phase 2 issue index](./issues/phase-2/README.md); the planned device matrix remains incomplete, so this document is a plan rather than a beta-distribution approval.
+
 Each slice should be independently testable and leave the app in a coherent state.
 
 ## P2-Slice 1: Review And Technical Debt Cleanup

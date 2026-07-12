@@ -4,6 +4,8 @@ Baseline commit: `cfa42ec chore: establish phase 1 baseline`
 
 Source issue: [Phase 2 Issue 1](./issues/phase-2/001-baseline-audit-and-risk-map.md)
 
+> Historical snapshot: this audit describes commit `cfa42ec` before the Phase 2 closures. Do not use its mock, in-memory, signing, or profile-layout findings as the current state. Current implementation and remaining validation are tracked in [Phase 2 Issue Files](./issues/phase-2/) and [Internal Beta Release](./INTERNAL-BETA-RELEASE.md).
+
 ## Conclusion
 
 Phase 1 is a feature-complete skeleton that covers the intended product surface from PRD Slice 0-15. It is not yet a real-device-testable internal beta because several core flows are still in-memory, mocked, or represented by Android/backend boundaries without durable integration.
