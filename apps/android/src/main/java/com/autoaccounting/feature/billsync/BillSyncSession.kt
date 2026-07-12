@@ -129,6 +129,17 @@ class BillSyncSessionController {
     }
 }
 
+fun startManualBillSync(
+    source: BillSyncSource,
+    launchSource: (BillSyncSource) -> Boolean,
+    controller: BillSyncSessionController = BillSyncSessions.controller
+) {
+    controller.start(source)
+    if (!launchSource(source)) {
+        controller.fail("未找到${source.label}，无法打开账单页面")
+    }
+}
+
 object BillSyncSessions {
     val controller = BillSyncSessionController()
 }

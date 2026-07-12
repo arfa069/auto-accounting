@@ -79,19 +79,9 @@ fun CategorizationRulesScreen(
         error("Backup repository unavailable")
     },
     onDeleteLocalData: () -> Unit = {},
-    notificationListenerAccessGranted: Boolean = false,
-    onOpenNotificationListenerSettings: () -> Unit = {},
-    resultNotificationPermissionGranted: Boolean = false,
-    onRequestResultNotificationPermission: () -> Unit = {},
-    billSyncAccessibilityAccessGranted: Boolean = false,
-    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
-    continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
-    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
-        ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
     snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
@@ -106,18 +96,9 @@ fun CategorizationRulesScreen(
         onExportEncryptedBackup = onExportEncryptedBackup,
         onImportEncryptedBackup = onImportEncryptedBackup,
         onDeleteLocalData = onDeleteLocalData,
-        notificationListenerAccessGranted = notificationListenerAccessGranted,
-        onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
-        resultNotificationPermissionGranted = resultNotificationPermissionGranted,
-        onRequestResultNotificationPermission = onRequestResultNotificationPermission,
-        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
-        continuousMonitoringState = continuousMonitoringState,
-        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange,
         snackbarHostState = snackbarHostState
     )
 }
@@ -138,19 +119,9 @@ fun CategorizationRulesScreen(
         error("Backup repository unavailable")
     },
     onDeleteLocalData: () -> Unit = {},
-    notificationListenerAccessGranted: Boolean = false,
-    onOpenNotificationListenerSettings: () -> Unit = {},
-    resultNotificationPermissionGranted: Boolean = false,
-    onRequestResultNotificationPermission: () -> Unit = {},
-    billSyncAccessibilityAccessGranted: Boolean = false,
-    onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
-    continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
-    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
-        ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
     snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
@@ -162,9 +133,6 @@ fun CategorizationRulesScreen(
     var showComplianceMaterials by remember { mutableStateOf(false) }
     var showInternalBetaReadiness by remember { mutableStateOf(false) }
     var currentAccountDeletionState by remember(accountDeletionState) { mutableStateOf(accountDeletionState) }
-    var currentContinuousMonitoringState by remember(continuousMonitoringState) {
-        mutableStateOf(continuousMonitoringState)
-    }
 
     fun updateAiSettings(next: AiCategorizationSettings) {
         currentAiSettings = next
@@ -174,11 +142,6 @@ fun CategorizationRulesScreen(
     fun updateAccountDeletionState(next: AccountDeletionUiState) {
         currentAccountDeletionState = next
         onAccountDeletionStateChange(next)
-    }
-
-    fun updateContinuousMonitoringState(next: ContinuousMonitoringState) {
-        currentContinuousMonitoringState = next
-        onContinuousMonitoringStateChange(next)
     }
 
     if (showComplianceMaterials) {
@@ -224,24 +187,6 @@ fun CategorizationRulesScreen(
                 onImportEncryptedBackup = onImportEncryptedBackup,
                 onRequestDelete = { showDeleteDialog = true },
                 snackbarHostState = snackbarHostState
-            )
-            PermissionCenterNotificationItem(
-                accessGranted = notificationListenerAccessGranted,
-                onOpenSettings = onOpenNotificationListenerSettings
-            )
-            PermissionCenterResultNotificationItem(
-                accessGranted = resultNotificationPermissionGranted,
-                onRequestPermission = onRequestResultNotificationPermission
-            )
-            PermissionCenterBillSyncItem(
-                accessGranted = billSyncAccessibilityAccessGranted,
-                onOpenSettings = onOpenBillSyncAccessibilitySettings
-            )
-            ContinuousMonitoringItem(
-                state = currentContinuousMonitoringState,
-                permissionHealth = continuousMonitoringPermissionHealth,
-                onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                onStateChange = ::updateContinuousMonitoringState
             )
             AiConsentItem(
                 settings = currentAiSettings,
@@ -598,6 +543,7 @@ private fun continuousMonitoringBlockReasonLabel(
     reason: ContinuousMonitoringBlockReason
 ): String = when (reason) {
     ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission -> "需要开启自动记账无障碍权限"
+    ContinuousMonitoringBlockReason.AccessibilityServiceDisconnected -> "自动记账无障碍服务未连接"
 }
 
 @Composable

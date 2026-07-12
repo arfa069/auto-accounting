@@ -8,6 +8,38 @@ import org.junit.Test
 
 class BillSyncSessionTest {
     @Test
+    fun userStartedSyncWaitsForTheSelectedPaymentSourceAfterLaunch() {
+        val controller = BillSyncSessionController()
+        var launchedSource: BillSyncSource? = null
+
+        startManualBillSync(
+            source = BillSyncSource.Alipay,
+            controller = controller,
+            launchSource = { source ->
+                launchedSource = source
+                true
+            }
+        )
+
+        assertEquals(BillSyncSource.Alipay, launchedSource)
+        assertEquals(BillSyncSessionPhase.AwaitingBillPage, controller.state.value.phase)
+    }
+
+    @Test
+    fun launchFailureIsReportedToTheUserStartedSyncSession() {
+        val controller = BillSyncSessionController()
+
+        startManualBillSync(
+            source = BillSyncSource.WeChat,
+            controller = controller,
+            launchSource = { false }
+        )
+
+        assertEquals(BillSyncSessionPhase.Failed, controller.state.value.phase)
+        assertEquals("未找到微信，无法打开账单页面", controller.state.value.message)
+    }
+
+    @Test
     fun userStartedSessionMovesThroughProgressToCompletion() = runBlocking {
         val controller = BillSyncSessionController()
         controller.start(BillSyncSource.WeChat)

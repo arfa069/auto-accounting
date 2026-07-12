@@ -7,6 +7,88 @@ import org.junit.Test
 
 class ContinuousMonitoringStateTest {
     @Test
+    fun enabledAutomaticBookkeepingRequiresNotificationListenerAccess() {
+        val status = summarizeAutomaticBookkeeping(
+            state = ContinuousMonitoringState(enabled = true),
+            notificationListenerAccessGranted = false,
+            permissionHealth = ContinuousMonitoringPermissionHealth(
+                billSyncAccessibilityGranted = true
+            )
+        )
+
+        assertEquals(
+            AutomaticBookkeepingStatus.RequiresAttention(
+                AutomaticBookkeepingAttentionReason.RequiresNotificationListenerAccess
+            ),
+            status
+        )
+    }
+
+    @Test
+    fun automaticBookkeepingSummaryIsReadyWithBothCapturePermissionsAndClosedWhenDisabled() {
+        val healthyPermissions = ContinuousMonitoringPermissionHealth(
+            billSyncAccessibilityGranted = true
+        )
+
+        assertEquals(
+            AutomaticBookkeepingStatus.Ready,
+            summarizeAutomaticBookkeeping(
+                state = ContinuousMonitoringState(enabled = true),
+                notificationListenerAccessGranted = true,
+                permissionHealth = healthyPermissions
+            )
+        )
+        assertEquals(
+            AutomaticBookkeepingStatus.Disabled,
+            summarizeAutomaticBookkeeping(
+                state = ContinuousMonitoringState(),
+                notificationListenerAccessGranted = false,
+                permissionHealth = ContinuousMonitoringPermissionHealth()
+            )
+        )
+    }
+
+    @Test
+    fun automaticBookkeepingSummaryKeepsServiceInterruptionVisibleUntilUserRepairsIt() {
+        val status = summarizeAutomaticBookkeeping(
+            state = ContinuousMonitoringState(
+                blockReason = ContinuousMonitoringBlockReason
+                    .RequiresBillSyncAccessibilityPermission
+            ),
+            notificationListenerAccessGranted = true,
+            permissionHealth = ContinuousMonitoringPermissionHealth(
+                billSyncAccessibilityGranted = true
+            )
+        )
+
+        assertEquals(
+            AutomaticBookkeepingStatus.RequiresAttention(
+                AutomaticBookkeepingAttentionReason.RequiresAccessibilityPermission
+            ),
+            status
+        )
+    }
+
+    @Test
+    fun automaticBookkeepingSummaryRequiresAttentionWhenAccessibilityServiceIsDisconnected() {
+        val status = summarizeAutomaticBookkeeping(
+            state = ContinuousMonitoringState(enabled = true),
+            notificationListenerAccessGranted = true,
+            permissionHealth = ContinuousMonitoringPermissionHealth(
+                billSyncAccessibilityGranted = true,
+                billSyncAccessibilityServiceConnected = false
+            )
+        )
+
+        assertEquals(
+            AutomaticBookkeepingStatus.RequiresAttention(
+                AutomaticBookkeepingAttentionReason.RequiresAccessibilityServiceConnection
+            ),
+            status
+        )
+    }
+
+    @Test
     fun automaticCaptureRequiresAccessibilityButNotBillSyncOrNotificationListener() {
         val enabled = reduceContinuousMonitoringState(
             ContinuousMonitoringState(),

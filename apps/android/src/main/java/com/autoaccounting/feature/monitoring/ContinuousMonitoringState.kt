@@ -6,21 +6,69 @@ data class ContinuousMonitoringState(
 )
 
 data class ContinuousMonitoringPermissionHealth(
-    val billSyncAccessibilityGranted: Boolean = false
+    val billSyncAccessibilityGranted: Boolean = false,
+    val billSyncAccessibilityServiceConnected: Boolean = true
 ) {
     val isHealthy: Boolean
-        get() = billSyncAccessibilityGranted
+        get() = billSyncAccessibilityGranted && billSyncAccessibilityServiceConnected
 
     val firstBlockReason: ContinuousMonitoringBlockReason?
         get() = when {
             !billSyncAccessibilityGranted ->
                 ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission
+            !billSyncAccessibilityServiceConnected ->
+                ContinuousMonitoringBlockReason.AccessibilityServiceDisconnected
             else -> null
-        }
+    }
+}
+
+sealed interface AutomaticBookkeepingStatus {
+    data object Ready : AutomaticBookkeepingStatus
+    data object Disabled : AutomaticBookkeepingStatus
+    data class RequiresAttention(
+        val reason: AutomaticBookkeepingAttentionReason
+    ) : AutomaticBookkeepingStatus
+}
+
+enum class AutomaticBookkeepingAttentionReason {
+    RequiresNotificationListenerAccess,
+    RequiresAccessibilityPermission,
+    RequiresAccessibilityServiceConnection
 }
 
 enum class ContinuousMonitoringBlockReason {
-    RequiresBillSyncAccessibilityPermission
+    RequiresBillSyncAccessibilityPermission,
+    AccessibilityServiceDisconnected
+}
+
+fun summarizeAutomaticBookkeeping(
+    state: ContinuousMonitoringState,
+    notificationListenerAccessGranted: Boolean,
+    permissionHealth: ContinuousMonitoringPermissionHealth
+): AutomaticBookkeepingStatus = when {
+    state.blockReason != null -> AutomaticBookkeepingStatus.RequiresAttention(
+        state.blockReason.toAutomaticBookkeepingAttentionReason()
+    )
+
+    !state.enabled -> AutomaticBookkeepingStatus.Disabled
+    !notificationListenerAccessGranted -> AutomaticBookkeepingStatus.RequiresAttention(
+        AutomaticBookkeepingAttentionReason.RequiresNotificationListenerAccess
+    )
+
+    !permissionHealth.isHealthy -> AutomaticBookkeepingStatus.RequiresAttention(
+        requireNotNull(permissionHealth.firstBlockReason)
+            .toAutomaticBookkeepingAttentionReason()
+    )
+
+    else -> AutomaticBookkeepingStatus.Ready
+}
+
+private fun ContinuousMonitoringBlockReason.toAutomaticBookkeepingAttentionReason():
+    AutomaticBookkeepingAttentionReason = when (this) {
+    ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission ->
+        AutomaticBookkeepingAttentionReason.RequiresAccessibilityPermission
+    ContinuousMonitoringBlockReason.AccessibilityServiceDisconnected ->
+        AutomaticBookkeepingAttentionReason.RequiresAccessibilityServiceConnection
 }
 
 sealed interface ContinuousMonitoringAction {

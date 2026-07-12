@@ -24,7 +24,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 16. [实时捕获微信/支付宝支付结果并反馈记账状态](./016-cover-in-app-payment-message-capture-paths.md)
 17. [实现单笔账新增、查看、编辑、删除与恢复](./017-support-ledger-entry-crud-and-recovery.md)
 18. [重构“我的”总览与账户管理](./018-rebuild-profile-overview-and-account-management.md)
-19. [将自动记账迁移为独立页面](./019-move-automatic-bookkeeping-into-its-own-page.md)
+19. [完成：将自动记账迁移为独立页面](./019-move-automatic-bookkeeping-into-its-own-page.md)
 20. [拆分分类规则与智能分类同意链](./020-separate-categorization-rules-and-ai-consent.md)
 21. [迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
 22. [拆分合规与隐私并隔离开发者工具](./022-separate-compliance-privacy-and-developer-tools.md)

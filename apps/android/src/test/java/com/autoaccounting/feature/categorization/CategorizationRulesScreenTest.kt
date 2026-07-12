@@ -1,7 +1,6 @@
 package com.autoaccounting.feature.categorization
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -11,8 +10,6 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.ActivityResultRegistryOwner
@@ -80,65 +77,6 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithTag("delete-rule-rule-delete").performClick()
 
         assertTrue(updatedRules?.isEmpty() == true)
-    }
-
-    @Test
-    fun profileCanShowNotificationPermissionItem() {
-        var settingsOpened = false
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                notificationListenerAccessGranted = true,
-                onOpenNotificationListenerSettings = { settingsOpened = true }
-            )
-        }
-
-        composeRule.onNodeWithText("权限中心").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("通知监听").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("用于识别微信、支付宝的收付款通知，生成待确认账目。")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("当前状态：已授权").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("notification-listener-settings").performScrollTo().performClick()
-        assertTrue(settingsOpened)
-    }
-
-    @Test
-    fun profileCanRequestBookkeepingResultNotifications() {
-        var permissionRequested = false
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                resultNotificationPermissionGranted = false,
-                onRequestResultNotificationPermission = { permissionRequested = true }
-            )
-        }
-
-        composeRule.onNodeWithText("记账结果通知").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("result-notification-permission")
-            .performScrollTo()
-            .performClick()
-
-        assertTrue(permissionRequested)
-    }
-
-    @Test
-    fun profileShowsBillSyncAccessibilityStateAndSettingsLink() {
-        var settingsOpened = false
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                billSyncAccessibilityAccessGranted = true,
-                onOpenBillSyncAccessibilitySettings = { settingsOpened = true }
-            )
-        }
-
-        composeRule.onNodeWithText("账单同步与监控权限").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("bill-sync-accessibility-settings")
-            .performScrollTo()
-            .performClick()
-
-        assertTrue(settingsOpened)
     }
 
     @Test
@@ -261,64 +199,6 @@ class CategorizationRulesScreenTest {
     }
 
     @Test
-    fun automaticCaptureCanBeEnabledAndDisabledWithoutManualBillSync() {
-        var monitoringState = ContinuousMonitoringState()
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                notificationListenerAccessGranted = true,
-                billSyncAccessibilityAccessGranted = true,
-                continuousMonitoringState = monitoringState,
-                continuousMonitoringPermissionHealth = healthyPermissions,
-                onContinuousMonitoringStateChange = { monitoringState = it }
-            )
-        }
-
-        composeRule.onNodeWithText("自动记账").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("开启自动记账").performScrollTo().performClick()
-        assertTrue(monitoringState.enabled)
-
-        composeRule.onNodeWithText("关闭自动记账").performScrollTo().performClick()
-        assertTrue(!monitoringState.enabled)
-    }
-
-    @Test
-    fun automaticCaptureRequiresAccessibilityAndShowsRomGuidance() {
-        var accessibilitySettingsOpened = false
-        var monitoringState = ContinuousMonitoringState()
-        composeRule.setContent {
-            CategorizationRulesScreen(
-                showPermissionCenter = true,
-                continuousMonitoringState = monitoringState,
-                continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-                    billSyncAccessibilityGranted = false
-                ),
-                onContinuousMonitoringStateChange = { monitoringState = it },
-                onOpenBillSyncAccessibilitySettings = { accessibilitySettingsOpened = true }
-            )
-        }
-
-        composeRule.onNodeWithText("自动记账").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("只处理支付结果和支付记录，不处理聊天、普通消息、付款发起或转账发送。")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("后台保活和自启动受手机系统限制，本应用只提示你检查，不保证一定可靠。")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("当前状态：需要开启自动记账无障碍权限")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("开启自动记账").performScrollTo().assertIsNotEnabled()
-
-        composeRule.onNodeWithTag("continuous-monitoring-accessibility-settings")
-            .performScrollTo()
-            .performClick()
-
-        assertTrue(accessibilitySettingsOpened)
-        assertTrue(!monitoringState.enabled)
-    }
-
-    @Test
     fun internalBetaReadinessIsReachableFromProfile() {
         composeRule.setContent {
             CategorizationRulesScreen(showPermissionCenter = true)
@@ -330,11 +210,5 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithText("内测准备检查").assertIsDisplayed()
         composeRule.onNodeWithText("Android 10 baseline").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("无密钥入库").performScrollTo().assertIsDisplayed()
-    }
-
-    private companion object {
-        val healthyPermissions = ContinuousMonitoringPermissionHealth(
-            billSyncAccessibilityGranted = true
-        )
     }
 }

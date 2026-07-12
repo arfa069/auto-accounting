@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.capture
 
 import android.provider.Settings
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +34,18 @@ class NotificationListenerPermissionTest {
         assertEquals(
             Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
             NotificationListenerPermission.settingsIntent().action
+        )
+    }
+
+    @Test
+    fun notificationCaptureStopsWhenAutomaticBookkeepingIsDisabled() {
+        assertFalse(
+            isAutomaticBookkeepingNotificationCaptureEnabled(ContinuousMonitoringState())
+        )
+        assertTrue(
+            isAutomaticBookkeepingNotificationCaptureEnabled(
+                ContinuousMonitoringState(enabled = true)
+            )
         )
     }
 }

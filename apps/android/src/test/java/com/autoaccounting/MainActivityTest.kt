@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
@@ -54,7 +55,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun unmigratedProfileEntryKeepsExistingSettingsReachable() {
+    fun automaticBookkeepingEntryOpensItsDedicatedPage() {
         composeRule.setContent {
             AutoAccountingApp()
         }
@@ -62,9 +63,25 @@ class MainActivityTest {
         composeRule.onNodeWithTag("app-tab-Profile").performClick()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
 
-        composeRule.onNodeWithTag("notification-listener-settings")
+        composeRule.onNodeWithText("自动记账状态")
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackFromAutomaticBookkeepingReturnsToProfileOverview() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
+
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").assertIsDisplayed()
     }
 
     private fun clearPersistedSession() {

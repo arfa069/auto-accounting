@@ -18,7 +18,9 @@ import com.autoaccounting.feature.capture.toBookkeepingResultNotification
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
 import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
+import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
 import com.autoaccounting.feature.monitoring.isContinuousMonitoringPackageAllowed
 import com.autoaccounting.feature.review.ReviewQueuePersistence
@@ -29,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -63,6 +66,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
     @Volatile
     private var continuousMonitoringState = ContinuousMonitoringState()
     private var automaticCaptureJob: Job? = null
+    private var healthHeartbeatJob: Job? = null
     private var wechatOcrCaptureJob: Job? = null
     private var wechatOcrGuardResetJob: Job? = null
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
@@ -71,6 +75,14 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ContinuousMonitoringServiceHealth.markServiceConnected(this, true)
+        healthHeartbeatJob?.cancel()
+        healthHeartbeatJob = serviceScope.launch {
+            while (isActive) {
+                ContinuousMonitoringServiceHealth.markServiceConnected(this@BillSyncAccessibilityService, true)
+                delay(SERVICE_HEARTBEAT_INTERVAL_MILLIS)
+            }
+        }
         serviceScope.launch {
             preferencesRepository.userPreferences.collect { preferences ->
                 continuousMonitoringState = preferences.continuousMonitoringState
@@ -335,14 +347,22 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     private fun currentContinuousMonitoringPermissionHealth(): ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(
-            billSyncAccessibilityGranted = BillSyncPermission.isGranted(this)
+            billSyncAccessibilityGranted = BillSyncPermission.isGranted(this),
+            billSyncAccessibilityServiceConnected =
+                ContinuousMonitoringServiceHealth.isServiceConnected(this)
         )
 
     override fun onInterrupt() {
+        healthHeartbeatJob?.cancel()
+        healthHeartbeatJob = null
+        ContinuousMonitoringServiceHealth.markServiceConnected(this, false)
         BillSyncSessions.controller.fail("无障碍服务已中断")
     }
 
     override fun onDestroy() {
+        healthHeartbeatJob?.cancel()
+        healthHeartbeatJob = null
+        ContinuousMonitoringServiceHealth.markServiceConnected(this, false)
         serviceScope.cancel()
         if (ocrRecognizerDelegate.isInitialized()) {
             ocrRecognizer.close()

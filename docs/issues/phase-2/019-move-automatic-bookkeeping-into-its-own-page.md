@@ -26,16 +26,16 @@
 
 ## 验收标准
 
-- [ ] 自动记账页只包含本 Issue 定义的设置和操作，不再与分类、备份或合规内容混排。
-- [ ] 已开启但缺少必要权限或服务不健康时，总览显示“需要处理”和具体原因；关闭自动记账时显示“已关闭”。
-- [ ] 拒绝记账结果通知不会阻断采集或使总览显示“需要处理”。
-- [ ] 无障碍说明明确其读取范围，不放宽现有隐私边界。
+- [x] 自动记账页只包含本 Issue 定义的设置和操作，不再与分类、备份或合规内容混排。
+- [x] 已开启但缺少必要权限或服务不健康时，总览显示“需要处理”和具体原因；关闭自动记账时显示“已关闭”。
+- [x] 拒绝记账结果通知不会阻断采集或使总览显示“需要处理”。
+- [x] 无障碍说明明确其读取范围，不放宽现有隐私边界。
 
 ## 验收测试
 
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证
 
@@ -50,7 +50,10 @@
 
 ## 验证记录
 
-- 规划阶段：尚未实现或执行验收。
+- 2026-07-12：新增独立“自动记账”页和状态摘要；通知监听、无障碍、结果通知、持续监控健康状态与手动账单同步入口按页面顺序呈现。健康状态同时检查无障碍授权和服务连接心跳，连接心跳超时会显示为需要处理；关闭自动记账会同时停止通知监听处理；手动同步继续复用既有会话、无障碍服务、去重和待确认入队链路。
+- 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*" --tests "com.autoaccounting.feature.monitoring.*" --tests "com.autoaccounting.feature.billsync.BillSyncSessionTest" --tests "com.autoaccounting.feature.categorization.CategorizationRulesScreenTest" --tests "com.autoaccounting.MainActivityTest"` 通过。
+- 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
+- 真机手工验证未执行；仍遵循本 Issue 的隐私边界，不进入微信钱包历史等敏感页面。
 
 ## 依赖
 

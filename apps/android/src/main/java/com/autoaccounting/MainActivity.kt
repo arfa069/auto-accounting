@@ -1,7 +1,10 @@
 package com.autoaccounting
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -39,6 +42,7 @@ import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.signOutToLocalMode
 import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
+import com.autoaccounting.feature.billsync.startManualBillSync
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
@@ -52,8 +56,11 @@ import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.monitoring.AutomaticBookkeepingScreen
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
+import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.feature.profile.AccountManagementScreen
 import com.autoaccounting.feature.profile.ProfileDestination
@@ -67,6 +74,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
     private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
+    private val billSyncAccessibilityServiceConnected = mutableStateOf(false)
     private val resultNotificationPermissionGranted = mutableStateOf(false)
     private val permissionStateLoaded = mutableStateOf(false)
     private val reviewNavigationRequest = mutableStateOf(0L)
@@ -76,15 +84,35 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         resultNotificationPermissionGranted.value = granted
     }
+    private var monitoringServiceHealthListener:
+        SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private val monitoringServiceHealthHandler = Handler(Looper.getMainLooper())
+    private val refreshMonitoringServiceHealth = object : Runnable {
+        override fun run() {
+            billSyncAccessibilityServiceConnected.value =
+                ContinuousMonitoringServiceHealth.isServiceConnected(this@MainActivity)
+            monitoringServiceHealthHandler.postDelayed(
+                this,
+                SERVICE_HEARTBEAT_INTERVAL_MILLIS
+            )
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleNavigationIntent(intent)
+        billSyncAccessibilityServiceConnected.value =
+            ContinuousMonitoringServiceHealth.isServiceConnected(this)
+        monitoringServiceHealthListener = ContinuousMonitoringServiceHealth.registerListener(this) {
+            connected -> billSyncAccessibilityServiceConnected.value = connected
+        }
+        monitoringServiceHealthHandler.post(refreshMonitoringServiceHealth)
         setContent {
             AutoAccountingApp(
                 notificationListenerAccessGranted = notificationListenerAccessGranted.value,
                 onOpenNotificationListenerSettings = ::openNotificationListenerSettings,
                 billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
+                billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected.value,
                 onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
                 resultNotificationPermissionGranted = resultNotificationPermissionGranted.value,
                 onRequestResultNotificationPermission = ::requestResultNotificationPermission,
@@ -107,9 +135,20 @@ class MainActivity : ComponentActivity() {
         notificationListenerAccessGranted.value =
             NotificationListenerPermission.isGranted(this)
         billSyncAccessibilityAccessGranted.value = BillSyncPermission.isGranted(this)
+        billSyncAccessibilityServiceConnected.value =
+            ContinuousMonitoringServiceHealth.isServiceConnected(this)
         resultNotificationPermissionGranted.value =
             BookkeepingResultNotificationPermission.isGranted(this)
         permissionStateLoaded.value = true
+    }
+
+    override fun onDestroy() {
+        monitoringServiceHealthListener?.let { listener ->
+            ContinuousMonitoringServiceHealth.unregisterListener(this, listener)
+        }
+        monitoringServiceHealthListener = null
+        monitoringServiceHealthHandler.removeCallbacks(refreshMonitoringServiceHealth)
+        super.onDestroy()
     }
 
     private fun openNotificationListenerSettings() {
@@ -161,6 +200,7 @@ fun AutoAccountingApp(
     notificationListenerAccessGranted: Boolean = false,
     onOpenNotificationListenerSettings: () -> Unit = {},
     billSyncAccessibilityAccessGranted: Boolean = false,
+    billSyncAccessibilityServiceConnected: Boolean = true,
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     resultNotificationPermissionGranted: Boolean = false,
     onRequestResultNotificationPermission: () -> Unit = {},
@@ -210,7 +250,8 @@ fun AutoAccountingApp(
     var fundingAccounts by remember { mutableStateOf(emptyList<FundingAccountEntity>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-        billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted
+        billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted,
+        billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected
     )
 
     LaunchedEffect(reviewNavigationRequest) {
@@ -443,6 +484,26 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
+                        ProfileDestination.AutomaticBookkeeping -> AutomaticBookkeepingScreen(
+                            notificationListenerAccessGranted = notificationListenerAccessGranted,
+                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
+                            continuousMonitoringState = continuousMonitoringState,
+                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
+                            onStartManualBillSync = { source ->
+                                startManualBillSync(
+                                    source = source,
+                                    launchSource = onLaunchBillSyncSource
+                                )
+                            },
+                            onBack = { profileDestination = null },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+
                         else -> CategorizationRulesScreen(
                             rules = categorizationRules,
                             onRulesChange = ::persistCategorizationRules,
@@ -476,20 +537,11 @@ fun AutoAccountingApp(
                                     localPreferencesRepository.clearLocalData()
                                 }
                             },
-                            notificationListenerAccessGranted = notificationListenerAccessGranted,
-                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
-                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
-                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
                             accountSession = activeAccountSession,
                             accountDeletionState = accountDeletionState,
                             onAccountDeletionStateChange = { next ->
                                 accountDeletionState = next
-                            },
-                            continuousMonitoringState = continuousMonitoringState,
-                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
+                            }
                         )
                     }
                 }

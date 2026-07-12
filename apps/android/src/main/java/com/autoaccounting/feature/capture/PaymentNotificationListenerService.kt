@@ -7,6 +7,7 @@ import android.util.Log
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import java.time.Instant
 import java.time.ZoneId
@@ -15,13 +16,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class PaymentNotificationListenerService : NotificationListenerService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private val database by lazy { AutoAccountingDatabaseProvider.get(this) }
+    private val preferencesRepository by lazy { LocalPreferencesRepository(database) }
     private val processor by lazy {
-        val database = AutoAccountingDatabaseProvider.get(this)
         PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
                 captureTimeFormatter = ::formatCaptureTime
@@ -29,7 +32,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
             reviewQueuePersistence = ReviewQueuePersistence(
                 LocalLedgerRepository(database)
             ),
-            preferencesRepository = LocalPreferencesRepository(database)
+            preferencesRepository = preferencesRepository
         )
     }
     private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
@@ -61,6 +64,11 @@ class PaymentNotificationListenerService : NotificationListenerService() {
     ) {
         val event = sbn.toPaymentNotificationEvent()
         serviceScope.launch {
+            val automaticBookkeepingEnabled = preferencesRepository.userPreferences
+                .first()
+                .continuousMonitoringState
+                .let(::isAutomaticBookkeepingNotificationCaptureEnabled)
+            if (!automaticBookkeepingEnabled) return@launch
             runCatching { processor.processWithResult(event) }
                 .onSuccess { result ->
                     result?.notification
@@ -101,6 +109,10 @@ private val PAYMENT_NOTIFICATION_PACKAGES = setOf(
 )
 
 private const val ACTIVE_NOTIFICATION_REPLAY_WINDOW_MILLIS = 60L * 60L * 1000L
+
+internal fun isAutomaticBookkeepingNotificationCaptureEnabled(
+    state: ContinuousMonitoringState
+): Boolean = state.enabled
 
 private fun StatusBarNotification.toPaymentNotificationEvent(): PaymentNotificationEvent {
     val extras = notification.extras
