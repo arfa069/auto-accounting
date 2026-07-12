@@ -82,6 +82,7 @@ fun CategorizationRulesScreen(
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
+    onBack: (() -> Unit)? = null,
     snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
@@ -99,6 +100,7 @@ fun CategorizationRulesScreen(
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         onAccountDeletionStateChange = onAccountDeletionStateChange,
+        onBack = onBack,
         snackbarHostState = snackbarHostState
     )
 }
@@ -122,6 +124,7 @@ fun CategorizationRulesScreen(
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     onAccountDeletionStateChange: (AccountDeletionUiState) -> Unit = {},
+    onBack: (() -> Unit)? = null,
     snackbarHostState: SnackbarHostState = SnackbarHostState()
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
@@ -167,6 +170,11 @@ fun CategorizationRulesScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        onBack?.let { back ->
+            TextButton(onClick = back) {
+                Text("返回")
+            }
+        }
         if (showPermissionCenter) {
             AccountDeletionItem(
                 session = accountSession,
@@ -193,6 +201,15 @@ fun CategorizationRulesScreen(
                 cloudWritesPaused = currentAccountDeletionState.isPending,
                 onSettingsChange = ::updateAiSettings
             )
+        } else {
+            when (accountSession) {
+                is AccountSession.SignedIn -> AiConsentItem(
+                    settings = currentAiSettings,
+                    cloudWritesPaused = currentAccountDeletionState.isPending,
+                    onSettingsChange = ::updateAiSettings
+                )
+                else -> Text("智能分类登录后可用；本地分类规则不受影响。")
+            }
         }
 
         Row(
@@ -644,7 +661,14 @@ private fun AiConsentItem(
                 Button(
                     onClick = {
                         onSettingsChange(
-                            settings.copy(aiConsentGranted = !settings.aiConsentGranted)
+                            reduceAiCategorizationSettings(
+                                settings,
+                                if (settings.aiConsentGranted) {
+                                    AiCategorizationSettingsAction.DisableAi
+                                } else {
+                                    AiCategorizationSettingsAction.EnableAi
+                                }
+                            )
                         )
                     },
                     enabled = !cloudWritesPaused
@@ -654,10 +678,15 @@ private fun AiConsentItem(
                 OutlinedButton(
                     onClick = {
                         onSettingsChange(
-                            settings.copy(enhancedContextGranted = !settings.enhancedContextGranted)
+                            reduceAiCategorizationSettings(
+                                settings,
+                                AiCategorizationSettingsAction.SetEnhancedContext(
+                                    !settings.enhancedContextGranted
+                                )
+                            )
                         )
                     },
-                    enabled = !cloudWritesPaused
+                    enabled = !cloudWritesPaused && settings.aiConsentGranted
                 ) {
                     Text(if (settings.enhancedContextGranted) "减少上下文" else "提供更多上下文")
                 }

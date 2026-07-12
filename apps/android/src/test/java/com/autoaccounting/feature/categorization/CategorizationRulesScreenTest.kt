@@ -1,9 +1,12 @@
 package com.autoaccounting.feature.categorization
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
@@ -31,6 +34,31 @@ import org.robolectric.annotation.Config
 class CategorizationRulesScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun localModeShowsRulesAndLoginHintWithoutAiControls() {
+        composeRule.setContent {
+            CategorizationRulesScreen(accountSession = AccountSession.LocalMode)
+        }
+
+        composeRule.onNodeWithText("分类规则").assertIsDisplayed()
+        composeRule.onNodeWithText("智能分类登录后可用；本地分类规则不受影响。").assertIsDisplayed()
+        composeRule.onAllNodesWithText("开启云端 AI").assertCountEquals(0)
+    }
+
+    @Test
+    fun signedInModeShowsOptionalAiConsentAndDisablesEnhancedContextByDefault() {
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                accountSession = AccountSession.SignedIn("13800138000", "token")
+            )
+        }
+
+        composeRule.onNodeWithText("云端 AI 分类").assertIsDisplayed()
+        composeRule.onNodeWithText("开启云端 AI").assertIsDisplayed()
+        composeRule.onNodeWithText("提供更多上下文").assertIsDisplayed()
+            .assertIsNotEnabled()
+    }
 
     @Test
     fun userCanCreateAndEditRule() {

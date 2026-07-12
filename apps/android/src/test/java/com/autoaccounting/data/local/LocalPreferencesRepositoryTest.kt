@@ -157,6 +157,35 @@ class LocalPreferencesRepositoryTest {
     }
 
     @Test
+    fun disablingAiPersistsWithEnhancedContextRevoked() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "preferences-ai-disabled-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val database = openDatabase(context, databaseName)
+        val repository = LocalPreferencesRepository(database)
+
+        runBlocking {
+            repository.updateAiSettings(
+                AiCategorizationSettings(
+                    aiConsentGranted = false,
+                    enhancedContextGranted = true
+                )
+            )
+        }
+        database.close()
+
+        val reopenedDatabase = openDatabase(context, databaseName)
+        val preferences = runBlocking {
+            LocalPreferencesRepository(reopenedDatabase).userPreferences.first()
+        }
+
+        assertFalse(preferences.aiSettings.aiConsentGranted)
+        assertFalse(preferences.aiSettings.enhancedContextGranted)
+        reopenedDatabase.close()
+        context.deleteDatabase(databaseName)
+    }
+
+    @Test
     fun savedRuleAppliesToLaterPendingEntryAfterRestart() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "rule-match-reopen-${System.nanoTime()}.db"

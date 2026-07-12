@@ -24,15 +24,15 @@
 
 ## 验收标准
 
-- [ ] 本地模式可查看、创建、编辑和删除本地分类规则，且不会显示可操作的云端 AI 开关。
-- [ ] 智能分类关闭时增强上下文已撤销且不可操作；再次开启智能分类时仅最小字段生效。
-- [ ] 已登录且未同意 AI 时，页面清楚解释这是可选能力。
-- [ ] 设置重启后仍保持同意链的正确状态。
+- [x] 本地模式可查看、创建、编辑和删除本地分类规则，且不会显示可操作的云端 AI 开关。
+- [x] 智能分类关闭时增强上下文已撤销且不可操作；再次开启智能分类时仅最小字段生效。
+- [x] 已登录且未同意 AI 时，页面清楚解释这是可选能力。
+- [x] 设置重启后仍保持同意链的正确状态。
 
 ## 验收测试
 
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.categorization.*"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.categorization.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证
 
@@ -46,7 +46,9 @@
 
 ## 验证记录
 
-- 规划阶段：尚未实现或执行验收。
+- 2026-07-12：分类专项单元测试通过；本地模式、登录模式、同意链 reducer、持久化重启和“我的”导航均有自动化覆盖。
+- 2026-07-12：完整 Android 单元测试（217 项）与 Debug APK 构建通过。导航测试曾因点击屏幕外入口而失败，补充滚动操作后复跑通过。
+- 2026-07-12：未执行真机手工验证；测试账号的 AI 同意链流程仍需在设备上确认。
 
 ## 依赖
 

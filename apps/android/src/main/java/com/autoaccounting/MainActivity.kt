@@ -504,6 +504,17 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
+                        ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
+                            rules = categorizationRules,
+                            onRulesChange = ::persistCategorizationRules,
+                            aiSettings = aiSettings,
+                            onAiSettingsChange = ::persistAiSettings,
+                            accountSession = activeAccountSession,
+                            accountDeletionState = accountDeletionState,
+                            onBack = { profileDestination = null },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+
                         else -> CategorizationRulesScreen(
                             rules = categorizationRules,
                             onRulesChange = ::persistCategorizationRules,

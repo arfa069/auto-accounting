@@ -8,6 +8,26 @@ data class AiCategorizationSettings(
     val enhancedContextGranted: Boolean = false
 )
 
+sealed interface AiCategorizationSettingsAction {
+    data object EnableAi : AiCategorizationSettingsAction
+    data object DisableAi : AiCategorizationSettingsAction
+    data class SetEnhancedContext(val enabled: Boolean) : AiCategorizationSettingsAction
+}
+
+fun reduceAiCategorizationSettings(
+    settings: AiCategorizationSettings,
+    action: AiCategorizationSettingsAction
+): AiCategorizationSettings = when (action) {
+    AiCategorizationSettingsAction.EnableAi -> settings.copy(
+        aiConsentGranted = true,
+        enhancedContextGranted = false
+    )
+    AiCategorizationSettingsAction.DisableAi -> AiCategorizationSettings()
+    is AiCategorizationSettingsAction.SetEnhancedContext -> settings.copy(
+        enhancedContextGranted = settings.aiConsentGranted && action.enabled
+    )
+}
+
 data class AiCategorizationPayload(
     val merchantTitle: String,
     val sourceLabel: String,

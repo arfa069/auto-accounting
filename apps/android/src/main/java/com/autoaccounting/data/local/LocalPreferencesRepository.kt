@@ -35,11 +35,16 @@ class LocalPreferencesRepository(
     }
 
     suspend fun updateAiSettings(aiSettings: AiCategorizationSettings) = database.withTransaction {
+        val validSettings = if (aiSettings.aiConsentGranted) {
+            aiSettings
+        } else {
+            AiCategorizationSettings()
+        }
         val current = currentSettingsEntity()
         database.localSettingsDao().upsert(
             current.copy(
-                aiConsentGranted = aiSettings.aiConsentGranted,
-                enhancedContextGranted = aiSettings.enhancedContextGranted
+                aiConsentGranted = validSettings.aiConsentGranted,
+                enhancedContextGranted = validSettings.enhancedContextGranted
             )
         )
     }
@@ -98,7 +103,7 @@ private fun CategorizationRule.toEntity(): CategorizationRuleEntity = Categoriza
 private fun LocalSettingsEntity.toDomain(): LocalUserPreferences = LocalUserPreferences(
     aiSettings = AiCategorizationSettings(
         aiConsentGranted = aiConsentGranted,
-        enhancedContextGranted = enhancedContextGranted
+        enhancedContextGranted = aiConsentGranted && enhancedContextGranted
     ),
     continuousMonitoringState = ContinuousMonitoringState(
         enabled = continuousMonitoringEnabled

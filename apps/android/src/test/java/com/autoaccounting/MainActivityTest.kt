@@ -84,6 +84,40 @@ class MainActivityTest {
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").assertIsDisplayed()
     }
 
+    @Test
+    fun categorizationRulesEntryOpensDedicatedPage() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-CategorizationRules")
+            .performScrollTo()
+            .performClick()
+
+        composeRule.onNodeWithText("新建规则").assertExists()
+    }
+
+    @Test
+    fun systemBackFromCategorizationRulesReturnsToProfileOverview() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-CategorizationRules")
+            .performScrollTo()
+            .performClick()
+
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithTag("profile-entry-CategorizationRules")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private fun clearPersistedSession() {
         context.getSharedPreferences(
             LOCAL_MODE_SESSION_PREFERENCES,
