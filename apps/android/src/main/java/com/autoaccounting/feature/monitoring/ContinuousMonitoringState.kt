@@ -169,12 +169,19 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
 
     val text = screenText.lowercase()
     if (PAYMENT_INITIATION_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }) return false
+    val hasChatOrGenericMessage =
+        CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }
     val hasCompletedPayment = PAYMENT_COMPLETION_KEYWORDS.any { keyword -> text.contains(keyword) } &&
         PAYMENT_AMOUNT_REGEX.containsMatchIn(text)
+    if (packageName == "com.tencent.mm") {
+        return hasCompletedPayment &&
+            !hasChatOrGenericMessage &&
+            ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+    }
     if (hasCompletedPayment) {
         return ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
     }
-    if (CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.any { keyword -> text.contains(keyword) } &&
+    if (hasChatOrGenericMessage &&
         PAYMENT_MESSAGE_CENTER_KEYWORDS.none { keyword -> text.contains(keyword) }
     ) {
         return false

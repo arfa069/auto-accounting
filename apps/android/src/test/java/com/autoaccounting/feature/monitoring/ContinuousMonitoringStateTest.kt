@@ -142,7 +142,7 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
-    fun monitoringAllowsPaymentHistoryAndResultSurfacesWithoutManualSync() {
+    fun monitoringRejectsWechatHistoryAndAllowsPaymentResultWithoutManualSync() {
         val state = ContinuousMonitoringState(enabled = true)
         val history = decide(
             state,
@@ -155,7 +155,7 @@ class ContinuousMonitoringStateTest {
             "支付成功 ¥12.34 收款方 测试门店"
         )
 
-        assertEquals(ContinuousMonitoringObservation.PaymentRelated, history.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, history.observation)
         assertEquals(ContinuousMonitoringObservation.PaymentRelated, result.observation)
     }
 
@@ -177,6 +177,24 @@ class ContinuousMonitoringStateTest {
         assertEquals(ContinuousMonitoringObservation.Ignored, chat.observation)
         assertEquals(ContinuousMonitoringObservation.Ignored, cashier.observation)
         assertEquals(ContinuousMonitoringObservation.Ignored, transferSend.observation)
+    }
+
+    @Test
+    fun wechatPaymentConversationIsDeniedWhilePaymentSuccessPageRemainsAllowed() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val paymentConversation = decide(
+            state,
+            "com.tencent.mm",
+            "微信支付 消息 支付成功 中国电信 ¥6.99"
+        )
+        val paymentSuccessPage = decide(
+            state,
+            "com.tencent.mm",
+            "支付成功 中国电信 ¥6.99 返回商家"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, paymentSuccessPage.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, paymentConversation.observation)
     }
 
     @Test
@@ -236,6 +254,17 @@ class ContinuousMonitoringStateTest {
 
         assertEquals(ContinuousMonitoringObservation.Ignored, otherPackage.observation)
         assertEquals(ContinuousMonitoringObservation.Disabled, missingPermission.observation)
+    }
+
+    @Test
+    fun emptyScreenTextIsIgnored() {
+        val decision = decide(
+            ContinuousMonitoringState(enabled = true),
+            "com.tencent.mm",
+            ""
+        )
+
+        assertEquals(ContinuousMonitoringObservation.Ignored, decision.observation)
     }
 
     @Test
