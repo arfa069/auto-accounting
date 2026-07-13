@@ -353,9 +353,6 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
 
     override fun onInterrupt() {
-        healthHeartbeatJob?.cancel()
-        healthHeartbeatJob = null
-        ContinuousMonitoringServiceHealth.markServiceConnected(this, false)
         BillSyncSessions.controller.fail("无障碍服务已中断")
     }
 
