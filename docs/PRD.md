@@ -67,7 +67,7 @@ Transaction kinds:
 Homepage:
 - The review queue is the first tab and primary workflow.
 - Top summary shows pending total, duplicate suspect count, today's newly captured count, and a bill sync button.
-- List is grouped into "needs careful review" and "quick confirm".
+- All pending entries appear in a single "quick confirm" list.
 - Sorting: duplicate suspect and low-confidence entries first, then capture time descending.
 
 List item fields:

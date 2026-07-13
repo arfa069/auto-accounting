@@ -241,6 +241,38 @@ class ReviewQueueScreenTest {
     }
 
     @Test
+    fun allPendingEntriesAppearInSingleQuickConfirmList() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(
+                    pendingEntries = listOf(
+                        sampleEntry(id = "high", confidence = ConfidenceState.HIGH),
+                        sampleEntry(id = "needs-review", confidence = ConfidenceState.NEEDS_REVIEW),
+                        sampleEntry(id = "duplicate", confidence = ConfidenceState.DUPLICATE_SUSPECT)
+                    )
+                )
+            )
+        }
+
+        composeRule.onNodeWithText("快速确认").assertIsDisplayed()
+        composeRule.onAllNodesWithText("需细看").assertCountEquals(0)
+        composeRule.onNodeWithTag("detail-high").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("detail-needs-review").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("detail-duplicate").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun emptyQueueShowsOnlyQuickConfirmEmptyState() {
+        composeRule.setContent {
+            ReviewQueueScreen(initialState = ReviewQueueState())
+        }
+
+        composeRule.onNodeWithText("快速确认").assertIsDisplayed()
+        composeRule.onNodeWithText("快速确认列表为空").assertIsDisplayed()
+        composeRule.onAllNodesWithText("需细看").assertCountEquals(0)
+    }
+
+    @Test
     fun billSyncWithoutPermissionOpensSettingsAndDoesNotLaunchSource() {
         var settingsOpened = false
         var sourceLaunched = false

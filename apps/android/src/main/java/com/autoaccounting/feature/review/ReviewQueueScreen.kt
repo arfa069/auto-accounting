@@ -360,8 +360,6 @@ private fun ReviewQueueContent(
     modifier: Modifier = Modifier
 ) {
     val sortedEntries = state.sortedPendingEntries
-    val carefulEntries = sortedEntries.filter { it.requiresCarefulReview }
-    val quickEntries = sortedEntries.filterNot { it.requiresCarefulReview }
 
     Column(
         modifier = modifier
@@ -401,19 +399,10 @@ private fun ReviewQueueContent(
         }
 
         ReviewEntryGroup(
-            title = "需细看",
-            subtitle = "金额、重复或分类需要人工确认",
-            entries = carefulEntries,
-            emptyText = "暂时没有需要细看的记录",
-            onAction = onAction,
-            onEdit = onEdit
-        )
-
-        ReviewEntryGroup(
-            title = "快捷确认",
-            subtitle = "置信度较高，可快速滑动或点确认",
-            entries = quickEntries,
-            emptyText = "快捷确认列表为空",
+            title = "快速确认",
+            subtitle = "所有待确认记录，可快速滑动或点确认",
+            entries = sortedEntries,
+            emptyText = "快速确认列表为空",
             onAction = onAction,
             onEdit = onEdit
         )

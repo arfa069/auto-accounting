@@ -50,9 +50,6 @@ data class ReviewQueueEntry(
     val rawEvidenceText: String = "",
     val parsedFields: List<String> = emptyList()
 ) {
-    val requiresCarefulReview: Boolean
-        get() = confidence != ConfidenceState.HIGH
-
     val reviewPriority: Int
         get() = when (confidence) {
             ConfidenceState.DUPLICATE_SUSPECT -> 0

@@ -35,9 +35,9 @@ Top summary:
 - Today's newly captured count.
 - Sync action.
 
-List grouping:
-- Needs careful review.
-- Quick confirm.
+Pending list:
+- A single Quick confirm group contains every pending entry.
+- Confidence state remains visible on each row.
 
 Default sorting:
 - Duplicate suspect and low-confidence first.
