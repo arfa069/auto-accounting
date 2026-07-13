@@ -25,10 +25,12 @@ Make continuous monitoring an advanced opt-in Android service path with clear st
 
 ## Device verification
 
-Status: Not run on 2026-07-09 because no Android device was connected through ADB.
+Status: Partial Xiaomi validation completed on 2026-07-13; payment-surface and deny-list scenarios below remain separate acceptance work.
 
 - [ ] Enable notification listener and bill-sync accessibility permissions from the profile permission center.
 - [ ] Enable continuous monitoring and confirm payment-history or bill surfaces create/merge pending entries.
 - [ ] Open WeChat/Alipay chat, message, payment initiation, and transfer surfaces and confirm no pending entries are created.
 - [ ] Disable continuous monitoring and confirm later WeChat/Alipay accessibility events are ignored.
-- [ ] Review background keep-alive/auto-start guidance on a target domestic ROM without treating it as guaranteed behavior.
+- [x] Review background keep-alive/auto-start guidance on a target domestic ROM without treating it as guaranteed behavior. Xiaomi Android 16 / MIUI `V816` opened the expected application-details and auto-start pages; battery optimization and battery saver also opened their corresponding system settings.
+
+Rebinding finding: ordinary app-process recovery retained accessibility enablement and binding. MIUI force-stop removed the service from `enabled_accessibility_services`, so relaunch alone could not restore it and a real user reauthorization was required. After reauthorization, Android reported the service enabled and bound, but the in-app heartbeat remained disconnected; `BillSyncAccessibilityService.onInterrupt()` currently clears the health flag and cancels its heartbeat even while the system may keep the service bound. Track this as an application health-reporting defect rather than repeatedly changing the user's permission.
