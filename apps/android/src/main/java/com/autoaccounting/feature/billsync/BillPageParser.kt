@@ -26,7 +26,8 @@ data class ParsedBillEntry(
     val transactionTimeText: String,
     val rawLine: String,
     val parsedFields: List<String>,
-    val transactionTimeFromFallback: Boolean = false
+    val transactionTimeFromFallback: Boolean = false,
+    val merchantTitleFromFallback: Boolean = false
 )
 
 enum class BillSyncPageObservation {
@@ -180,11 +181,13 @@ class BillPageParser {
             ?: fallbackTimeText
             ?: return null
         val transactionKindLabel = windowText.inferTransactionKindLabel() ?: return null
-        val merchantTitle = extractMerchantTitle(
+        val extractedMerchantTitle = extractMerchantTitle(
             windowText = windowText,
             lines = windowLines,
             linesBeforeAmount = linesBeforeAmount
-        ) ?: source.genericPaymentTitle.takeIf { isCompletedPaymentResult }
+        )
+        val merchantTitle = extractedMerchantTitle
+            ?: source.genericPaymentTitle.takeIf { isCompletedPaymentResult }
             ?: return null
         val fundingAccountLabel = extractFundingAccountLabel(windowText, windowLines)
             ?: source.defaultFundingAccountLabel
@@ -204,7 +207,8 @@ class BillPageParser {
                 "金额=${amountMinorToText(amountMinor)}",
                 "类型=$transactionKindLabel"
             ),
-            transactionTimeFromFallback = fallbackTimeText != null
+            transactionTimeFromFallback = fallbackTimeText != null,
+            merchantTitleFromFallback = extractedMerchantTitle == null
         )
     }
 

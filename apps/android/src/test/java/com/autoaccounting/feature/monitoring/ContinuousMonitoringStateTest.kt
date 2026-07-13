@@ -180,12 +180,22 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
-    fun wechatPaymentConversationIsDeniedWhilePaymentSuccessPageRemainsAllowed() {
+    fun wechatMerchantPaymentRequiresStrongSuccessPageSignature() {
         val state = ContinuousMonitoringState(enabled = true)
         val paymentConversation = decide(
             state,
             "com.tencent.mm",
             "微信支付 消息 支付成功 中国电信 ¥6.99"
+        )
+        val incompletePaymentResult = decide(
+            state,
+            "com.tencent.mm",
+            "支付成功 中国电信 ¥6.99"
+        )
+        val ambiguousCompletion = decide(
+            state,
+            "com.tencent.mm",
+            "付款成功 中国电信 ¥6.99"
         )
         val paymentSuccessPage = decide(
             state,
@@ -194,6 +204,8 @@ class ContinuousMonitoringStateTest {
         )
 
         assertEquals(ContinuousMonitoringObservation.PaymentRelated, paymentSuccessPage.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, incompletePaymentResult.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, ambiguousCompletion.observation)
         assertEquals(ContinuousMonitoringObservation.Ignored, paymentConversation.observation)
     }
 
@@ -209,6 +221,11 @@ class ContinuousMonitoringStateTest {
             state,
             "com.tencent.mm",
             "转账成功 ¥0.01 对方 测试对象"
+        )
+        val transferAwaitingReceipt = decide(
+            state,
+            "com.tencent.mm",
+            "支付成功 待测试对象确认收款 ¥0.05 完成"
         )
         val genericMessage = decide(
             state,
@@ -228,6 +245,10 @@ class ContinuousMonitoringStateTest {
 
         assertEquals(ContinuousMonitoringObservation.PaymentRelated, paymentMessage.observation)
         assertEquals(ContinuousMonitoringObservation.PaymentRelated, transferResult.observation)
+        assertEquals(
+            ContinuousMonitoringObservation.PaymentRelated,
+            transferAwaitingReceipt.observation
+        )
         assertEquals(
             ContinuousMonitoringObservation.PaymentRelated,
             resultWithNavigationChrome.observation

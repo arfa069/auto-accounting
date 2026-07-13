@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
@@ -22,6 +23,9 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
 import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
+import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
+import com.autoaccounting.feature.monitoring.hasOnlyGenericWechatAccessibilityText
+import com.autoaccounting.feature.monitoring.hasWechatTransferCompletionContext
 import com.autoaccounting.feature.monitoring.isContinuousMonitoringPackageAllowed
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import kotlinx.coroutines.CancellationException
@@ -72,6 +76,8 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
     private val ocrSessionGuard = PaymentScreenOcrSessionGuard()
     private var lastWechatOcrAttemptAtElapsedMillis = 0L
+    @Volatile
+    private var activeWechatWindowIdentity: WechatWindowIdentity? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -92,6 +98,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val windowIdentity = event.className?.toString()
+                ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
+                ?.let { activityClassName ->
+                    WechatWindowIdentity(
+                        windowId = event.windowId,
+                        activityClassName = activityClassName
+                    )
+            }
+            activeWechatWindowIdentity = windowIdentity
+        }
         val manualBillSyncAcceptsPackage = BillSyncSessions.controller.acceptsPackage(packageName)
         val monitoringPermissionHealth = if (manualBillSyncAcceptsPackage) {
             null
@@ -106,17 +123,26 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
         val activeRoot = rootInActiveWindow ?: event.source
         val pageText = activeRoot?.collectVisibleText().orEmpty()
-        if (pageText.isBlank()) {
+        val windowIdentity = activeWechatWindowIdentity
+            ?.takeIf { identity -> identity.windowId == activeRoot?.windowId }
+        val windowEvidence = activeRoot?.let { root ->
+            currentWechatWindowEvidence(root.windowId, windowIdentity)
+        }
+        val shouldEvaluateOcr = shouldConsiderContinuousMonitoring &&
+            windowEvidence != null &&
+            isWechatOcrFallbackCandidate(
+                packageName = packageName,
+                pageText = pageText,
+                sdkInt = Build.VERSION.SDK_INT,
+                windowEvidence = windowEvidence
+            )
+        if (shouldEvaluateOcr) {
             wechatOcrGuardResetJob?.cancel()
             wechatOcrGuardResetJob = null
-            if (
-                shouldConsiderContinuousMonitoring &&
-                shouldAttemptWechatOcrFallback(packageName, pageText, Build.VERSION.SDK_INT)
-            ) {
-                captureWechatOcrFallback(packageName)
-            }
+            captureWechatOcrFallback(packageName)
             return
         }
+        if (pageText.isBlank()) return
 
         if (packageName == BillSyncSource.WeChat.packageName) {
             scheduleWechatOcrGuardReset(packageName)
@@ -185,10 +211,33 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return@launch
 
                 val windowId = requireNotNull(activeRoot).windowId
-                if (!ocrSessionGuard.shouldAttempt()) return@launch
+                val windowIdentity = activeWechatWindowIdentity
+                    ?.takeIf { identity -> identity.windowId == windowId }
+                val windowEvidence = currentWechatWindowEvidence(windowId, windowIdentity)
+                val nodePageText = activeRoot.collectVisibleText()
+                val hasRecentPaymentNotification = !windowEvidence.isApplicationWindow &&
+                    processor.hasRecentWechatNotificationCaptureCandidate()
+                if (
+                    !shouldAttemptWechatOcrFallback(
+                        packageName = packageName,
+                        pageText = nodePageText,
+                        sdkInt = Build.VERSION.SDK_INT,
+                        windowEvidence = windowEvidence,
+                        hasRecentPaymentNotification = hasRecentPaymentNotification
+                    )
+                ) {
+                    return@launch
+                }
                 val screenshot = captureScreenBitmap(windowId) ?: return@launch
                 try {
-                    if (rootInActiveWindow?.packageName?.toString() != packageName) return@launch
+                    val currentRoot = rootInActiveWindow
+                    if (
+                        currentRoot == null ||
+                        currentRoot.packageName?.toString() != packageName ||
+                        currentRoot.windowId != windowId
+                    ) {
+                        return@launch
+                    }
                     if (
                         !isScreenReadyForWechatOcr(
                             powerManager.isInteractive,
@@ -197,14 +246,32 @@ class BillSyncAccessibilityService : AccessibilityService() {
                     ) {
                         return@launch
                     }
-                    val pageText = ocrRecognizer.recognize(screenshot)
-                    val processed = captureOcrPaymentResult(
-                        packageName = packageName,
-                        pageText = pageText
+                    val currentWindowIdentity = activeWechatWindowIdentity
+                        ?.takeIf { identity -> identity.windowId == windowId }
+                    val currentWindowEvidence = currentWechatWindowEvidence(
+                        windowId = windowId,
+                        windowIdentity = currentWindowIdentity
                     )
-                    if (processed) {
-                        ocrSessionGuard.markProcessed()
+                    val currentHasRecentPaymentNotification =
+                        !currentWindowEvidence.isApplicationWindow &&
+                            processor.hasRecentWechatNotificationCaptureCandidate()
+                    if (
+                        !shouldAttemptWechatOcrFallback(
+                            packageName = packageName,
+                            pageText = currentRoot.collectVisibleText(),
+                            sdkInt = Build.VERSION.SDK_INT,
+                            windowEvidence = currentWindowEvidence,
+                            hasRecentPaymentNotification = currentHasRecentPaymentNotification
+                        )
+                    ) {
+                        return@launch
                     }
+                    val pageText = ocrRecognizer.recognize(screenshot)
+                    captureOcrPaymentResult(
+                        packageName = packageName,
+                        pageText = pageText,
+                        windowEvidence = currentWindowEvidence
+                    )
                 } finally {
                     screenshot.recycle()
                 }
@@ -235,9 +302,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     private suspend fun captureOcrPaymentResult(
         packageName: String,
-        pageText: String
+        pageText: String,
+        windowEvidence: WechatWindowEvidence
     ): Boolean {
         if (pageText.isBlank()) return false
+        val ocrDecision = decideWechatOcrCapture(
+            pageText = pageText,
+            windowEvidence = windowEvidence
+        )
+        if (!ocrDecision.shouldCapture) return false
+        val transactionFingerprint = wechatOcrPaymentFingerprint(pageText) ?: return false
+        if (!ocrSessionGuard.shouldProcess(transactionFingerprint)) return false
         val permissionHealth = currentContinuousMonitoringPermissionHealth()
         if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return false
         val decision = decideContinuousMonitoringCapture(
@@ -256,14 +331,19 @@ class BillSyncAccessibilityService : AccessibilityService() {
             processor.processAutomatic(
                 source = source,
                 pageText = pageText,
-                retainRawEvidence = false
+                retainRawEvidence = false,
+                automaticCaptureVerification = ocrDecision.verification
             )
         }.onSuccess { result ->
             result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
         }.onFailure { error ->
             Log.w(TAG, "Automatic OCR payment capture failed", error)
         }
-        return outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
+        val processed = outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
+        if (processed) {
+            ocrSessionGuard.markProcessed(transactionFingerprint)
+        }
+        return processed
     }
 
     private suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
@@ -345,6 +425,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun currentWechatWindowEvidence(
+        windowId: Int,
+        windowIdentity: WechatWindowIdentity?
+    ): WechatWindowEvidence =
+        WechatWindowEvidence(
+            activityClassName = windowIdentity?.activityClassName,
+            isApplicationWindow = windows
+                .firstOrNull { window -> window.id == windowId }
+                ?.type == AccessibilityWindowInfo.TYPE_APPLICATION
+        )
+
     private fun currentContinuousMonitoringPermissionHealth(): ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(
             billSyncAccessibilityGranted = BillSyncPermission.isGranted(this),
@@ -378,30 +469,53 @@ class BillSyncAccessibilityService : AccessibilityService() {
 internal fun shouldAttemptWechatOcrFallback(
     packageName: String,
     pageText: String,
-    sdkInt: Int
+    sdkInt: Int,
+    windowEvidence: WechatWindowEvidence,
+    hasRecentPaymentNotification: Boolean = false
+): Boolean = isWechatOcrFallbackCandidate(
+    packageName = packageName,
+    pageText = pageText,
+    sdkInt = sdkInt,
+    windowEvidence = windowEvidence
+) && (windowEvidence.isApplicationWindow || hasRecentPaymentNotification)
+
+private fun isWechatOcrFallbackCandidate(
+    packageName: String,
+    pageText: String,
+    sdkInt: Int,
+    windowEvidence: WechatWindowEvidence
 ): Boolean = packageName == BillSyncSource.WeChat.packageName &&
-    pageText.isBlank() &&
-    sdkInt >= Build.VERSION_CODES.R
+    sdkInt >= Build.VERSION_CODES.R &&
+    isVerifiedWechatOcrResultActivity(windowEvidence.activityClassName) &&
+    hasOnlyGenericWechatAccessibilityText(pageText) &&
+    !hasWechatMerchantPaymentSuccessSignature(pageText) &&
+    !hasWechatTransferCompletionContext(pageText)
 
 internal fun isScreenReadyForWechatOcr(
     screenInteractive: Boolean,
     keyguardLocked: Boolean
 ): Boolean = screenInteractive && !keyguardLocked
 
+private data class WechatWindowIdentity(
+    val windowId: Int,
+    val activityClassName: String
+)
+
 internal class PaymentScreenOcrSessionGuard {
-    private var processed = false
+    private var processedFingerprint: WechatOcrPaymentFingerprint? = null
 
     @Synchronized
-    fun shouldAttempt(): Boolean = !processed
+    fun shouldProcess(fingerprint: WechatOcrPaymentFingerprint): Boolean =
+        fingerprint != processedFingerprint
 
     @Synchronized
-    fun markProcessed() {
-        processed = true
+    fun markProcessed(fingerprint: WechatOcrPaymentFingerprint) {
+        processedFingerprint = fingerprint
     }
 
     @Synchronized
     fun reset() {
-        processed = false
+        processedFingerprint = null
     }
 }
 

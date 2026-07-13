@@ -134,7 +134,7 @@ class BillSyncPipelineTest {
     fun transientOcrEvidenceIsNotStoredWithPendingEntry() {
         val result = BillSyncPipeline(parser = BillPageParser()).sync(
             source = BillSyncSource.WeChat,
-            pageText = "支付成功\n测试商户\n¥12.34",
+            pageText = "支付成功\n测试商户\n¥12.34\n返回商家",
             existingPendingEntries = emptyList(),
             capturedAtEpochMillis = NOW,
             captureReasonLabel = "支付结果自动捕获",
@@ -144,6 +144,144 @@ class BillSyncPipelineTest {
         assertEquals(1, result.createdEntries.size)
         assertEquals("", result.createdEntries.single().rawEvidenceText)
         assertTrue(result.createdEntries.single().parsedFields.isNotEmpty())
+    }
+
+    @Test
+    fun trustedWechatMerchantOcrWithoutMerchantIsIgnored() {
+        val result = BillSyncPipeline(parser = BillPageParser()).sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n¥6.99\n返回商家",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertTrue(result.mergedEntries.isEmpty())
+    }
+
+    @Test
+    fun untrustedWechatMerchantOcrWithoutNotificationIsIgnored() {
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 12:21" }
+        ).sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n¥6.99\n返回商家",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false,
+            automaticCaptureVerification =
+                AutomaticCaptureVerification.RequireRecentNotification
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertTrue(result.mergedEntries.isEmpty())
+    }
+
+    @Test
+    fun untrustedWechatMerchantOcrMergesWithUniqueRecentNotification() {
+        val notification = notificationEntry(
+            id = "wechat-notification-1",
+            transactionTimeText = "2026-07-08 12:20",
+            title = "中国电信",
+            amountMinor = 699,
+            sourceLabel = "微信"
+        )
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 12:21" }
+        ).sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n¥6.99\n返回商家",
+            existingPendingEntries = listOf(notification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false,
+            automaticCaptureVerification =
+                AutomaticCaptureVerification.RequireRecentNotification
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertEquals("wechat-notification-1", result.mergedEntries.single().id)
+    }
+
+    @Test
+    fun untrustedWechatMerchantOcrRejectsLateOrAmbiguousNotifications() {
+        fun notification(id: String, time: String, capturedAtEpochMillis: Long) = notificationEntry(
+            id = id,
+            transactionTimeText = time,
+            title = "中国电信",
+            amountMinor = 699,
+            sourceLabel = "微信",
+            capturedAtEpochMillis = capturedAtEpochMillis
+        )
+        val pipeline = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-07-08 12:21" }
+        )
+        val late = pipeline.sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n¥6.99\n返回商家",
+            existingPendingEntries = listOf(
+                notification(
+                    id = "late",
+                    time = "2026-07-08 12:20",
+                    capturedAtEpochMillis = NOW - 6 * 60_000
+                )
+            ),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false,
+            automaticCaptureVerification =
+                AutomaticCaptureVerification.RequireRecentNotification
+        )
+        val ambiguous = pipeline.sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n¥6.99\n返回商家",
+            existingPendingEntries = listOf(
+                notification("first", "2026-07-08 12:20", NOW - 60_000),
+                notification("second", "2026-07-08 12:22", NOW - 2 * 60_000)
+            ),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false,
+            automaticCaptureVerification =
+                AutomaticCaptureVerification.RequireRecentNotification
+        )
+
+        assertTrue(late.createdEntries.isEmpty())
+        assertTrue(late.mergedEntries.isEmpty())
+        assertTrue(ambiguous.createdEntries.isEmpty())
+        assertTrue(ambiguous.mergedEntries.isEmpty())
+    }
+
+    @Test
+    fun untrustedWechatMerchantOcrRejectsOldNotificationWithMatchingExplicitTime() {
+        val oldNotification = notificationEntry(
+            id = "old-wechat-notification",
+            transactionTimeText = "2026-07-01 08:00",
+            title = "中国电信",
+            amountMinor = 699,
+            sourceLabel = "微信",
+            capturedAtEpochMillis = NOW - 7 * 24 * 60 * 60_000L
+        )
+
+        val result = BillSyncPipeline(parser = BillPageParser()).sync(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n交易时间 2026-07-01 08:00\n¥6.99\n返回商家",
+            existingPendingEntries = listOf(oldNotification),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            retainRawEvidence = false,
+            automaticCaptureVerification =
+                AutomaticCaptureVerification.RequireRecentNotification
+        )
+
+        assertTrue(result.createdEntries.isEmpty())
+        assertTrue(result.mergedEntries.isEmpty())
     }
 
     @Test
@@ -274,15 +412,20 @@ class BillSyncPipelineTest {
 
     private fun notificationEntry(
         id: String,
-        transactionTimeText: String
+        transactionTimeText: String,
+        title: String = "未知来源",
+        amountMinor: Long = 3_590,
+        sourceLabel: String = "支付宝",
+        capturedAtEpochMillis: Long = NOW - 60_000
     ): ReviewQueueEntry = ReviewQueueEntry(
         id = id,
-        title = "未知来源",
-        amountMinor = 3_590,
+        title = title,
+        amountMinor = amountMinor,
         transactionTimeText = transactionTimeText,
-        sourceLabel = "支付宝",
+        sourceLabel = sourceLabel,
         kindLabel = "支出",
-        captureReasonLabel = "通知捕获"
+        captureReasonLabel = "通知捕获",
+        capturedAtEpochMillis = capturedAtEpochMillis
     )
 
     private companion object {

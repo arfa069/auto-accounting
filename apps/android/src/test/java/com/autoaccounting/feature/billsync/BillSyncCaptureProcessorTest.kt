@@ -152,6 +152,23 @@ class BillSyncCaptureProcessorTest {
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
     }
 
+    @Test
+    fun automaticWechatOcrPersistsParsedFieldsWithoutRawEvidence() = runBlocking {
+        val result = processor.processAutomatic(
+            source = BillSyncSource.WeChat,
+            pageText = "支付成功\n中国电信\n¥6.99\n返回商家",
+            retainRawEvidence = false
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("中国电信", entry.merchantTitle)
+        assertEquals(699L, entry.amountMinor)
+        assertEquals(CaptureReason.ACCESSIBILITY_AUTO, entry.captureReason)
+        assertEquals(null, entry.evidenceSummary)
+        assertTrue(entry.parsedFieldsText.orEmpty().isNotBlank())
+    }
+
     private companion object {
         const val NOW = 1_783_468_800_000L
     }

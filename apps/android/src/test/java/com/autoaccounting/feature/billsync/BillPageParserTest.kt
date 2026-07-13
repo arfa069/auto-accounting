@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.billsync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -233,6 +234,7 @@ class BillPageParserTest {
 
         assertEquals(1, entries.size)
         assertEquals("支付宝支付", entries.single().merchantTitle)
+        assertTrue(entries.single().merchantTitleFromFallback)
     }
 
     @Test
@@ -266,6 +268,27 @@ class BillPageParserTest {
         assertEquals(1, entries.size)
         assertEquals(1_234L, entries.single().amountMinor)
         assertEquals("测试商户", entries.single().merchantTitle)
+    }
+
+    @Test
+    fun parsesWechatMerchantAndAmountFromStrongSuccessPageLayout() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                21:12
+                0.99 KB/s 5G 91%
+                支付成功
+                中国电信
+                ¥6.99
+                返回商家
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-13 21:12"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("中国电信", entries.single().merchantTitle)
+        assertEquals(699L, entries.single().amountMinor)
+        assertFalse(entries.single().merchantTitleFromFallback)
     }
 
     @Test

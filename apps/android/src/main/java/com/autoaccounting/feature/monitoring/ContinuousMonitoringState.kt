@@ -174,7 +174,10 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
     val hasCompletedPayment = PAYMENT_COMPLETION_KEYWORDS.any { keyword -> text.contains(keyword) } &&
         PAYMENT_AMOUNT_REGEX.containsMatchIn(text)
     if (packageName == "com.tencent.mm") {
+        val hasSupportedCompletion = hasWechatMerchantPaymentSuccessSignature(text) ||
+            hasWechatTransferCompletionContext(text)
         return hasCompletedPayment &&
+            hasSupportedCompletion &&
             !hasChatOrGenericMessage &&
             ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
     }

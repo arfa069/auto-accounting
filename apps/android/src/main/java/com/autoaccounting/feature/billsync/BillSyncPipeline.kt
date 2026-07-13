@@ -3,6 +3,7 @@ package com.autoaccounting.feature.billsync
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.dedupe.DedupeEngine
 import com.autoaccounting.feature.dedupe.DedupeMatchLevel
+import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
@@ -31,6 +32,11 @@ data class BillSyncResult(
     val errorMessage: String? = null
 )
 
+enum class AutomaticCaptureVerification {
+    Standard,
+    RequireRecentNotification
+}
+
 class BillSyncPipeline(
     private val parser: BillPageParser = BillPageParser(),
     private val captureTimeFormatter: (Long) -> String = ::formatCaptureTime
@@ -42,7 +48,9 @@ class BillSyncPipeline(
         existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
         capturedAtEpochMillis: Long,
         captureReasonLabel: String = "账单同步",
-        retainRawEvidence: Boolean = true
+        retainRawEvidence: Boolean = true,
+        automaticCaptureVerification: AutomaticCaptureVerification =
+            AutomaticCaptureVerification.Standard
     ): BillSyncResult {
         val successSteps = listOf(
             BillSyncStep.OpenSource,
@@ -87,16 +95,35 @@ class BillSyncPipeline(
         var ledgerDuplicateCount = 0
 
         parsedEntries
-            .map { parsed ->
+            .mapNotNull { parsed ->
+                val requiresExplicitWechatMerchant =
+                    source == BillSyncSource.WeChat &&
+                        captureReasonLabel == AUTOMATIC_CAPTURE_REASON &&
+                        hasWechatMerchantPaymentSuccessSignature(pageText)
+                if (
+                    requiresExplicitWechatMerchant &&
+                    parsed.merchantTitleFromFallback
+                ) {
+                    return@mapNotNull null
+                }
                 val candidate = parsed.toPendingEntry(
                     capturedAtEpochMillis = capturedAtEpochMillis,
                     captureReasonLabel = captureReasonLabel,
                     retainRawEvidence = retainRawEvidence
                 )
+                val verificationRequired = automaticCaptureVerification ==
+                    AutomaticCaptureVerification.RequireRecentNotification
+                val matchingNotifications = candidate.matchingRecentNotifications(
+                    existingPendingEntries = existingPendingEntries,
+                    verification = automaticCaptureVerification
+                )
+                if (verificationRequired && matchingNotifications.size != 1) {
+                    return@mapNotNull null
+                }
                 candidate.correlateWithUniqueRecentNotification(
                     transactionTimeFromFallback = parsed.transactionTimeFromFallback,
                     captureReasonLabel = captureReasonLabel,
-                    existingPendingEntries = existingPendingEntries
+                    matchingNotifications = matchingNotifications
                 )
             }
             .forEach { candidate ->
@@ -175,20 +202,12 @@ class BillSyncPipeline(
     private fun ReviewQueueEntry.correlateWithUniqueRecentNotification(
         transactionTimeFromFallback: Boolean,
         captureReasonLabel: String,
-        existingPendingEntries: List<ReviewQueueEntry>
+        matchingNotifications: List<ReviewQueueEntry>
     ): ReviewQueueEntry {
         if (!transactionTimeFromFallback || captureReasonLabel != AUTOMATIC_CAPTURE_REASON) {
             return this
         }
 
-        val matchingNotifications = existingPendingEntries.filter { existing ->
-            existing.hasNotificationCaptureEvidence &&
-                existing.sourceLabel == sourceLabel &&
-                existing.amountMinor == amountMinor &&
-                existing.kindLabel == kindLabel &&
-                transactionTimeText.minutesFrom(existing.transactionTimeText)
-                    ?.let { it <= RECENT_NOTIFICATION_WINDOW_MINUTES } == true
-        }
         if (matchingNotifications.size > 1) {
             return copy(
                 confidence = ConfidenceState.DUPLICATE_SUSPECT,
@@ -203,9 +222,22 @@ class BillSyncPipeline(
         )
     }
 
-    private val ReviewQueueEntry.hasNotificationCaptureEvidence: Boolean
-        get() = captureReasonLabel == NOTIFICATION_CAPTURE_REASON ||
-            parsedFields.contains("证据来源=$NOTIFICATION_CAPTURE_REASON")
+    private fun ReviewQueueEntry.matchingRecentNotifications(
+        existingPendingEntries: List<ReviewQueueEntry>,
+        verification: AutomaticCaptureVerification
+    ): List<ReviewQueueEntry> = existingPendingEntries.filter { existing ->
+        existing.hasNotificationCaptureEvidence &&
+            existing.sourceLabel == sourceLabel &&
+            existing.amountMinor == amountMinor &&
+            existing.kindLabel == kindLabel &&
+            when (verification) {
+                AutomaticCaptureVerification.Standard ->
+                    transactionTimeText.minutesFrom(existing.transactionTimeText)
+                        ?.let { it <= RECENT_NOTIFICATION_WINDOW_MINUTES } == true
+                AutomaticCaptureVerification.RequireRecentNotification ->
+                    existing.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
+            }
+    }
 
     private fun String.minutesFrom(other: String): Long? {
         val first = parseTransactionTime(this) ?: return null
@@ -219,8 +251,7 @@ class BillSyncPipeline(
 
     private companion object {
         const val AUTOMATIC_CAPTURE_REASON = "支付结果自动捕获"
-        const val NOTIFICATION_CAPTURE_REASON = "通知捕获"
-        const val RECENT_NOTIFICATION_WINDOW_MINUTES = 60
+        const val RECENT_NOTIFICATION_WINDOW_MINUTES = 60L
         val TRANSACTION_TIME_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }

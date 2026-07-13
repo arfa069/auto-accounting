@@ -24,19 +24,33 @@ class BillSyncCaptureProcessor(
     suspend fun processAutomatic(
         source: BillSyncSource,
         pageText: String,
-        retainRawEvidence: Boolean = true
+        retainRawEvidence: Boolean = true,
+        automaticCaptureVerification: AutomaticCaptureVerification =
+            AutomaticCaptureVerification.Standard
     ): BillSyncResult = processWithReason(
         source = source,
         pageText = pageText,
         captureReasonLabel = "支付结果自动捕获",
-        retainRawEvidence = retainRawEvidence
+        retainRawEvidence = retainRawEvidence,
+        automaticCaptureVerification = automaticCaptureVerification
     )
+
+    suspend fun hasRecentWechatNotificationCaptureCandidate(): Boolean {
+        val capturedAtEpochMillis = clock()
+        return reviewQueuePersistence.observeState().first().pendingEntries.any { entry ->
+            entry.sourceLabel == BillSyncSource.WeChat.label &&
+                entry.hasNotificationCaptureEvidence &&
+                entry.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
+        }
+    }
 
     private suspend fun processWithReason(
         source: BillSyncSource,
         pageText: String,
         captureReasonLabel: String,
-        retainRawEvidence: Boolean = true
+        retainRawEvidence: Boolean = true,
+        automaticCaptureVerification: AutomaticCaptureVerification =
+            AutomaticCaptureVerification.Standard
     ): BillSyncResult = captureCoordinator.serialize {
         reviewQueuePersistence.ensureSystemCategories()
         val previousState = reviewQueuePersistence.observeState().first()
@@ -48,7 +62,8 @@ class BillSyncCaptureProcessor(
             existingLedgerEntries = existingLedgerEntries,
             capturedAtEpochMillis = clock(),
             captureReasonLabel = captureReasonLabel,
-            retainRawEvidence = retainRawEvidence
+            retainRawEvidence = retainRawEvidence,
+            automaticCaptureVerification = automaticCaptureVerification
         )
         if (result.errorMessage != null) return@serialize result
 
