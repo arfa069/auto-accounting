@@ -11,6 +11,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeWithVelocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.billsync.BillSyncPipeline
@@ -35,6 +39,87 @@ import org.robolectric.annotation.Config
 class ReviewQueueScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun shortSlowSwipesInEitherDirectionDoNotResolvePendingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+        }
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
+            down(center)
+            advanceEventTime(500)
+            moveBy(Offset(72.dp.toPx(), 0f))
+            advanceEventTime(500)
+            up()
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("detail-pending-lunch").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
+            down(center)
+            advanceEventTime(500)
+            moveBy(Offset(-72.dp.toPx(), 0f))
+            advanceEventTime(500)
+            up()
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("detail-pending-lunch").assertIsDisplayed()
+    }
+
+    @Test
+    fun shortFastSwipeDoesNotResolvePendingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+        }
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
+            swipeWithVelocity(
+                start = center,
+                end = center + Offset(-48.dp.toPx(), 0f),
+                endVelocity = 2_000f
+            )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("detail-pending-lunch").assertIsDisplayed()
+    }
+
+    @Test
+    fun longSwipeFromStartToEndConfirmsPendingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+        }
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
+            down(center)
+            advanceEventTime(500)
+            moveBy(Offset(160.dp.toPx(), 0f))
+            advanceEventTime(500)
+            up()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("已确认 午餐").assertIsDisplayed()
+    }
+
+    @Test
+    fun longSwipeFromEndToStartIgnoresPendingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+        }
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
+            down(center)
+            advanceEventTime(500)
+            moveBy(Offset(-160.dp.toPx(), 0f))
+            advanceEventTime(500)
+            up()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("已忽略 午餐").assertIsDisplayed()
+    }
 
     @Test
     fun pendingNotificationNavigationOpensMatchingEntry() {

@@ -33,6 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,12 +43,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,6 +71,7 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
+import kotlin.math.abs
 
 @Composable
 fun ReviewQueueScreen(
@@ -527,19 +531,34 @@ private fun ReviewEntryRow(
     onIgnore: () -> Unit,
     onEdit: () -> Unit
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
+    var rowWidthPx by remember { mutableIntStateOf(0) }
+    lateinit var dismissState: SwipeToDismissBoxState
+    dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * SWIPE_ACTION_THRESHOLD_FRACTION },
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onConfirm()
-                SwipeToDismissBoxValue.EndToStart -> onIgnore()
-                SwipeToDismissBoxValue.Settled -> Unit
+                SwipeToDismissBoxValue.Settled -> true
+                SwipeToDismissBoxValue.StartToEnd,
+                SwipeToDismissBoxValue.EndToStart -> {
+                    val reachedThreshold = rowWidthPx > 0 &&
+                        abs(dismissState.requireOffset()) >=
+                        rowWidthPx * SWIPE_ACTION_THRESHOLD_FRACTION
+                    if (reachedThreshold) {
+                        when (value) {
+                            SwipeToDismissBoxValue.StartToEnd -> onConfirm()
+                            SwipeToDismissBoxValue.EndToStart -> onIgnore()
+                            SwipeToDismissBoxValue.Settled -> Unit
+                        }
+                    }
+                    reachedThreshold
+                }
             }
-            value != SwipeToDismissBoxValue.Settled
         }
     )
 
     SwipeToDismissBox(
         state = dismissState,
+        modifier = Modifier.onSizeChanged { rowWidthPx = it.width },
         enableDismissFromStartToEnd = true,
         enableDismissFromEndToStart = true,
         backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
@@ -609,6 +628,8 @@ private fun ReviewEntryRow(
         }
     )
 }
+
+private const val SWIPE_ACTION_THRESHOLD_FRACTION = 0.4f
 
 @Composable
 private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
