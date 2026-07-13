@@ -40,7 +40,8 @@ Recommended modules:
 - `feature:capture-accessibility`: automatic payment-result capture and manual bill sync.
 - `feature:categorization`: local rules and AI categorization client.
 - `feature:account`: login, registration, recovery, local mode, deletion.
-- `feature:settings`: profile, permission center, backup/export, compliance pages.
+- `feature:monitoring`: automatic-bookkeeping state, compact permission and background-reliability settings, service health, and payment-surface observation decisions.
+- `feature:settings`: data/backup and related profile settings.
 
 Keep capture parsing and deduplication testable without Android UI.
 
@@ -172,18 +173,18 @@ Account deletion:
 
 Permission center tracks:
 - Notification listener state.
-- Bookkeeping result notification permission.
 - Accessibility service state for automatic capture and bill sync.
 - Automatic capture enabled state.
-- Cloud AI consent state.
-- Background keep-alive / auto-start guidance.
+- Accessibility-service connection heartbeat.
+- Detectable battery-optimization and battery-saver state.
+- Non-blocking background-running and manufacturer-specific auto-start guidance, without pretending these states are reliably readable.
 
 Important boundaries:
 - Notification listener only creates pending entries from WeChat/Alipay payment notifications.
 - Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual sync or notification-listener access.
 - Automatic capture reads accessibility nodes first. A blank WeChat accessibility surface may use one transient screenshot with bundled local OCR: Android 14 or later captures only the active app window, while Android 11-13 uses the display screenshot API. The bitmap and raw OCR text are released after parsing and are not persisted, uploaded, or logged.
 - Manual bill sync remains user-started and is not part of the normal payment flow.
-- Result notification permission is independent; denial must not prevent local capture or persistence.
+- On Android 13 or later, result-notification permission is requested when automatic bookkeeping is enabled; denial must not prevent local capture or persistence.
 - The app must not read chat content, send messages, initiate payments, or initiate transfers.
 
 ## 10. Build And Verification Targets

@@ -193,11 +193,11 @@ The app's recurring animal companion, using a cat-like personality and visual di
 _Avoid_: Generic animal, pet theme
 
 **Auto Bookkeeping**:
-A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, bookkeeping-result notifications, continuous monitoring, user-started bill sync, and their health states.
+A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, non-blocking background-reliability guidance, continuous-monitoring health, and user-started bill sync. Bookkeeping-result notifications are requested when needed after enabling rather than shown as a separate setting.
 _Avoid_: Permission center, permission tab
 
 **Permission Center**:
-A section within Auto Bookkeeping that shows notification access, accessibility access, and related setup or troubleshooting actions.
+A compact section within Auto Bookkeeping that shows notification access, accessibility access, and non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
 _Avoid_: Profile-area entry, permission tab
 
 **Permission Health**:

@@ -44,6 +44,8 @@
 
 Phase 2 已将本地账本、待确认队列、规则与 AI 同意、备份恢复、权限服务和“我的”五个二级页接入当前 Android 主流程。五个页面依次为账户管理、自动记账、分类规则、数据与备份、合规与隐私；开发者工具只在 Debug 构建中显示。
 
+“自动记账”页当前以紧凑清单展示通知监听、无障碍及后台运行、自启动、电池优化、省电模式引导；后四项只用于提升国产 ROM 后台稳定性，不阻断自动记账启用。Android 13 及以上的记账结果通知在开启自动记账时按需申请，拒绝不影响本地采集与持久化。
+
 当前仍不具备向更广泛测试者分发的条件：目标 ROM 设备矩阵尚未完成，云端 AI 仍使用本地 `DemoAiCategorizationGateway`，而 Release 只有在本地提供 keystore 与完整签名凭据时才是可安装的已签名 APK。没有签名凭据时，构建会产出未签名的 `android-release-unsigned.apk`，仅用于编译与 lint 验证。
 
 - 当前执行状态与未完成手工验证见 [Phase 2 Issue Files](docs/issues/phase-2/) 和 [可选真机验证清单](docs/issues/phase-2/OPTIONAL-VALIDATIONS.md)。

@@ -220,9 +220,9 @@ Backend limits:
 The Automatic Bookkeeping page shows, in order:
 - Automatic-bookkeeping state and its enable or disable action.
 - Notification listening.
-- Bookkeeping result notifications.
 - Automatic-bookkeeping accessibility service.
-- Continuous monitoring and its health state.
+- Non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
+- Continuous-monitoring health summary.
 - User-started bill sync as a separate backfill action.
 
 The Automatic Bookkeeping overview status is:
@@ -230,24 +230,17 @@ The Automatic Bookkeeping overview status is:
 - Needs attention when automatic bookkeeping is enabled but a required permission or service is unavailable; it names the specific cause.
 - Off when the user has disabled automatic bookkeeping, regardless of retained permissions.
 
-Bookkeeping result notifications do not block capture and therefore do not make the overview status need attention. Bill sync remains a user-started action and is not a standing permission.
+On Android 13 or later, bookkeeping-result notification permission is requested when the user enables automatic bookkeeping; denial does not block capture or persistence and therefore does not make the overview status need attention. Bill sync remains a user-started action and is not a standing permission.
 
-The permission section shows:
+The permission and background-settings section shows compact rows with a title, one-sentence purpose, short status, and settings action. Background-running and auto-start state cannot be read reliably across manufacturers, so they remain “please check” guidance and never block automatic bookkeeping.
 
-Each permission item shows:
-- Status icon.
-- Title.
-- One-sentence purpose.
-- Current state.
-- Action button.
-
-Permission copy:
-- Notification listening: "用于识别微信、支付宝的收付款通知，生成待确认账目".
-- Bookkeeping result notifications: "用于通知待确认、分类建议、重复合并或识别失败结果；未授权不影响本地采集".
-- Automatic-bookkeeping accessibility service: "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发起付款、转账或退款".
-- Automatic capture: "开启后会在支付完成时观察受支持的结果页，必要时在本机瞬时 OCR，并生成待确认记录；可随时关闭".
-- Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
-- Background keep-alive: "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同".
+Compact copy:
+- Notification listening: "用于识别微信、支付宝支付通知".
+- Automatic-bookkeeping accessibility service: "用于识别支付结果页和支付记录".
+- Background running: "避免系统关闭后台导致自动记账失效".
+- Auto-start: "允许手机重启后恢复自动记账服务", followed by a short manufacturer-specific path where available.
+- Ignore battery optimization: "避免系统休眠导致自动记账中断".
+- Disable battery saver: "避免省电策略限制后台自动记账".
 
 ### 5.9 Backup And Export
 
