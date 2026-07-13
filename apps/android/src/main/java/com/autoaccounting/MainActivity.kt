@@ -52,17 +52,21 @@ import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
+import com.autoaccounting.feature.capture.shouldRequestBookkeepingResultNotificationPermission
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.AutomaticBookkeepingScreen
+import com.autoaccounting.feature.monitoring.BackgroundReliability
+import com.autoaccounting.feature.monitoring.BackgroundReliabilityState
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
 import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
+import com.autoaccounting.feature.monitoring.launchSettingsIntent
 import com.autoaccounting.feature.profile.AccountManagementScreen
 import com.autoaccounting.feature.profile.ProfileDestination
 import com.autoaccounting.feature.profile.ProfileOverviewScreen
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
     private val billSyncAccessibilityServiceConnected = mutableStateOf(false)
     private val resultNotificationPermissionGranted = mutableStateOf(false)
+    private val backgroundReliabilityState = mutableStateOf(BackgroundReliabilityState())
     private val permissionStateLoaded = mutableStateOf(false)
     private val reviewNavigationRequest = mutableStateOf(0L)
     private val pendingEntryNavigationId = mutableStateOf<String?>(null)
@@ -118,6 +123,11 @@ class MainActivity : ComponentActivity() {
                 onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
                 resultNotificationPermissionGranted = resultNotificationPermissionGranted.value,
                 onRequestResultNotificationPermission = ::requestResultNotificationPermission,
+                backgroundReliabilityState = backgroundReliabilityState.value,
+                onOpenBackgroundRunningSettings = ::openBackgroundRunningSettings,
+                onOpenAutoStartSettings = ::openAutoStartSettings,
+                onOpenBatteryOptimizationSettings = ::openBatteryOptimizationSettings,
+                onOpenBatterySaverSettings = ::openBatterySaverSettings,
                 onLaunchBillSyncSource = ::launchBillSyncSource,
                 permissionStateLoaded = permissionStateLoaded.value,
                 reviewNavigationRequest = reviewNavigationRequest.value,
@@ -141,6 +151,7 @@ class MainActivity : ComponentActivity() {
             ContinuousMonitoringServiceHealth.isServiceConnected(this)
         resultNotificationPermissionGranted.value =
             BookkeepingResultNotificationPermission.isGranted(this)
+        backgroundReliabilityState.value = BackgroundReliability.read(this)
         permissionStateLoaded.value = true
     }
 
@@ -170,8 +181,39 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestResultNotificationPermission() {
+        if (
+            !shouldRequestBookkeepingResultNotificationPermission(
+                sdkInt = android.os.Build.VERSION.SDK_INT,
+                isGranted = BookkeepingResultNotificationPermission.isGranted(this)
+            )
+        ) return
         requestResultNotificationPermission.launch(
             BookkeepingResultNotificationPermission.permission
+        )
+    }
+
+    private fun openBackgroundRunningSettings() {
+        startFirstAvailable(BackgroundReliability.backgroundRunningIntents(this))
+    }
+
+    private fun openAutoStartSettings() {
+        startFirstAvailable(BackgroundReliability.autoStartIntents(this))
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        startFirstAvailable(BackgroundReliability.batteryOptimizationIntents(this))
+    }
+
+    private fun openBatterySaverSettings() {
+        startFirstAvailable(BackgroundReliability.batterySaverIntents(this))
+    }
+
+    private fun startFirstAvailable(intents: List<Intent>) {
+        launchSettingsIntent(
+            intents = intents,
+            fallback = BackgroundReliability.applicationDetailsIntent(this),
+            canResolve = { it.resolveActivity(packageManager) != null },
+            launch = ::startActivity
         )
     }
 
@@ -206,6 +248,11 @@ fun AutoAccountingApp(
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     resultNotificationPermissionGranted: Boolean = false,
     onRequestResultNotificationPermission: () -> Unit = {},
+    backgroundReliabilityState: BackgroundReliabilityState = BackgroundReliabilityState(),
+    onOpenBackgroundRunningSettings: () -> Unit = {},
+    onOpenAutoStartSettings: () -> Unit = {},
+    onOpenBatteryOptimizationSettings: () -> Unit = {},
+    onOpenBatterySaverSettings: () -> Unit = {},
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
     permissionStateLoaded: Boolean = false,
     reviewNavigationRequest: Long = 0,
@@ -493,6 +540,11 @@ fun AutoAccountingApp(
                             onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
                             resultNotificationPermissionGranted = resultNotificationPermissionGranted,
                             onRequestResultNotificationPermission = onRequestResultNotificationPermission,
+                            backgroundReliabilityState = backgroundReliabilityState,
+                            onOpenBackgroundRunningSettings = onOpenBackgroundRunningSettings,
+                            onOpenAutoStartSettings = onOpenAutoStartSettings,
+                            onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
+                            onOpenBatterySaverSettings = onOpenBatterySaverSettings,
                             continuousMonitoringState = continuousMonitoringState,
                             continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                             onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,

@@ -6,10 +6,10 @@
 
 ## 范围
 
-- 从“我的”总览进入自动记账二级页，按状态、必要权限、持续监控与健康状态、手动账单同步的顺序展示。
+- 从“我的”总览进入自动记账二级页，按状态、权限与后台设置、持续监控健康摘要、手动账单同步的顺序展示。
 - 总览状态仅使用“已就绪”“需要处理（指出具体原因）”“已关闭”。
 - 通知监听和无障碍状态参与自动记账可用性判断；记账结果通知只影响回执展示，不阻断捕获；账单同步不是常驻权限。
-- 保留现有通知监听、无障碍、记账结果通知、持续监控与账单同步的真实系统入口和安全说明。
+- 保留通知监听、无障碍与账单同步的真实系统入口；结果通知改为开启自动记账时按需申请，并增加后台运行、自启动、电池优化和省电模式的非阻断设置引导。
 
 ## 非目标
 
@@ -54,6 +54,7 @@
 - 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*" --tests "com.autoaccounting.feature.monitoring.*" --tests "com.autoaccounting.feature.billsync.BillSyncSessionTest" --tests "com.autoaccounting.feature.categorization.CategorizationRulesScreenTest" --tests "com.autoaccounting.MainActivityTest"` 通过。
 - 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
 - `2026-07-13`：在 Xiaomi `24117RK2CC`（Android 16，`192.168.1.6:40793`）的已签名 Release 包完成非破坏性检查：二级页依次显示自动记账状态、通知监听、自动记账无障碍权限；向下滚动确认持续监控和健康状态、手动账单同步，系统返回回到“我的”总览。未变更权限、开关或服务状态，未发起手动账单同步，也未进入微信钱包历史等敏感页面。
+- `2026-07-13`：自动记账页改为紧凑权限清单，新增后台运行、自启动、电池优化和省电模式引导；结果通知不再单列，Android 13 及以上在开启自动记账时按需申请，拒绝仍不阻断采集。新增入口尚待真机复验。
 
 ## 依赖
 

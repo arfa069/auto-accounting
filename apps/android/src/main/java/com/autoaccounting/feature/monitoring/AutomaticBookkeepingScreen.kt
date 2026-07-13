@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.monitoring
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,19 +14,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.billsync.BillSyncSource
-import com.autoaccounting.feature.compliance.AUTO_ACCOUNTING_COMPLIANCE
-import com.autoaccounting.feature.compliance.PermissionExplanationId
-import com.autoaccounting.feature.compliance.permissionPurpose
 
 @Composable
 fun AutomaticBookkeepingScreen(
@@ -35,6 +35,11 @@ fun AutomaticBookkeepingScreen(
     onOpenBillSyncAccessibilitySettings: () -> Unit = {},
     resultNotificationPermissionGranted: Boolean = false,
     onRequestResultNotificationPermission: () -> Unit = {},
+    backgroundReliabilityState: BackgroundReliabilityState = BackgroundReliabilityState(),
+    onOpenBackgroundRunningSettings: () -> Unit = {},
+    onOpenAutoStartSettings: () -> Unit = {},
+    onOpenBatteryOptimizationSettings: () -> Unit = {},
+    onOpenBatterySaverSettings: () -> Unit = {},
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
@@ -56,34 +61,76 @@ fun AutomaticBookkeepingScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        TextButton(onClick = onBack) {
-            Text("返回")
-        }
-        Text(
-            text = "自动记账",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
+        TextButton(onClick = onBack) { Text("返回") }
+        Text("自动记账", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         AutomaticBookkeepingStatusCard(
             state = continuousMonitoringState,
             permissionHealth = continuousMonitoringPermissionHealth,
             status = status,
-            onStateChange = onContinuousMonitoringStateChange
+            onStateChange = { nextState ->
+                onContinuousMonitoringStateChange(nextState)
+                if (nextState.enabled && !resultNotificationPermissionGranted) {
+                    onRequestResultNotificationPermission()
+                }
+            }
         )
-        Text("必要权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        NotificationListenerPermissionCard(
-            accessGranted = notificationListenerAccessGranted,
-            onOpenSettings = onOpenNotificationListenerSettings
-        )
-        AccessibilityPermissionCard(
-            accessGranted = billSyncAccessibilityAccessGranted,
-            onOpenSettings = onOpenBillSyncAccessibilitySettings
-        )
-        ResultNotificationPermissionCard(
-            accessGranted = resultNotificationPermissionGranted,
-            onRequestPermission = onRequestResultNotificationPermission
-        )
-        Text("持续监控和健康状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("权限与后台设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column {
+                PermissionSettingRow(
+                    title = "通知监听（重要）",
+                    description = "用于识别微信、支付宝支付通知",
+                    status = if (notificationListenerAccessGranted) "已开启" else "去设置",
+                    testTag = "notification-listener-settings",
+                    onClick = onOpenNotificationListenerSettings
+                )
+                HorizontalDivider()
+                PermissionSettingRow(
+                    title = "自动记账无障碍权限（重要）",
+                    description = "用于识别支付结果页和支付记录",
+                    status = if (billSyncAccessibilityAccessGranted) "已开启" else "去设置",
+                    testTag = "bill-sync-accessibility-settings",
+                    onClick = onOpenBillSyncAccessibilitySettings
+                )
+                HorizontalDivider()
+                PermissionSettingRow(
+                    title = "允许后台运行（建议）",
+                    description = "避免系统关闭后台导致自动记账失效",
+                    status = "请检查",
+                    testTag = "background-running-settings",
+                    onClick = onOpenBackgroundRunningSettings
+                )
+                HorizontalDivider()
+                PermissionSettingRow(
+                    title = "允许应用自启动（建议）",
+                    description = "允许手机重启后恢复自动记账服务\n${backgroundReliabilityState.manufacturer.autoStartGuidance}",
+                    status = "请检查",
+                    testTag = "auto-start-settings",
+                    onClick = onOpenAutoStartSettings
+                )
+                HorizontalDivider()
+                PermissionSettingRow(
+                    title = "忽略电池优化（建议）",
+                    description = "避免系统休眠导致自动记账中断",
+                    status = if (backgroundReliabilityState.batteryOptimizationIgnored) "已开启" else "去设置",
+                    testTag = "battery-optimization-settings",
+                    onClick = onOpenBatteryOptimizationSettings
+                )
+                HorizontalDivider()
+                PermissionSettingRow(
+                    title = "关闭省电模式（建议）",
+                    description = "避免省电策略限制后台自动记账",
+                    status = if (backgroundReliabilityState.powerSaveModeEnabled) "去设置" else "已关闭",
+                    testTag = "battery-saver-settings",
+                    onClick = onOpenBatterySaverSettings
+                )
+            }
+        }
         MonitoringHealthCard(
             permissionHealth = continuousMonitoringPermissionHealth,
             state = continuousMonitoringState
@@ -106,27 +153,15 @@ private fun AutomaticBookkeepingStatusCard(
 ) {
     SettingsCard {
         Text("自动记账状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(status.label(), style = MaterialTheme.typography.bodyMedium)
+        Text("开启后自动识别受支持的支付通知和支付结果页", style = MaterialTheme.typography.bodyMedium)
+        Text(status.label(), style = MaterialTheme.typography.bodySmall)
         if (status is AutomaticBookkeepingStatus.RequiresAttention) {
-            Text(
-                text = "需要处理：${status.reason.label()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
+            Text(status.reason.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         if (state.enabled) {
-            OutlinedButton(
-                onClick = {
-                    onStateChange(
-                        reduceContinuousMonitoringState(
-                            state,
-                            ContinuousMonitoringAction.Disable
-                        )
-                    )
-                }
-            ) {
-                Text("关闭自动记账")
-            }
+            OutlinedButton(onClick = {
+                onStateChange(reduceContinuousMonitoringState(state, ContinuousMonitoringAction.Disable))
+            }) { Text("关闭自动记账") }
         } else {
             Button(
                 onClick = {
@@ -138,80 +173,34 @@ private fun AutomaticBookkeepingStatusCard(
                     )
                 },
                 enabled = permissionHealth.isHealthy
-            ) {
-                Text("开启自动记账")
-            }
+            ) { Text("开启自动记账") }
         }
     }
 }
 
 @Composable
-private fun NotificationListenerPermissionCard(
-    accessGranted: Boolean,
-    onOpenSettings: () -> Unit
+private fun PermissionSettingRow(
+    title: String,
+    description: String,
+    status: String,
+    testTag: String,
+    onClick: () -> Unit
 ) {
-    SettingsCard {
-        Text("通知监听", fontWeight = FontWeight.SemiBold)
-        Text(
-            AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.NotificationListening),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        PermissionStatus(accessGranted)
-        OutlinedButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.testTag("notification-listener-settings")
-        ) {
-            Text("打开系统设置")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(description, style = MaterialTheme.typography.bodySmall)
         }
-    }
-}
-
-@Composable
-private fun AccessibilityPermissionCard(
-    accessGranted: Boolean,
-    onOpenSettings: () -> Unit
-) {
-    SettingsCard {
-        Text("自动记账无障碍权限", fontWeight = FontWeight.SemiBold)
-        Text(
-            AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.AccessibilityBillSync),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Text(
-            "只处理支付结果和支付记录，不处理聊天、普通消息、付款发起或转账发送。",
-            style = MaterialTheme.typography.bodySmall
-        )
-        PermissionStatus(accessGranted)
-        OutlinedButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.testTag("bill-sync-accessibility-settings")
-        ) {
-            Text("打开无障碍设置")
-        }
-    }
-}
-
-@Composable
-private fun ResultNotificationPermissionCard(
-    accessGranted: Boolean,
-    onRequestPermission: () -> Unit
-) {
-    SettingsCard {
-        Text("记账结果通知", fontWeight = FontWeight.SemiBold)
-        Text(
-            AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.ResultNotifications),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        PermissionStatus(accessGranted)
-        if (!accessGranted) {
-            Text("未授权不会影响本地采集和待确认入队", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(
-                onClick = onRequestPermission,
-                modifier = Modifier.testTag("result-notification-permission")
-            ) {
-                Text("授权结果通知")
-            }
-        }
+        Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        Text("›", style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -221,18 +210,15 @@ private fun MonitoringHealthCard(
     state: ContinuousMonitoringState
 ) {
     SettingsCard {
-        Text(
-            if (state.enabled && permissionHealth.isHealthy) "持续监控健康" else "持续监控需要处理",
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            AUTO_ACCOUNTING_COMPLIANCE.permissionPurpose(PermissionExplanationId.ContinuousMonitoring),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Text(
-            "后台保活和自启动受手机系统限制，本应用只提示你检查，不保证一定可靠。",
-            style = MaterialTheme.typography.bodySmall
-        )
+        val healthy = state.enabled && permissionHealth.isHealthy
+        Text(if (healthy) "持续监控正常" else "持续监控需要处理", fontWeight = FontWeight.SemiBold)
+        if (!permissionHealth.billSyncAccessibilityGranted) {
+            Text("请开启自动记账无障碍权限", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        } else if (!permissionHealth.billSyncAccessibilityServiceConnected) {
+            Text("无障碍服务未连接", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        } else if (!state.enabled) {
+            Text("自动记账当前已关闭", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -244,30 +230,19 @@ private fun ManualBillSyncCard(
 ) {
     SettingsCard {
         Text("补录遗漏交易", fontWeight = FontWeight.SemiBold)
-        Text(
-            "只在你主动发起时读取支付来源的账单页，用于补录；不是常驻权限。",
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Text("仅在你主动发起时读取支付来源的账单页", style = MaterialTheme.typography.bodyMedium)
         if (accessibilityGranted) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { onStart(BillSyncSource.WeChat) },
-                    modifier = Modifier.testTag("manual-bill-sync-WeChat")
-                ) {
+                Button(onClick = { onStart(BillSyncSource.WeChat) }, modifier = Modifier.testTag("manual-bill-sync-WeChat")) {
                     Text("同步微信账单")
                 }
-                Button(
-                    onClick = { onStart(BillSyncSource.Alipay) },
-                    modifier = Modifier.testTag("manual-bill-sync-Alipay")
-                ) {
+                Button(onClick = { onStart(BillSyncSource.Alipay) }, modifier = Modifier.testTag("manual-bill-sync-Alipay")) {
                     Text("同步支付宝账单")
                 }
             }
         } else {
             Text("请先开启自动记账无障碍权限", color = MaterialTheme.colorScheme.error)
-            OutlinedButton(onClick = onOpenAccessibilitySettings) {
-                Text("打开无障碍设置")
-            }
+            OutlinedButton(onClick = onOpenAccessibilitySettings) { Text("打开无障碍设置") }
         }
     }
 }
@@ -280,21 +255,8 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shape = RoundedCornerShape(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            content = { content() }
-        )
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = { content() })
     }
-}
-
-@Composable
-private fun PermissionStatus(accessGranted: Boolean) {
-    Text(
-        if (accessGranted) "当前状态：已授权" else "当前状态：未授权",
-        style = MaterialTheme.typography.bodySmall,
-        color = if (accessGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-    )
 }
 
 private fun AutomaticBookkeepingStatus.label(): String = when (this) {
@@ -304,8 +266,7 @@ private fun AutomaticBookkeepingStatus.label(): String = when (this) {
 }
 
 private fun AutomaticBookkeepingAttentionReason.label(): String = when (this) {
-    AutomaticBookkeepingAttentionReason.RequiresNotificationListenerAccess -> "需要开启通知监听权限"
-    AutomaticBookkeepingAttentionReason.RequiresAccessibilityPermission -> "需要开启自动记账无障碍权限"
-    AutomaticBookkeepingAttentionReason.RequiresAccessibilityServiceConnection ->
-        "自动记账无障碍服务未连接，请重新打开授权"
+    AutomaticBookkeepingAttentionReason.RequiresNotificationListenerAccess -> "请开启通知监听权限"
+    AutomaticBookkeepingAttentionReason.RequiresAccessibilityPermission -> "请开启自动记账无障碍权限"
+    AutomaticBookkeepingAttentionReason.RequiresAccessibilityServiceConnection -> "自动记账无障碍服务未连接"
 }

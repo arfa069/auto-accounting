@@ -132,6 +132,8 @@ In-app controls:
 - Request account deletion.
 - Cancel account deletion during 7-day cooling-off period.
 - Delete local data through a separate confirmation flow.
+- Enable automatic bookkeeping; on Android 13 or later this action may also request result-notification permission, whose denial does not block local capture or persistence.
+- Open system settings for notification listening, accessibility, background running, auto-start, battery optimization, and battery saver. Background reliability suggestions are non-blocking and must not be presented as reliably verified permissions when the operating system does not expose their state.
 
 ## 8. Account Deletion And Local Data Deletion
 

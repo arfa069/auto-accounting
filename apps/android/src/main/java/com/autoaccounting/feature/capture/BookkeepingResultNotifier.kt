@@ -23,6 +23,11 @@ object BookkeepingResultNotificationPermission {
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
 
+fun shouldRequestBookkeepingResultNotificationPermission(
+    sdkInt: Int,
+    isGranted: Boolean
+): Boolean = sdkInt >= Build.VERSION_CODES.TIRAMISU && !isGranted
+
 sealed interface BookkeepingResultNotification {
     val key: String
 
