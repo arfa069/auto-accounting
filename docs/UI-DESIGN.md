@@ -54,6 +54,7 @@ List item content:
 Swipe actions:
 - Right swipe confirms.
 - Left swipe ignores.
+- Resolve only after the row moves about 40% of its width; shorter slow or fast swipes settle without an action.
 - Both show undo Snackbar.
 
 Ignored entries:

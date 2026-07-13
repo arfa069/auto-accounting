@@ -81,6 +81,7 @@ List item fields:
 Actions:
 - Swipe right to confirm.
 - Swipe left to ignore.
+- A swipe resolves only after the row moves about 40% of its width; shorter slow or fast swipes settle without an action.
 - Both actions show undo Snackbar.
 - Ignored entries remain recoverable for 30 days.
 - Opening an entry shows parse result first, editable fields second, and folded evidence third.
