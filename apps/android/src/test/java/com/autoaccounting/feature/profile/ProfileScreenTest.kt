@@ -1,7 +1,9 @@
 package com.autoaccounting.feature.profile
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -37,6 +39,7 @@ class ProfileScreenTest {
         composeRule.onNodeWithTag("profile-entry-CategorizationRules").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("profile-entry-DataAndBackup").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("进入").assertCountEquals(0)
     }
 
     @Test

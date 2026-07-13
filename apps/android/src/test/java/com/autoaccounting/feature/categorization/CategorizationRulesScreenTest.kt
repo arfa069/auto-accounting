@@ -1,5 +1,8 @@
 package com.autoaccounting.feature.categorization
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -12,6 +15,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.feature.account.AccountSession
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -37,6 +41,25 @@ class CategorizationRulesScreenTest {
     }
 
     @Test
+    fun ruleRowDoesNotRepeatCategoryAsSubtitle() {
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                rules = listOf(
+                    CategorizationRule(
+                        id = "refund-rule",
+                        merchantContains = "退款",
+                        category = "退款"
+                    )
+                ),
+                onRulesChange = {}
+            )
+        }
+
+        composeRule.onAllNodesWithText("退款").assertCountEquals(1)
+        composeRule.onNodeWithText("全部交易").assertIsDisplayed()
+    }
+
+    @Test
     fun signedInModeShowsOptionalAiConsentAndDisablesEnhancedContextByDefault() {
         composeRule.setContent {
             CategorizationRulesScreen(
@@ -52,8 +75,12 @@ class CategorizationRulesScreenTest {
 
     @Test
     fun userCanCreateAndEditRule() {
+        var rules by mutableStateOf(emptyList<CategorizationRule>())
         composeRule.setContent {
-            CategorizationRulesScreen()
+            CategorizationRulesScreen(
+                rules = rules,
+                onRulesChange = { rules = it }
+            )
         }
 
         composeRule.onNodeWithText("分类规则").assertIsDisplayed()
@@ -66,14 +93,18 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithText("保存规则").performClick()
 
         composeRule.onNodeWithText("星巴克").assertIsDisplayed()
-        composeRule.onNodeWithText("餐饮").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals("餐饮", rules.single().category)
+        }
 
         composeRule.onNodeWithText("编辑").performClick()
         composeRule.onNodeWithText("分类").performTextClearance()
         composeRule.onNodeWithText("分类").performTextInput("工作餐")
         composeRule.onNodeWithText("保存规则").performClick()
 
-        composeRule.onNodeWithText("工作餐").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals("工作餐", rules.single().category)
+        }
     }
 
     @Test

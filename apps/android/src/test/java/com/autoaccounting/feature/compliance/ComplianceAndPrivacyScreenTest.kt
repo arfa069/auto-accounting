@@ -26,6 +26,7 @@ class ComplianceAndPrivacyScreenTest {
         composeRule.setContent {
             ComplianceAndPrivacyScreen(isDebugBuild = false, onBack = {})
         }
+        composeRule.onAllNodesWithText("进入").assertCountEquals(0)
         ComplianceMaterialPage.entries.forEach { page ->
             composeRule.onNodeWithTag("compliance-entry-${page.name}")
                 .performScrollTo()

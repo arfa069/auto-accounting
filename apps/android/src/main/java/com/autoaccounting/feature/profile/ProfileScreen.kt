@@ -218,7 +218,6 @@ private fun ProfileEntry(
         ) {
             Text(destination.title, fontWeight = FontWeight.SemiBold)
             Text(summary, style = MaterialTheme.typography.bodyMedium)
-            Text("进入", style = MaterialTheme.typography.labelMedium)
         }
     }
 }

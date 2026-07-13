@@ -154,7 +154,6 @@ private fun EntryCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold)
             summary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            Text("进入", style = MaterialTheme.typography.labelMedium)
         }
     }
 }

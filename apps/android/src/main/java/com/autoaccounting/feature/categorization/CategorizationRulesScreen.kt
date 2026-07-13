@@ -266,7 +266,6 @@ private fun CategorizationRuleRow(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(rule.displayName(), fontWeight = FontWeight.SemiBold)
-                Text(rule.category, style = MaterialTheme.typography.bodyMedium)
                 Text(rule.scopeLabel(), style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.width(12.dp))
