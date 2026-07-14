@@ -27,7 +27,18 @@ class LocalLedgerRepository(
         database.ignoredEntryDao().observeRecoverable(nowEpochMillis)
 
     suspend fun seedSystemCategories() {
-        database.categoryDao().insertIgnore(DefaultCategories.systemDefaults(clock()))
+        val defaults = DefaultCategories.systemDefaults(clock())
+        database.withTransaction {
+            database.categoryDao().insertIgnore(defaults)
+            defaults.forEach { category ->
+                database.categoryDao().updateSystemCategory(
+                    id = category.id,
+                    name = category.name,
+                    kind = category.kind,
+                    sortOrder = category.sortOrder
+                )
+            }
+        }
     }
 
     suspend fun ensureFundingAccount(

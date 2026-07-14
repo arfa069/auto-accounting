@@ -42,14 +42,14 @@ object DefaultCategorizationRules {
             id = "default-housing",
             titleContains = "物业",
             transactionKind = "支出",
-            category = "居住",
+            category = "住房",
             priority = 100
         ),
         defaultRule(
             id = "default-healthcare",
             titleContains = "医院",
             transactionKind = "支出",
-            category = "医疗健康",
+            category = "医疗",
             priority = 100
         )
     )

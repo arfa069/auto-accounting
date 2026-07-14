@@ -14,7 +14,7 @@ class DefaultCategorizationRulesTest {
         assertTrue(rules.all { it.id.startsWith("default-") })
         assertTrue(rules.all { it.enabled && it.category.isNotBlank() })
         assertEquals(
-            setOf("餐饮", "交通", "购物", "居住", "医疗健康", "工资", "退款"),
+            setOf("餐饮", "交通", "购物", "住房", "医疗", "工资", "退款"),
             rules.map { it.category }.toSet()
         )
     }

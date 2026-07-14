@@ -13,19 +13,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.autoaccounting.ui.components.Button
+import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.autoaccounting.ui.components.OutlinedButton
+import com.autoaccounting.ui.components.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -36,7 +38,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.autoaccounting.ui.components.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +56,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.autoaccounting.R
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.billsync.BillSyncSessionController
 import com.autoaccounting.feature.billsync.BillSyncSessionPhase
@@ -71,6 +75,7 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
+import com.autoaccounting.ui.visual.CategoryArtwork
 import kotlin.math.abs
 
 @Composable
@@ -218,6 +223,7 @@ fun ReviewQueueScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         ReviewQueueContent(
@@ -496,7 +502,7 @@ private fun ReviewEntryGroup(
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(subtitle, style = MaterialTheme.typography.bodySmall)
         if (entries.isEmpty()) {
-            Text(emptyText, style = MaterialTheme.typography.bodyMedium)
+            EmptyStatePanel(emptyText)
         } else {
             entries.forEach { entry ->
                 key(entry.id) {
@@ -572,6 +578,12 @@ private fun ReviewEntryRow(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top
                     ) {
+                        CategoryArtwork(
+                            categoryName = entry.category,
+                            transactionKind = entry.kindLabel.toCategoryTransactionKind(),
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(entry.title, fontWeight = FontWeight.SemiBold)
                             Text(
@@ -757,6 +769,12 @@ private fun ReviewQueueEntry.hasCategoryCorrection(category: String): Boolean {
     return category.trim().isNotBlank() && category.trim() != this.category
 }
 
+private fun String.toCategoryTransactionKind(): TransactionKind = when (trim()) {
+    "收入" -> TransactionKind.INCOME
+    "退款" -> TransactionKind.REFUND
+    else -> TransactionKind.EXPENSE
+}
+
 @Composable
 private fun ReviewEditDialog(
     entry: ReviewQueueEntry,
@@ -885,6 +903,13 @@ private fun ReviewEditDialog(
                     value = category,
                     onValueChange = { category = it },
                     label = { Text("分类") },
+                    leadingIcon = {
+                        CategoryArtwork(
+                            categoryName = category,
+                            transactionKind = transactionKind.toCategoryTransactionKind(),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()

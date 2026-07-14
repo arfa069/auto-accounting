@@ -12,27 +12,31 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.autoaccounting.ui.components.Button
+import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
+import com.autoaccounting.ui.components.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.autoaccounting.ui.components.OutlinedButton
+import com.autoaccounting.ui.components.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.autoaccounting.ui.components.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.autoaccounting.R
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.FlowDirection
@@ -54,6 +59,7 @@ import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.ui.visual.CategoryArtwork
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDateTime
@@ -213,6 +219,11 @@ private fun LedgerList(
 
     val monthKey = latestMonthKey(entries)
     val summary = monthlySummary(entries, monthKey)
+    val hasCurrentMonthEntries = entries.any { it.monthKey == monthKey }
+    val hasActiveFilters = searchText.isNotBlank() ||
+        sourceFilter.isNotBlank() ||
+        categoryFilter.isNotBlank() ||
+        kindFilter.isNotBlank()
     val filteredEntries = entries
         .filter { it.monthKey == monthKey }
         .filter {
@@ -272,7 +283,11 @@ private fun LedgerList(
             }
             Text("$monthKey 明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (filteredEntries.isEmpty()) {
-                Text("当前没有已确认账目")
+                if (!hasCurrentMonthEntries && !hasActiveFilters) {
+                    EmptyStatePanel("当前没有已确认账目")
+                } else {
+                    EmptyStatePanel("没有符合当前筛选条件的账目")
+                }
             } else {
                 filteredEntries.forEach { entry -> LedgerEntryRow(entry) { onEntryClick(entry.id) } }
             }
@@ -335,6 +350,13 @@ private fun LedgerEntryRow(entry: LedgerUiEntry, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            CategoryArtwork(
+                categoryId = entry.categoryId,
+                categoryName = entry.category,
+                transactionKind = entry.transactionKind,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(entry.title.ifBlank { "未填写标题" }, fontWeight = FontWeight.SemiBold)
                 Text("${entry.category} · ${entry.sourceLabel} · ${entry.transactionTimeText}")
@@ -365,15 +387,51 @@ internal fun <T> SelectionMenu(
     selected: T,
     options: List<T>,
     itemLabel: (T) -> String,
+    leadingContent: (@Composable (T) -> Unit)? = null,
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { expanded = true }) { Text("$label：${itemLabel(selected)}") }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    leadingContent?.let {
+                        it(selected)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("$label：${itemLabel(selected)}")
+                }
+                Text("⌄", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp),
+            shape = RoundedCornerShape(8.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
+        ) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(itemLabel(option)) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            leadingContent?.let {
+                                it(option)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(itemLabel(option))
+                        }
+                    },
                     onClick = {
                         expanded = false
                         onSelected(option)

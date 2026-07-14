@@ -1,7 +1,7 @@
 package com.autoaccounting.feature.profile
 
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,7 +25,7 @@ class ProfileScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun overviewShowsAccountCardAndFiveProfileEntriesInOrder() {
+    fun overviewShowsAccountCardAndFeatureEntries() {
         composeRule.setContent {
             ProfileOverviewScreen(
                 session = AccountSession.LocalMode,
@@ -34,7 +34,7 @@ class ProfileScreenTest {
         }
 
         composeRule.onNodeWithTag("profile-account-status-card").assertIsDisplayed()
-        composeRule.onNodeWithTag("profile-entry-AccountManagement").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("profile-entry-AccountManagement").assertDoesNotExist()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("profile-entry-CategorizationRules").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("profile-entry-DataAndBackup").performScrollTo().assertIsDisplayed()

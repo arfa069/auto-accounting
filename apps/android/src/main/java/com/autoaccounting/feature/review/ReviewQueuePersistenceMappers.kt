@@ -2,6 +2,7 @@ package com.autoaccounting.feature.review
 
 import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.IgnoreReason
 import com.autoaccounting.data.local.IgnoredEntryEntity
 import com.autoaccounting.data.local.LedgerEntryEntity
@@ -17,7 +18,9 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     title = merchantTitle,
     amountMinor = amountMinor,
     transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
-    category = suggestedCategoryLabel ?: suggestedCategoryId?.toCategoryLabel().orEmpty(),
+    category = suggestedCategoryLabel
+        ?: suggestedCategoryId?.let(DefaultCategories::nameForId)
+        ?: suggestedCategoryId.orEmpty(),
     fundingAccountLabel = fundingAccountLabel ?: fundingAccountId?.let { "账户 $it" }.orEmpty(),
     sourceLabel = source.toLabel(),
     kindLabel = transactionKind.toLabel(),
@@ -53,26 +56,29 @@ internal fun IgnoredEntryEntity.toReviewIgnoredEntry(zoneId: ZoneId): ReviewQueu
         expiresAtEpochMillis = expiresAtEpochMillis
     )
 
-internal fun ReviewQueueEntry.toEntity(zoneId: ZoneId): PendingEntryEntity = PendingEntryEntity(
-    id = id,
-    source = sourceLabel.toPaymentSource(),
-    captureReason = captureReasonLabel.toCaptureReason(),
-    confidence = confidence,
-    transactionKind = kindLabel.toTransactionKind(),
-    amountMinor = amountMinor,
-    currency = "CNY",
-    merchantTitle = title,
-    transactionTimeEpochMillis = parseReviewDateTime(transactionTimeText, zoneId)
-        ?: capturedAtEpochMillis,
-    capturedAtEpochMillis = capturedAtEpochMillis,
-    suggestedCategoryId = category.toCategoryIdOrNull(),
-    fundingAccountId = null,
-    fundingAccountLabel = fundingAccountLabel.ifBlank { null },
-    note = note,
-    evidenceSummary = rawEvidenceText.ifBlank { null },
-    parsedFieldsText = parsedFields.encodeParsedFields(),
-    suggestedCategoryLabel = category.ifBlank { null }
-)
+internal fun ReviewQueueEntry.toEntity(zoneId: ZoneId): PendingEntryEntity {
+    val transactionKind = kindLabel.toTransactionKind()
+    return PendingEntryEntity(
+        id = id,
+        source = sourceLabel.toPaymentSource(),
+        captureReason = captureReasonLabel.toCaptureReason(),
+        confidence = confidence,
+        transactionKind = transactionKind,
+        amountMinor = amountMinor,
+        currency = "CNY",
+        merchantTitle = title,
+        transactionTimeEpochMillis = parseReviewDateTime(transactionTimeText, zoneId)
+            ?: capturedAtEpochMillis,
+        capturedAtEpochMillis = capturedAtEpochMillis,
+        suggestedCategoryId = category.toCategoryIdOrNull(transactionKind),
+        fundingAccountId = null,
+        fundingAccountLabel = fundingAccountLabel.ifBlank { null },
+        note = note,
+        evidenceSummary = rawEvidenceText.ifBlank { null },
+        parsedFieldsText = parsedFields.encodeParsedFields(),
+        suggestedCategoryLabel = category.ifBlank { null }
+    )
+}
 
 internal fun ReviewQueueIgnoredEntry.toEntity(zoneId: ZoneId): IgnoredEntryEntity {
     val pending = entry.toEntity(zoneId)
@@ -101,17 +107,8 @@ internal fun ReviewQueueIgnoredEntry.toEntity(zoneId: ZoneId): IgnoredEntryEntit
     )
 }
 
-internal fun String.toCategoryIdOrNull(): String? = when (trim()) {
-    "餐饮" -> "food"
-    "交通" -> "transport"
-    "购物" -> "shopping"
-    "居住" -> "housing"
-    "医疗健康" -> "healthcare"
-    "工资" -> "salary"
-    "退款" -> "refund"
-    "未分类" -> "uncategorized"
-    else -> null
-}
+internal fun String.toCategoryIdOrNull(kind: TransactionKind? = null): String? =
+    DefaultCategories.idForName(this, kind)
 
 private fun IgnoredEntryEntity.toPendingEntryEntity(): PendingEntryEntity = PendingEntryEntity(
     id = originalPendingEntryId,
@@ -155,7 +152,7 @@ private fun TransactionKind.toLabel(): String = when (this) {
     TransactionKind.OTHER -> "其他"
 }
 
-private fun String.toTransactionKind(): TransactionKind = when (trim()) {
+internal fun String.toTransactionKind(): TransactionKind = when (trim()) {
     "收入" -> TransactionKind.INCOME
     "退款" -> TransactionKind.REFUND
     "转账" -> TransactionKind.TRANSFER
@@ -181,18 +178,6 @@ private fun String.toCaptureReason(): CaptureReason = when (trim()) {
     "重复合并" -> CaptureReason.DUPLICATE_MERGE
     "手动样例" -> CaptureReason.MANUAL_SAMPLE
     else -> CaptureReason.NOTIFICATION
-}
-
-private fun String.toCategoryLabel(): String = when (this) {
-    "food" -> "餐饮"
-    "transport" -> "交通"
-    "shopping" -> "购物"
-    "housing" -> "居住"
-    "healthcare" -> "医疗健康"
-    "salary" -> "工资"
-    "refund" -> "退款"
-    "uncategorized" -> "未分类"
-    else -> this
 }
 
 private fun formatReviewDateTime(epochMillis: Long, zoneId: ZoneId): String =

@@ -1,6 +1,10 @@
 <resources>
-    <color name="brand_primary">#6366F1</color>
-    <color name="brand_secondary">#14B8A6</color>
+    <color name="brand_primary">#5B5BD6</color>
+    <color name="brand_secondary">#56C7B7</color>
+    <color name="brand_accent">#FF7B7B</color>
+    <color name="brand_highlight">#FFD45A</color>
+    <color name="brand_canvas">#FFF9EC</color>
+    <color name="brand_ink">#252536</color>
     <color name="expense_warm">#F97316</color>
     <color name="income_green">#16A34A</color>
     <color name="risk_red">#DC2626</color>

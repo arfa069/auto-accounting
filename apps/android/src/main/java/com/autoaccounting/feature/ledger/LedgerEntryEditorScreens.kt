@@ -4,40 +4,53 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.autoaccounting.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.autoaccounting.ui.components.OutlinedButton
+import com.autoaccounting.ui.components.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.autoaccounting.ui.components.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.autoaccounting.data.local.CategoryEntity
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.LocalLedgerRepository
@@ -45,6 +58,7 @@ import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.ui.visual.CategoryArtwork
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDateTime
@@ -142,13 +156,10 @@ internal fun LedgerEntryForm(
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text("资金方向")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FlowDirection.entries.forEach { direction ->
-                OutlinedButton(onClick = { state = state.copy(flowDirection = direction) }) {
-                    Text(if (state.flowDirection == direction) "✓ ${direction.label()}" else direction.label())
-                }
-            }
-        }
+        FlowDirectionSelector(
+            selected = state.flowDirection,
+            onSelected = { direction -> state = state.copy(flowDirection = direction) }
+        )
         SelectionMenu(
             label = "交易类型",
             selected = state.transactionKind,
@@ -177,8 +188,20 @@ internal fun LedgerEntryForm(
             label = { Text("商户/标题（可选）") },
             modifier = Modifier.fillMaxWidth()
         )
-        val categoryOptions = remember(categories) {
-            (categories + CategoryEntity(
+        val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {
+            val matchingCategories = categories.filter { category ->
+                when {
+                    category.kind == null -> true
+                    state.transactionKind == TransactionKind.REFUND ->
+                        category.kind == TransactionKind.REFUND
+                    state.flowDirection == FlowDirection.INFLOW ->
+                        category.kind == TransactionKind.INCOME
+                    state.flowDirection == FlowDirection.OUTFLOW ->
+                        category.kind == TransactionKind.EXPENSE
+                    else -> true
+                }
+            }
+            (matchingCategories + CategoryEntity(
                 id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
                 name = "未分类",
                 kind = null,
@@ -187,11 +210,29 @@ internal fun LedgerEntryForm(
                 createdAtEpochMillis = 0
             )).distinctBy { it.id }
         }
+        LaunchedEffect(categoryOptions, state.categoryId) {
+            if (categoryOptions.none { it.id == state.categoryId }) {
+                state = state.copy(categoryId = LocalLedgerRepository.DEFAULT_CATEGORY_ID)
+            }
+        }
         SelectionMenu(
             label = "分类",
             selected = state.categoryId,
             options = categoryOptions.map { it.id },
-            itemLabel = { id -> categoryOptions.firstOrNull { it.id == id }?.name ?: "未分类" },
+            itemLabel = { id ->
+                DefaultCategories.nameForId(id)
+                    ?: categoryOptions.firstOrNull { it.id == id }?.name
+                    ?: "未分类"
+            },
+            leadingContent = { id ->
+                val category = categoryOptions.firstOrNull { it.id == id }
+                CategoryArtwork(
+                    categoryId = id,
+                    categoryName = category?.name,
+                    transactionKind = category?.kind,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
             onSelected = { state = state.copy(categoryId = it) }
         )
         SelectionMenu(
@@ -267,6 +308,64 @@ internal fun LedgerEntryForm(
         )
     }
 }
+
+@Composable
+private fun FlowDirectionSelector(
+    selected: FlowDirection,
+    onSelected: (FlowDirection) -> Unit
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(shape)
+            .border(1.5.dp, FlowSelectorInk, shape)
+    ) {
+        FlowDirection.entries.forEachIndexed { index, direction ->
+            val isSelected = selected == direction
+            val selectedColor = when (direction) {
+                FlowDirection.INFLOW -> FlowSelectorIncome
+                FlowDirection.OUTFLOW -> FlowSelectorExpense
+                FlowDirection.NEUTRAL -> MaterialTheme.colorScheme.primaryContainer
+            }
+            val contentColor = when (direction) {
+                FlowDirection.INFLOW -> FlowSelectorIncomeText
+                FlowDirection.OUTFLOW -> FlowSelectorExpenseText
+                FlowDirection.NEUTRAL -> MaterialTheme.colorScheme.primary
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(if (isSelected) selectedColor else FlowSelectorSurface)
+                    .clickable { onSelected(direction) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (isSelected) "✓ ${direction.label()}" else direction.label(),
+                    color = if (isSelected) contentColor else FlowSelectorInk,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+            if (index < FlowDirection.entries.lastIndex) {
+                Box(
+                    modifier = Modifier
+                        .width(1.5.dp)
+                        .fillMaxHeight()
+                        .background(FlowSelectorInk)
+                )
+            }
+        }
+    }
+}
+
+private val FlowSelectorInk = Color(0xFF202A44)
+private val FlowSelectorSurface = Color(0xFFFFFEFA)
+private val FlowSelectorIncome = Color(0xFFDDF7F1)
+private val FlowSelectorIncomeText = Color(0xFF169B87)
+private val FlowSelectorExpense = Color(0xFFFFE1DE)
+private val FlowSelectorExpenseText = Color(0xFFEF5F56)
 
 @Composable
 internal fun RecentlyDeletedScreen(

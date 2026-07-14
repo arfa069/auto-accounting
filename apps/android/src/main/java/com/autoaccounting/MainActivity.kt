@@ -10,8 +10,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -28,8 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.FundingAccountEntity
@@ -75,6 +80,8 @@ import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import com.autoaccounting.feature.settings.DataAndBackupScreen
+import com.autoaccounting.ui.theme.AutoAccountingTheme
+import com.autoaccounting.ui.visual.AppWallpaper
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -414,18 +421,20 @@ fun AutoAccountingApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    MaterialTheme {
+    AutoAccountingTheme {
         val activeAccountSession = accountSession
         if (activeAccountSession == null) {
-            AccountScreen(
-                onSessionChange = { session ->
-                    if (session == AccountSession.LocalMode) {
-                        localModeSessionStore.confirmLocalMode()
+            AppWallpaper(R.drawable.aa_bg_account) {
+                AccountScreen(
+                    onSessionChange = { session ->
+                        if (session == AccountSession.LocalMode) {
+                            localModeSessionStore.confirmLocalMode()
+                        }
+                        accountSession = session
                     }
-                    accountSession = session
-                }
-            )
-            return@MaterialTheme
+                )
+            }
+            return@AutoAccountingTheme
         }
 
         BackHandler(
@@ -434,11 +443,18 @@ fun AutoAccountingApp(
             profileDestination = null
         }
 
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Transparent
+        ) {
             Scaffold(
+                containerColor = Color.Transparent,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = {
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                        tonalElevation = 0.dp
+                    ) {
                         tabs.forEach { tab ->
                             NavigationBarItem(
                                 selected = selectedTab == tab,
@@ -447,14 +463,28 @@ fun AutoAccountingApp(
                                     profileDestination = null
                                 },
                                 modifier = Modifier.testTag("app-tab-${tab.name}"),
-                                icon = { Text(tab.symbol) },
+                                icon = {
+                                    Image(
+                                        painter = painterResource(tab.iconRes),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                },
                                 label = { Text(tab.label) }
                             )
                         }
                     }
                 }
             ) { innerPadding ->
-                when (selectedTab) {
+                val wallpaperRes = if (
+                    selectedTab == AppTab.Profile && profileDestination != null
+                ) {
+                    R.drawable.aa_bg_neutral
+                } else {
+                    selectedTab.backgroundRes
+                }
+                AppWallpaper(wallpaperRes) {
+                    when (selectedTab) {
                     AppTab.Review -> ReviewQueueScreen(
                         state = reviewState,
                         onStateChange = ::persistReviewState,
@@ -510,7 +540,7 @@ fun AutoAccountingApp(
                         modifier = Modifier.padding(innerPadding)
                     )
 
-                    AppTab.Profile -> when (val destination = profileDestination) {
+                        AppTab.Profile -> when (val destination = profileDestination) {
                         null -> ProfileOverviewScreen(
                             session = activeAccountSession,
                             onDestinationSelected = { profileDestination = it },
@@ -606,6 +636,7 @@ fun AutoAccountingApp(
                             modifier = Modifier.padding(innerPadding)
                         )
 
+                        }
                     }
                 }
             }
@@ -633,23 +664,28 @@ private object DemoAiCategorizationGateway : AiCategorizationGateway {
 
 private enum class AppTab(
     val label: String,
-    val symbol: String
+    val iconRes: Int,
+    val backgroundRes: Int
 ) {
     Review(
         label = "待确认",
-        symbol = "✓"
+        iconRes = R.drawable.aa_nav_review_art,
+        backgroundRes = R.drawable.aa_bg_review
     ),
     Ledger(
         label = "账本",
-        symbol = "账"
+        iconRes = R.drawable.aa_nav_ledger_art,
+        backgroundRes = R.drawable.aa_bg_ledger
     ),
     Reports(
         label = "报表",
-        symbol = "%"
+        iconRes = R.drawable.aa_nav_reports_art,
+        backgroundRes = R.drawable.aa_bg_reports
     ),
     Profile(
         label = "我的",
-        symbol = "我"
+        iconRes = R.drawable.aa_nav_profile_art,
+        backgroundRes = R.drawable.aa_bg_profile
     )
 }
 

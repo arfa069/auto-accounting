@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.ledger
 
 import com.autoaccounting.data.local.EntryOrigin
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.PaymentSource
@@ -69,7 +70,7 @@ fun LedgerEntryEntity.toLedgerUiEntry(
         amountMinor = amountMinor,
         monthKey = transactionTimeText.take(7),
         transactionTimeText = transactionTimeText,
-        category = categoryId?.toCategoryLabel() ?: "未分类",
+        category = categoryId?.let { DefaultCategories.nameForId(it) ?: it } ?: "未分类",
         sourceLabel = paymentSource?.toLabel() ?: "未指定",
         kindLabel = kind,
         flowType = when (flowDirection) {
@@ -194,18 +195,6 @@ private fun TransactionKind.toLabel(): String = when (this) {
     TransactionKind.INVESTMENT -> "理财"
     TransactionKind.FEE -> "手续费"
     TransactionKind.OTHER -> "其他"
-}
-
-private fun String.toCategoryLabel(): String = when (this) {
-    "food" -> "餐饮"
-    "transport" -> "交通"
-    "shopping" -> "购物"
-    "housing" -> "居住"
-    "healthcare" -> "医疗健康"
-    "salary" -> "工资"
-    "refund" -> "退款"
-    "uncategorized" -> "未分类"
-    else -> this
 }
 
 private fun formatLedgerDateTime(epochMillis: Long, zoneId: ZoneId): String =

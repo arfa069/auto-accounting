@@ -17,6 +17,20 @@ interface CategoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(categories: List<CategoryEntity>)
 
+    @Query(
+        """
+        UPDATE OR IGNORE categories
+        SET name = :name, kind = :kind, sort_order = :sortOrder
+        WHERE id = :id AND is_system = 1
+        """
+    )
+    suspend fun updateSystemCategory(
+        id: String,
+        name: String,
+        kind: TransactionKind?,
+        sortOrder: Int
+    )
+
     @Query("SELECT * FROM categories ORDER BY sort_order ASC, name ASC")
     suspend fun getAllCategories(): List<CategoryEntity>
 

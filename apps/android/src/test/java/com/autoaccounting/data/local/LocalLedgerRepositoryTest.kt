@@ -58,8 +58,33 @@ class LocalLedgerRepositoryTest {
 
         val categories = database.categoryDao().getAllCategories()
 
+        assertEquals(49, categories.size)
         assertTrue(categories.any { it.id == "food" && it.name == "餐饮" })
+        assertTrue(categories.any { it.id == "games" && it.name == "游戏" })
+        assertTrue(categories.any { it.id == "payment_received" && it.name == "收款" })
         assertTrue(categories.any { it.id == "uncategorized" && it.kind == null })
+    }
+
+    @Test
+    fun seedUpdatesLegacySystemLabelsWithoutReplacingRows() = runBlocking {
+        database.categoryDao().insertIgnore(
+            listOf(
+                CategoryEntity(
+                    id = "housing",
+                    name = "居住",
+                    kind = TransactionKind.EXPENSE,
+                    sortOrder = 40,
+                    isSystem = true,
+                    createdAtEpochMillis = 42
+                )
+            )
+        )
+
+        repository.seedSystemCategories()
+
+        val housing = database.categoryDao().getCategory("housing")
+        assertEquals("住房", housing?.name)
+        assertEquals(42L, housing?.createdAtEpochMillis)
     }
 
     @Test

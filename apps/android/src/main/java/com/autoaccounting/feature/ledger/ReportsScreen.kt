@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,7 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.autoaccounting.ui.components.OutlinedButton
+import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.ui.visual.CategoryArtwork
 
 @Composable
 fun ReportsScreen(
@@ -55,17 +60,26 @@ fun ReportsScreen(
     ) {
         Text("报表", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         ReportOverview(summary)
-        CategorySharePlaceholder()
-        CategoryRanking(
-            totals = categoryTotals,
-            selectedCategory = selectedCategory,
-            onSelectedCategoryChange = { selectedCategory = it }
-        )
-        TrendPanel(
-            selectedCategory = selectedCategory,
-            trend = trend
-        )
+        if (categoryTotals.isEmpty()) {
+            ReportEmptyState()
+        } else {
+            CategorySharePlaceholder()
+            CategoryRanking(
+                totals = categoryTotals,
+                selectedCategory = selectedCategory,
+                onSelectedCategoryChange = { selectedCategory = it }
+            )
+            TrendPanel(
+                selectedCategory = selectedCategory,
+                trend = trend
+            )
+        }
     }
+}
+
+@Composable
+private fun ReportEmptyState() {
+    EmptyStatePanel("本月暂无可分析的支出")
 }
 
 @Composable
@@ -138,7 +152,16 @@ private fun CategoryRanking(
             Text("本月暂无分类支出")
         } else {
             totals.forEach { total ->
-                OutlinedButton(onClick = { onSelectedCategoryChange(total.category) }) {
+                OutlinedButton(
+                    onClick = { onSelectedCategoryChange(total.category) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CategoryArtwork(
+                        categoryName = total.category,
+                        transactionKind = TransactionKind.EXPENSE,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                     Text("${total.category} ${formatMoney(total.amountMinor)}")
                 }
             }

@@ -92,7 +92,9 @@ class ReviewQueuePersistence(
         val result = runCatching {
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
-                categoryId = confirmed.entry.category.toCategoryIdOrNull(),
+                categoryId = confirmed.entry.category.toCategoryIdOrNull(
+                    confirmed.entry.kindLabel.toTransactionKind()
+                ),
                 note = confirmed.entry.note
             )
         }
@@ -100,7 +102,9 @@ class ReviewQueuePersistence(
             repository.upsertPending(confirmed.entry.toEntity(zoneId))
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
-                categoryId = confirmed.entry.category.toCategoryIdOrNull(),
+                categoryId = confirmed.entry.category.toCategoryIdOrNull(
+                    confirmed.entry.kindLabel.toTransactionKind()
+                ),
                 note = confirmed.entry.note
             )
         }
