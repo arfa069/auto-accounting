@@ -6,6 +6,7 @@ import com.autoaccounting.feature.dedupe.DedupeEngine
 import com.autoaccounting.feature.dedupe.DedupeMatchLevel
 import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueueCaptureCoordinator
+import com.autoaccounting.feature.review.ReviewQueueEntry
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.review.reduceReviewQueue
@@ -34,8 +35,12 @@ class PaymentNotificationCaptureProcessor(
         val rules = preferencesRepository.categorizationRules.first()
         val categorizedEntry = entry.applyCategorizationSuggestion(rules)
         val previousState = reviewQueuePersistence.observeState().first()
+        val ledgerEntriesForDedupe = reviewQueuePersistence.ledgerEntriesForDedupe()
+            .filterNot { ledgerEntry ->
+                ledgerEntry.isPriorRedPacketLedgerFor(categorizedEntry)
+            }
         val ledgerDedupeResult = DedupeEngine().addCandidate(
-            reviewQueuePersistence.ledgerEntriesForDedupe(),
+            ledgerEntriesForDedupe,
             categorizedEntry
         )
         if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
@@ -51,8 +56,18 @@ class PaymentNotificationCaptureProcessor(
         } else {
             categorizedEntry
         }
+        val hasPriorRedPacketNotification = previousState.pendingEntries.any { existing ->
+            existing.isPriorRedPacketNotificationFor(candidateAfterLedgerCheck)
+        }
+        val pendingEntriesForDedupe = if (hasPriorRedPacketNotification) {
+            previousState.pendingEntries.filterNot { existing ->
+                existing.isPriorRedPacketNotificationFor(candidateAfterLedgerCheck)
+            }
+        } else {
+            previousState.pendingEntries
+        }
         val dedupeResult = DedupeEngine().addCandidate(
-            previousState.pendingEntries,
+            pendingEntriesForDedupe,
             candidateAfterLedgerCheck
         )
         val entryToPersist = when (dedupeResult.matchLevel) {
@@ -65,10 +80,21 @@ class PaymentNotificationCaptureProcessor(
             DedupeMatchLevel.LOW_CONFIDENCE ->
                 dedupeResult.pendingEntries.first { it.id == candidateAfterLedgerCheck.id }
         }
-        val nextState = reduceReviewQueue(
-            previousState,
-            ReviewQueueAction.AddPending(entryToPersist)
-        )
+        val nextState = if (
+            hasPriorRedPacketNotification &&
+            entryToPersist.id == candidateAfterLedgerCheck.id
+        ) {
+            previousState.copy(
+                pendingEntries = listOf(entryToPersist) +
+                    previousState.pendingEntries.filterNot { it.id == entryToPersist.id },
+                lastAction = null
+            )
+        } else {
+            reduceReviewQueue(
+                previousState,
+                ReviewQueueAction.AddPending(entryToPersist)
+            )
+        }
         reviewQueuePersistence.persistTransition(previousState, nextState)
 
         val notification = if (dedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
@@ -83,3 +109,35 @@ class PaymentNotificationCaptureProcessor(
         PaymentNotificationProcessResult(nextState, notification)
     }
 }
+
+private fun ReviewQueueEntry.isPriorRedPacketNotificationFor(
+    candidate: ReviewQueueEntry
+): Boolean =
+    candidate.isWechatRedPacketNotification &&
+        id != candidate.id &&
+        hasNotificationCaptureEvidence &&
+        sourceLabel == candidate.sourceLabel &&
+        title == candidate.title &&
+        amountMinor == candidate.amountMinor &&
+        kindLabel == candidate.kindLabel
+
+private fun ReviewQueueEntry.isPriorRedPacketLedgerFor(
+    candidate: ReviewQueueEntry
+): Boolean =
+    candidate.isWechatRedPacketNotification &&
+        captureReasonLabel == "已入账" &&
+        originPendingId != null &&
+        originPendingId != candidate.id &&
+        sourceLabel == candidate.sourceLabel &&
+        title == candidate.title &&
+        amountMinor == candidate.amountMinor &&
+        kindLabel == candidate.kindLabel
+
+private val ReviewQueueEntry.isWechatRedPacketNotification: Boolean
+    get() = sourceLabel == "微信" &&
+        captureReasonLabel == "通知捕获" &&
+        rawEvidenceText.contains("红包")
+
+private val ReviewQueueEntry.hasNotificationCaptureEvidence: Boolean
+    get() = captureReasonLabel == "通知捕获" ||
+        parsedFields.contains("证据来源=通知捕获")

@@ -174,6 +174,13 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
     val hasCompletedPayment = PAYMENT_COMPLETION_KEYWORDS.any { keyword -> text.contains(keyword) } &&
         PAYMENT_AMOUNT_REGEX.containsMatchIn(text)
     if (packageName == "com.tencent.mm") {
+        if (
+            hasWechatReceivedRedPacketSuccessSignature(text) ||
+            hasWechatSentRedPacketSuccessSignature(text)
+        ) {
+            return PAYMENT_AMOUNT_REGEX.containsMatchIn(text) &&
+                ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+        }
         val hasSupportedCompletion = hasWechatMerchantPaymentSuccessSignature(text) ||
             hasWechatTransferCompletionContext(text)
         return hasCompletedPayment &&
@@ -320,10 +327,15 @@ class PaymentScreenCaptureDebouncer(
     private var lastProcessedAtEpochMillis: Long = 0
 
     @Synchronized
-    fun shouldProcess(packageName: String, screenText: String): Boolean {
+    fun shouldProcess(
+        packageName: String,
+        screenText: String,
+        bypassDuplicateWindow: Boolean = false
+    ): Boolean {
         val now = clock()
         val fingerprint = 31 * packageName.hashCode() + screenText.hashCode()
         if (
+            !bypassDuplicateWindow &&
             fingerprint == lastFingerprint &&
             now - lastProcessedAtEpochMillis < duplicateWindowMillis
         ) {

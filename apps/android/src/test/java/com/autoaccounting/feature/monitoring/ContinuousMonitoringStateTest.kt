@@ -210,6 +210,61 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
+    fun wechatReceivedRedPacketRequiresCompletedReceiptPageSignature() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val received = decide(
+            state,
+            "com.tencent.mm",
+            "Yellen的红包\n4.00元\n已存入零钱，可用于发红包\n回复表情到聊天"
+        )
+        val chat = decide(
+            state,
+            "com.tencent.mm",
+            "聊天\nYellen的红包\n4.00元\n发送消息"
+        )
+        val sendInitiation = decide(
+            state,
+            "com.tencent.mm",
+            "发红包\n金额 ¥3.50\n塞钱进红包"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, received.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, chat.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, sendInitiation.observation)
+    }
+
+    @Test
+    fun wechatSentRedPacketRequiresCompletedDetailPageSignature() {
+        val state = ContinuousMonitoringState(enabled = true)
+        val waiting = decide(
+            state,
+            "com.tencent.mm",
+            "Arfa😘的红包\n红包金额3.00元，等待对方领取\n" +
+                "未领取的红包，将于24小时后发起退款"
+        )
+        val claimed = decide(
+            state,
+            "com.tencent.mm",
+            "Arfa😘的红包\n1个红包共3.00元\nYellen\n3.00元\n11:22"
+        )
+        val preparation = decide(
+            state,
+            "com.tencent.mm",
+            "发红包\n金额 ¥3.00\n塞钱进红包"
+        )
+        val paymentPassword = decide(
+            state,
+            "com.tencent.mm",
+            "微信红包\n¥3.00\n支付密码\n零钱"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, waiting.observation)
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, claimed.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, preparation.observation)
+        assertEquals(ContinuousMonitoringObservation.Ignored, paymentPassword.observation)
+    }
+
+    @Test
     fun monitoringAllowsPaymentMessageCenterAndCompletedTransfer() {
         val state = ContinuousMonitoringState(enabled = true)
         val paymentMessage = decide(
@@ -295,6 +350,13 @@ class ContinuousMonitoringStateTest {
 
         assertTrue(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))
         assertFalse(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))
+        assertTrue(
+            debouncer.shouldProcess(
+                packageName = "com.tencent.mm",
+                screenText = "支付成功 ¥1.00",
+                bypassDuplicateWindow = true
+            )
+        )
 
         now += 30_001
         assertTrue(debouncer.shouldProcess("com.tencent.mm", "支付成功 ¥1.00"))

@@ -294,7 +294,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 settledRoot?.packageName?.toString() == packageName &&
                 settledRoot.collectVisibleText().isNotBlank()
             ) {
-                ocrSessionGuard.reset()
+                ocrSessionGuard.resetCurrentFingerprint()
             }
             wechatOcrGuardResetJob = null
         }
@@ -312,7 +312,16 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
         if (!ocrDecision.shouldCapture) return false
         val transactionFingerprint = wechatOcrPaymentFingerprint(pageText) ?: return false
-        if (!ocrSessionGuard.shouldProcess(transactionFingerprint)) return false
+        val hasNewMatchingNotification = transactionFingerprint.isRedPacket &&
+            processor.hasUniqueUnlinkedRecentWechatNotification(transactionFingerprint)
+        if (
+            !ocrSessionGuard.shouldProcess(
+                fingerprint = transactionFingerprint,
+                hasNewMatchingNotification = hasNewMatchingNotification
+            )
+        ) {
+            return false
+        }
         val permissionHealth = currentContinuousMonitoringPermissionHealth()
         if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return false
         val decision = decideContinuousMonitoringCapture(
@@ -324,7 +333,15 @@ class BillSyncAccessibilityService : AccessibilityService() {
             permissionHealth = permissionHealth
         )
         if (!decision.shouldCapture) return false
-        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) return false
+        if (
+            !automaticCaptureDebouncer.shouldProcess(
+                packageName = packageName,
+                screenText = pageText,
+                bypassDuplicateWindow = hasNewMatchingNotification
+            )
+        ) {
+            return false
+        }
 
         val source = BillSyncSource.fromPackageName(packageName) ?: return false
         val outcome = runCatching {
@@ -332,7 +349,11 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 source = source,
                 pageText = pageText,
                 retainRawEvidence = false,
-                automaticCaptureVerification = ocrDecision.verification
+                automaticCaptureVerification = if (hasNewMatchingNotification) {
+                    AutomaticCaptureVerification.RequireRecentNotification
+                } else {
+                    ocrDecision.verification
+                }
             )
         }.onSuccess { result ->
             result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
@@ -503,19 +524,42 @@ private data class WechatWindowIdentity(
 
 internal class PaymentScreenOcrSessionGuard {
     private var processedFingerprint: WechatOcrPaymentFingerprint? = null
+    private val processedRedPacketFingerprints =
+        linkedSetOf<WechatOcrPaymentFingerprint>()
 
     @Synchronized
-    fun shouldProcess(fingerprint: WechatOcrPaymentFingerprint): Boolean =
-        fingerprint != processedFingerprint
+    fun shouldProcess(
+        fingerprint: WechatOcrPaymentFingerprint,
+        hasNewMatchingNotification: Boolean = false
+    ): Boolean =
+        (fingerprint.isRedPacket && hasNewMatchingNotification) ||
+            (
+                fingerprint != processedFingerprint &&
+                    fingerprint !in processedRedPacketFingerprints
+                )
 
     @Synchronized
     fun markProcessed(fingerprint: WechatOcrPaymentFingerprint) {
         processedFingerprint = fingerprint
+        if (fingerprint.isRedPacket) {
+            processedRedPacketFingerprints += fingerprint
+            while (processedRedPacketFingerprints.size > MAX_RED_PACKET_FINGERPRINTS) {
+                val oldest = processedRedPacketFingerprints.iterator()
+                if (oldest.hasNext()) {
+                    oldest.next()
+                    oldest.remove()
+                }
+            }
+        }
     }
 
     @Synchronized
-    fun reset() {
+    fun resetCurrentFingerprint() {
         processedFingerprint = null
+    }
+
+    private companion object {
+        const val MAX_RED_PACKET_FINGERPRINTS = 64
     }
 }
 

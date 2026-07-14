@@ -44,6 +44,20 @@ class BillSyncCaptureProcessor(
         }
     }
 
+    internal suspend fun hasUniqueUnlinkedRecentWechatNotification(
+        fingerprint: WechatOcrPaymentFingerprint
+    ): Boolean {
+        if (!fingerprint.isRedPacket) return false
+        val capturedAtEpochMillis = clock()
+        val matches = reviewQueuePersistence.observeState().first().pendingEntries.count { entry ->
+            entry.matchesUnlinkedRecentWechatNotification(
+                fingerprint = fingerprint,
+                capturedAtEpochMillis = capturedAtEpochMillis
+            )
+        }
+        return matches == 1
+    }
+
     private suspend fun processWithReason(
         source: BillSyncSource,
         pageText: String,

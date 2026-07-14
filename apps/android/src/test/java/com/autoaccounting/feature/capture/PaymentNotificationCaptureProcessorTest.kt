@@ -9,9 +9,13 @@ import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
+import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.categorization.CategorizationRule
+import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
+import com.autoaccounting.feature.review.reduceReviewQueue
 import java.time.ZoneId
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -31,6 +35,7 @@ class PaymentNotificationCaptureProcessorTest {
     val instantTaskExecutorRule = InstantTaskExecutorRule()
 
     private lateinit var database: AutoAccountingDatabase
+    private lateinit var persistence: ReviewQueuePersistence
     private lateinit var processor: PaymentNotificationCaptureProcessor
 
     @Before
@@ -40,15 +45,16 @@ class PaymentNotificationCaptureProcessorTest {
             AutoAccountingDatabase::class.java
         ).allowMainThreadQueries().build()
         val ledgerRepository = LocalLedgerRepository(database)
+        persistence = ReviewQueuePersistence(
+            repository = ledgerRepository,
+            nowProvider = { NOW },
+            zoneId = ZoneId.of("UTC")
+        )
         processor = PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
                 captureTimeFormatter = { "2026-07-08 12:21" }
             ),
-            reviewQueuePersistence = ReviewQueuePersistence(
-                repository = ledgerRepository,
-                nowProvider = { NOW },
-                zoneId = ZoneId.of("UTC")
-            ),
+            reviewQueuePersistence = persistence,
             preferencesRepository = LocalPreferencesRepository(database)
         )
     }
@@ -97,11 +103,84 @@ class PaymentNotificationCaptureProcessorTest {
         assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
     }
 
+    @Test
+    fun distinctSentRedPacketNotificationsWithSameAmountStaySeparate() = runBlocking {
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW + 30_000))
+
+        val entries = database.pendingEntryDao().listPendingEntries()
+
+        assertEquals(2, entries.size)
+        assertTrue(entries.all { it.captureReason == CaptureReason.NOTIFICATION })
+
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW + 30_000))
+
+        assertEquals(2, database.pendingEntryDao().listPendingEntries().size)
+    }
+
+    @Test
+    fun newSentRedPacketNotificationIsNotMergedIntoEarlierLedgerEntry() = runBlocking {
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
+        val pendingState = persistence.observeState().first()
+        val confirmedState = reduceReviewQueue(
+            pendingState,
+            ReviewQueueAction.Confirm(pendingState.pendingEntries.single().id)
+        )
+        persistence.persistTransition(pendingState, confirmedState)
+
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW + 30_000))
+
+        val pendingEntries = database.pendingEntryDao().listPendingEntries()
+        assertEquals(1, pendingEntries.size)
+        assertTrue(pendingEntries.single().id.contains((NOW + 30_000).toString()))
+    }
+
+    @Test
+    fun newReceivedRedPacketNotificationIsNotMergedIntoEarlierLedgerEntry() = runBlocking {
+        processor.process(receivedRedPacketEvent(postedAtEpochMillis = NOW))
+        val pendingState = persistence.observeState().first()
+        val confirmedState = reduceReviewQueue(
+            pendingState,
+            ReviewQueueAction.Confirm(pendingState.pendingEntries.single().id)
+        )
+        persistence.persistTransition(pendingState, confirmedState)
+
+        processor.process(receivedRedPacketEvent(postedAtEpochMillis = NOW))
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+
+        processor.process(receivedRedPacketEvent(postedAtEpochMillis = NOW + 30_000))
+
+        val pendingEntries = database.pendingEntryDao().listPendingEntries()
+        assertEquals(1, pendingEntries.size)
+        assertEquals("张三", pendingEntries.single().merchantTitle)
+        assertEquals(TransactionKind.INCOME, pendingEntries.single().transactionKind)
+        assertTrue(pendingEntries.single().id.contains((NOW + 30_000).toString()))
+    }
+
     private fun paymentEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
         PaymentNotificationEvent(
             packageName = "com.tencent.mm",
             title = "微信支付",
             text = "付款成功 商户：午餐 金额：¥35.90",
+            postedAtEpochMillis = postedAtEpochMillis
+        )
+
+    private fun sentRedPacketEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
+        PaymentNotificationEvent(
+            packageName = "com.tencent.mm",
+            title = "微信红包",
+            text = "发出红包 ¥3.00",
+            postedAtEpochMillis = postedAtEpochMillis
+        )
+
+    private fun receivedRedPacketEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
+        PaymentNotificationEvent(
+            packageName = "com.tencent.mm",
+            title = "微信红包",
+            text = "收到张三的红包 ¥3.00",
             postedAtEpochMillis = postedAtEpochMillis
         )
 

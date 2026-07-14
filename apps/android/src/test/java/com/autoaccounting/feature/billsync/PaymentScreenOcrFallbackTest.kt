@@ -260,6 +260,146 @@ class PaymentScreenOcrFallbackTest {
     }
 
     @Test
+    fun wechatReceivedRedPacketOcrRequiresCompletedReceiptPageSignature() {
+        val windowEvidence = WechatWindowEvidence(
+            activityClassName =
+                "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyNewDetailUI",
+            isApplicationWindow = true
+        )
+        val completedReceipt = decideWechatOcrCapture(
+            pageText = """
+                Yellen的红包
+                恭喜发财，大吉大利
+                4.00元
+                已存入零钱，可用于发红包
+                回复表情到聊天
+            """.trimIndent(),
+            windowEvidence = windowEvidence
+        )
+        val missingCompletion = decideWechatOcrCapture(
+            pageText = "Yellen的红包\n4.00元\n回复表情到聊天",
+            windowEvidence = windowEvidence
+        )
+        val missingAmount = decideWechatOcrCapture(
+            pageText = "Yellen的红包\n已存入零钱\n回复表情到聊天",
+            windowEvidence = windowEvidence
+        )
+        val chatMessage = decideWechatOcrCapture(
+            pageText = "聊天\nYellen的红包\n4.00元\n已存入零钱\n发送消息",
+            windowEvidence = windowEvidence
+        )
+        val sendInitiation = decideWechatOcrCapture(
+            pageText = "发红包\n金额 ¥3.50\n塞钱进红包",
+            windowEvidence = windowEvidence
+        )
+
+        assertTrue(completedReceipt.shouldCapture)
+        assertFalse(missingCompletion.shouldCapture)
+        assertFalse(missingAmount.shouldCapture)
+        assertFalse(chatMessage.shouldCapture)
+        assertFalse(sendInitiation.shouldCapture)
+        val fingerprint = requireNotNull(
+            wechatOcrPaymentFingerprint(
+                "Yellen的红包\n4.00元\n已存入零钱\n回复表情到聊天"
+            )
+        )
+        assertEquals("Yellen", fingerprint.merchantTitle)
+        assertEquals(400L, fingerprint.amountMinor)
+        assertEquals("收入", fingerprint.transactionKindLabel)
+        val guard = PaymentScreenOcrSessionGuard()
+        guard.markProcessed(fingerprint)
+        guard.resetCurrentFingerprint()
+        assertFalse(guard.shouldProcess(fingerprint))
+        assertTrue(
+            guard.shouldProcess(
+                fingerprint,
+                hasNewMatchingNotification = true
+            )
+        )
+        assertEquals(AutomaticCaptureVerification.Standard, completedReceipt.verification)
+        assertTrue(isVerifiedWechatOcrResultActivity(windowEvidence.activityClassName))
+        assertTrue(
+            shouldAttemptWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "返回\n更多",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = windowEvidence
+            )
+        )
+    }
+
+    @Test
+    fun wechatSentRedPacketOcrUsesStableFingerprintAcrossClaimStatusChanges() {
+        val windowEvidence = WechatWindowEvidence(
+            activityClassName =
+                "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyNewDetailUI",
+            isApplicationWindow = true
+        )
+        val waitingText = """
+            Arfa😘的红包
+            恭喜发财，大吉大利
+            红包金额3.00元，等待对方领取
+            未领取的红包，将于24小时后发起退款
+        """.trimIndent()
+        val claimedText = """
+            Arfa😘的红包
+            恭喜发财，大吉大利
+            1个红包共3.00元
+            Yellen
+            3.00元
+            11:22
+        """.trimIndent()
+
+        val waiting = decideWechatOcrCapture(waitingText, windowEvidence)
+        val claimed = decideWechatOcrCapture(claimedText, windowEvidence)
+        val preparation = decideWechatOcrCapture(
+            "发红包\n金额 ¥3.00\n塞钱进红包",
+            windowEvidence
+        )
+        val paymentPassword = decideWechatOcrCapture(
+            "微信红包\n¥3.00\n支付密码\n零钱",
+            windowEvidence
+        )
+        val incompleteClaimedDetail = decideWechatOcrCapture(
+            "Arfa😘的红包\n1个红包共3.00元",
+            windowEvidence
+        )
+
+        assertTrue(waiting.shouldCapture)
+        assertTrue(claimed.shouldCapture)
+        assertEquals(AutomaticCaptureVerification.Standard, waiting.verification)
+        assertEquals(AutomaticCaptureVerification.Standard, claimed.verification)
+        assertFalse(preparation.shouldCapture)
+        assertFalse(paymentPassword.shouldCapture)
+        assertFalse(incompleteClaimedDetail.shouldCapture)
+        val waitingFingerprint = requireNotNull(wechatOcrPaymentFingerprint(waitingText))
+        val claimedFingerprint = requireNotNull(wechatOcrPaymentFingerprint(claimedText))
+        assertEquals(waitingFingerprint, claimedFingerprint)
+        val guard = PaymentScreenOcrSessionGuard()
+        guard.markProcessed(waitingFingerprint)
+        guard.resetCurrentFingerprint()
+        assertFalse(guard.shouldProcess(claimedFingerprint))
+        assertTrue(
+            guard.shouldProcess(
+                claimedFingerprint,
+                hasNewMatchingNotification = true
+            )
+        )
+        val differentAmountFingerprint = requireNotNull(
+            wechatOcrPaymentFingerprint(
+                "Arfa😘的红包\n红包金额4.00元，等待对方领取\n" +
+                    "未领取的红包，将于24小时后发起退款"
+            )
+        )
+        assertTrue(guard.shouldProcess(differentAmountFingerprint))
+        guard.markProcessed(differentAmountFingerprint)
+        assertFalse(guard.shouldProcess(claimedFingerprint))
+        assertEquals("红包", waitingFingerprint.merchantTitle)
+        assertEquals(300L, waitingFingerprint.amountMinor)
+        assertEquals("支出", waitingFingerprint.transactionKindLabel)
+    }
+
+    @Test
     fun successfulOcrSurfaceIsProcessedOnceUntilTransactionFingerprintChangesOrResets() {
         val guard = PaymentScreenOcrSessionGuard()
         val firstTransaction = requireNotNull(
@@ -274,8 +414,27 @@ class PaymentScreenOcrFallbackTest {
         assertFalse(guard.shouldProcess(firstTransaction))
         assertTrue(guard.shouldProcess(nextTransaction))
 
-        guard.reset()
+        guard.resetCurrentFingerprint()
         assertTrue(guard.shouldProcess(firstTransaction))
+    }
+
+    @Test
+    fun sentRedPacketSessionGuardBoundsRememberedFingerprints() {
+        val guard = PaymentScreenOcrSessionGuard()
+        val fingerprints = (1..65).map { amount ->
+            requireNotNull(
+                wechatOcrPaymentFingerprint(
+                    "Arfa的红包\n红包金额$amount.00元，等待对方领取\n" +
+                        "未领取的红包，将于24小时后发起退款"
+                )
+            )
+        }
+
+        fingerprints.forEach(guard::markProcessed)
+        guard.resetCurrentFingerprint()
+
+        assertTrue(guard.shouldProcess(fingerprints.first()))
+        assertFalse(guard.shouldProcess(fingerprints.last()))
     }
 
     @Test

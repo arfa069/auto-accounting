@@ -188,6 +188,83 @@ class BillPageParserTest {
     }
 
     @Test
+    fun parsesWechatReceivedRedPacketSuccessPage() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                Yellen的红包
+                恭喜发财，大吉大利
+                4.00元
+                已存入零钱，可用于发红包
+                回复表情到聊天
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-14 20:51"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals("Yellen", entries.single().merchantTitle)
+        assertEquals(400L, entries.single().amountMinor)
+        assertEquals("收入", entries.single().transactionKindLabel)
+        assertEquals("微信零钱", entries.single().fundingAccountLabel)
+        assertEquals("2026-07-14 20:51", entries.single().transactionTimeText)
+    }
+
+    @Test
+    fun parsesWechatSentRedPacketBeforeAndAfterRecipientClaimsIt() {
+        val waiting = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                Arfa😘的红包
+                恭喜发财，大吉大利
+                红包金额3.00元，等待对方领取
+                未领取的红包，将于24小时后发起退款
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-14 11:21"
+        )
+        val claimed = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                Arfa😘的红包
+                恭喜发财，大吉大利
+                1个红包共3.00元
+                Yellen
+                3.00元
+                11:22
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-14 11:23"
+        )
+
+        listOf(waiting.single(), claimed.single()).forEach { entry ->
+            assertEquals("红包", entry.merchantTitle)
+            assertEquals(300L, entry.amountMinor)
+            assertEquals("支出", entry.transactionKindLabel)
+            assertEquals("微信零钱", entry.fundingAccountLabel)
+        }
+    }
+
+    @Test
+    fun ignoresWechatRedPacketChatTextWithoutCompletedReceiptSignature() {
+        val chatText = """
+            聊天
+            Yellen的红包
+            4.00元
+            已存入零钱
+            发送消息
+        """.trimIndent()
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = chatText,
+            fallbackTransactionTimeText = "2026-07-14 20:51"
+        )
+
+        assertTrue(entries.isEmpty())
+        assertEquals(
+            BillSyncPageObservation.Ignored,
+            observeBillSyncPage(BillSyncSource.WeChat, chatText)
+        )
+    }
+
+    @Test
     fun ignoresUnsupportedOrPaymentInitiationSurfaces() {
         val chat = BillPageParser().parse(
             source = BillSyncSource.WeChat,

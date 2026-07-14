@@ -44,7 +44,8 @@ internal fun LedgerEntryEntity.toReviewEntryForDedupe(zoneId: ZoneId): ReviewQue
         captureReasonLabel = "已入账",
         confidence = ConfidenceState.HIGH,
         capturedAtEpochMillis = confirmedAtEpochMillis,
-        captureTimeText = formatReviewDateTime(confirmedAtEpochMillis, zoneId)
+        captureTimeText = formatReviewDateTime(confirmedAtEpochMillis, zoneId),
+        originPendingId = originPendingEntryId
     )
 
 internal fun IgnoredEntryEntity.toReviewIgnoredEntry(zoneId: ZoneId): ReviewQueueIgnoredEntry =

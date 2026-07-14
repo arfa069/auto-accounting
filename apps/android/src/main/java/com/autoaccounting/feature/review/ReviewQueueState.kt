@@ -48,7 +48,8 @@ data class ReviewQueueEntry(
     val captureTimeText: String = "",
     val note: String? = null,
     val rawEvidenceText: String = "",
-    val parsedFields: List<String> = emptyList()
+    val parsedFields: List<String> = emptyList(),
+    val originPendingId: String? = null
 ) {
     val reviewPriority: Int
         get() = when (confidence) {

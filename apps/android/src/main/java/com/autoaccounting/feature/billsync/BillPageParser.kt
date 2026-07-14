@@ -1,5 +1,7 @@
 package com.autoaccounting.feature.billsync
 
+import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
+import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -241,7 +243,9 @@ private fun String.isSupportedPaymentRecordSurface(): Boolean =
     PAYMENT_RECORD_SURFACE_KEYWORDS.any { contains(it) }
 
 private fun String.isCompletedPaymentResultSurface(): Boolean =
-    PAYMENT_COMPLETION_KEYWORDS.any { contains(it) }
+    PAYMENT_COMPLETION_KEYWORDS.any { contains(it) } ||
+        hasWechatReceivedRedPacketSuccessSignature(this) ||
+        hasWechatSentRedPacketSuccessSignature(this)
 
 private fun String.hasPaymentInitiationKeyword(): Boolean =
     PAYMENT_INITIATION_KEYWORDS.any { contains(it) }
@@ -257,6 +261,8 @@ private fun String.hasCompletedPaymentResultEvidence(): Boolean =
         inferTransactionKindLabel() != null
 
 private fun String.inferTransactionKindLabel(): String? = when {
+    hasWechatSentRedPacketSuccessSignature(this) -> "支出"
+    hasWechatReceivedRedPacketSuccessSignature(this) -> "收入"
     contains("退款") -> "退款"
     contains("收入") ||
         contains("收款到账") ||
@@ -317,6 +323,8 @@ private fun extractMerchantTitle(
     lines: List<String>,
     linesBeforeAmount: List<String>
 ): String? {
+    if (hasWechatSentRedPacketSuccessSignature(windowText)) return "红包"
+
     val p2pTitle = extractP2pTitle(windowText)
     if (p2pTitle != null) return p2pTitle
 
@@ -342,6 +350,7 @@ private fun extractP2pTitle(windowText: String): String? {
     val p2pPatterns = listOf(
         Regex("""待(.+?)确认收款"""),
         Regex("""收到(.+?)的红包"""),
+        Regex("""(?:^|\n)([^\n]+?)的红包(?:\n|$)"""),
         Regex("""收到(.+?)的转账"""),
         Regex("""([^\s]+?)向你转账"""),
         Regex("""转账给(.+?)(?:\s|$)"""),
@@ -562,6 +571,7 @@ private val PAYMENT_RECORD_NOISE_CONTAINS = listOf(
     "收款成功",
     "退款成功",
     "红包发送成功",
+    "已存入零钱",
     "扫码支付",
     "碰一碰支付",
     "当前状态"

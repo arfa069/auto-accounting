@@ -1,6 +1,8 @@
 package com.autoaccounting.feature.billsync
 
 import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
+import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
+import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
 import com.autoaccounting.feature.monitoring.hasWechatTransferCompletionContext
 import com.autoaccounting.feature.review.ReviewQueueEntry
 
@@ -8,6 +10,8 @@ internal const val WECHAT_MERCHANT_PAYMENT_ACTIVITY_CLASS =
     "com.tencent.mm.plugin.brandservice.ui.flutter.BizFlutterTLFlutterViewActivity"
 internal const val WECHAT_TRANSFER_RESULT_ACTIVITY_CLASS =
     "com.tencent.mm.framework.app.UIPageFragmentActivity"
+internal const val WECHAT_RED_PACKET_DETAIL_ACTIVITY_CLASS =
+    "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyNewDetailUI"
 internal const val WECHAT_RECENT_NOTIFICATION_WINDOW_MILLIS = 5 * 60_000L
 
 internal data class WechatWindowEvidence(
@@ -24,13 +28,27 @@ internal data class WechatOcrPaymentFingerprint(
     val merchantTitle: String,
     val amountMinor: Long,
     val transactionKindLabel: String,
-    val explicitTransactionTimeText: String?
+    val explicitTransactionTimeText: String?,
+    val isRedPacket: Boolean
 )
 
 internal fun decideWechatOcrCapture(
     pageText: String,
     windowEvidence: WechatWindowEvidence
 ): WechatOcrCaptureDecision {
+    if (
+        hasWechatSentRedPacketSuccessSignature(pageText) ||
+        hasWechatReceivedRedPacketSuccessSignature(pageText)
+    ) {
+        return WechatOcrCaptureDecision(
+            shouldCapture = true,
+            verification = if (isTrustedWechatRedPacketWindow(windowEvidence)) {
+                AutomaticCaptureVerification.Standard
+            } else {
+                AutomaticCaptureVerification.RequireRecentNotification
+            }
+        )
+    }
     if (hasWechatTransferCompletionContext(pageText)) {
         return WechatOcrCaptureDecision(
             shouldCapture = true,
@@ -63,12 +81,18 @@ internal fun isTrustedWechatMerchantPaymentWindow(
 
 internal fun isVerifiedWechatOcrResultActivity(activityClassName: String?): Boolean =
     activityClassName == WECHAT_MERCHANT_PAYMENT_ACTIVITY_CLASS ||
-        activityClassName == WECHAT_TRANSFER_RESULT_ACTIVITY_CLASS
+        activityClassName == WECHAT_TRANSFER_RESULT_ACTIVITY_CLASS ||
+        activityClassName == WECHAT_RED_PACKET_DETAIL_ACTIVITY_CLASS
 
 private fun isTrustedWechatTransferResultWindow(
     windowEvidence: WechatWindowEvidence
 ): Boolean = windowEvidence.isApplicationWindow &&
     windowEvidence.activityClassName == WECHAT_TRANSFER_RESULT_ACTIVITY_CLASS
+
+private fun isTrustedWechatRedPacketWindow(
+    windowEvidence: WechatWindowEvidence
+): Boolean = windowEvidence.isApplicationWindow &&
+    windowEvidence.activityClassName == WECHAT_RED_PACKET_DETAIL_ACTIVITY_CLASS
 
 internal fun wechatOcrPaymentFingerprint(pageText: String): WechatOcrPaymentFingerprint? =
     BillPageParser().parse(
@@ -82,13 +106,31 @@ internal fun wechatOcrPaymentFingerprint(pageText: String): WechatOcrPaymentFing
                 amountMinor = entry.amountMinor,
                 transactionKindLabel = entry.transactionKindLabel,
                 explicitTransactionTimeText = entry.transactionTimeText
-                    .takeUnless { entry.transactionTimeFromFallback }
+                    .takeUnless { entry.transactionTimeFromFallback },
+                isRedPacket = hasWechatSentRedPacketSuccessSignature(pageText) ||
+                    hasWechatReceivedRedPacketSuccessSignature(pageText)
             )
         }
 
 internal val ReviewQueueEntry.hasNotificationCaptureEvidence: Boolean
     get() = captureReasonLabel == "通知捕获" ||
         parsedFields.contains("证据来源=通知捕获")
+
+internal val ReviewQueueEntry.hasAutomaticOcrCaptureEvidence: Boolean
+    get() = captureReasonLabel == "支付结果自动捕获" ||
+        parsedFields.contains("证据来源=支付结果自动捕获")
+
+internal fun ReviewQueueEntry.matchesUnlinkedRecentWechatNotification(
+    fingerprint: WechatOcrPaymentFingerprint,
+    capturedAtEpochMillis: Long
+): Boolean =
+    sourceLabel == BillSyncSource.WeChat.label &&
+        hasNotificationCaptureEvidence &&
+        !hasAutomaticOcrCaptureEvidence &&
+        title.trim().equals(fingerprint.merchantTitle.trim(), ignoreCase = true) &&
+        amountMinor == fingerprint.amountMinor &&
+        kindLabel == fingerprint.transactionKindLabel &&
+        wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
 
 internal fun ReviewQueueEntry.wasCapturedWithinWechatNotificationWindow(
     capturedAtEpochMillis: Long

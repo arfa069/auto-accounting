@@ -4,6 +4,8 @@ import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.dedupe.DedupeEngine
 import com.autoaccounting.feature.dedupe.DedupeMatchLevel
 import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
+import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
+import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
@@ -93,6 +95,18 @@ class BillSyncPipeline(
         val mergedEntries = mutableListOf<ReviewQueueEntry>()
         var pendingEntries = existingPendingEntries
         var ledgerDuplicateCount = 0
+        var persistentRedPacketDuplicateCount = 0
+        val hasWechatRedPacketSuccessSignature =
+            hasWechatSentRedPacketSuccessSignature(pageText) ||
+                hasWechatReceivedRedPacketSuccessSignature(pageText)
+        val isWechatRedPacketAutomaticCapture =
+            source == BillSyncSource.WeChat &&
+                captureReasonLabel == AUTOMATIC_CAPTURE_REASON &&
+                hasWechatRedPacketSuccessSignature
+        val isNotificationVerifiedRedPacket =
+            isWechatRedPacketAutomaticCapture &&
+                automaticCaptureVerification ==
+                AutomaticCaptureVerification.RequireRecentNotification
 
         parsedEntries
             .mapNotNull { parsed ->
@@ -127,8 +141,27 @@ class BillSyncPipeline(
                 )
             }
             .forEach { candidate ->
+                if (
+                    isWechatRedPacketAutomaticCapture &&
+                    !isNotificationVerifiedRedPacket &&
+                    (
+                        pendingEntries.any {
+                            it.hasAutomaticOcrCaptureEvidence &&
+                                it.hasSameStableIdentityAs(candidate)
+                        } ||
+                            existingLedgerEntries.any { it.hasSameStableIdentityAs(candidate) }
+                        )
+                ) {
+                    persistentRedPacketDuplicateCount += 1
+                    return@forEach
+                }
+                val ledgerEntriesForDedupe = if (isNotificationVerifiedRedPacket) {
+                    existingLedgerEntries.filterNot { it.hasSameStableIdentityAs(candidate) }
+                } else {
+                    existingLedgerEntries
+                }
                 val ledgerDedupeResult = DedupeEngine().addCandidate(
-                    existingLedgerEntries,
+                    ledgerEntriesForDedupe,
                     candidate
                 )
                 if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
@@ -142,11 +175,26 @@ class BillSyncPipeline(
                 } else {
                     candidate
                 }
+                val excludedPriorOcrEntries = if (isNotificationVerifiedRedPacket) {
+                    pendingEntries.filter {
+                        it.hasAutomaticOcrCaptureEvidence &&
+                            it.hasSameStableIdentityAs(candidateAfterLedgerCheck)
+                    }
+                } else {
+                    emptyList()
+                }
+                val pendingEntriesForDedupe = if (excludedPriorOcrEntries.isEmpty()) {
+                    pendingEntries
+                } else {
+                    pendingEntries.filterNot { entry ->
+                        excludedPriorOcrEntries.any { excluded -> excluded.id == entry.id }
+                    }
+                }
                 val dedupeResult = DedupeEngine().addCandidate(
-                    pendingEntries,
+                    pendingEntriesForDedupe,
                     candidateAfterLedgerCheck
                 )
-                pendingEntries = dedupeResult.pendingEntries
+                pendingEntries = dedupeResult.pendingEntries + excludedPriorOcrEntries
                 when (dedupeResult.matchLevel) {
                     DedupeMatchLevel.NONE,
                     DedupeMatchLevel.LOW_CONFIDENCE -> {
@@ -163,7 +211,8 @@ class BillSyncPipeline(
                     }
                 }
             }
-        val duplicateSkippedCount = mergedEntries.size + ledgerDuplicateCount
+        val duplicateSkippedCount =
+            mergedEntries.size + ledgerDuplicateCount + persistentRedPacketDuplicateCount
 
         return BillSyncResult(
             steps = successSteps,
@@ -235,9 +284,17 @@ class BillSyncPipeline(
                     transactionTimeText.minutesFrom(existing.transactionTimeText)
                         ?.let { it <= RECENT_NOTIFICATION_WINDOW_MINUTES } == true
                 AutomaticCaptureVerification.RequireRecentNotification ->
-                    existing.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
+                    !existing.hasAutomaticOcrCaptureEvidence &&
+                        existing.title.trim().equals(title.trim(), ignoreCase = true) &&
+                        existing.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
             }
     }
+
+    private fun ReviewQueueEntry.hasSameStableIdentityAs(other: ReviewQueueEntry): Boolean =
+        sourceLabel == other.sourceLabel &&
+            title.trim().equals(other.title.trim(), ignoreCase = true) &&
+            amountMinor == other.amountMinor &&
+            kindLabel == other.kindLabel
 
     private fun String.minutesFrom(other: String): Long? {
         val first = parseTransactionTime(this) ?: return null
