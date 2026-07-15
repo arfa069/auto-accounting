@@ -1,5 +1,7 @@
 # Android 视觉素材需求盘点（v1）
 
+> 历史状态（2026-07-15）：本文记录视觉系统落地前的需求盘点与审核门槛，不再代表当前实现状态。基础导航、分类、“我的”入口、控件和页面壁纸已在代码中落地；当前资源以 `apps/android/src/main/res/`、`AppVisuals.kt`、`AppControls.kt` 与 `AutoAccountingTheme.kt` 为准。未进入当前 checkout 的后续评审方案不计入已交付素材。
+
 ## 盘点依据
 
 - 产品与视觉规范：`docs/PRD.md`、`docs/UI-DESIGN.md`。

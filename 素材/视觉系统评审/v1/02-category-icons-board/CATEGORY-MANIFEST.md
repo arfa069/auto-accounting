@@ -1,5 +1,7 @@
 # 分类图标扩展清单（v1 评审）
 
+> 历史状态（2026-07-15）：本文保留分类评审板的读取顺序和视觉约束。评审素材已经转为 Android 资源并接入分类展示；当前分类集合以 `DefaultCategories.systemDefaults(...)` 为准，分类到图像的映射以 `AppVisuals.categoryArtworkRes()` 为准。
+
 ## 范围
 
 - 来源：`支出1.jpg`、`支出2.jpg`、`支出3.jpg`、`支出4.jpg`、`收入.jpg`。
