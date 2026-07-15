@@ -76,6 +76,7 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealt
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.ui.visual.CategoryArtwork
+import com.autoaccounting.ui.components.HomeReturnButton
 import kotlin.math.abs
 
 @Composable
@@ -97,7 +98,8 @@ fun ReviewQueueScreen(
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
+    onNavigateHome: () -> Unit = {}
 ) {
     var state by remember { mutableStateOf(initialState) }
     ReviewQueueScreen(
@@ -116,7 +118,8 @@ fun ReviewQueueScreen(
         billSyncSessionController = billSyncSessionController,
         continuousMonitoringState = continuousMonitoringState,
         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange
+        onContinuousMonitoringStateChange = onContinuousMonitoringStateChange,
+        onNavigateHome = onNavigateHome
     )
 }
 
@@ -138,7 +141,8 @@ fun ReviewQueueScreen(
     continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {}
+    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
+    onNavigateHome: () -> Unit = {}
 ) {
     var editingEntry by remember { mutableStateOf<ReviewQueueEntry?>(null) }
     var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
@@ -252,6 +256,7 @@ fun ReviewQueueScreen(
             onDismissContinuousMonitoringPrompt = {
                 showPostBillSyncMonitoringPrompt = false
             },
+            onNavigateHome = onNavigateHome,
             modifier = Modifier.padding(innerPadding)
         )
     }
@@ -363,6 +368,7 @@ private fun ReviewQueueContent(
     showPostBillSyncMonitoringPrompt: Boolean,
     onEnableContinuousMonitoring: () -> Unit,
     onDismissContinuousMonitoringPrompt: () -> Unit,
+    onNavigateHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sortedEntries = state.sortedPendingEntries
@@ -379,7 +385,7 @@ private fun ReviewQueueContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "待确认队列",
                     style = MaterialTheme.typography.headlineSmall,
@@ -390,8 +396,14 @@ private fun ReviewQueueContent(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            OutlinedButton(onClick = onShowIgnoredList) {
-                Text("忽略列表")
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onShowIgnoredList) {
+                    Text("忽略列表")
+                }
+                HomeReturnButton(onClick = onNavigateHome)
             }
         }
 

@@ -28,10 +28,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import com.autoaccounting.ui.components.FloatingActionButton
+import com.autoaccounting.ui.components.HomeReturnButton
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
+import com.autoaccounting.ui.components.SlidePageTransition
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -74,12 +75,12 @@ fun LedgerScreen(
     deletedEntries: List<LedgerUiEntry> = emptyList(),
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
-    onCreateEntry: suspend (LedgerEntryInput) -> Unit = {},
     onUpdateEntry: suspend (String, LedgerEntryInput) -> Unit = { _, _ -> },
     onDeleteEntry: suspend (String) -> Unit = {},
     onRestoreEntry: suspend (String) -> Unit = {},
     onPermanentlyDeleteEntry: suspend (String) -> Unit = {},
     onPurgeExpiredEntries: suspend () -> Unit = {},
+    onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var view by remember { mutableStateOf(LedgerView.LIST) }
@@ -87,6 +88,7 @@ fun LedgerScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val selectedEntry = entries.firstOrNull { it.id == selectedEntryId }
+    val page = LedgerPage(view, selectedEntryId)
 
     BackHandler(enabled = view == LedgerView.DETAIL || view == LedgerView.DELETED) {
         view = LedgerView.LIST
@@ -99,26 +101,39 @@ fun LedgerScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        when (view) {
-            LedgerView.LIST -> LedgerList(
-                entries = entries,
-                onEntryClick = {
-                    selectedEntryId = it
-                    view = LedgerView.DETAIL
-                },
-                onCreateClick = { view = LedgerView.CREATE },
-                onRecentlyDeletedClick = { view = LedgerView.DELETED }
-            )
+    LaunchedEffect(view, selectedEntryId, selectedEntry) {
+        if (
+            (view == LedgerView.DETAIL || view == LedgerView.EDIT) &&
+            selectedEntryId != null &&
+            selectedEntry == null
+        ) {
+            view = LedgerView.LIST
+            selectedEntryId = null
+        }
+    }
 
-            LedgerView.DETAIL -> {
-                if (selectedEntry == null) {
-                    view = LedgerView.LIST
-                } else {
+    Box(modifier = modifier.fillMaxSize()) {
+        SlidePageTransition(
+            targetState = page,
+            modifier = Modifier.fillMaxSize()
+        ) { targetPage ->
+            val targetEntry = entries.firstOrNull { it.id == targetPage.selectedEntryId }
+            when (targetPage.view) {
+                LedgerView.LIST -> LedgerList(
+                    entries = entries,
+                    onEntryClick = {
+                        selectedEntryId = it
+                        view = LedgerView.DETAIL
+                    },
+                    onRecentlyDeletedClick = { view = LedgerView.DELETED },
+                    onNavigateHome = onNavigateHome
+                )
+
+                LedgerView.DETAIL -> targetEntry?.let { entry ->
                     LedgerEntryDetail(
-                        entry = selectedEntry,
+                        entry = entry,
                         fundingAccountLabel = fundingAccounts
-                            .firstOrNull { it.id == selectedEntry.fundingAccountId }
+                            .firstOrNull { it.id == entry.fundingAccountId }
                             ?.label,
                         onBack = {
                             selectedEntryId = null
@@ -127,7 +142,7 @@ fun LedgerScreen(
                         onEdit = { view = LedgerView.EDIT },
                         onDelete = {
                             scope.launch {
-                                runCatching { onDeleteEntry(selectedEntry.id) }
+                                runCatching { onDeleteEntry(entry.id) }
                                     .onSuccess {
                                         selectedEntryId = null
                                         view = LedgerView.LIST
@@ -136,7 +151,7 @@ fun LedgerScreen(
                                             actionLabel = "撤销"
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
-                                            onRestoreEntry(selectedEntry.id)
+                                            onRestoreEntry(entry.id)
                                         }
                                     }
                                     .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
@@ -144,56 +159,39 @@ fun LedgerScreen(
                         }
                     )
                 }
-            }
 
-            LedgerView.CREATE -> LedgerEntryForm(
-                title = "新增一笔",
-                initial = LedgerEntryFormState.newEntry(),
-                categories = categories,
-                fundingAccounts = fundingAccounts,
-                onExit = { view = LedgerView.LIST },
-                onSave = { input ->
-                    onCreateEntry(input)
-                    view = LedgerView.LIST
-                },
-                snackbarHostState = snackbarHostState
-            )
-
-            LedgerView.EDIT -> {
-                if (selectedEntry == null) {
-                    view = LedgerView.LIST
-                } else {
+                LedgerView.EDIT -> targetEntry?.let { entry ->
                     LedgerEntryForm(
                         title = "编辑账目",
-                        initial = LedgerEntryFormState.from(selectedEntry),
+                        initial = LedgerEntryFormState.from(entry),
                         categories = categories,
                         fundingAccounts = fundingAccounts,
                         onExit = { view = LedgerView.DETAIL },
                         onSave = { input ->
-                            onUpdateEntry(selectedEntry.id, input)
+                            onUpdateEntry(entry.id, input)
                             view = LedgerView.DETAIL
                         },
                         snackbarHostState = snackbarHostState
                     )
                 }
-            }
 
-            LedgerView.DELETED -> RecentlyDeletedScreen(
-                entries = deletedEntries,
-                onBack = { view = LedgerView.LIST },
-                onRestore = { id ->
-                    scope.launch {
-                        runCatching { onRestoreEntry(id) }
-                            .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                LedgerView.DELETED -> RecentlyDeletedScreen(
+                    entries = deletedEntries,
+                    onBack = { view = LedgerView.LIST },
+                    onRestore = { id ->
+                        scope.launch {
+                            runCatching { onRestoreEntry(id) }
+                                .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                        }
+                    },
+                    onPermanentlyDelete = { id ->
+                        scope.launch {
+                            runCatching { onPermanentlyDeleteEntry(id) }
+                                .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                        }
                     }
-                },
-                onPermanentlyDelete = { id ->
-                    scope.launch {
-                        runCatching { onPermanentlyDeleteEntry(id) }
-                            .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
-                    }
-                }
-            )
+                )
+            }
         }
 
         SnackbarHost(
@@ -207,8 +205,8 @@ fun LedgerScreen(
 private fun LedgerList(
     entries: List<LedgerUiEntry>,
     onEntryClick: (String) -> Unit,
-    onCreateClick: () -> Unit,
-    onRecentlyDeletedClick: () -> Unit
+    onRecentlyDeletedClick: () -> Unit,
+    onNavigateHome: () -> Unit
 ) {
     var searchText by remember { mutableStateOf("") }
     var showFilters by remember { mutableStateOf(false) }
@@ -249,17 +247,20 @@ private fun LedgerList(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("本地账本", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Box {
-                    TextButton(onClick = { showMenu = true }) { Text("更多") }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("最近删除") },
-                            onClick = {
-                                showMenu = false
-                                onRecentlyDeletedClick()
-                            }
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        TextButton(onClick = { showMenu = true }) { Text("更多") }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("最近删除") },
+                                onClick = {
+                                    showMenu = false
+                                    onRecentlyDeletedClick()
+                                }
+                            )
+                        }
                     }
+                    HomeReturnButton(onClick = onNavigateHome)
                 }
             }
             LedgerSummary(summary)
@@ -291,14 +292,7 @@ private fun LedgerList(
             } else {
                 filteredEntries.forEach { entry -> LedgerEntryRow(entry) { onEntryClick(entry.id) } }
             }
-            Spacer(Modifier.size(72.dp))
         }
-        FloatingActionButton(
-            onClick = onCreateClick,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-        ) { Text("+") }
     }
 }
 
@@ -445,10 +439,14 @@ internal fun <T> SelectionMenu(
 private enum class LedgerView {
     LIST,
     DETAIL,
-    CREATE,
     EDIT,
     DELETED
 }
+
+private data class LedgerPage(
+    val view: LedgerView,
+    val selectedEntryId: String?
+)
 
 internal data class LedgerEntryFormState(
     val flowDirection: FlowDirection,

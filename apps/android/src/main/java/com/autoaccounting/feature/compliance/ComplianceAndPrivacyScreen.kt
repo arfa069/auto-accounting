@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import com.autoaccounting.feature.beta.InternalBetaReadinessScreen
+import com.autoaccounting.ui.components.SlidePageTransition
 
 enum class ComplianceMaterialPage(val title: String) {
     PrivacyPolicy("隐私政策"),
@@ -49,49 +50,60 @@ fun ComplianceAndPrivacyScreen(
         showDeveloperTools = false
     }
 
-    selectedPage?.let { page ->
-        ComplianceMaterialDetailScreen(
-            page = page,
-            materials = materials,
-            onBack = { selectedPage = null },
-            modifier = modifier
-        )
-        return
-    }
-    if (showDeveloperTools) {
-        DeveloperToolsScreen(
-            onBack = { showDeveloperTools = false },
-            modifier = modifier
-        )
-        return
-    }
+    val page = selectedPage?.let(CompliancePage::Material)
+        ?: if (showDeveloperTools) CompliancePage.DeveloperTools else CompliancePage.Overview
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        TextButton(onClick = onBack) { Text("返回") }
-        Text("合规与隐私", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("以下材料在本地模式和账号模式均可查阅。")
-        ComplianceMaterialPage.entries.forEach { page ->
-            EntryCard(
-                title = page.title,
-                tag = "compliance-entry-${page.name}",
-                onClick = { selectedPage = page }
+    SlidePageTransition(
+        targetState = page,
+        modifier = modifier.fillMaxSize()
+    ) { targetPage ->
+        when (targetPage) {
+            is CompliancePage.Material -> ComplianceMaterialDetailScreen(
+                page = targetPage.page,
+                materials = materials,
+                onBack = { selectedPage = null }
             )
-        }
-        if (isDebugBuild) {
-            EntryCard(
-                title = "开发者工具",
-                summary = "内测日志、设备矩阵、权限留存和质量指标",
-                tag = "developer-tools-entry",
-                onClick = { showDeveloperTools = true }
+
+            CompliancePage.DeveloperTools -> DeveloperToolsScreen(
+                onBack = { showDeveloperTools = false }
             )
+
+            CompliancePage.Overview -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TextButton(onClick = onBack) { Text("返回") }
+                Text("合规与隐私", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("以下材料在本地模式和账号模式均可查阅。")
+                ComplianceMaterialPage.entries.forEach { materialPage ->
+                    EntryCard(
+                        title = materialPage.title,
+                        tag = "compliance-entry-${materialPage.name}",
+                        onClick = { selectedPage = materialPage }
+                    )
+                }
+                if (isDebugBuild) {
+                    EntryCard(
+                        title = "开发者工具",
+                        summary = "内测日志、设备矩阵、权限留存和质量指标",
+                        tag = "developer-tools-entry",
+                        onClick = { showDeveloperTools = true }
+                    )
+                }
+            }
         }
     }
+}
+
+private sealed interface CompliancePage {
+    data object Overview : CompliancePage
+
+    data class Material(val page: ComplianceMaterialPage) : CompliancePage
+
+    data object DeveloperTools : CompliancePage
 }
 
 @Composable

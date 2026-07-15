@@ -96,7 +96,7 @@ Detail page:
 Ledger tab:
 - Monthly grouped transaction list.
 - Top monthly summary shows monthly expense, monthly income, and net amount.
-- A prominent floating add button opens the manual-entry form.
+- The centered add action in the home bottom navigation opens the manual-entry form.
 - The review queue does not expose manual ledger-entry creation.
 
 Ledger row:
@@ -253,7 +253,9 @@ Compact copy:
 ## 6. UI Scope
 
 Main navigation:
-- Four bottom tabs: review queue, ledger, reports, profile.
+- The home bottom navigation exposes four destinations: review queue, ledger, reports, and profile.
+- A raised centered add action opens manual ledger-entry creation; it is an action, not a fifth destination.
+- Destination screens hide the bottom navigation and expose an explicit return-to-home action.
 
 Onboarding:
 - Progressive onboarding.

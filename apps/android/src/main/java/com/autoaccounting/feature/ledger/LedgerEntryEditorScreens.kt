@@ -30,6 +30,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import com.autoaccounting.ui.components.TextButton
@@ -121,6 +122,34 @@ internal fun LedgerEntryDetail(
                 ) { Text("移入最近删除") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+internal fun ManualLedgerEntryScreen(
+    categories: List<CategoryEntity>,
+    fundingAccounts: List<FundingAccountEntity>,
+    onExit: () -> Unit,
+    onCreateEntry: suspend (LedgerEntryInput) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val initial = remember { LedgerEntryFormState.newEntry() }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        LedgerEntryForm(
+            title = "新增一笔",
+            initial = initial,
+            categories = categories,
+            fundingAccounts = fundingAccounts,
+            onExit = onExit,
+            onSave = onCreateEntry,
+            snackbarHostState = snackbarHostState
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
 }

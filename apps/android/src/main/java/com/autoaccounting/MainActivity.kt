@@ -10,18 +10,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,8 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.CategoryEntity
@@ -58,8 +50,10 @@ import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.capture.shouldRequestBookkeepingResultNotificationPermission
+import com.autoaccounting.feature.home.HomeScreen
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
+import com.autoaccounting.feature.ledger.ManualLedgerEntryScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
@@ -80,6 +74,9 @@ import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import com.autoaccounting.feature.settings.DataAndBackupScreen
+import com.autoaccounting.ui.components.AppBottomNavigationBar
+import com.autoaccounting.ui.components.AppBottomNavigationItem
+import com.autoaccounting.ui.components.SlidePageTransition
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
 import kotlinx.coroutines.launch
@@ -291,7 +288,15 @@ fun AutoAccountingApp(
         AppTab.Reports,
         AppTab.Profile
     )
-    var selectedTab by remember { mutableStateOf(AppTab.Review) }
+    val bottomNavigationItems = tabs.map { tab ->
+        AppBottomNavigationItem(
+            key = tab.name,
+            label = tab.label,
+            iconRes = tab.iconRes
+        )
+    }
+    var selectedTab by remember { mutableStateOf<AppTab?>(null) }
+    var manualEntryOpen by remember { mutableStateOf(false) }
     var profileDestination by remember { mutableStateOf<ProfileDestination?>(null) }
     var accountSession by remember(localModeSessionStore) {
         mutableStateOf(localModeSessionStore.restoreSession())
@@ -422,220 +427,265 @@ fun AutoAccountingApp(
     val snackbarHostState = remember { SnackbarHostState() }
 
     AutoAccountingTheme {
-        val activeAccountSession = accountSession
-        if (activeAccountSession == null) {
-            AppWallpaper(R.drawable.aa_bg_account) {
-                AccountScreen(
-                    onSessionChange = { session ->
-                        if (session == AccountSession.LocalMode) {
-                            localModeSessionStore.confirmLocalMode()
+        SlidePageTransition(
+            targetState = accountSession,
+            modifier = Modifier.fillMaxSize()
+        ) { activeAccountSession ->
+            if (activeAccountSession == null) {
+                AppWallpaper(R.drawable.aa_bg_account) {
+                    AccountScreen(
+                        onSessionChange = { session ->
+                            if (session == AccountSession.LocalMode) {
+                                localModeSessionStore.confirmLocalMode()
+                            }
+                            accountSession = session
+                            selectedTab = if (reviewNavigationRequest > 0) AppTab.Review else null
+                            profileDestination = null
                         }
-                        accountSession = session
-                    }
-                )
-            }
-            return@AutoAccountingTheme
-        }
-
-        BackHandler(
-            enabled = selectedTab == AppTab.Profile && profileDestination != null
-        ) {
-            profileDestination = null
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color.Transparent
-        ) {
-            Scaffold(
-                containerColor = Color.Transparent,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-                bottomBar = {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                        tonalElevation = 0.dp
-                    ) {
-                        tabs.forEach { tab ->
-                            NavigationBarItem(
-                                selected = selectedTab == tab,
-                                onClick = {
-                                    selectedTab = tab
-                                    profileDestination = null
-                                },
-                                modifier = Modifier.testTag("app-tab-${tab.name}"),
-                                icon = {
-                                    Image(
-                                        painter = painterResource(tab.iconRes),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(28.dp)
-                                    )
-                                },
-                                label = { Text(tab.label) }
-                            )
-                        }
-                    }
+                    )
                 }
-            ) { innerPadding ->
-                val wallpaperRes = if (
-                    selectedTab == AppTab.Profile && profileDestination != null
+            } else {
+                BackHandler(
+                    enabled = selectedTab == AppTab.Profile && profileDestination != null
                 ) {
-                    R.drawable.aa_bg_neutral
-                } else {
-                    selectedTab.backgroundRes
+                    profileDestination = null
                 }
-                AppWallpaper(wallpaperRes) {
-                    when (selectedTab) {
-                    AppTab.Review -> ReviewQueueScreen(
-                        state = reviewState,
-                        onStateChange = ::persistReviewState,
-                        modifier = Modifier.padding(innerPadding),
-                        onCategorizationRuleRequested = { rule ->
-                            persistCategorizationRules(categorizationRules.upsert(rule))
-                        },
-                        accountSession = accountSession,
-                        aiSettings = if (accountDeletionState.cloudWritesAllowed) {
-                            aiSettings
-                        } else {
-                            AiCategorizationSettings()
-                        },
-                        aiCategorizationGateway = DemoAiCategorizationGateway,
-                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                        onLaunchBillSyncSource = onLaunchBillSyncSource,
-                        openPendingEntryId = pendingEntryNavigationId,
-                        openPendingEntryRequestId = reviewNavigationRequest,
-                        continuousMonitoringState = continuousMonitoringState,
-                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
-                    )
 
-                    AppTab.Ledger -> LedgerScreen(
-                        entries = ledgerEntries,
-                        deletedEntries = deletedLedgerEntries,
-                        categories = ledgerCategories,
-                        fundingAccounts = fundingAccounts,
-                        onCreateEntry = { input ->
-                            localLedgerRepository.createManualEntry(input)
-                        },
-                        onUpdateEntry = { id, input ->
-                            localLedgerRepository.updateLedgerEntry(id, input)
-                        },
-                        onDeleteEntry = { id ->
-                            localLedgerRepository.moveLedgerEntryToDeleted(id)
-                        },
-                        onRestoreEntry = { id ->
-                            localLedgerRepository.restoreDeletedLedgerEntry(id)
-                        },
-                        onPermanentlyDeleteEntry = { id ->
-                            localLedgerRepository.permanentlyDeleteLedgerEntry(id)
-                        },
-                        onPurgeExpiredEntries = {
-                            localLedgerRepository.purgeExpiredDeletedLedgerEntries()
-                        },
-                        modifier = Modifier.padding(innerPadding)
-                    )
-
-                    AppTab.Reports -> ReportsScreen(
-                        entries = ledgerEntries,
-                        modifier = Modifier.padding(innerPadding)
-                    )
-
-                        AppTab.Profile -> when (val destination = profileDestination) {
-                        null -> ProfileOverviewScreen(
-                            session = activeAccountSession,
-                            onDestinationSelected = { profileDestination = it },
-                            modifier = Modifier.padding(innerPadding)
-                        )
-
-                        ProfileDestination.AccountManagement -> AccountManagementScreen(
-                            session = activeAccountSession,
-                            deletionState = accountDeletionState,
-                            onSignInOrRegister = {
-                                profileDestination = null
-                                accountSession = null
-                            },
-                            onSignOut = {
-                                accountSession = signOutToLocalMode(localModeSessionStore)
-                                profileDestination = null
-                            },
-                            onDeletionStateChange = { accountDeletionState = it },
-                            onBack = { profileDestination = null },
-                            modifier = Modifier.padding(innerPadding)
-                        )
-
-                        ProfileDestination.AutomaticBookkeeping -> AutomaticBookkeepingScreen(
-                            notificationListenerAccessGranted = notificationListenerAccessGranted,
-                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
-                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
-                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
-                            backgroundReliabilityState = backgroundReliabilityState,
-                            onOpenBackgroundRunningSettings = onOpenBackgroundRunningSettings,
-                            onOpenAutoStartSettings = onOpenAutoStartSettings,
-                            onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
-                            onOpenBatterySaverSettings = onOpenBatterySaverSettings,
-                            continuousMonitoringState = continuousMonitoringState,
-                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
-                            onStartManualBillSync = { source ->
-                                startManualBillSync(
-                                    source = source,
-                                    launchSource = onLaunchBillSyncSource
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color.Transparent
+                ) {
+                    Scaffold(
+                        containerColor = Color.Transparent,
+                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        bottomBar = {
+                            if (selectedTab == null) {
+                                AppBottomNavigationBar(
+                                    items = bottomNavigationItems,
+                                    selectedKey = null,
+                                    onItemSelected = { key ->
+                                        if (!manualEntryOpen) {
+                                            selectedTab = tabs.first { it.name == key }
+                                            profileDestination = null
+                                        }
+                                    },
+                                    onAddEntry = {
+                                        if (!manualEntryOpen) {
+                                            manualEntryOpen = true
+                                        }
+                                    },
+                                    enabled = !manualEntryOpen
                                 )
+                            }
+                        }
+                    ) { innerPadding ->
+                        val route = AppRoute(
+                            tab = selectedTab,
+                            profileDestination = profileDestination.takeIf {
+                                selectedTab == AppTab.Profile
                             },
-                            onBack = { profileDestination = null },
-                            modifier = Modifier.padding(innerPadding)
+                            manualEntryOpen = manualEntryOpen
                         )
+                        SlidePageTransition(
+                            targetState = route,
+                            modifier = Modifier.fillMaxSize()
+                        ) { targetRoute ->
+                            val wallpaperRes = when {
+                                targetRoute.manualEntryOpen -> R.drawable.aa_bg_ledger
+                                targetRoute.tab == null -> R.drawable.aa_bg_account
+                                targetRoute.profileDestination != null -> R.drawable.aa_bg_neutral
+                                else -> targetRoute.tab.backgroundRes
+                            }
+                            AppWallpaper(wallpaperRes) {
+                                if (targetRoute.manualEntryOpen) {
+                                    ManualLedgerEntryScreen(
+                                        categories = ledgerCategories,
+                                        fundingAccounts = fundingAccounts,
+                                        onExit = { manualEntryOpen = false },
+                                        onCreateEntry = { input ->
+                                            localLedgerRepository.createManualEntry(input)
+                                            manualEntryOpen = false
+                                            selectedTab = AppTab.Ledger
+                                            profileDestination = null
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(innerPadding)
+                                    )
+                                } else {
+                                    when (targetRoute.tab) {
+                                    null -> HomeScreen(
+                                        modifier = Modifier.padding(innerPadding)
+                                    )
 
-                        ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
-                            rules = categorizationRules,
-                            onRulesChange = ::persistCategorizationRules,
-                            aiSettings = aiSettings,
-                            onAiSettingsChange = ::persistAiSettings,
-                            accountSession = activeAccountSession,
-                            accountDeletionState = accountDeletionState,
-                            onBack = { profileDestination = null },
-                            modifier = Modifier.padding(innerPadding)
-                        )
+                                    AppTab.Review -> ReviewQueueScreen(
+                                        state = reviewState,
+                                        onStateChange = ::persistReviewState,
+                                        modifier = Modifier.padding(innerPadding),
+                                        onCategorizationRuleRequested = { rule ->
+                                            persistCategorizationRules(categorizationRules.upsert(rule))
+                                        },
+                                        accountSession = accountSession,
+                                        aiSettings = if (accountDeletionState.cloudWritesAllowed) {
+                                            aiSettings
+                                        } else {
+                                            AiCategorizationSettings()
+                                        },
+                                        aiCategorizationGateway = DemoAiCategorizationGateway,
+                                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                                        onLaunchBillSyncSource = onLaunchBillSyncSource,
+                                        openPendingEntryId = pendingEntryNavigationId,
+                                        openPendingEntryRequestId = reviewNavigationRequest,
+                                        continuousMonitoringState = continuousMonitoringState,
+                                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
+                                        onNavigateHome = {
+                                            selectedTab = null
+                                            profileDestination = null
+                                        }
+                                    )
 
-                        ProfileDestination.DataAndBackup -> DataAndBackupScreen(
-                            ledgerEntries = ledgerEntries,
-                            onExportEncryptedBackup = { passphrase ->
-                                localDataBackupRepository.exportEncryptedBackup(passphrase)
-                            },
-                            onValidateEncryptedBackup = { backup, passphrase ->
-                                localDataBackupRepository.validateEncryptedBackup(backup, passphrase)
-                            },
-                            onImportEncryptedBackup = { backup, passphrase ->
-                                localDataBackupRepository.importEncryptedBackup(backup, passphrase)
-                                reviewState = ReviewQueueState()
-                            },
-                            onDeleteLocalData = {
-                                reviewState = ReviewQueueState()
-                                categorizationRules = emptyList()
-                                aiSettings = AiCategorizationSettings()
-                                continuousMonitoringState = ContinuousMonitoringState()
-                                ledgerEntries = emptyList()
-                                deletedLedgerEntries = emptyList()
-                                ledgerCategories = emptyList()
-                                fundingAccounts = emptyList()
-                                coroutineScope.launch {
-                                    localLedgerRepository.clearLocalData()
-                                    localPreferencesRepository.clearLocalData()
+                                    AppTab.Ledger -> LedgerScreen(
+                                        entries = ledgerEntries,
+                                        deletedEntries = deletedLedgerEntries,
+                                        categories = ledgerCategories,
+                                        fundingAccounts = fundingAccounts,
+                                        onUpdateEntry = { id, input ->
+                                            localLedgerRepository.updateLedgerEntry(id, input)
+                                        },
+                                        onDeleteEntry = { id ->
+                                            localLedgerRepository.moveLedgerEntryToDeleted(id)
+                                        },
+                                        onRestoreEntry = { id ->
+                                            localLedgerRepository.restoreDeletedLedgerEntry(id)
+                                        },
+                                        onPermanentlyDeleteEntry = { id ->
+                                            localLedgerRepository.permanentlyDeleteLedgerEntry(id)
+                                        },
+                                        onPurgeExpiredEntries = {
+                                            localLedgerRepository.purgeExpiredDeletedLedgerEntries()
+                                        },
+                                        onNavigateHome = {
+                                            selectedTab = null
+                                            profileDestination = null
+                                        },
+                                        modifier = Modifier.padding(innerPadding)
+                                    )
+
+                                    AppTab.Reports -> ReportsScreen(
+                                        entries = ledgerEntries,
+                                        onNavigateHome = {
+                                            selectedTab = null
+                                            profileDestination = null
+                                        },
+                                        modifier = Modifier.padding(innerPadding)
+                                    )
+
+                                    AppTab.Profile -> when (val destination = targetRoute.profileDestination) {
+                                        null -> ProfileOverviewScreen(
+                                            session = activeAccountSession,
+                                            onDestinationSelected = { profileDestination = it },
+                                            onNavigateHome = {
+                                                selectedTab = null
+                                                profileDestination = null
+                                            },
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        ProfileDestination.AccountManagement -> AccountManagementScreen(
+                                            session = activeAccountSession,
+                                            deletionState = accountDeletionState,
+                                            onSignInOrRegister = {
+                                                profileDestination = null
+                                                accountSession = null
+                                            },
+                                            onSignOut = {
+                                                accountSession = signOutToLocalMode(localModeSessionStore)
+                                                profileDestination = null
+                                            },
+                                            onDeletionStateChange = { accountDeletionState = it },
+                                            onBack = { profileDestination = null },
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        ProfileDestination.AutomaticBookkeeping -> AutomaticBookkeepingScreen(
+                                            notificationListenerAccessGranted = notificationListenerAccessGranted,
+                                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+                                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+                                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
+                                            backgroundReliabilityState = backgroundReliabilityState,
+                                            onOpenBackgroundRunningSettings = onOpenBackgroundRunningSettings,
+                                            onOpenAutoStartSettings = onOpenAutoStartSettings,
+                                            onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
+                                            onOpenBatterySaverSettings = onOpenBatterySaverSettings,
+                                            continuousMonitoringState = continuousMonitoringState,
+                                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
+                                            onStartManualBillSync = { source ->
+                                                startManualBillSync(
+                                                    source = source,
+                                                    launchSource = onLaunchBillSyncSource
+                                                )
+                                            },
+                                            onBack = { profileDestination = null },
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
+                                            rules = categorizationRules,
+                                            onRulesChange = ::persistCategorizationRules,
+                                            aiSettings = aiSettings,
+                                            onAiSettingsChange = ::persistAiSettings,
+                                            accountSession = activeAccountSession,
+                                            accountDeletionState = accountDeletionState,
+                                            onBack = { profileDestination = null },
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        ProfileDestination.DataAndBackup -> DataAndBackupScreen(
+                                            ledgerEntries = ledgerEntries,
+                                            onExportEncryptedBackup = { passphrase ->
+                                                localDataBackupRepository.exportEncryptedBackup(passphrase)
+                                            },
+                                            onValidateEncryptedBackup = { backup, passphrase ->
+                                                localDataBackupRepository.validateEncryptedBackup(backup, passphrase)
+                                            },
+                                            onImportEncryptedBackup = { backup, passphrase ->
+                                                localDataBackupRepository.importEncryptedBackup(backup, passphrase)
+                                                reviewState = ReviewQueueState()
+                                            },
+                                            onDeleteLocalData = {
+                                                reviewState = ReviewQueueState()
+                                                categorizationRules = emptyList()
+                                                aiSettings = AiCategorizationSettings()
+                                                continuousMonitoringState = ContinuousMonitoringState()
+                                                ledgerEntries = emptyList()
+                                                deletedLedgerEntries = emptyList()
+                                                ledgerCategories = emptyList()
+                                                fundingAccounts = emptyList()
+                                                coroutineScope.launch {
+                                                    localLedgerRepository.clearLocalData()
+                                                    localPreferencesRepository.clearLocalData()
+                                                }
+                                            },
+                                            onBack = { profileDestination = null },
+                                            snackbarHostState = snackbarHostState,
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        ProfileDestination.ComplianceAndPrivacy -> ComplianceAndPrivacyScreen(
+                                            isDebugBuild = BuildConfig.DEBUG,
+                                            onBack = { profileDestination = null },
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                    }
                                 }
-                            },
-                            onBack = { profileDestination = null },
-                            snackbarHostState = snackbarHostState,
-                            modifier = Modifier.padding(innerPadding)
-                        )
-
-                        ProfileDestination.ComplianceAndPrivacy -> ComplianceAndPrivacyScreen(
-                            isDebugBuild = BuildConfig.DEBUG,
-                            onBack = { profileDestination = null },
-                            modifier = Modifier.padding(innerPadding)
-                        )
-
+                                }
+                            }
                         }
                     }
                 }
@@ -669,25 +719,31 @@ private enum class AppTab(
 ) {
     Review(
         label = "待确认",
-        iconRes = R.drawable.aa_nav_review_art,
+        iconRes = R.drawable.aa_nav_review_outlined,
         backgroundRes = R.drawable.aa_bg_review
     ),
     Ledger(
         label = "账本",
-        iconRes = R.drawable.aa_nav_ledger_art,
+        iconRes = R.drawable.aa_nav_ledger_outlined,
         backgroundRes = R.drawable.aa_bg_ledger
     ),
     Reports(
         label = "报表",
-        iconRes = R.drawable.aa_nav_reports_art,
+        iconRes = R.drawable.aa_nav_reports_outlined,
         backgroundRes = R.drawable.aa_bg_reports
     ),
     Profile(
         label = "我的",
-        iconRes = R.drawable.aa_nav_profile_art,
+        iconRes = R.drawable.aa_nav_profile_outlined,
         backgroundRes = R.drawable.aa_bg_profile
     )
 }
+
+private data class AppRoute(
+    val tab: AppTab?,
+    val profileDestination: ProfileDestination?,
+    val manualEntryOpen: Boolean
+)
 
 private fun List<CategorizationRule>.upsert(rule: CategorizationRule): List<CategorizationRule> {
     return if (any { it.id == rule.id }) {

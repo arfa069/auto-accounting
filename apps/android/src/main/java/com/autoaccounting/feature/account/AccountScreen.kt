@@ -21,6 +21,7 @@ import com.autoaccounting.ui.components.Checkbox
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
+import com.autoaccounting.ui.components.SlidePageTransition
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -86,60 +87,74 @@ fun AccountScreen(
         }
     }
 
-    if (showComplianceMaterials) {
-        ComplianceMaterialsScreen(
-            modifier = modifier,
-            onBack = { showComplianceMaterials = false }
-        )
-        return
+    val page = if (showComplianceMaterials) {
+        AccountPage.Compliance
+    } else {
+        AccountPage.Flow(state.flow)
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            color = Color.Transparent
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                AccountHeader()
+    SlidePageTransition(
+        targetState = page,
+        modifier = modifier.fillMaxSize()
+    ) { targetPage ->
+        when (targetPage) {
+            AccountPage.Compliance -> ComplianceMaterialsScreen(
+                onBack = { showComplianceMaterials = false }
+            )
 
-                when (state.flow) {
-                    AccountFlow.Landing -> LandingContent(
-                        state = state,
-                        onAction = ::dispatch,
-                        onComplianceClick = { showComplianceMaterials = true }
-                    )
-                    AccountFlow.Login -> LoginContent(
-                        state = state,
-                        onAction = ::dispatch
-                    )
-                    AccountFlow.Register -> RegisterContent(
-                        state = state,
-                        onAction = ::dispatch
-                    )
-                    AccountFlow.Recovery -> RecoveryContent(
-                        state = state,
-                        onAction = ::dispatch
-                    )
-                    AccountFlow.LocalModeExplanation -> LocalModeExplanation(
-                        onAction = ::dispatch
-                    )
+            is AccountPage.Flow -> Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
+                snackbarHost = { SnackbarHost(snackbarHostState) }
+            ) { innerPadding ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    color = Color.Transparent
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        AccountHeader()
+
+                        when (targetPage.flow) {
+                            AccountFlow.Landing -> LandingContent(
+                                state = state,
+                                onAction = ::dispatch,
+                                onComplianceClick = { showComplianceMaterials = true }
+                            )
+                            AccountFlow.Login -> LoginContent(
+                                state = state,
+                                onAction = ::dispatch
+                            )
+                            AccountFlow.Register -> RegisterContent(
+                                state = state,
+                                onAction = ::dispatch
+                            )
+                            AccountFlow.Recovery -> RecoveryContent(
+                                state = state,
+                                onAction = ::dispatch
+                            )
+                            AccountFlow.LocalModeExplanation -> LocalModeExplanation(
+                                onAction = ::dispatch
+                            )
+                        }
+                    }
                 }
-
             }
         }
     }
+}
+
+private sealed interface AccountPage {
+    data class Flow(val flow: AccountFlow) : AccountPage
+
+    data object Compliance : AccountPage
 }
 
 private fun AccountUiState.submitSmsCodeRequestIfValid(

@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.autoaccounting.ui.components.Button
+import com.autoaccounting.ui.components.HomeReturnButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,7 @@ enum class ProfileDestination(
 fun ProfileOverviewScreen(
     session: AccountSession,
     onDestinationSelected: (ProfileDestination) -> Unit,
+    onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -60,11 +62,18 @@ fun ProfileOverviewScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "我的",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "我的",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            HomeReturnButton(onClick = onNavigateHome)
+        }
         AccountStatusCard(
             session = session,
             onClick = { onDestinationSelected(ProfileDestination.AccountManagement) }
@@ -191,47 +200,25 @@ private fun AccountStatusCard(
     session: AccountSession,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("profile-account-status-card")
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.aa_profile_account),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(52.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text("账户管理", fontWeight = FontWeight.SemiBold)
-                Text(session.accountSummary(), style = MaterialTheme.typography.bodyMedium)
-            }
-            Text("›", style = MaterialTheme.typography.headlineSmall)
-        }
-    }
+    ProfileEntry(
+        destination = ProfileDestination.AccountManagement,
+        summary = session.accountSummary(),
+        testTag = "profile-account-status-card",
+        onClick = onClick
+    )
 }
 
 @Composable
 private fun ProfileEntry(
     destination: ProfileDestination,
     summary: String,
+    testTag: String = "profile-entry-${destination.name}",
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("profile-entry-${destination.name}")
+            .testTag(testTag)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

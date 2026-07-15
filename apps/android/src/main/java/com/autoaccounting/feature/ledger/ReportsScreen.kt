@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.EmptyStatePanel
+import com.autoaccounting.ui.components.HomeReturnButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import com.autoaccounting.ui.visual.CategoryArtwork
 @Composable
 fun ReportsScreen(
     entries: List<LedgerUiEntry>,
+    onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val monthKey = latestMonthKey(entries)
@@ -58,7 +60,14 @@ fun ReportsScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("报表", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("报表", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            HomeReturnButton(onClick = onNavigateHome)
+        }
         ReportOverview(summary)
         if (categoryTotals.isEmpty()) {
             ReportEmptyState()

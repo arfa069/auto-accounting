@@ -67,13 +67,14 @@ class LedgerReportsScreenTest {
     fun manualEntryFormSavesValidatedInput() {
         val savedInput = AtomicReference<LedgerEntryInput?>()
         composeRule.setContent {
-            LedgerScreen(
-                entries = emptyList(),
+            ManualLedgerEntryScreen(
+                categories = emptyList(),
+                fundingAccounts = emptyList(),
+                onExit = {},
                 onCreateEntry = { savedInput.set(it) }
             )
         }
 
-        composeRule.onNodeWithText("+").performClick()
         composeRule.onNodeWithText("新增一笔").assertIsDisplayed()
         composeRule.onNodeWithText("金额（CNY）").performTextInput("12.34")
         composeRule.onNodeWithText("商户/标题（可选）").performTextInput("早餐")
@@ -90,10 +91,14 @@ class LedgerReportsScreenTest {
     fun invalidAmountDoesNotSave() {
         val savedInput = AtomicReference<LedgerEntryInput?>()
         composeRule.setContent {
-            LedgerScreen(entries = emptyList(), onCreateEntry = { savedInput.set(it) })
+            ManualLedgerEntryScreen(
+                categories = emptyList(),
+                fundingAccounts = emptyList(),
+                onExit = {},
+                onCreateEntry = { savedInput.set(it) }
+            )
         }
 
-        composeRule.onNodeWithText("+").performClick()
         composeRule.onNodeWithText("金额（CNY）").performTextInput("0")
         composeRule.onNodeWithText("保存").performScrollTo().performClick()
 
@@ -103,9 +108,15 @@ class LedgerReportsScreenTest {
 
     @Test
     fun dirtyFormRequiresDiscardConfirmation() {
-        composeRule.setContent { LedgerScreen(entries = emptyList()) }
+        composeRule.setContent {
+            ManualLedgerEntryScreen(
+                categories = emptyList(),
+                fundingAccounts = emptyList(),
+                onExit = {},
+                onCreateEntry = {}
+            )
+        }
 
-        composeRule.onNodeWithText("+").performClick()
         composeRule.onNodeWithText("商户/标题（可选）").performTextInput("未保存")
         composeRule.onNodeWithText("取消").performScrollTo().performClick()
 

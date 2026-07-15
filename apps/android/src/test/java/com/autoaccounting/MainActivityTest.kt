@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.autoaccounting.feature.account.LocalModeSessionStore
@@ -36,6 +37,87 @@ class MainActivityTest {
     @After
     fun clearSession() {
         clearPersistedSession()
+    }
+
+    @Test
+    fun restoredSessionStartsOnHome() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+        composeRule.onNodeWithText("主页").assertIsDisplayed()
+    }
+
+    @Test
+    fun centeredAddActionOpensManualEntryAndCancelReturnsHome() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-add-entry").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("新增一笔").assertIsDisplayed()
+        composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()
+
+        composeRule.onNodeWithText("取消").performScrollTo().performClick()
+
+        composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()
+    }
+
+    @Test
+    fun firstLocalModeSelectionNavigatesToHome() {
+        clearPersistedSession()
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.onNodeWithText("进入本地模式").performClick()
+
+        composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+    }
+
+    @Test
+    fun firstSignInNavigatesToHome() {
+        clearPersistedSession()
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithText("登录").performClick()
+        composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+        composeRule.onNodeWithTag("account-password").performTextInput("Aa123456!")
+        composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("登录").performScrollTo().performClick()
+
+        composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+    }
+
+    @Test
+    fun eachPrimaryPageHidesBottomNavigationAndCanReturnHome() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()
+        listOf("Review", "Ledger", "Reports", "Profile").forEach { tab ->
+            composeRule.onNodeWithTag("app-tab-$tab").performClick()
+            composeRule.onNodeWithTag("app-bottom-navigation").assertDoesNotExist()
+            composeRule.onNodeWithTag("return-home").assertIsDisplayed().performClick()
+            composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+            composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun reviewNavigationRequestStillOpensReviewQueue() {
+        composeRule.setContent {
+            AutoAccountingApp(reviewNavigationRequest = 1L)
+        }
+
+        composeRule.onNodeWithText("待确认队列").assertIsDisplayed()
     }
 
     @Test

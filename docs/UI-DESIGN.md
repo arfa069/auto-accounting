@@ -14,13 +14,15 @@ The UI can be cute, but sensitive moments must stay clear:
 
 ## 2. Navigation
 
-Bottom tabs:
+Home bottom-navigation destinations:
 - Review.
 - Ledger.
 - Reports.
 - Profile.
 
-The review queue is the primary first tab. Permission status and setup tools live in Profile, with inline prompts where missing setup blocks a workflow.
+The four destination illustrations straddle the navigation surface's top edge and use a surface-colored outline. Use 52 dp artwork with 15 sp labels. A concave center cutout holds the existing purple circular add button with one soft shadow; the add button is not a fifth selectable destination. Destination screens hide the bottom navigation and expose an explicit return-to-home action.
+
+The review queue is the first destination in navigation order. Permission status and setup tools live in Profile, with inline prompts where missing setup blocks a workflow.
 
 ## 3. Review Queue
 
@@ -113,7 +115,8 @@ Top monthly summary:
 - Net amount.
 
 Primary action:
-- A prominent floating add button on the ledger screen opens the manual-entry form.
+- The raised center action in the home bottom navigation opens the manual-entry form.
+- The ledger screen does not duplicate this action with a local floating button.
 - Manual entry is not duplicated on the review-queue screen.
 - The ledger overflow menu contains a Recently Deleted entry.
 
