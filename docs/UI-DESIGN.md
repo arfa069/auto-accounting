@@ -178,21 +178,25 @@ Search and filtering:
 ## 7. Reports
 
 First screen:
-- Scope every total, category share, and trend query to the current ledger book.
-- Current-month income/expense overview.
-- Category share.
-- Trend entry.
+- Scope every total, category-share, and cash-flow query to the current ledger book.
+- Let `x` be the latest month in the current ledger book with at least one reportable income or expense entry; neutral entries do not establish `x`.
+- Show month `x` income and expense totals above the report panels.
+- Place Panel A, the month `x` expense-category share, before Panel B, the seven-month cash-flow table.
 
-Category share:
-- Illustrated donut chart.
-- Category ranking list.
-- Include outflow entries only; neutral entries do not contribute to income, expense, or net totals.
-- Values and percentages must be readable without relying only on color.
+Panel A — expense category share:
+- Render a hand-drawn-style donut with Compose `Canvas`.
+- Include outflow entries from month `x` only. Sort categories by expense amount, keep the first four, and combine any remaining categories into "其他".
+- Pair the donut with a legend showing category name and one-decimal percentage. Keep the existing ranking as a read-only list showing category name and amount; color is decorative reinforcement, never the only way to identify a segment.
+- When month `x` has income but no expense, replace the donut and ranking with "本月暂无支出分类" while keeping the income overview visible.
 
-Category trend:
-- Latest 6 months.
-- User can select category.
-- Use clear labels even with illustrated styling.
+Panel B — seven-month cash flow:
+- Display the inclusive window `[x-3, x+3]` as month, expense, and income columns ordered by month.
+- Fill missing months in that window with zero, keep all seven month rows available by scrolling, highlight row `x` with a light-purple background, and use coral for expense and teal for income.
+- Do not offer category selection or retain the previous category-specific six-month trend.
+
+Report-level no-data state:
+- If the current ledger book has no reportable income or expense entries, there is no `x`; show "当前账本暂无可分析的收支" instead of overview totals or zero-filled report content.
+- Neutral entries remain outside income, expense, category-share, and cash-flow calculations.
 
 ## 8. Profile
 

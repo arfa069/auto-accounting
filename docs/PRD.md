@@ -157,16 +157,19 @@ Search and filters:
 
 Reports first screen:
 - All report queries use the current ledger book only.
-- Current-month income and expense overview.
-- Category share.
-- Trend entry point.
+- Define `x` as the latest month in the current ledger book that contains at least one reportable inflow or outflow entry; neutral entries do not establish `x`.
+- Show the income and expense overview for month `x`.
+- Panel A shows the expense category share for month `x`.
+- Panel B shows total expense and total income for the inclusive seven-month window `[x-3, x+3]`.
 - Inflow entries contribute to income, outflow entries contribute to expense, and neutral entries are excluded from income, expense, and net totals.
 - Reports aggregate CNY entries only; multi-currency entry and exchange-rate conversion are outside the first-version scope.
 
-Charts:
-- Category share uses illustrated donut chart plus category ranking.
-- Category trend shows the latest 6 months and allows category selection.
-- Illustrated chart style is allowed, but values and comparisons must stay immediately readable.
+Charts and empty states:
+- Panel A uses a hand-drawn-style donut rendered with Compose `Canvas`. Rank expense categories by amount, show the first four, and combine any remaining categories into "其他"; the legend shows category names and percentages, the center shows total expense, and the read-only ranking shows category amounts so the result does not rely on color alone.
+- Panel B uses a fixed seven-month cash-flow table with month, total-expense, and total-income columns. Missing months inside `[x-3, x+3]` use zero values, and the table does not provide category selection.
+- If the current ledger book has no reportable inflow or outflow entries, do not invent `x` or render zero-filled report content; show a report-level no-data state.
+- If month `x` contains income but no expense, keep the income overview and cash-flow table, show expense as zero, and replace Panel A's donut with a month-specific no-expense state instead of falling back to another month.
+- Illustrated donut styling is allowed, but values and comparisons must stay immediately readable.
 
 ### 5.5 Categorization
 

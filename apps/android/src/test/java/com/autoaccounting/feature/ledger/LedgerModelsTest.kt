@@ -59,15 +59,17 @@ class LedgerModelsTest {
 
         val summary = monthlySummary(entries, "2026-07")
         val categoryTotals = categoryExpenseTotals(entries, "2026-07")
-        val trend = categoryTrend(entries, "餐饮", "2026-07")
+        val cashFlow = monthlyCashFlowRange(entries, "2026-07")
 
         assertEquals(4190, summary.expenseMinor)
         assertEquals(10_000, summary.incomeMinor)
         assertEquals(5810, summary.netMinor)
         assertEquals(listOf("餐饮", "交通"), categoryTotals.map { it.category })
         assertEquals(3590, categoryTotals.first().amountMinor)
-        assertEquals(4200, trend.first { it.monthKey == "2026-06" }.amountMinor)
-        assertEquals(3590, trend.first { it.monthKey == "2026-07" }.amountMinor)
+        assertEquals("2026-07", latestCashFlowMonthKey(entries))
+        assertEquals(4200, cashFlow.first { it.monthKey == "2026-06" }.expenseMinor)
+        assertEquals(4190, cashFlow.first { it.monthKey == "2026-07" }.expenseMinor)
+        assertEquals(10_000, cashFlow.first { it.monthKey == "2026-07" }.incomeMinor)
     }
 
     private fun ledgerEntry(

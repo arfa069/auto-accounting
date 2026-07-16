@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -11,9 +12,14 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
+import com.autoaccounting.data.local.FlowDirection
+import com.autoaccounting.data.local.LedgerEntryInput
+import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
+import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.autoaccounting.feature.account.LocalModeSessionStore
+import com.autoaccounting.feature.ledger.LedgerTestTags
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -131,6 +137,58 @@ class MainActivityTest {
             }
 
             composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun reportsFollowTheSelectedLedgerBook() {
+        val repository = LocalLedgerRepository(AutoAccountingDatabaseProvider.get(context))
+        val travelLedgerId = runBlocking {
+            repository.clearLocalData()
+            val defaultLedger = repository.ensureDefaultLedgerBook()
+            repository.createManualEntry(
+                defaultLedger.id,
+                reportEntryInput(amountMinor = 100, merchantTitle = "默认账本支出")
+            )
+            val travelLedger = repository.createLedgerBook("旅行账本")
+            repository.createManualEntry(
+                travelLedger.id,
+                reportEntryInput(amountMinor = 200, merchantTitle = "旅行账本支出")
+            )
+            repository.selectLedgerBook(defaultLedger.id)
+            travelLedger.id
+        }
+
+        try {
+            composeRule.setContent {
+                AutoAccountingApp()
+            }
+
+            composeRule.onNodeWithTag("app-tab-Reports").performClick()
+            composeRule.onNodeWithText("本月支出 ¥1.00").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("return-home").performClick()
+            composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+            composeRule.onNodeWithTag(LedgerTestTags.MORE_MENU).performClick()
+            composeRule.onNodeWithTag(LedgerTestTags.MANAGE_LEDGERS).performClick()
+            composeRule.onNodeWithTag(LedgerTestTags.selectLedger(travelLedgerId))
+                .performScrollTo()
+                .performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("return-home")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeRule.onNodeWithText("旅行账本").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("return-home").performClick()
+            composeRule.onNodeWithTag("app-tab-Reports").performClick()
+            composeRule.onNodeWithText("本月支出 ¥2.00").assertIsDisplayed()
+            composeRule.onNodeWithText("本月支出 ¥1.00").assertDoesNotExist()
+        } finally {
+            runBlocking {
+                repository.clearLocalData()
+            }
         }
     }
 
@@ -331,4 +389,20 @@ class MainActivityTest {
             Context.MODE_PRIVATE
         ).edit().clear().commit()
     }
+
+    private fun reportEntryInput(
+        amountMinor: Long,
+        merchantTitle: String
+    ): LedgerEntryInput = LedgerEntryInput(
+        flowDirection = FlowDirection.OUTFLOW,
+        transactionKind = TransactionKind.EXPENSE,
+        amountMinor = amountMinor,
+        transactionTimeEpochMillis = 1_783_513_200_000,
+        merchantTitle = merchantTitle,
+        categoryId = "food",
+        fundingAccountId = null,
+        newFundingAccountLabel = null,
+        note = null,
+        paymentSource = null
+    )
 }

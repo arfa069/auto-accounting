@@ -29,6 +29,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 21. [完成：迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
 22. [完成：拆分合规与隐私并隔离开发者工具](./022-separate-compliance-privacy-and-developer-tools.md)
 23. [管理本地多账本、资金账户并隔离账目调试信息](./023-manage-local-ledgers-and-funding-accounts.md)
+24. [完成：新增报表环形图与七个月现金流](./024-add-report-donut-and-seven-month-cash-flow.md)
 
 ## Supporting Lists
 
@@ -49,3 +50,4 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 - Issue 18 establishes the profile overview and account-management navigation used by Issues 19-22.
 - Issues 19-22 are independently implementable after Issue 18.
 - Issue 23 builds on the persisted ledger lifecycle, protected backup flow, and Debug/Release isolation established by Issues 17, 21, and 22; it remains entirely local and does not depend on backend work.
+- Issue 24 builds on the current-ledger scope and report semantics established by Issues 17 and 23; it replaces the category-selectable six-month trend without changing persisted data, backend APIs, or shared contracts.

@@ -6,7 +6,9 @@ import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
+import java.math.BigInteger
 import java.time.Instant
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -54,9 +56,16 @@ data class CategoryTotal(
     val amountMinor: Long
 )
 
-data class MonthlyCategoryTotal(
+data class MonthlyCashFlowTotal(
     val monthKey: String,
-    val amountMinor: Long
+    val expenseMinor: Long,
+    val incomeMinor: Long
+)
+
+data class CategoryShareSlice(
+    val category: String,
+    val amountMinor: Long,
+    val percentageTenths: Int
 )
 
 fun LedgerEntryEntity.toLedgerUiEntry(
@@ -100,7 +109,7 @@ fun monthlySummary(
     entries: List<LedgerUiEntry>,
     monthKey: String
 ): MonthlySummary {
-    val currentMonthEntries = entries.filter { it.monthKey == monthKey }
+    val currentMonthEntries = entries.filter { it.isActive() && it.monthKey == monthKey }
     val expense = currentMonthEntries
         .filter { it.flowType == LedgerFlowType.EXPENSE }
         .sumOf { it.amountMinor }
@@ -118,7 +127,11 @@ fun categoryExpenseTotals(
     entries: List<LedgerUiEntry>,
     monthKey: String
 ): List<CategoryTotal> = entries
-    .filter { it.monthKey == monthKey && it.flowType == LedgerFlowType.EXPENSE }
+    .filter {
+        it.isActive() &&
+            it.monthKey == monthKey &&
+            it.flowType == LedgerFlowType.EXPENSE
+    }
     .groupBy { it.category }
     .map { (category, categoryEntries) ->
         CategoryTotal(
@@ -128,22 +141,87 @@ fun categoryExpenseTotals(
     }
     .sortedByDescending { it.amountMinor }
 
-fun categoryTrend(
+fun latestCashFlowMonthKey(entries: List<LedgerUiEntry>): String? = entries
+    .asSequence()
+    .filter { it.isActiveCashFlow() }
+    .map { YearMonth.parse(it.monthKey) }
+    .maxOrNull()
+    ?.toString()
+
+fun monthlyCashFlowRange(
     entries: List<LedgerUiEntry>,
-    category: String,
-    latestMonthKey: String,
-    monthCount: Int = 6
-): List<MonthlyCategoryTotal> {
-    return previousMonths(latestMonthKey, monthCount).map { monthKey ->
-        MonthlyCategoryTotal(
-            monthKey = monthKey,
-            amountMinor = entries
-                .filter {
-                    it.monthKey == monthKey &&
-                        it.category == category &&
-                        it.flowType == LedgerFlowType.EXPENSE
-                }
+    anchorMonthKey: String,
+    radius: Int = 3
+): List<MonthlyCashFlowTotal> {
+    require(radius >= 0) { "radius must be non-negative" }
+    val anchorMonth = YearMonth.parse(anchorMonthKey)
+    val entriesByMonth = entries
+        .asSequence()
+        .filter { it.isActiveCashFlow() }
+        .groupBy { YearMonth.parse(it.monthKey) }
+
+    return (-radius..radius).map { offset ->
+        val month = anchorMonth.plusMonths(offset.toLong())
+        val monthEntries = entriesByMonth[month].orEmpty()
+        MonthlyCashFlowTotal(
+            monthKey = month.toString(),
+            expenseMinor = monthEntries
+                .filter { it.flowType == LedgerFlowType.EXPENSE }
+                .sumOf { it.amountMinor },
+            incomeMinor = monthEntries
+                .filter { it.flowType == LedgerFlowType.INCOME }
                 .sumOf { it.amountMinor }
+        )
+    }
+}
+
+fun categoryShareSlices(
+    totals: List<CategoryTotal>,
+    maxVisibleCategories: Int = 4
+): List<CategoryShareSlice> {
+    require(maxVisibleCategories > 0) { "maxVisibleCategories must be positive" }
+    val rankedTotals = totals
+        .filter { it.amountMinor > 0 }
+        .sortedWith(
+            compareByDescending<CategoryTotal> { it.amountMinor }
+                .thenBy { it.category }
+        )
+    if (rankedTotals.isEmpty()) return emptyList()
+
+    val displayedTotals = if (rankedTotals.size <= maxVisibleCategories) {
+        rankedTotals
+    } else {
+        rankedTotals.take(maxVisibleCategories) +
+            CategoryTotal(
+                category = "其他",
+                amountMinor = rankedTotals.drop(maxVisibleCategories).sumOf { it.amountMinor }
+            )
+    }
+    val totalAmount = displayedTotals.fold(BigInteger.ZERO) { sum, total ->
+        sum.add(BigInteger.valueOf(total.amountMinor))
+    }
+    val percentageTenths = MutableList(displayedTotals.size) { 0 }
+    val remainders = displayedTotals.mapIndexed { index, total ->
+        val quotientAndRemainder = BigInteger.valueOf(total.amountMinor)
+            .multiply(BigInteger.valueOf(1000))
+            .divideAndRemainder(totalAmount)
+        percentageTenths[index] = quotientAndRemainder[0].toInt()
+        index to quotientAndRemainder[1]
+    }
+    val undistributedTenths = 1000 - percentageTenths.sum()
+    remainders
+        .sortedWith(
+            compareByDescending<Pair<Int, BigInteger>> { it.second }
+                .thenBy { it.first }
+        )
+        .take(undistributedTenths)
+        .forEach { (index) -> percentageTenths[index] += 1 }
+
+    return displayedTotals.mapIndexed { index, total ->
+        CategoryShareSlice(
+            category = total.category,
+            amountMinor = total.amountMinor,
+            percentageTenths = percentageTenths[index]
         )
     }
 }
@@ -166,19 +244,10 @@ fun formatSignedMoney(amountMinor: Long): String {
     return "$sign${formatMoney(kotlin.math.abs(amountMinor))}"
 }
 
-private fun previousMonths(
-    latestMonthKey: String,
-    count: Int
-): List<String> {
-    val year = latestMonthKey.substringBefore("-").toInt()
-    val month = latestMonthKey.substringAfter("-").toInt()
-    val latestMonthIndex = year * 12 + (month - 1)
-    return ((latestMonthIndex - count + 1)..latestMonthIndex).map { monthIndex ->
-        val itemYear = monthIndex / 12
-        val itemMonth = monthIndex % 12 + 1
-        "$itemYear-${itemMonth.toString().padStart(2, '0')}"
-    }
-}
+private fun LedgerUiEntry.isActive(): Boolean = deletedAtEpochMillis == null
+
+private fun LedgerUiEntry.isActiveCashFlow(): Boolean =
+    isActive() && flowType != LedgerFlowType.NEUTRAL
 
 private fun PaymentSource.toLabel(): String = when (this) {
     PaymentSource.WECHAT -> "微信"
