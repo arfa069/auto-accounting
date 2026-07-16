@@ -5,6 +5,7 @@
     <color name="brand_highlight">#FFD45A</color>
     <color name="brand_canvas">#FFF9EC</color>
     <color name="brand_ink">#252536</color>
+    <color name="launcher_background">#FBB7A6</color>
     <color name="expense_warm">#F97316</color>
     <color name="income_green">#16A34A</color>
     <color name="risk_red">#DC2626</color>
