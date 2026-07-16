@@ -17,10 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.EmptyStatePanel
@@ -281,7 +281,6 @@ private fun LedgerList(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -353,14 +352,26 @@ private fun LedgerList(
                 )
             }
             Text("$monthKey 明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (filteredEntries.isEmpty()) {
-                if (!hasCurrentMonthEntries && !hasActiveFilters) {
-                    EmptyStatePanel("当前没有已确认账目")
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .testTag(LedgerTestTags.ENTRY_LIST),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (filteredEntries.isEmpty()) {
+                    item {
+                        if (!hasCurrentMonthEntries && !hasActiveFilters) {
+                            EmptyStatePanel("当前没有已确认账目")
+                        } else {
+                            EmptyStatePanel("没有符合当前筛选条件的账目")
+                        }
+                    }
                 } else {
-                    EmptyStatePanel("没有符合当前筛选条件的账目")
+                    items(filteredEntries, key = { it.id }) { entry ->
+                        LedgerEntryRow(entry) { onEntryClick(entry.id) }
+                    }
                 }
-            } else {
-                filteredEntries.forEach { entry -> LedgerEntryRow(entry) { onEntryClick(entry.id) } }
             }
         }
     }
@@ -371,7 +382,7 @@ private fun LedgerSummary(summary: MonthlySummary) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SummaryChip("本月支出 ${formatMoney(summary.expenseMinor)}", Modifier.weight(1f))
         SummaryChip("本月收入 ${formatMoney(summary.incomeMinor)}", Modifier.weight(1f))
-        SummaryChip("净额 ${formatSignedMoney(summary.netMinor)}", Modifier.weight(1f))
+        SummaryChip("净额\n${formatSignedMoney(summary.netMinor)}", Modifier.weight(1f))
     }
 }
 

@@ -570,6 +570,7 @@ private fun FundingAccountDeleteResult.Referenced.referenceMessage(): String =
         "$pendingEntryCount 条待确认记录和 $ignoredEntryCount 条忽略记录引用。"
 
 internal object LedgerTestTags {
+    const val ENTRY_LIST = "ledger-entry-list"
     const val MORE_MENU = "ledger-more"
     const val MANAGE_LEDGERS = "ledger-manage-ledgers"
     const val MANAGE_FUNDING_ACCOUNTS = "ledger-manage-funding-accounts"
