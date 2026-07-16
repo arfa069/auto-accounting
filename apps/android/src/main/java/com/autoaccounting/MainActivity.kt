@@ -368,7 +368,8 @@ fun AutoAccountingApp(
             )
         )
         if (refreshedState != continuousMonitoringState) {
-            persistContinuousMonitoringState(refreshedState)
+            // Permission health is runtime state; only explicit user actions persist enabled.
+            continuousMonitoringState = refreshedState
         }
     }
 

@@ -10,8 +10,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
+import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
+import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.autoaccounting.feature.account.LocalModeSessionStore
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -165,6 +171,46 @@ class MainActivityTest {
         composeRule.onNodeWithText("自动记账状态")
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun disconnectedAccessibilityKeepsPersistedAutomaticBookkeepingIntentEnabled() {
+        val preferencesRepository = LocalPreferencesRepository(
+            AutoAccountingDatabaseProvider.get(context)
+        )
+        runBlocking {
+            preferencesRepository.updateContinuousMonitoringState(
+                ContinuousMonitoringState(enabled = true)
+            )
+        }
+
+        try {
+            composeRule.setContent {
+                AutoAccountingApp(
+                    billSyncAccessibilityAccessGranted = true,
+                    billSyncAccessibilityServiceConnected = false,
+                    permissionStateLoaded = true
+                )
+            }
+
+            composeRule.onNodeWithTag("app-tab-Profile").performClick()
+            composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
+
+            composeRule.onNodeWithText("状态：需要处理").assertIsDisplayed()
+            composeRule.onNodeWithText("关闭自动记账").assertIsDisplayed()
+            assertTrue(
+                runBlocking {
+                    preferencesRepository.userPreferences.first()
+                        .continuousMonitoringState.enabled
+                }
+            )
+        } finally {
+            runBlocking {
+                preferencesRepository.updateContinuousMonitoringState(
+                    ContinuousMonitoringState()
+                )
+            }
+        }
     }
 
     @Test

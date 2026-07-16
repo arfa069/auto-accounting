@@ -117,13 +117,10 @@ fun reduceContinuousMonitoringState(
     ContinuousMonitoringAction.Disable -> state.copy(enabled = false, blockReason = null)
 
     is ContinuousMonitoringAction.RefreshPermissionHealth -> {
-        val blockReason = action.permissionHealth.firstBlockReason
-        when {
-            state.enabled && blockReason != null ->
-                state.copy(enabled = false, blockReason = blockReason)
-            blockReason == null && state.blockReason != null ->
-                state.copy(blockReason = null)
-            else -> state
+        if (state.enabled) {
+            state.copy(blockReason = action.permissionHealth.firstBlockReason)
+        } else {
+            state.copy(blockReason = null)
         }
     }
 }

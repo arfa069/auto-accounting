@@ -119,7 +119,7 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
-    fun automaticCaptureCanBeDisabledAndStopsWhenAccessibilityIsRevoked() {
+    fun automaticCaptureCanBeDisabledAndPreservesUserIntentWhenAccessibilityIsRevoked() {
         val enabled = ContinuousMonitoringState(enabled = true)
 
         assertFalse(
@@ -134,11 +134,22 @@ class ContinuousMonitoringStateTest {
                 )
             )
         )
-        assertFalse(revoked.enabled)
+        assertTrue(revoked.enabled)
         assertEquals(
             ContinuousMonitoringBlockReason.RequiresBillSyncAccessibilityPermission,
             revoked.blockReason
         )
+
+        val recovered = reduceContinuousMonitoringState(
+            revoked,
+            ContinuousMonitoringAction.RefreshPermissionHealth(
+                ContinuousMonitoringPermissionHealth(
+                    billSyncAccessibilityGranted = true
+                )
+            )
+        )
+        assertTrue(recovered.enabled)
+        assertEquals(null, recovered.blockReason)
     }
 
     @Test
