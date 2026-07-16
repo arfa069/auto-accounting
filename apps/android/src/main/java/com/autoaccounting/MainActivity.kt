@@ -551,7 +551,7 @@ fun AutoAccountingApp(
                         containerColor = Color.Transparent,
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         bottomBar = {
-                            if (selectedTab == null) {
+                            if (selectedTab == null && !manualEntryOpen) {
                                 AppBottomNavigationBar(
                                     items = bottomNavigationItems,
                                     selectedKey = null,
