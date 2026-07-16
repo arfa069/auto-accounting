@@ -131,10 +131,6 @@ fun AutomaticBookkeepingScreen(
                 )
             }
         }
-        MonitoringHealthCard(
-            permissionHealth = continuousMonitoringPermissionHealth,
-            state = continuousMonitoringState
-        )
         Text("手动账单同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         ManualBillSyncCard(
             accessibilityGranted = billSyncAccessibilityAccessGranted,
@@ -201,24 +197,6 @@ private fun PermissionSettingRow(
         }
         Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         Text("›", style = MaterialTheme.typography.titleLarge)
-    }
-}
-
-@Composable
-private fun MonitoringHealthCard(
-    permissionHealth: ContinuousMonitoringPermissionHealth,
-    state: ContinuousMonitoringState
-) {
-    SettingsCard {
-        val healthy = state.enabled && permissionHealth.isHealthy
-        Text(if (healthy) "持续监控正常" else "持续监控需要处理", fontWeight = FontWeight.SemiBold)
-        if (!permissionHealth.billSyncAccessibilityGranted) {
-            Text("请开启自动记账无障碍权限", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        } else if (!permissionHealth.billSyncAccessibilityServiceConnected) {
-            Text("无障碍服务未连接", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        } else if (!state.enabled) {
-            Text("自动记账当前已关闭", style = MaterialTheme.typography.bodySmall)
-        }
     }
 }
 

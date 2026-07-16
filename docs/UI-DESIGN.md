@@ -195,7 +195,7 @@ Account Management:
 - Sign-out keeps the local ledger, while account deletion follows its separate cooling-off flow.
 
 Automatic Bookkeeping:
-- Order sections as state, required permissions, continuous-monitoring health, then user-started bill sync.
+- Order sections as state, required permissions, then user-started bill sync.
 - Overview status is Ready, Needs attention with a specific reason, or Off. Result notifications do not block capture and do not produce Needs attention.
 - Keep the accessibility description explicit: it is limited to payment-result and permitted bill pages, and does not read chats or ordinary messages.
 
@@ -269,8 +269,7 @@ First screen items:
 - Notification listening.
 - Automatic-bookkeeping accessibility service.
 - Background running, auto-start, battery optimization, and battery-saver suggestions.
-- Continuous-monitoring health summary.
-- User-started bill sync appears after the permission and health sections, not as a permission.
+- User-started bill sync appears after the permission section, not as a permission.
 
 Each item:
 - Title.

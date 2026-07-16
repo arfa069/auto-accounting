@@ -42,7 +42,7 @@ class AutomaticBookkeepingScreenTest {
 
         composeRule.onNodeWithText("状态：已就绪").assertIsDisplayed()
         composeRule.onAllNodesWithText("记账结果通知").assertCountEquals(0)
-        composeRule.onNodeWithText("持续监控正常").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("持续监控正常").assertCountEquals(0)
         composeRule.onAllNodesWithText("云端 AI 分类").assertCountEquals(0)
         composeRule.onAllNodesWithText("数据与备份").assertCountEquals(0)
     }
@@ -204,9 +204,10 @@ class AutomaticBookkeepingScreenTest {
     }
 
     @Test
-    fun healthSummaryShowsDisconnectedAccessibilityService() {
+    fun primaryStatusShowsDisconnectedAccessibilityServiceWithoutDuplicateHealthCard() {
         composeRule.setContent {
             AutomaticBookkeepingScreen(
+                notificationListenerAccessGranted = true,
                 billSyncAccessibilityAccessGranted = true,
                 continuousMonitoringState = ContinuousMonitoringState(enabled = true),
                 continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
@@ -216,7 +217,10 @@ class AutomaticBookkeepingScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("持续监控需要处理").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("无障碍服务未连接").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("状态：需要处理").assertIsDisplayed()
+        composeRule.onNodeWithText("自动记账无障碍服务未连接")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithText("持续监控需要处理").assertCountEquals(0)
     }
 }
