@@ -41,6 +41,18 @@ class ReviewQueueScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun headerShowsCurrentLedgerAsConfirmationTarget() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(),
+                targetLedgerName = "家庭账本"
+            )
+        }
+
+        composeRule.onNodeWithText("确认后记入「家庭账本」，误操作可撤销").assertIsDisplayed()
+    }
+
+    @Test
     fun shortSlowSwipesInEitherDirectionDoNotResolvePendingEntry() {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))

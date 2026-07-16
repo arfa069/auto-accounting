@@ -45,6 +45,54 @@ interface CategoryDao {
 }
 
 @Dao
+interface LedgerBookDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(ledgerBook: LedgerBookEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(ledgerBooks: List<LedgerBookEntity>)
+
+    @Query("SELECT * FROM ledger_books WHERE id = :id")
+    suspend fun getById(id: String): LedgerBookEntity?
+
+    @Query("SELECT * FROM ledger_books WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): LedgerBookEntity?
+
+    @Query("SELECT * FROM ledger_books ORDER BY created_at_epoch_millis ASC, id ASC")
+    suspend fun getAll(): List<LedgerBookEntity>
+
+    @Query("SELECT * FROM ledger_books ORDER BY created_at_epoch_millis ASC, id ASC")
+    fun observeAll(): Flow<List<LedgerBookEntity>>
+
+    @Query(
+        """
+        SELECT * FROM ledger_books
+        ORDER BY
+            CASE WHEN id = (
+                SELECT active_ledger_id
+                FROM local_settings
+                WHERE id = :settingsId
+            ) THEN 0 ELSE 1 END,
+            created_at_epoch_millis ASC,
+            id ASC
+        LIMIT 1
+        """
+    )
+    fun observeActive(
+        settingsId: String = LOCAL_SETTINGS_ID
+    ): Flow<LedgerBookEntity?>
+
+    @Query("SELECT COUNT(*) FROM ledger_books")
+    suspend fun count(): Int
+
+    @Query("DELETE FROM ledger_books WHERE id = :id")
+    suspend fun deleteById(id: String): Int
+
+    @Query("DELETE FROM ledger_books")
+    suspend fun deleteAll()
+}
+
+@Dao
 interface FundingAccountDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(account: FundingAccountEntity): Long
@@ -57,6 +105,28 @@ interface FundingAccountDao {
         sourceScope: FundingAccountSourceScope,
         label: String
     ): FundingAccountEntity?
+
+    @Query("SELECT * FROM funding_accounts WHERE id = :id")
+    suspend fun getById(id: Long): FundingAccountEntity?
+
+    @Query(
+        """
+        UPDATE funding_accounts
+        SET source = :sourceScope,
+            payment_source = :paymentSource,
+            label = :label
+        WHERE id = :id
+        """
+    )
+    suspend fun update(
+        id: Long,
+        sourceScope: FundingAccountSourceScope,
+        paymentSource: PaymentSource?,
+        label: String
+    ): Int
+
+    @Query("DELETE FROM funding_accounts WHERE id = :id")
+    suspend fun deleteById(id: Long): Int
 
     @Query("SELECT * FROM funding_accounts ORDER BY source ASC, label ASC")
     suspend fun getAllFundingAccounts(): List<FundingAccountEntity>
@@ -95,6 +165,9 @@ interface PendingEntryDao {
 
     @Query("SELECT * FROM pending_entries ORDER BY captured_at_epoch_millis DESC")
     suspend fun listPendingEntries(): List<PendingEntryEntity>
+
+    @Query("SELECT COUNT(*) FROM pending_entries WHERE funding_account_id = :fundingAccountId")
+    suspend fun countByFundingAccountId(fundingAccountId: Long): Int
 
     @Query("DELETE FROM pending_entries WHERE id = :id")
     suspend fun deleteById(id: String)
@@ -136,6 +209,9 @@ interface LedgerEntryDao {
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
     suspend fun listAllLedgerEntries(): List<LedgerEntryEntity>
 
+    @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
+    fun observeAllLedgerEntries(): Flow<List<LedgerEntryEntity>>
+
     @Query(
         "SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NULL " +
             "ORDER BY transaction_time_epoch_millis DESC"
@@ -147,6 +223,42 @@ interface LedgerEntryDao {
             "ORDER BY deleted_at_epoch_millis DESC"
     )
     fun observeDeletedLedgerEntries(): Flow<List<LedgerEntryEntity>>
+
+    @Query(
+        "SELECT * FROM ledger_entries WHERE ledger_book_id = :ledgerBookId " +
+            "AND deleted_at_epoch_millis IS NULL ORDER BY transaction_time_epoch_millis DESC"
+    )
+    fun observeLedgerEntriesForBook(ledgerBookId: String): Flow<List<LedgerEntryEntity>>
+
+    @Query(
+        "SELECT * FROM ledger_entries WHERE ledger_book_id = :ledgerBookId " +
+            "AND deleted_at_epoch_millis IS NOT NULL ORDER BY deleted_at_epoch_millis DESC"
+    )
+    fun observeDeletedLedgerEntriesForBook(ledgerBookId: String): Flow<List<LedgerEntryEntity>>
+
+    @Query(
+        "SELECT COUNT(*) FROM ledger_entries WHERE ledger_book_id = :ledgerBookId " +
+            "AND deleted_at_epoch_millis IS NULL"
+    )
+    suspend fun countActiveByLedgerBookId(ledgerBookId: String): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM ledger_entries WHERE ledger_book_id = :ledgerBookId " +
+            "AND deleted_at_epoch_millis IS NOT NULL"
+    )
+    suspend fun countDeletedByLedgerBookId(ledgerBookId: String): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM ledger_entries WHERE funding_account_id = :fundingAccountId " +
+            "AND deleted_at_epoch_millis IS NULL"
+    )
+    suspend fun countActiveByFundingAccountId(fundingAccountId: Long): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM ledger_entries WHERE funding_account_id = :fundingAccountId " +
+            "AND deleted_at_epoch_millis IS NOT NULL"
+    )
+    suspend fun countDeletedByFundingAccountId(fundingAccountId: Long): Int
 
     @Query("UPDATE ledger_entries SET deleted_at_epoch_millis = :deletedAt WHERE id = :id AND deleted_at_epoch_millis IS NULL")
     suspend fun moveToDeleted(id: String, deletedAt: Long): Int
@@ -198,6 +310,9 @@ interface IgnoredEntryDao {
 
     @Query("SELECT * FROM ignored_entries ORDER BY ignored_at_epoch_millis DESC")
     suspend fun listAll(): List<IgnoredEntryEntity>
+
+    @Query("SELECT COUNT(*) FROM ignored_entries WHERE funding_account_id = :fundingAccountId")
+    suspend fun countByFundingAccountId(fundingAccountId: Long): Int
 
     @Query("DELETE FROM ignored_entries WHERE id = :id")
     suspend fun deleteById(id: String)

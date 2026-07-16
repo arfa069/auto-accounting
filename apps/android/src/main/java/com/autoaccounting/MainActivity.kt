@@ -29,7 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.CategoryEntity
+import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
+import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
 import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.FundingAccountDeleteResult as DataFundingAccountDeleteResult
+import com.autoaccounting.data.local.LedgerBookDeleteResult as DataLedgerBookDeleteResult
+import com.autoaccounting.data.local.LedgerBookEntity
+import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -53,6 +59,9 @@ import com.autoaccounting.feature.capture.shouldRequestBookkeepingResultNotifica
 import com.autoaccounting.feature.home.HomeScreen
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.LedgerScreen
+import com.autoaccounting.feature.ledger.LedgerBookUiModel
+import com.autoaccounting.feature.ledger.LedgerBookDeleteResult as UiLedgerBookDeleteResult
+import com.autoaccounting.feature.ledger.FundingAccountDeleteResult as UiFundingAccountDeleteResult
 import com.autoaccounting.feature.ledger.ManualLedgerEntryScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
@@ -79,6 +88,7 @@ import com.autoaccounting.ui.components.AppBottomNavigationItem
 import com.autoaccounting.ui.components.SlidePageTransition
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -282,6 +292,7 @@ fun AutoAccountingApp(
         ReviewQueuePersistence(localLedgerRepository)
     }
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val tabs = listOf(
         AppTab.Review,
         AppTab.Ledger,
@@ -305,11 +316,35 @@ fun AutoAccountingApp(
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
-    var ledgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
-    var deletedLedgerEntries by remember { mutableStateOf(emptyList<LedgerUiEntry>()) }
+    var reviewTransitionInFlight by remember { mutableStateOf(false) }
+    var ledgerBooks by remember { mutableStateOf(emptyList<LedgerBookEntity>()) }
+    var activeLedgerBook by remember { mutableStateOf<LedgerBookEntity?>(null) }
+    var allLedgerEntryEntities by remember { mutableStateOf(emptyList<LedgerEntryEntity>()) }
     var ledgerCategories by remember { mutableStateOf(emptyList<CategoryEntity>()) }
     var fundingAccounts by remember { mutableStateOf(emptyList<FundingAccountEntity>()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
+    val activeLedgerId = activeLedgerBook?.id
+    val activeLedgerName = activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
+    val ledgerEntries = allLedgerEntryEntities
+        .asSequence()
+        .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis == null }
+        .map { it.toLedgerUiEntry() }
+        .toList()
+    val deletedLedgerEntries = allLedgerEntryEntities
+        .asSequence()
+        .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis != null }
+        .map { it.toLedgerUiEntry() }
+        .toList()
+    val ledgerBookUiModels = ledgerBooks.map { ledgerBook ->
+        val entries = allLedgerEntryEntities.filter { it.ledgerBookId == ledgerBook.id }
+        LedgerBookUiModel(
+            id = ledgerBook.id,
+            name = ledgerBook.name,
+            activeEntryCount = entries.count { it.deletedAtEpochMillis == null },
+            deletedEntryCount = entries.count { it.deletedAtEpochMillis != null },
+            isActive = ledgerBook.id == activeLedgerId
+        )
+    }
     val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
         billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted,
         billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected
@@ -322,9 +357,54 @@ fun AutoAccountingApp(
     }
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
+        if (reviewTransitionInFlight) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("上一项操作正在保存，请稍后重试")
+            }
+            return
+        }
+        val previousConfirmedIds =
+            previousState.confirmedEntries.mapTo(mutableSetOf()) { it.originPendingId }
+        val addsConfirmation = nextState.confirmedEntries.any {
+            it.originPendingId !in previousConfirmedIds
+        }
+        val targetLedgerBookId = activeLedgerBook?.id
+        if (addsConfirmation && targetLedgerBookId == null) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("当前账本尚未加载，请稍后重试")
+            }
+            return
+        }
+        reviewTransitionInFlight = true
         reviewState = nextState
         coroutineScope.launch {
-            reviewQueuePersistence.persistTransition(previousState, nextState)
+            val failure = runCatching {
+                reviewQueuePersistence.persistTransition(
+                    previous = previousState,
+                    next = nextState,
+                    targetLedgerBookId = targetLedgerBookId ?: DEFAULT_LEDGER_BOOK_ID
+                )
+            }.exceptionOrNull()
+            if (failure != null) {
+                val persistedState = runCatching {
+                    reviewQueuePersistence.observeState().first()
+                }.getOrElse {
+                    previousState.copy(
+                        confirmedEntries = emptyList(),
+                        lastAction = null
+                    )
+                }
+                reviewState = persistedState.copy(
+                    undoEventSequence = maxOf(
+                        persistedState.undoEventSequence,
+                        previousState.undoEventSequence
+                    )
+                )
+            }
+            reviewTransitionInFlight = false
+            if (failure != null) {
+                snackbarHostState.showSnackbar("保存待确认操作失败，请重试")
+            }
         }
     }
 
@@ -374,7 +454,9 @@ fun AutoAccountingApp(
     }
 
     LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.ensureDefaultLedgerBook()
         localLedgerRepository.seedSystemCategories()
+        localLedgerRepository.purgeExpiredDeletedLedgerEntries()
     }
 
     LaunchedEffect(reviewQueuePersistence) {
@@ -388,15 +470,18 @@ fun AutoAccountingApp(
     }
 
     LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.purgeExpiredDeletedLedgerEntries()
-        localLedgerRepository.ledgerEntries.collect { entries ->
-            ledgerEntries = entries.map { it.toLedgerUiEntry() }
+        localLedgerRepository.ledgerBooks.collect { books -> ledgerBooks = books }
+    }
+
+    LaunchedEffect(localLedgerRepository) {
+        localLedgerRepository.activeLedgerBook.collect { ledgerBook ->
+            activeLedgerBook = ledgerBook
         }
     }
 
     LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.deletedLedgerEntries.collect { entries ->
-            deletedLedgerEntries = entries.map { it.toLedgerUiEntry() }
+        localLedgerRepository.allLedgerEntries.collect { entries ->
+            allLedgerEntryEntities = entries
         }
     }
 
@@ -424,8 +509,6 @@ fun AutoAccountingApp(
             continuousMonitoringState = preferences.continuousMonitoringState
         }
     }
-
-    val snackbarHostState = remember { SnackbarHostState() }
 
     AutoAccountingTheme {
         SlidePageTransition(
@@ -512,7 +595,12 @@ fun AutoAccountingApp(
                                         fundingAccounts = fundingAccounts,
                                         onExit = { manualEntryOpen = false },
                                         onCreateEntry = { input ->
-                                            localLedgerRepository.createManualEntry(input)
+                                            val targetLedgerBookId = activeLedgerBook?.id
+                                                ?: error("当前账本尚未加载")
+                                            localLedgerRepository.createManualEntry(
+                                                ledgerBookId = targetLedgerBookId,
+                                                input = input
+                                            )
                                             manualEntryOpen = false
                                             selectedTab = AppTab.Ledger
                                             profileDestination = null
@@ -529,6 +617,7 @@ fun AutoAccountingApp(
 
                                     AppTab.Review -> ReviewQueueScreen(
                                         state = reviewState,
+                                        targetLedgerName = activeLedgerName,
                                         onStateChange = ::persistReviewState,
                                         modifier = Modifier.padding(innerPadding),
                                         onCategorizationRuleRequested = { rule ->
@@ -560,6 +649,8 @@ fun AutoAccountingApp(
                                         deletedEntries = deletedLedgerEntries,
                                         categories = ledgerCategories,
                                         fundingAccounts = fundingAccounts,
+                                        ledgerBooks = ledgerBookUiModels,
+                                        activeLedgerName = activeLedgerName,
                                         onUpdateEntry = { id, input ->
                                             localLedgerRepository.updateLedgerEntry(id, input)
                                         },
@@ -575,6 +666,70 @@ fun AutoAccountingApp(
                                         onPurgeExpiredEntries = {
                                             localLedgerRepository.purgeExpiredDeletedLedgerEntries()
                                         },
+                                        onCreateLedger = { name ->
+                                            activeLedgerBook =
+                                                localLedgerRepository.createLedgerBook(name)
+                                        },
+                                        onSelectLedger = { id ->
+                                            activeLedgerBook =
+                                                localLedgerRepository.selectLedgerBook(id)
+                                        },
+                                        onDeleteLedger = { id ->
+                                            when (val result = localLedgerRepository.deleteLedgerBook(id)) {
+                                                DataLedgerBookDeleteResult.Deleted ->
+                                                    UiLedgerBookDeleteResult.Deleted
+
+                                                DataLedgerBookDeleteResult.LastLedgerBook ->
+                                                    UiLedgerBookDeleteResult.LastLedger
+
+                                                is DataLedgerBookDeleteResult.NotEmpty ->
+                                                    UiLedgerBookDeleteResult.NotEmpty(
+                                                        activeEntryCount = result.activeEntryCount,
+                                                        deletedEntryCount = result.deletedEntryCount
+                                                    )
+
+                                                DataLedgerBookDeleteResult.NotFound ->
+                                                    error("账本不存在")
+                                            }
+                                        },
+                                        onCreateFundingAccount = { label, paymentSource ->
+                                            localLedgerRepository.createFundingAccount(
+                                                label = label,
+                                                paymentSource = paymentSource
+                                            )
+                                        },
+                                        onUpdateFundingAccount = { id, label, paymentSource ->
+                                            localLedgerRepository.updateFundingAccount(
+                                                fundingAccountId = id,
+                                                label = label,
+                                                paymentSource = paymentSource
+                                            )
+                                        },
+                                        onDeleteFundingAccount = { id ->
+                                            when (
+                                                val result =
+                                                    localLedgerRepository.deleteFundingAccount(id)
+                                            ) {
+                                                DataFundingAccountDeleteResult.Deleted ->
+                                                    UiFundingAccountDeleteResult.Deleted
+
+                                                is DataFundingAccountDeleteResult.Referenced ->
+                                                    UiFundingAccountDeleteResult.Referenced(
+                                                        activeLedgerEntryCount =
+                                                            result.activeLedgerEntryCount,
+                                                        deletedLedgerEntryCount =
+                                                            result.deletedLedgerEntryCount,
+                                                        pendingEntryCount =
+                                                            result.pendingEntryCount,
+                                                        ignoredEntryCount =
+                                                            result.ignoredEntryCount
+                                                    )
+
+                                                DataFundingAccountDeleteResult.NotFound ->
+                                                    error("资金账户不存在")
+                                            }
+                                        },
+                                        showDebugMetadata = BuildConfig.DEBUG,
                                         onNavigateHome = {
                                             selectedTab = null
                                             profileDestination = null
@@ -656,6 +811,7 @@ fun AutoAccountingApp(
 
                                         ProfileDestination.DataAndBackup -> DataAndBackupScreen(
                                             ledgerEntries = ledgerEntries,
+                                            currentLedgerName = activeLedgerName,
                                             onExportEncryptedBackup = { passphrase ->
                                                 localDataBackupRepository.exportEncryptedBackup(passphrase)
                                             },
@@ -671,13 +827,13 @@ fun AutoAccountingApp(
                                                 categorizationRules = emptyList()
                                                 aiSettings = AiCategorizationSettings()
                                                 continuousMonitoringState = ContinuousMonitoringState()
-                                                ledgerEntries = emptyList()
-                                                deletedLedgerEntries = emptyList()
+                                                allLedgerEntryEntities = emptyList()
+                                                ledgerBooks = emptyList()
+                                                activeLedgerBook = null
                                                 ledgerCategories = emptyList()
                                                 fundingAccounts = emptyList()
                                                 coroutineScope.launch {
                                                     localLedgerRepository.clearLocalData()
-                                                    localPreferencesRepository.clearLocalData()
                                                 }
                                             },
                                             onBack = { profileDestination = null },

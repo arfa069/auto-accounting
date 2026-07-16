@@ -64,7 +64,14 @@ class LocalPreferencesRepository(
     suspend fun clearLocalData() = database.withTransaction {
         database.categorizationRuleDao().deleteAll()
         database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
-        database.localSettingsDao().deleteAll()
+        database.localSettingsDao().upsert(
+            currentSettingsEntity().copy(
+                aiConsentGranted = false,
+                enhancedContextGranted = false,
+                continuousBillSyncCompleted = false,
+                continuousMonitoringEnabled = false
+            )
+        )
     }
 
     private suspend fun currentSettingsEntity(): LocalSettingsEntity =

@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DataAndBackupScreen(
     ledgerEntries: List<LedgerUiEntry>,
+    currentLedgerName: String = "默认账本",
     onExportEncryptedBackup: suspend (String) -> String,
     onValidateEncryptedBackup: suspend (String, String) -> Unit,
     onImportEncryptedBackup: suspend (String, String) -> Unit,
@@ -61,6 +62,7 @@ fun DataAndBackupScreen(
     var passphrase by remember { mutableStateOf("") }
     var pendingBackup by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var isCsvExporting by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
@@ -91,7 +93,10 @@ fun DataAndBackupScreen(
         TextButton(onClick = onBack) { Text("返回") }
         Text("数据与备份", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         CardSection(title = "导出与恢复") {
-            Text("CSV 是明文表格，不是完整备份或云端同步；完整迁移请使用加密备份。")
+            Text(
+                "CSV 仅导出当前账本「$currentLedgerName」，且是明文表格；" +
+                    "加密备份包含全部账本及本机设置。"
+            )
             OutlinedTextField(
                 value = passphrase,
                 onValueChange = { passphrase = it },
@@ -101,10 +106,36 @@ fun DataAndBackupScreen(
                 modifier = Modifier.fillMaxWidth().testTag("backup-passphrase")
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    exportLedgerCsv(ledgerEntries)
-                    coroutineScope.launch { snackbarHostState.showSnackbar("CSV 已生成") }
-                }) { Text("导出 CSV") }
+                Button(
+                    onClick = {
+                        isCsvExporting = true
+                        coroutineScope.launch {
+                            runCatching {
+                                val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
+                                val filename = ledgerCsvFilename(currentLedgerName, timestamp)
+                                val values = ContentValues().apply {
+                                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                                    put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+                                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                                }
+                                val uri = context.contentResolver.insert(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    values
+                                ) ?: error("Failed to create Downloads entry")
+                                context.contentResolver.openOutputStream(uri)?.use { output ->
+                                    output.write(exportLedgerCsv(ledgerEntries).toByteArray(Charsets.UTF_8))
+                                } ?: error("Failed to write CSV file")
+                                filename
+                            }.onSuccess {
+                                snackbarHostState.showSnackbar("CSV 已保存到 Download/$it")
+                            }.onFailure {
+                                snackbarHostState.showSnackbar("CSV 导出失败")
+                            }
+                            isCsvExporting = false
+                        }
+                    },
+                    enabled = !isCsvExporting
+                ) { Text("导出 CSV") }
                 OutlinedButton(
                     onClick = {
                         isExporting = true

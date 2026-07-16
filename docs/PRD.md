@@ -2,7 +2,7 @@
 
 ## 1. Product Goal
 
-Build an Android automatic bookkeeping app for domestic Android app stores. The app captures WeChat and Alipay payment activity, turns captured transactions into pending entries, helps users review and confirm them, and keeps a local-first ledger with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
+Build an Android automatic bookkeeping app for domestic Android app stores. The app captures WeChat and Alipay payment activity, turns captured transactions into pending entries, helps users review and confirm them, and keeps local-first named ledger books with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
 
 The first delivery target is a feature-complete internal beta, not a small MVP. It must be usable enough to measure capture accuracy, deduplication accuracy, review efficiency, and permission retention.
 
@@ -19,7 +19,9 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 - Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
 - Automatic capture is the primary flow after explicit opt-in; user-started bill sync remains a history backfill and fallback path.
 - All automatically captured transactions first become pending entries.
-- The ledger is local-first; future cloud sync is reserved but not implemented in the first backend.
+- Ledger books are local-first; future cloud sync is reserved but not implemented in the first backend.
+- One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
+- Local mode and signed-in mode use the same on-device ledger books; signing in or out does not replace or reassign them.
 - The first backend supports account, registered device, cloud configuration, AI categorization proxy, and AI categorization logs.
 - Cloud AI categorization is opt-in. Local rules run first.
 - AI categorization uploads minimal fields by default; users may opt into enhanced context.
@@ -38,7 +40,7 @@ Core jobs:
 - Review pending entries quickly.
 - Correct amount, time, transaction kind, category, funding account, merchant/title, and note.
 - Build categorization rules from repeated corrections.
-- View ledger and reports.
+- Create and switch local ledger books, manage shared funding accounts, and view the current ledger book and reports.
 - Export CSV and create encrypted backups.
 - Manage permissions, account, AI consent, and privacy controls.
 
@@ -89,15 +91,18 @@ Actions:
 Detail page:
 - Editable fields: amount, time, transaction kind, category, funding account, merchant/title, note.
 - Evidence section is collapsed by default and can show raw text, source, capture time, and parsed fields.
+- The page identifies the current ledger book that will receive the entry; confirmation captures that ledger-book ID before the asynchronous write starts.
 - Bottom fixed action bar: confirm into ledger, ignore.
 
 ### 5.3 Ledger
 
 Ledger tab:
+- The title shows the current ledger-book name.
 - Monthly grouped transaction list.
 - Top monthly summary shows monthly expense, monthly income, and net amount.
 - The centered add action in the home bottom navigation opens the manual-entry form.
 - The review queue does not expose manual ledger-entry creation.
+- The overflow menu lists Ledger Management, Funding Accounts, and Recently Deleted in that order.
 
 Ledger row:
 - Merchant/title.
@@ -107,27 +112,39 @@ Ledger row:
 - Source marker.
 
 Ledger management:
-- Users can create a manual entry directly in the ledger without passing through the review queue.
+- Users can create multiple named local ledger books. Names are trimmed, non-empty, and unique.
+- Existing single-ledger installations migrate into a fixed default ledger book named "默认账本".
+- The current ledger-book selection persists across process restarts. Creating a ledger book selects it immediately; selecting another ledger book returns to its ledger list.
+- Users can delete only an empty ledger book that is not the final remaining ledger book. Active and recently deleted entries both make a ledger book non-empty.
+- Deleting the current empty ledger book atomically selects the earliest-created remaining ledger book.
+- Users cannot rename a ledger book or move an existing entry between ledger books in this version.
+- Users can create a manual entry directly in the current ledger book without passing through the review queue.
 - Manual entry requires flow direction, transaction kind, amount, and transaction time; the first version supports CNY only.
 - Merchant/title, category, funding account, note, and payment source are optional; an omitted category uses the uncategorized category.
 - The funding-account selector lists reusable existing accounts and offers inline creation of a named account with an optional payment source.
-- Creating or selecting a funding account does not introduce account balances or reconciliation.
+- A separate Funding Accounts page lists shared accounts and supports create, edit, and delete without opening a ledger-entry form.
+- Funding-account names are trimmed and must be non-empty. The same normalized name cannot repeat within the same payment source, while equal names under different payment sources remain valid.
+- Editing a funding account preserves its identity and creation time and does not rewrite the payment source stored on historical entries.
+- A funding account can be deleted only when no active or recently deleted ledger entry, pending entry, or ignored entry references it. A blocked deletion identifies the reference counts by record type.
+- Automatic confirmation preserves an existing funding-account ID when present; otherwise it may match an existing account by exact normalized name and payment source, but never creates an account automatically.
+- Creating, selecting, or managing a funding account does not introduce account balances or reconciliation.
 - The form can select existing categories or the uncategorized category; creating, editing, or deleting categories is outside this ledger CRUD scope.
 - Users can edit flow direction, transaction kind, amount, transaction time, merchant/title, category, funding account, note, and payment source on both manual and automatically captured ledger entries.
 - Amounts are stored as positive minor-unit values; flow direction independently determines whether an entry is an inflow, outflow, or neutral for reports.
 - Amount input must be greater than zero, use at most two decimal places, and fit safely in the stored minor-unit integer; users do not enter a sign.
 - Transaction time cannot be later than the current device time; future planned transactions are outside the ledger CRUD scope.
 - Editing an automatically captured entry does not overwrite its original capture source, entry origin, original pending-entry reference, first confirmation time, or capture evidence.
+- Entry origin, lifecycle timestamps, original capture source, original pending-entry ID, and capture evidence remain persisted but are ledger-entry debug metadata: Debug builds show them in the corresponding entry detail, while Release builds do not compose that section.
 - Editing replaces the current user-visible fields and records the last-modified time; the first version does not keep per-edit versions or provide history rollback.
 - Ledger entries retain their creation or first-confirmation time in addition to the last-modified time.
-- Ledger display, search, and reports use the corrected payment source; provenance views use the original capture source.
+- Ledger display, search, and reports use the corrected payment source; Debug provenance views use the original capture source.
 - Tapping a ledger row opens a read-only detail view; editing starts only after an explicit edit action.
 - Manual creation and ledger-entry editing share the same transaction form while keeping their entry points and save actions distinct.
 - Creation and editing keep changes in the form until the user explicitly saves; saving validates and writes the complete entry as one operation.
 - Leaving a dirty form requires the user to choose between discarding changes and continuing editing.
 - Manual creation and ledger-entry editing do not run duplicate detection; valid entries are saved directly even when similar ledger entries already exist.
-- Deleting an entry removes it from the active ledger, search, and reports while keeping it recoverable for 30 days.
-- The ledger overflow menu opens a recently deleted list showing deletion time and remaining retention days.
+- Deleting an entry removes it from the current ledger book's active list, search, CSV, and reports while keeping it recoverable in that ledger book for 30 days.
+- The Recently Deleted page is scoped to the current ledger book and shows deletion time and remaining retention days.
 - Recently deleted entries can be restored or permanently deleted; permanent deletion requires explicit confirmation and cannot be undone.
 - Entries remaining in recently deleted for 30 days are permanently removed automatically.
 - Deleting from the detail screen first confirms that the entry will remain recoverable for 30 days, then returns to the ledger and offers an immediate undo action.
@@ -139,6 +156,7 @@ Search and filters:
 ### 5.4 Reports
 
 Reports first screen:
+- All report queries use the current ledger book only.
 - Current-month income and expense overview.
 - Category share.
 - Trend entry point.
@@ -196,7 +214,7 @@ Account recovery:
 - Flow: phone confirmation -> SMS verification code -> set new password.
 
 Deletion:
-- Signing out removes only the current device's login session. It does not remove the local ledger, encrypted backups, or the cloud account.
+- Signing out removes only the current device's login session. It does not remove local ledger books, encrypted backups, or the cloud account.
 - Account deletion removes cloud account, registered devices, cloud configuration, and AI categorization logs.
 - Local ledger deletion is separate.
 - Account deletion uses a 7-day cooling-off period.
@@ -245,10 +263,12 @@ Compact copy:
 
 ### 5.9 Backup And Export
 
-- CSV export for spreadsheet inspection and external analysis.
-- Encrypted backup export/import for migration and recovery.
+- CSV export covers the current ledger book only, and its file name includes the ledger-book name.
+- Encrypted backup export/import covers all ledger books, their entry ownership, shared local data, and the current ledger-book selection.
 - Complete app backup must be encrypted before leaving the app sandbox.
 - Before importing, validate the selected backup and passphrase without altering local data. After successful validation, require a separate confirmation that the import replaces the current local snapshot before restoring it.
+- Importing older supported backups creates the fixed default ledger book and assigns all imported ledger entries to it.
+- Clearing local data recreates one empty default ledger book and selects it so the app always has a valid current ledger book.
 
 ## 6. UI Scope
 
@@ -256,6 +276,7 @@ Main navigation:
 - The home bottom navigation exposes four destinations: review queue, ledger, reports, and profile.
 - A raised centered add action opens manual ledger-entry creation; it is an action, not a fifth destination.
 - Destination screens hide the bottom navigation and expose an explicit return-to-home action.
+- Ledger Management and Funding Accounts are secondary pages opened from the ledger overflow menu, not additional bottom-navigation destinations.
 
 Onboarding:
 - Progressive onboarding.
@@ -279,10 +300,10 @@ Profile overview:
 - Each entry opens a full in-app secondary page with a title and back action. Bottom navigation remains available; switching tabs does not preserve this secondary-page stack.
 
 Profile entries:
-- Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
+- Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
 - Automatic Bookkeeping: state, permissions, continuous-monitoring health, and user-started bill sync as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
-- Data and Backup: normal actions for CSV export and encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
+- Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
 - Compliance and Privacy: entry points for the privacy policy, personal-information collection list, third-party-service list, and permission explanations. Each document opens separately and is available in local mode.
 - Internal-beta logs, device matrices, retention checks, and quality metrics are not user settings. They appear only in Debug-build Developer Tools and are absent from release builds and the Profile overview.
 
@@ -344,6 +365,7 @@ Supporting metrics:
 - iOS support.
 - Real-time cloud ledger sync.
 - Full asset, liability, or balance reconciliation.
+- Ledger-book renaming, moving existing entries between ledger books, or per-ledger copies of categories and funding accounts.
 - Advertising SDKs or marketing tracking.
 - Automatic payment, transfer, message sending, or chat reading.
 - Public store submission until internal beta behavior and compliance package are reviewed.

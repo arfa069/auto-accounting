@@ -1,0 +1,890 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 6,
+    "identityHash": "97db54b05ca2384692194459560d0f81",
+    "entities": [
+      {
+        "tableName": "categories",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `kind` TEXT, `sort_order` INTEGER NOT NULL, `is_system` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSystem",
+            "columnName": "is_system",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_categories_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "funding_accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `source` TEXT NOT NULL, `payment_source` TEXT, `label` TEXT NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceScope",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentSource",
+            "columnName": "payment_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_funding_accounts_source_label",
+            "unique": true,
+            "columnNames": [
+              "source",
+              "label"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_funding_accounts_source_label` ON `${TABLE_NAME}` (`source`, `label`)"
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_books",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_books_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ledger_books_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pending_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `source` TEXT NOT NULL, `capture_reason` TEXT NOT NULL, `confidence` TEXT NOT NULL, `transaction_kind` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant_title` TEXT NOT NULL, `transaction_time_epoch_millis` INTEGER NOT NULL, `captured_at_epoch_millis` INTEGER NOT NULL, `suggested_category_id` TEXT, `funding_account_id` INTEGER, `funding_account_label` TEXT, `note` TEXT, `evidence_summary` TEXT, `parsed_fields_text` TEXT, `suggested_category_label` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`suggested_category_id`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`funding_account_id`) REFERENCES `funding_accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureReason",
+            "columnName": "capture_reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionKind",
+            "columnName": "transaction_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinor",
+            "columnName": "amount_minor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantTitle",
+            "columnName": "merchant_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionTimeEpochMillis",
+            "columnName": "transaction_time_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMillis",
+            "columnName": "captured_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suggestedCategoryId",
+            "columnName": "suggested_category_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fundingAccountId",
+            "columnName": "funding_account_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fundingAccountLabel",
+            "columnName": "funding_account_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "evidenceSummary",
+            "columnName": "evidence_summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parsedFieldsText",
+            "columnName": "parsed_fields_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "suggestedCategoryLabel",
+            "columnName": "suggested_category_label",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pending_entries_source",
+            "unique": false,
+            "columnNames": [
+              "source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_entries_source` ON `${TABLE_NAME}` (`source`)"
+          },
+          {
+            "name": "index_pending_entries_confidence",
+            "unique": false,
+            "columnNames": [
+              "confidence"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_entries_confidence` ON `${TABLE_NAME}` (`confidence`)"
+          },
+          {
+            "name": "index_pending_entries_transaction_time_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "transaction_time_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_entries_transaction_time_epoch_millis` ON `${TABLE_NAME}` (`transaction_time_epoch_millis`)"
+          },
+          {
+            "name": "index_pending_entries_suggested_category_id",
+            "unique": false,
+            "columnNames": [
+              "suggested_category_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_entries_suggested_category_id` ON `${TABLE_NAME}` (`suggested_category_id`)"
+          },
+          {
+            "name": "index_pending_entries_funding_account_id",
+            "unique": false,
+            "columnNames": [
+              "funding_account_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_entries_funding_account_id` ON `${TABLE_NAME}` (`funding_account_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "categories",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "suggested_category_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "funding_accounts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "funding_account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `ledger_book_id` TEXT NOT NULL DEFAULT 'default-ledger', `payment_source` TEXT, `original_capture_source` TEXT, `entry_origin` TEXT NOT NULL, `origin_pending_entry_id` TEXT, `flow_direction` TEXT NOT NULL, `transaction_kind` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant_title` TEXT NOT NULL, `transaction_time_epoch_millis` INTEGER NOT NULL, `category_id` TEXT, `funding_account_id` INTEGER, `note` TEXT, `evidence_summary` TEXT, `parsed_fields_text` TEXT, `confirmed_at_epoch_millis` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, `deleted_at_epoch_millis` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`category_id`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`funding_account_id`) REFERENCES `funding_accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`ledger_book_id`) REFERENCES `ledger_books`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerBookId",
+            "columnName": "ledger_book_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'default-ledger'"
+          },
+          {
+            "fieldPath": "paymentSource",
+            "columnName": "payment_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "originalCaptureSource",
+            "columnName": "original_capture_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "entryOrigin",
+            "columnName": "entry_origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originPendingEntryId",
+            "columnName": "origin_pending_entry_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "flowDirection",
+            "columnName": "flow_direction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionKind",
+            "columnName": "transaction_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinor",
+            "columnName": "amount_minor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantTitle",
+            "columnName": "merchant_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionTimeEpochMillis",
+            "columnName": "transaction_time_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "category_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fundingAccountId",
+            "columnName": "funding_account_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "evidenceSummary",
+            "columnName": "evidence_summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parsedFieldsText",
+            "columnName": "parsed_fields_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confirmedAtEpochMillis",
+            "columnName": "confirmed_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAtEpochMillis",
+            "columnName": "deleted_at_epoch_millis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_entries_ledger_book_id",
+            "unique": false,
+            "columnNames": [
+              "ledger_book_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_ledger_book_id` ON `${TABLE_NAME}` (`ledger_book_id`)"
+          },
+          {
+            "name": "index_ledger_entries_payment_source",
+            "unique": false,
+            "columnNames": [
+              "payment_source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_payment_source` ON `${TABLE_NAME}` (`payment_source`)"
+          },
+          {
+            "name": "index_ledger_entries_original_capture_source",
+            "unique": false,
+            "columnNames": [
+              "original_capture_source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_original_capture_source` ON `${TABLE_NAME}` (`original_capture_source`)"
+          },
+          {
+            "name": "index_ledger_entries_entry_origin",
+            "unique": false,
+            "columnNames": [
+              "entry_origin"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_entry_origin` ON `${TABLE_NAME}` (`entry_origin`)"
+          },
+          {
+            "name": "index_ledger_entries_flow_direction",
+            "unique": false,
+            "columnNames": [
+              "flow_direction"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_flow_direction` ON `${TABLE_NAME}` (`flow_direction`)"
+          },
+          {
+            "name": "index_ledger_entries_transaction_kind",
+            "unique": false,
+            "columnNames": [
+              "transaction_kind"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_transaction_kind` ON `${TABLE_NAME}` (`transaction_kind`)"
+          },
+          {
+            "name": "index_ledger_entries_transaction_time_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "transaction_time_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_transaction_time_epoch_millis` ON `${TABLE_NAME}` (`transaction_time_epoch_millis`)"
+          },
+          {
+            "name": "index_ledger_entries_category_id",
+            "unique": false,
+            "columnNames": [
+              "category_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_category_id` ON `${TABLE_NAME}` (`category_id`)"
+          },
+          {
+            "name": "index_ledger_entries_funding_account_id",
+            "unique": false,
+            "columnNames": [
+              "funding_account_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_funding_account_id` ON `${TABLE_NAME}` (`funding_account_id`)"
+          },
+          {
+            "name": "index_ledger_entries_origin_pending_entry_id",
+            "unique": false,
+            "columnNames": [
+              "origin_pending_entry_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_origin_pending_entry_id` ON `${TABLE_NAME}` (`origin_pending_entry_id`)"
+          },
+          {
+            "name": "index_ledger_entries_deleted_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "deleted_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_deleted_at_epoch_millis` ON `${TABLE_NAME}` (`deleted_at_epoch_millis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "categories",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "category_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "funding_accounts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "funding_account_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "ledger_books",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ledger_book_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ignored_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `original_pending_entry_id` TEXT NOT NULL, `source` TEXT NOT NULL, `capture_reason` TEXT NOT NULL DEFAULT 'NOTIFICATION', `confidence` TEXT NOT NULL DEFAULT 'NEEDS_REVIEW', `transaction_kind` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant_title` TEXT NOT NULL, `transaction_time_epoch_millis` INTEGER NOT NULL, `captured_at_epoch_millis` INTEGER NOT NULL DEFAULT 0, `suggested_category_id` TEXT, `funding_account_id` INTEGER, `funding_account_label` TEXT, `note` TEXT, `evidence_summary` TEXT, `parsed_fields_text` TEXT, `ignored_at_epoch_millis` INTEGER NOT NULL, `expires_at_epoch_millis` INTEGER NOT NULL, `reason` TEXT NOT NULL, `suggested_category_label` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalPendingEntryId",
+            "columnName": "original_pending_entry_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureReason",
+            "columnName": "capture_reason",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NOTIFICATION'"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NEEDS_REVIEW'"
+          },
+          {
+            "fieldPath": "transactionKind",
+            "columnName": "transaction_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinor",
+            "columnName": "amount_minor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantTitle",
+            "columnName": "merchant_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionTimeEpochMillis",
+            "columnName": "transaction_time_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMillis",
+            "columnName": "captured_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "suggestedCategoryId",
+            "columnName": "suggested_category_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fundingAccountId",
+            "columnName": "funding_account_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fundingAccountLabel",
+            "columnName": "funding_account_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "evidenceSummary",
+            "columnName": "evidence_summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parsedFieldsText",
+            "columnName": "parsed_fields_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ignoredAtEpochMillis",
+            "columnName": "ignored_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAtEpochMillis",
+            "columnName": "expires_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suggestedCategoryLabel",
+            "columnName": "suggested_category_label",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ignored_entries_source",
+            "unique": false,
+            "columnNames": [
+              "source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ignored_entries_source` ON `${TABLE_NAME}` (`source`)"
+          },
+          {
+            "name": "index_ignored_entries_ignored_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "ignored_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ignored_entries_ignored_at_epoch_millis` ON `${TABLE_NAME}` (`ignored_at_epoch_millis`)"
+          },
+          {
+            "name": "index_ignored_entries_expires_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "expires_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ignored_entries_expires_at_epoch_millis` ON `${TABLE_NAME}` (`expires_at_epoch_millis`)"
+          },
+          {
+            "name": "index_ignored_entries_original_pending_entry_id",
+            "unique": false,
+            "columnNames": [
+              "original_pending_entry_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ignored_entries_original_pending_entry_id` ON `${TABLE_NAME}` (`original_pending_entry_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "categorization_rules",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `merchant_contains` TEXT NOT NULL, `title_contains` TEXT NOT NULL, `source_label` TEXT NOT NULL, `transaction_kind` TEXT NOT NULL, `category` TEXT NOT NULL, `priority` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantContains",
+            "columnName": "merchant_contains",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleContains",
+            "columnName": "title_contains",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceLabel",
+            "columnName": "source_label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionKind",
+            "columnName": "transaction_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "local_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `ai_consent_granted` INTEGER NOT NULL, `enhanced_context_granted` INTEGER NOT NULL, `continuous_bill_sync_completed` INTEGER NOT NULL, `continuous_monitoring_enabled` INTEGER NOT NULL, `active_ledger_id` TEXT NOT NULL DEFAULT 'default-ledger', PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aiConsentGranted",
+            "columnName": "ai_consent_granted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enhancedContextGranted",
+            "columnName": "enhanced_context_granted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "continuousBillSyncCompleted",
+            "columnName": "continuous_bill_sync_completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "continuousMonitoringEnabled",
+            "columnName": "continuous_monitoring_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeLedgerId",
+            "columnName": "active_ledger_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'default-ledger'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '97db54b05ca2384692194459560d0f81')"
+    ]
+  }
+}

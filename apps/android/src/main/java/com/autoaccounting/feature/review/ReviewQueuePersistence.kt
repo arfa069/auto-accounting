@@ -1,17 +1,22 @@
 package com.autoaccounting.feature.review
 
+import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
 import com.autoaccounting.data.local.LocalLedgerRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class ReviewQueuePersistence(
     private val repository: LocalLedgerRepository,
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
 ) {
+    private val transitionMutex = Mutex()
+
     fun observeState(): Flow<ReviewQueueState> {
         val nowEpochMillis = nowProvider()
         return combine(
@@ -37,8 +42,13 @@ class ReviewQueuePersistence(
         repository.seedSystemCategories()
     }
 
-    suspend fun persistTransition(previous: ReviewQueueState, next: ReviewQueueState) {
-        val previousPendingIds = previous.pendingEntries.map { it.id }.toSet()
+    suspend fun persistTransition(
+        previous: ReviewQueueState,
+        next: ReviewQueueState,
+        targetLedgerBookId: String = DEFAULT_LEDGER_BOOK_ID
+    ): Unit = transitionMutex.withLock {
+        val previousPendingById = previous.pendingEntries.associateBy { it.id }
+        val previousPendingIds = previousPendingById.keys
         val nextPendingIds = next.pendingEntries.map { it.id }.toSet()
         val previousConfirmedOriginIds = previous.confirmedEntries.map { it.originPendingId }.toSet()
         val nextConfirmedOriginIds = next.confirmedEntries.map { it.originPendingId }.toSet()
@@ -49,7 +59,7 @@ class ReviewQueuePersistence(
         next.confirmedEntries
             .filterNot { it.originPendingId in previousConfirmedOriginIds }
             .forEach { confirmed ->
-                confirmThroughRepository(confirmed)
+                confirmThroughRepository(confirmed, targetLedgerBookId)
             }
 
         nextIgnoredById.values
@@ -59,9 +69,11 @@ class ReviewQueuePersistence(
                 repository.deletePending(ignored.originalPendingId)
             }
 
-        next.pendingEntries.forEach { entry ->
-            repository.upsertPending(entry.toEntity(zoneId))
-        }
+        next.pendingEntries
+            .filter { entry -> previousPendingById[entry.id] != entry }
+            .forEach { entry ->
+                repository.upsertPending(entry.toEntity(zoneId))
+            }
 
         previousIgnoredById.values
             .filterNot { it.id in nextIgnoredById }
@@ -88,10 +100,14 @@ class ReviewQueuePersistence(
             }
     }
 
-    private suspend fun confirmThroughRepository(confirmed: ReviewQueueConfirmedEntry) {
+    private suspend fun confirmThroughRepository(
+        confirmed: ReviewQueueConfirmedEntry,
+        targetLedgerBookId: String
+    ) {
         val result = runCatching {
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
+                ledgerBookId = targetLedgerBookId,
                 categoryId = confirmed.entry.category.toCategoryIdOrNull(
                     confirmed.entry.kindLabel.toTransactionKind()
                 ),
@@ -102,6 +118,7 @@ class ReviewQueuePersistence(
             repository.upsertPending(confirmed.entry.toEntity(zoneId))
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
+                ledgerBookId = targetLedgerBookId,
                 categoryId = confirmed.entry.category.toCategoryIdOrNull(
                     confirmed.entry.kindLabel.toTransactionKind()
                 ),

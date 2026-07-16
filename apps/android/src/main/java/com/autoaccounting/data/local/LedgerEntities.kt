@@ -36,6 +36,18 @@ data class FundingAccountEntity(
 )
 
 @Entity(
+    tableName = "ledger_books",
+    indices = [
+        Index(value = ["name"], unique = true)
+    ]
+)
+data class LedgerBookEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    @ColumnInfo(name = "created_at_epoch_millis") val createdAtEpochMillis: Long
+)
+
+@Entity(
     tableName = "pending_entries",
     foreignKeys = [
         ForeignKey(
@@ -93,9 +105,16 @@ data class PendingEntryEntity(
             parentColumns = ["id"],
             childColumns = ["funding_account_id"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = LedgerBookEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["ledger_book_id"],
+            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [
+        Index(value = ["ledger_book_id"]),
         Index(value = ["payment_source"]),
         Index(value = ["original_capture_source"]),
         Index(value = ["entry_origin"]),
@@ -110,6 +129,10 @@ data class PendingEntryEntity(
 )
 data class LedgerEntryEntity(
     @PrimaryKey val id: String,
+    @ColumnInfo(
+        name = "ledger_book_id",
+        defaultValue = "'default-ledger'"
+    ) val ledgerBookId: String = DEFAULT_LEDGER_BOOK_ID,
     @ColumnInfo(name = "payment_source") val paymentSource: PaymentSource?,
     @ColumnInfo(name = "original_capture_source") val originalCaptureSource: PaymentSource?,
     @ColumnInfo(name = "entry_origin") val entryOrigin: EntryOrigin,
@@ -182,7 +205,13 @@ data class LocalSettingsEntity(
     @ColumnInfo(name = "ai_consent_granted") val aiConsentGranted: Boolean,
     @ColumnInfo(name = "enhanced_context_granted") val enhancedContextGranted: Boolean,
     @ColumnInfo(name = "continuous_bill_sync_completed") val continuousBillSyncCompleted: Boolean,
-    @ColumnInfo(name = "continuous_monitoring_enabled") val continuousMonitoringEnabled: Boolean
+    @ColumnInfo(name = "continuous_monitoring_enabled") val continuousMonitoringEnabled: Boolean,
+    @ColumnInfo(
+        name = "active_ledger_id",
+        defaultValue = "'default-ledger'"
+    ) val activeLedgerId: String = DEFAULT_LEDGER_BOOK_ID
 )
 
 const val LOCAL_SETTINGS_ID = "local"
+const val DEFAULT_LEDGER_BOOK_ID = "default-ledger"
+const val DEFAULT_LEDGER_BOOK_NAME = "默认账本"

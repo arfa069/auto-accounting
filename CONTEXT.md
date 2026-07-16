@@ -21,7 +21,7 @@ The way a transaction entered the app, such as manual entry, notification captur
 _Avoid_: Payment source, funding account
 
 **Ledger Entry**:
-A transaction after it has been accepted into the user's ledger, either through manual entry or by confirming a pending entry.
+A transaction after it has been accepted into one of the user's ledger books, either through manual entry or by confirming a pending entry.
 _Avoid_: Record, item
 
 **Manual Entry**:
@@ -41,15 +41,23 @@ A pending entry dismissed from the review queue without becoming a ledger entry,
 _Avoid_: Deleted entry, archived transaction
 
 **Deleted Ledger Entry**:
-A former ledger entry removed from the active ledger and reports, recoverable for 30 days before permanent deletion.
+A former ledger entry removed from its ledger book's active list and reports, recoverable in that same ledger book for 30 days before permanent deletion.
 _Avoid_: Ignored entry, archived entry
 
 **Ledger**:
-The user's confirmed collection of ledger entries.
-_Avoid_: History, statement
+The product area that displays and manages the current ledger book.
+_Avoid_: History, statement, all local data
+
+**Ledger Book**:
+A named local collection of ledger entries. Every ledger entry belongs to exactly one ledger book, while categories and funding accounts are shared across all ledger books.
+_Avoid_: Category, funding account, cloud ledger
+
+**Current Ledger Book**:
+The persisted ledger-book selection that receives manual entries and confirmed pending entries and scopes ledger lists, reports, CSV export, and recently deleted entries.
+_Avoid_: Default category, review queue, encrypted-backup scope
 
 **Reports**:
-Summaries and visual analysis of confirmed ledger entries.
+Summaries and visual analysis of confirmed entries in the current ledger book.
 _Avoid_: Dashboard, analytics
 
 **Duplicate Candidate**:
@@ -73,15 +81,15 @@ The user's purpose-based label for a ledger entry, such as food, transport, shop
 _Avoid_: Transaction kind, source type
 
 **Funding Account**:
-A reusable payment method or money account used by a transaction, such as cash, Alipay balance, WeChat balance, a bank card, or Huabei. It may be reported by a payment source or created by the user.
+A reusable payment method or money account used by a transaction, such as cash, Alipay balance, WeChat balance, a bank card, or Huabei. It may be reported by a payment source or created by the user, is shared across ledger books, and can be deleted only when no active/deleted ledger entry, pending entry, or ignored entry references it.
 _Avoid_: Balance account, asset account
 
 **Encrypted Backup**:
-A portable app data backup that is encrypted before it leaves the app sandbox and can later restore the user's ledger and settings.
+A portable app data backup that is encrypted before it leaves the app sandbox and can later restore all ledger books, their entries, shared local data, settings, and the current ledger-book selection.
 _Avoid_: Export, archive
 
 **Data and Backup**:
-A profile-area entry for CSV export and encrypted-backup export or import. Local Data Deletion is a separately protected, destructive action at the bottom of this entry.
+A profile-area entry for current-ledger CSV export and all-ledger encrypted-backup export or import. Local Data Deletion is a separately protected, destructive action at the bottom of this entry.
 _Avoid_: Account management, cloud sync
 
 **User Account**:
@@ -93,7 +101,7 @@ The first profile-area entry for viewing the current account state, signing in o
 _Avoid_: Profile, local-data settings
 
 **Local Mode**:
-An app state where the user can keep a local ledger without signing in, while cloud-linked capabilities remain unavailable.
+An app state where the user can keep local ledger books without signing in, while cloud-linked capabilities remain unavailable.
 _Avoid_: Guest account, anonymous account
 
 **Registered Device**:
@@ -117,7 +125,7 @@ The user flow for regaining account access by verifying the phone number and set
 _Avoid_: SMS login, customer support reset
 
 **Local Data Deletion**:
-The separate user-confirmed removal of ledger and app data stored on the Android device.
+The separate user-confirmed removal of all ledger books and app data stored on the Android device, followed by recreation of one empty default ledger book.
 _Avoid_: Account deletion, logout
 
 **Internal Beta**:
@@ -127,6 +135,10 @@ _Avoid_: MVP, prototype, store release
 **Developer Tools**:
 Debug-build-only tools for internal-beta checks such as logs, device matrices, permission retention, and quality metrics. They are not available in release builds or the normal user-facing profile area.
 _Avoid_: User settings, hidden release entry
+
+**Ledger Entry Debug Metadata**:
+Persisted lifecycle and capture-provenance fields such as entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence. They may appear in the corresponding entry detail only in Debug builds and are not composed in Release UI.
+_Avoid_: Normal transaction details, centralized transaction log
 
 **Store Compliance Package**:
 The permission explanations, privacy policy, review materials, screenshots, videos, and declarations needed for public app-store submission.
@@ -205,7 +217,7 @@ The user-visible readiness state of permissions and device settings that affect 
 _Avoid_: Permission granted, setup status
 
 **CSV Export**:
-A plain-text spreadsheet-oriented export of ledger entries for user inspection and external analysis.
+A plain-text spreadsheet-oriented export of the current ledger book for user inspection and external analysis.
 _Avoid_: Backup, sync
 
 **Categorization Rule**:

@@ -55,6 +55,14 @@ fun exportLedgerCsv(entries: List<LedgerUiEntry>): String {
     return (listOf(header) + rows).joinToString("\n")
 }
 
+internal fun ledgerCsvFilename(ledgerName: String, timestamp: String): String {
+    val safeLedgerName = ledgerName
+        .trim()
+        .replace(Regex("""[\\/:*?"<>|\r\n]+"""), "_")
+        .ifBlank { "默认账本" }
+    return "$timestamp-$safeLedgerName-ledger.csv"
+}
+
 private fun String.csvCell(): String {
     val needsQuoting = contains(",") || contains("\"") || contains("\n")
     val escaped = replace("\"", "\"\"")

@@ -28,6 +28,7 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 20. [完成：拆分分类规则与智能分类同意链](./020-separate-categorization-rules-and-ai-consent.md)
 21. [完成：迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
 22. [完成：拆分合规与隐私并隔离开发者工具](./022-separate-compliance-privacy-and-developer-tools.md)
+23. [管理本地多账本、资金账户并隔离账目调试信息](./023-manage-local-ledgers-and-funding-accounts.md)
 
 ## Supporting Lists
 
@@ -47,3 +48,4 @@ These issue files are ready for independent agent pickup. Work in dependency ord
 - Issue 17 builds on Issues 2, 3, and 5 to complete the persisted ledger-entry lifecycle without changing the pending-only automatic-capture boundary.
 - Issue 18 establishes the profile overview and account-management navigation used by Issues 19-22.
 - Issues 19-22 are independently implementable after Issue 18.
+- Issue 23 builds on the persisted ledger lifecycle, protected backup flow, and Debug/Release isolation established by Issues 17, 21, and 22; it remains entirely local and does not depend on backend work.

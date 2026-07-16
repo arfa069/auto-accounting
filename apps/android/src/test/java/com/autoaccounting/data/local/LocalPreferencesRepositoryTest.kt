@@ -228,7 +228,7 @@ class LocalPreferencesRepositoryTest {
     }
 
     @Test
-    fun clearLocalDataRestoresDefaultRulesAndDeletesSettings() {
+    fun clearLocalDataRestoresDefaultRulesAndResetsSettings() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,

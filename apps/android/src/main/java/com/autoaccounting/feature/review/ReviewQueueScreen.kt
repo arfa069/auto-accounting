@@ -85,6 +85,7 @@ fun ReviewQueueScreen(
     initialState: ReviewQueueState = ReviewQueueState(
         pendingEntries = sampleReviewQueueEntries()
     ),
+    targetLedgerName: String = "默认账本",
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
@@ -105,6 +106,7 @@ fun ReviewQueueScreen(
     ReviewQueueScreen(
         state = state,
         onStateChange = { state = it },
+        targetLedgerName = targetLedgerName,
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
         accountSession = accountSession,
@@ -127,6 +129,7 @@ fun ReviewQueueScreen(
 fun ReviewQueueScreen(
     state: ReviewQueueState,
     onStateChange: (ReviewQueueState) -> Unit,
+    targetLedgerName: String = "默认账本",
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
@@ -232,6 +235,7 @@ fun ReviewQueueScreen(
     ) { innerPadding ->
         ReviewQueueContent(
             state = state,
+            targetLedgerName = targetLedgerName,
             onAction = ::dispatch,
             onEdit = { editingEntry = it },
             onShowIgnoredList = { showIgnoredList = true },
@@ -361,6 +365,7 @@ fun ReviewQueueScreen(
 @Composable
 private fun ReviewQueueContent(
     state: ReviewQueueState,
+    targetLedgerName: String,
     onAction: (ReviewQueueAction) -> Unit,
     onEdit: (ReviewQueueEntry) -> Unit,
     onShowIgnoredList: () -> Unit,
@@ -392,7 +397,7 @@ private fun ReviewQueueContent(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "先确认再入账，误操作可撤销",
+                    text = "确认后记入「$targetLedgerName」，误操作可撤销",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }

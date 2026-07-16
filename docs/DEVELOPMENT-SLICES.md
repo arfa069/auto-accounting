@@ -23,17 +23,21 @@ Verification:
 ## Slice 1: Local Ledger Foundation
 
 Outcome:
-- Local database can store pending entries, ledger entries, categories, funding accounts, and ignored entries.
+- Local database can store named ledger books, their entries, pending entries, categories, shared funding accounts, and ignored entries.
 
 Includes:
 - Room schema.
+- Persisted current ledger-book selection and single-ledger-to-default-ledger migration.
+- Safe ledger-book creation, selection, and empty-book deletion.
+- Shared funding-account create, update, reference-aware delete, and exact-match reuse.
 - DAO tests.
 - Seed categories.
 - Basic repository APIs.
 
 Verification:
 - Unit tests for insert/update/query.
-- Migration test baseline.
+- Migration tests preserve active and soft-deleted ledger entries and assign them to the default ledger book.
+- Deletion tests cover final-book, non-empty-book, and referenced-funding-account blocking.
 
 ## Slice 2: Review Queue UI Without Real Capture
 
@@ -54,18 +58,21 @@ Verification:
 ## Slice 3: Ledger And Reports From Local Data
 
 Outcome:
-- Confirmed entries appear in ledger and reports.
+- Confirmed entries appear in the selected ledger book and its reports.
 
 Includes:
+- Ledger-book and funding-account management pages.
 - Ledger monthly summary.
 - Ledger search and filter panel.
+- Current-ledger recently deleted list and CSV scope.
 - Report overview.
 - Illustrated donut chart placeholder plus category ranking.
 - 6-month category trend.
+- Debug-only ledger provenance metadata with no Release composition.
 
 Verification:
-- Query tests for monthly totals and category aggregates.
-- UI smoke tests for ledger and reports.
+- Query tests for per-ledger monthly totals, category aggregates, recently deleted entries, and CSV rows.
+- UI smoke tests for ledger switching, funding-account management, reports, and Debug/Release metadata visibility.
 
 ## Slice 4: Categorization Rules
 
@@ -188,17 +195,18 @@ Verification:
 ## Slice 11: Backup, Export, And Local Deletion
 
 Outcome:
-- Users can export CSV, export/import encrypted backups, and delete local data with safeguards.
+- Users can export the current ledger book as CSV, export/import all local ledger books in an encrypted backup, and delete local data with safeguards.
 
 Includes:
-- CSV export.
-- Encrypted backup format.
+- Current-ledger CSV export with the ledger-book name in the file name.
+- Encrypted backup format with all ledger books, entry ownership, shared data, and current selection.
+- Legacy backup import into the default ledger book.
 - Restore flow.
-- Local data deletion with backup reminder and typed phrase.
+- Local data deletion with backup reminder, typed phrase, and recreation of one selected default ledger book.
 
 Verification:
-- Backup round-trip test.
-- CSV schema test.
+- All-ledger backup round-trip and legacy-version import tests.
+- Current-ledger CSV schema and isolation tests.
 - Deletion confirmation test.
 
 ## Slice 12: Account Deletion

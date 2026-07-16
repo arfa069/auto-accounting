@@ -90,8 +90,55 @@ class ReviewQueueStateTest {
         assertEquals("2026-07-08 12:30", edited.transactionTimeText)
         assertEquals("退款", edited.kindLabel)
         assertEquals("餐饮", edited.category)
+        assertEquals(42L, edited.fundingAccountId)
         assertEquals("微信零钱", edited.fundingAccountLabel)
         assertEquals("客户会议", edited.note)
+    }
+
+    @Test
+    fun editClearsFundingAccountIdWhenFundingAccountLabelChanges() {
+        val state = ReviewQueueState(pendingEntries = listOf(sampleEntry()))
+
+        val next = reduceReviewQueue(
+            state,
+            ReviewQueueAction.SaveEdit(
+                entryId = "pending-lunch",
+                title = "午餐",
+                amountText = "35.90",
+                timeText = "2026-07-08 12:20",
+                transactionKind = "支出",
+                category = "餐饮",
+                fundingAccount = "支付宝余额",
+                note = ""
+            )
+        )
+
+        val edited = next.pendingEntries.single()
+        assertNull(edited.fundingAccountId)
+        assertEquals("支付宝余额", edited.fundingAccountLabel)
+    }
+
+    @Test
+    fun editCanClearFundingAccountLabelAndItsId() {
+        val state = ReviewQueueState(pendingEntries = listOf(sampleEntry()))
+
+        val next = reduceReviewQueue(
+            state,
+            ReviewQueueAction.SaveEdit(
+                entryId = "pending-lunch",
+                title = "午餐",
+                amountText = "35.90",
+                timeText = "2026-07-08 12:20",
+                transactionKind = "支出",
+                category = "餐饮",
+                fundingAccount = "",
+                note = ""
+            )
+        )
+
+        val edited = next.pendingEntries.single()
+        assertNull(edited.fundingAccountId)
+        assertEquals("", edited.fundingAccountLabel)
     }
 
     @Test
@@ -200,6 +247,7 @@ class ReviewQueueStateTest {
         amountMinor = 3590,
         transactionTimeText = "2026-07-08 12:20",
         category = "餐饮",
+        fundingAccountId = 42L,
         fundingAccountLabel = "微信零钱",
         sourceLabel = "微信",
         kindLabel = "支出",

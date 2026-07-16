@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         CategoryEntity::class,
         FundingAccountEntity::class,
+        LedgerBookEntity::class,
         PendingEntryEntity::class,
         LedgerEntryEntity::class,
         IgnoredEntryEntity::class,
@@ -23,6 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun fundingAccountDao(): FundingAccountDao
+    abstract fun ledgerBookDao(): LedgerBookDao
     abstract fun pendingEntryDao(): PendingEntryDao
     abstract fun ledgerEntryDao(): LedgerEntryDao
     abstract fun ignoredEntryDao(): IgnoredEntryDao
@@ -30,7 +32,7 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun localSettingsDao(): LocalSettingsDao
 
     companion object {
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -149,6 +151,107 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE ledger_entries")
                 db.execSQL("ALTER TABLE ledger_entries_new RENAME TO ledger_entries")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_payment_source ON ledger_entries(payment_source)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_original_capture_source ON ledger_entries(original_capture_source)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_entry_origin ON ledger_entries(entry_origin)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_flow_direction ON ledger_entries(flow_direction)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_transaction_kind ON ledger_entries(transaction_kind)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_transaction_time_epoch_millis ON ledger_entries(transaction_time_epoch_millis)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_category_id ON ledger_entries(category_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_funding_account_id ON ledger_entries(funding_account_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_origin_pending_entry_id ON ledger_entries(origin_pending_entry_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_deleted_at_epoch_millis ON ledger_entries(deleted_at_epoch_millis)")
+            }
+        }
+
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ledger_books` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `created_at_epoch_millis` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_ledger_books_name` " +
+                        "ON `ledger_books` (`name`)"
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO ledger_books (id, name, created_at_epoch_millis)
+                    VALUES (?, ?, 0)
+                    """.trimIndent(),
+                    arrayOf(DEFAULT_LEDGER_BOOK_ID, DEFAULT_LEDGER_BOOK_NAME)
+                )
+                db.execSQL(
+                    "ALTER TABLE local_settings ADD COLUMN active_ledger_id TEXT NOT NULL " +
+                        "DEFAULT '$DEFAULT_LEDGER_BOOK_ID'"
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO local_settings (
+                        id, ai_consent_granted, enhanced_context_granted,
+                        continuous_bill_sync_completed, continuous_monitoring_enabled,
+                        active_ledger_id
+                    ) VALUES (?, 0, 0, 0, 0, ?)
+                    """.trimIndent(),
+                    arrayOf(LOCAL_SETTINGS_ID, DEFAULT_LEDGER_BOOK_ID)
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ledger_entries_new` (
+                        `id` TEXT NOT NULL,
+                        `ledger_book_id` TEXT NOT NULL DEFAULT '$DEFAULT_LEDGER_BOOK_ID',
+                        `payment_source` TEXT,
+                        `original_capture_source` TEXT,
+                        `entry_origin` TEXT NOT NULL,
+                        `origin_pending_entry_id` TEXT,
+                        `flow_direction` TEXT NOT NULL,
+                        `transaction_kind` TEXT NOT NULL,
+                        `amount_minor` INTEGER NOT NULL,
+                        `currency` TEXT NOT NULL,
+                        `merchant_title` TEXT NOT NULL,
+                        `transaction_time_epoch_millis` INTEGER NOT NULL,
+                        `category_id` TEXT,
+                        `funding_account_id` INTEGER,
+                        `note` TEXT,
+                        `evidence_summary` TEXT,
+                        `parsed_fields_text` TEXT,
+                        `confirmed_at_epoch_millis` INTEGER NOT NULL,
+                        `updated_at_epoch_millis` INTEGER NOT NULL,
+                        `deleted_at_epoch_millis` INTEGER,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`category_id`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`funding_account_id`) REFERENCES `funding_accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`ledger_book_id`) REFERENCES `ledger_books`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO ledger_entries_new (
+                        id, ledger_book_id, payment_source, original_capture_source, entry_origin,
+                        origin_pending_entry_id, flow_direction, transaction_kind, amount_minor,
+                        currency, merchant_title, transaction_time_epoch_millis, category_id,
+                        funding_account_id, note, evidence_summary, parsed_fields_text,
+                        confirmed_at_epoch_millis, updated_at_epoch_millis, deleted_at_epoch_millis
+                    )
+                    SELECT
+                        id, '$DEFAULT_LEDGER_BOOK_ID', payment_source, original_capture_source,
+                        entry_origin, origin_pending_entry_id, flow_direction, transaction_kind,
+                        amount_minor, currency, merchant_title, transaction_time_epoch_millis,
+                        category_id, funding_account_id, note, evidence_summary, parsed_fields_text,
+                        confirmed_at_epoch_millis, updated_at_epoch_millis, deleted_at_epoch_millis
+                    FROM ledger_entries
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE ledger_entries")
+                db.execSQL("ALTER TABLE ledger_entries_new RENAME TO ledger_entries")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_ledger_book_id ON ledger_entries(ledger_book_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_payment_source ON ledger_entries(payment_source)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_original_capture_source ON ledger_entries(original_capture_source)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_entry_origin ON ledger_entries(entry_origin)")

@@ -39,6 +39,7 @@ data class ReviewQueueEntry(
     val amountMinor: Long = 0,
     val transactionTimeText: String = "",
     val category: String = "",
+    val fundingAccountId: Long? = null,
     val fundingAccountLabel: String = "",
     val sourceLabel: String = "",
     val kindLabel: String = "",
@@ -240,6 +241,7 @@ fun reduceReviewQueue(
                 if (entry.id != action.entryId) {
                     entry
                 } else {
+                    val normalizedFundingAccount = action.fundingAccount.trim()
                     entry.copy(
                         title = action.title.trim().ifBlank { entry.title },
                         amountMinor = amountMinor,
@@ -247,8 +249,10 @@ fun reduceReviewQueue(
                             .ifBlank { entry.transactionTimeText },
                         kindLabel = action.transactionKind.trim().ifBlank { entry.kindLabel },
                         category = action.category.trim().ifBlank { entry.category },
-                        fundingAccountLabel = action.fundingAccount.trim()
-                            .ifBlank { entry.fundingAccountLabel },
+                        fundingAccountId = entry.fundingAccountId.takeIf {
+                            normalizedFundingAccount == entry.fundingAccountLabel.trim()
+                        },
+                        fundingAccountLabel = normalizedFundingAccount,
                         note = action.note.trim().ifBlank { null }
                     )
                 }

@@ -52,4 +52,12 @@ class LocalDataPortabilityTest {
         assertFalse(wrongPhrase.canDelete)
         assertTrue(exactPhrase.canDelete)
     }
+
+    @Test
+    fun csvFilenameIncludesSanitizedCurrentLedgerName() {
+        assertEquals(
+            "2026-07-16-14-30-家庭_日常-ledger.csv",
+            ledgerCsvFilename(" 家庭/日常 ", "2026-07-16-14-30")
+        )
+    }
 }

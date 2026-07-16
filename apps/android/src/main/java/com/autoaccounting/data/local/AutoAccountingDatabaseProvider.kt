@@ -20,7 +20,8 @@ object AutoAccountingDatabaseProvider {
                     AutoAccountingDatabase.MIGRATION_1_2,
                     AutoAccountingDatabase.MIGRATION_2_3,
                     AutoAccountingDatabase.MIGRATION_3_4,
-                    AutoAccountingDatabase.MIGRATION_4_5
+                    AutoAccountingDatabase.MIGRATION_4_5,
+                    AutoAccountingDatabase.MIGRATION_5_6
                 )
                 .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
                 .build()
@@ -31,5 +32,21 @@ object AutoAccountingDatabaseProvider {
 internal val DEFAULT_CATEGORIZATION_RULES_CALLBACK = object : RoomDatabase.Callback() {
     override fun onCreate(db: SupportSQLiteDatabase) {
         DefaultCategorizationRules.insertMissing(db)
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO ledger_books (id, name, created_at_epoch_millis)
+            VALUES (?, ?, 0)
+            """.trimIndent(),
+            arrayOf(DEFAULT_LEDGER_BOOK_ID, DEFAULT_LEDGER_BOOK_NAME)
+        )
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO local_settings (
+                id, ai_consent_granted, enhanced_context_granted,
+                continuous_bill_sync_completed, continuous_monitoring_enabled, active_ledger_id
+            ) VALUES (?, 0, 0, 0, 0, ?)
+            """.trimIndent(),
+            arrayOf(LOCAL_SETTINGS_ID, DEFAULT_LEDGER_BOOK_ID)
+        )
     }
 }

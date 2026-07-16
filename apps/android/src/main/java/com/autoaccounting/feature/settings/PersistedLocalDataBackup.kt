@@ -12,9 +12,12 @@ import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.FundingAccountSourceScope
 import com.autoaccounting.data.local.IgnoreReason
 import com.autoaccounting.data.local.IgnoredEntryEntity
+import com.autoaccounting.data.local.LedgerBookEntity
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.LocalSettingsEntity
 import com.autoaccounting.data.local.LOCAL_SETTINGS_ID
+import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
+import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
@@ -41,7 +44,8 @@ data class PersistedLocalDataSnapshot(
     val ledgerEntries: List<LedgerEntryEntity>,
     val ignoredEntries: List<IgnoredEntryEntity>,
     val categorizationRules: List<CategorizationRuleEntity>,
-    val settings: LocalSettingsEntity?
+    val settings: LocalSettingsEntity?,
+    val ledgerBooks: List<LedgerBookEntity> = listOf(defaultBackupLedgerBook())
 )
 
 class LocalDataBackupRepository(
@@ -49,6 +53,8 @@ class LocalDataBackupRepository(
 ) {
     suspend fun exportEncryptedBackup(passphrase: String): String {
         val snapshot = database.withTransaction {
+            val ledgerBooks = database.ledgerBookDao().getAll()
+                .ifEmpty { listOf(defaultBackupLedgerBook()) }
             PersistedLocalDataSnapshot(
                 categories = database.categoryDao().getAllCategories(),
                 fundingAccounts = database.fundingAccountDao().getAllFundingAccounts(),
@@ -57,6 +63,8 @@ class LocalDataBackupRepository(
                 ignoredEntries = database.ignoredEntryDao().listAll(),
                 categorizationRules = database.categorizationRuleDao().listRules(),
                 settings = database.localSettingsDao().getById()
+                    ?: defaultBackupSettings(ledgerBooks.first().id),
+                ledgerBooks = ledgerBooks
             )
         }
         return encryptPersistedLocalData(snapshot, passphrase)
@@ -73,16 +81,18 @@ class LocalDataBackupRepository(
             database.ignoredEntryDao().deleteAll()
             database.fundingAccountDao().deleteAll()
             database.categoryDao().deleteAll()
+            database.ledgerBookDao().deleteAll()
             database.categorizationRuleDao().deleteAll()
             database.localSettingsDao().deleteAll()
 
             database.categoryDao().upsertAll(snapshot.categories)
             database.fundingAccountDao().upsertAll(snapshot.fundingAccounts)
+            database.ledgerBookDao().insertAll(snapshot.ledgerBooks)
             database.pendingEntryDao().upsertAll(snapshot.pendingEntries)
             database.ledgerEntryDao().upsertAll(snapshot.ledgerEntries)
             database.ignoredEntryDao().upsertAll(snapshot.ignoredEntries)
             database.categorizationRuleDao().upsertAll(snapshot.categorizationRules)
-            snapshot.settings?.let { database.localSettingsDao().upsert(it) }
+            database.localSettingsDao().upsert(requireNotNull(snapshot.settings))
         }
     }
 
@@ -103,6 +113,9 @@ class LocalDataBackupRepository(
 
 private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot = apply {
     require(categories.map { it.id }.allDistinct()) { "Backup contains duplicate categories" }
+    require(categories.map { it.name }.allDistinct()) {
+        "Backup contains duplicate category names"
+    }
     require(categories.all { it.id.isNotBlank() && it.name.isNotBlank() }) {
         "Backup contains an invalid category"
     }
@@ -110,8 +123,27 @@ private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot =
     require(fundingAccounts.all { it.id >= 0 && it.label.isNotBlank() }) {
         "Backup contains an invalid funding account"
     }
+    require(
+        fundingAccounts
+            .map { it.sourceScope to it.label }
+            .allDistinct()
+    ) { "Backup contains duplicate funding account names for a payment source" }
+    require(ledgerBooks.isNotEmpty()) { "Backup must contain at least one ledger book" }
+    require(ledgerBooks.map { it.id }.allDistinct()) {
+        "Backup contains duplicate ledger books"
+    }
+    require(ledgerBooks.map { it.name }.allDistinct()) {
+        "Backup contains duplicate ledger book names"
+    }
+    require(ledgerBooks.all {
+        it.id.isNotBlank() &&
+            it.name.isNotBlank() &&
+            it.name == it.name.trim() &&
+            it.createdAtEpochMillis >= 0
+    }) { "Backup contains an invalid ledger book" }
     val categoryIds = categories.mapTo(mutableSetOf()) { it.id }
     val fundingAccountIds = fundingAccounts.mapTo(mutableSetOf()) { it.id }
+    val ledgerBookIds = ledgerBooks.mapTo(mutableSetOf()) { it.id }
     fun referencesExist(categoryId: String?, fundingAccountId: Long?): Boolean =
         (categoryId == null || categoryId in categoryIds) &&
             (fundingAccountId == null || fundingAccountId in fundingAccountIds)
@@ -133,6 +165,7 @@ private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot =
             entry.confirmedAtEpochMillis >= 0 &&
             entry.updatedAtEpochMillis >= entry.confirmedAtEpochMillis &&
             (entry.deletedAtEpochMillis == null || entry.deletedAtEpochMillis >= entry.confirmedAtEpochMillis) &&
+            entry.ledgerBookId in ledgerBookIds &&
             referencesExist(entry.categoryId, entry.fundingAccountId)
     }) { "Backup contains an invalid ledger entry" }
     require(ignoredEntries.map { it.id }.allDistinct()) { "Backup contains duplicate ignored entries" }
@@ -149,10 +182,12 @@ private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot =
     require(categorizationRules.all {
         it.id.isNotBlank() && it.category.isNotBlank() && it.updatedAtEpochMillis >= 0
     }) { "Backup contains an invalid categorization rule" }
-    require(settings == null || (
-        settings.id == LOCAL_SETTINGS_ID &&
+    require(
+        settings != null &&
+            settings.id == LOCAL_SETTINGS_ID &&
+            settings.activeLedgerId in ledgerBookIds &&
             (settings.aiConsentGranted || !settings.enhancedContextGranted)
-        )) { "Backup contains invalid local settings" }
+    ) { "Backup contains invalid local settings" }
 }
 
 private fun <T> List<T>.allDistinct(): Boolean = size == toSet().size
@@ -172,7 +207,7 @@ internal fun encryptPersistedLocalData(
         GCMParameterSpec(GCM_TAG_BITS, iv)
     )
     val encrypted = cipher.doFinal(plainText)
-    return BACKUP_PREFIX_V3 + Base64.getEncoder().encodeToString(salt + iv + encrypted)
+    return BACKUP_PREFIX_V4 + Base64.getEncoder().encodeToString(salt + iv + encrypted)
 }
 
 internal fun decryptPersistedLocalData(
@@ -181,6 +216,7 @@ internal fun decryptPersistedLocalData(
 ): PersistedLocalDataSnapshot {
     require(passphrase.isNotBlank()) { "Backup passphrase is required" }
     val prefix = when {
+        backupText.startsWith(BACKUP_PREFIX_V4) -> BACKUP_PREFIX_V4
         backupText.startsWith(BACKUP_PREFIX_V3) -> BACKUP_PREFIX_V3
         backupText.startsWith(BACKUP_PREFIX_V2) -> BACKUP_PREFIX_V2
         else -> error("Unsupported backup format")
@@ -203,7 +239,7 @@ private fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
     val output = ByteArrayOutputStream()
     DataOutputStream(output).use { data ->
         data.writeInt(BACKUP_MAGIC)
-        data.writeInt(BACKUP_VERSION_V3)
+        data.writeInt(BACKUP_VERSION_V4)
         data.writeList(categories) { category ->
             writeString(category.id)
             writeString(category.name)
@@ -219,8 +255,13 @@ private fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
             writeString(account.label)
             writeLong(account.createdAtEpochMillis)
         }
+        data.writeList(ledgerBooks) { ledgerBook ->
+            writeString(ledgerBook.id)
+            writeString(ledgerBook.name)
+            writeLong(ledgerBook.createdAtEpochMillis)
+        }
         data.writeList(pendingEntries, DataOutputStream::writePendingEntry)
-        data.writeList(ledgerEntries, DataOutputStream::writeLedgerEntry)
+        data.writeList(ledgerEntries, DataOutputStream::writeLedgerEntryV4)
         data.writeList(ignoredEntries, DataOutputStream::writeIgnoredEntry)
         data.writeList(categorizationRules, DataOutputStream::writeCategorizationRule)
         data.writeBoolean(settings != null)
@@ -233,50 +274,78 @@ private fun snapshotFromBytes(bytes: ByteArray): PersistedLocalDataSnapshot =
     DataInputStream(ByteArrayInputStream(bytes)).use { data ->
         require(data.readInt() == BACKUP_MAGIC) { "Invalid backup payload" }
         val version = data.readInt()
-        require(version == BACKUP_VERSION_V2 || version == BACKUP_VERSION_V3) {
+        require(
+            version == BACKUP_VERSION_V2 ||
+                version == BACKUP_VERSION_V3 ||
+                version == BACKUP_VERSION_V4
+        ) {
             "Unsupported backup version"
         }
-        val snapshot = PersistedLocalDataSnapshot(
-            categories = data.readList {
-                CategoryEntity(
-                    id = readString(),
-                    name = readString(),
-                    kind = readNullableString()?.let(TransactionKind::valueOf),
-                    sortOrder = readInt(),
-                    isSystem = readBoolean(),
+        val categories = data.readList {
+            CategoryEntity(
+                id = readString(),
+                name = readString(),
+                kind = readNullableString()?.let(TransactionKind::valueOf),
+                sortOrder = readInt(),
+                isSystem = readBoolean(),
+                createdAtEpochMillis = readLong()
+            )
+        }
+        val fundingAccounts = data.readList {
+            if (version == BACKUP_VERSION_V2) {
+                val id = readLong()
+                val source = PaymentSource.valueOf(readString())
+                FundingAccountEntity(
+                    id = id,
+                    sourceScope = source.toScope(),
+                    paymentSource = source,
+                    label = readString(),
                     createdAtEpochMillis = readLong()
                 )
-            },
-            fundingAccounts = data.readList {
-                if (version == BACKUP_VERSION_V2) {
-                    val id = readLong()
-                    val source = PaymentSource.valueOf(readString())
-                    FundingAccountEntity(
-                        id = id,
-                        sourceScope = source.toScope(),
-                        paymentSource = source,
-                        label = readString(),
-                        createdAtEpochMillis = readLong()
-                    )
-                } else {
-                    FundingAccountEntity(
-                        id = readLong(),
-                        sourceScope = FundingAccountSourceScope.valueOf(readString()),
-                        paymentSource = readNullableString()?.let(PaymentSource::valueOf),
-                        label = readString(),
-                        createdAtEpochMillis = readLong()
-                    )
-                }
-            },
-            pendingEntries = data.readList(DataInputStream::readPendingEntry),
-            ledgerEntries = if (version == BACKUP_VERSION_V2) {
-                data.readList(DataInputStream::readLedgerEntryV2)
             } else {
-                data.readList(DataInputStream::readLedgerEntryV3)
-            },
-            ignoredEntries = data.readList(DataInputStream::readIgnoredEntry),
-            categorizationRules = data.readList(DataInputStream::readCategorizationRule),
-            settings = if (data.readBoolean()) data.readSettings() else null
+                FundingAccountEntity(
+                    id = readLong(),
+                    sourceScope = FundingAccountSourceScope.valueOf(readString()),
+                    paymentSource = readNullableString()?.let(PaymentSource::valueOf),
+                    label = readString(),
+                    createdAtEpochMillis = readLong()
+                )
+            }
+        }
+        val ledgerBooks = if (version == BACKUP_VERSION_V4) {
+            data.readList {
+                LedgerBookEntity(
+                    id = readString(),
+                    name = readString(),
+                    createdAtEpochMillis = readLong()
+                )
+            }
+        } else {
+            listOf(defaultBackupLedgerBook())
+        }
+        val pendingEntries = data.readList(DataInputStream::readPendingEntry)
+        val ledgerEntries = when (version) {
+            BACKUP_VERSION_V2 -> data.readList(DataInputStream::readLedgerEntryV2)
+            BACKUP_VERSION_V3 -> data.readList(DataInputStream::readLedgerEntryV3)
+            else -> data.readList(DataInputStream::readLedgerEntryV4)
+        }
+        val ignoredEntries = data.readList(DataInputStream::readIgnoredEntry)
+        val categorizationRules = data.readList(DataInputStream::readCategorizationRule)
+        val settingsPresent = data.readBoolean()
+        val settings = when {
+            !settingsPresent -> defaultBackupSettings(ledgerBooks.first().id)
+            version == BACKUP_VERSION_V4 -> data.readSettingsV4()
+            else -> data.readSettingsV3()
+        }
+        val snapshot = PersistedLocalDataSnapshot(
+            categories = categories,
+            fundingAccounts = fundingAccounts,
+            pendingEntries = pendingEntries,
+            ledgerEntries = ledgerEntries,
+            ignoredEntries = ignoredEntries,
+            categorizationRules = categorizationRules,
+            settings = settings,
+            ledgerBooks = ledgerBooks
         )
         require(data.available() == 0) { "Invalid backup payload" }
         snapshot
@@ -322,8 +391,9 @@ private fun DataInputStream.readPendingEntry(): PendingEntryEntity = PendingEntr
     suggestedCategoryLabel = readNullableString()
 )
 
-private fun DataOutputStream.writeLedgerEntry(entry: LedgerEntryEntity) {
+private fun DataOutputStream.writeLedgerEntryV4(entry: LedgerEntryEntity) {
     writeString(entry.id)
+    writeString(entry.ledgerBookId)
     writeNullableString(entry.paymentSource?.name)
     writeNullableString(entry.originalCaptureSource?.name)
     writeString(entry.entryOrigin.name)
@@ -343,6 +413,29 @@ private fun DataOutputStream.writeLedgerEntry(entry: LedgerEntryEntity) {
     writeLong(entry.updatedAtEpochMillis)
     writeNullableLong(entry.deletedAtEpochMillis)
 }
+
+private fun DataInputStream.readLedgerEntryV4(): LedgerEntryEntity = LedgerEntryEntity(
+    id = readString(),
+    ledgerBookId = readString(),
+    paymentSource = readNullableString()?.let(PaymentSource::valueOf),
+    originalCaptureSource = readNullableString()?.let(PaymentSource::valueOf),
+    entryOrigin = EntryOrigin.valueOf(readString()),
+    originPendingEntryId = readNullableString(),
+    flowDirection = FlowDirection.valueOf(readString()),
+    transactionKind = TransactionKind.valueOf(readString()),
+    amountMinor = readLong(),
+    currency = readString(),
+    merchantTitle = readString(),
+    transactionTimeEpochMillis = readLong(),
+    categoryId = readNullableString(),
+    fundingAccountId = readNullableLong(),
+    note = readNullableString(),
+    evidenceSummary = readNullableString(),
+    parsedFieldsText = readNullableString(),
+    confirmedAtEpochMillis = readLong(),
+    updatedAtEpochMillis = readLong(),
+    deletedAtEpochMillis = readNullableLong()
+)
 
 private fun DataInputStream.readLedgerEntryV3(): LedgerEntryEntity = LedgerEntryEntity(
     id = readString(),
@@ -481,14 +574,25 @@ private fun DataOutputStream.writeSettings(settings: LocalSettingsEntity) {
     writeBoolean(settings.enhancedContextGranted)
     writeBoolean(settings.continuousBillSyncCompleted)
     writeBoolean(settings.continuousMonitoringEnabled)
+    writeString(settings.activeLedgerId)
 }
 
-private fun DataInputStream.readSettings(): LocalSettingsEntity = LocalSettingsEntity(
+private fun DataInputStream.readSettingsV4(): LocalSettingsEntity = LocalSettingsEntity(
     id = readString(),
     aiConsentGranted = readBoolean(),
     enhancedContextGranted = readBoolean(),
     continuousBillSyncCompleted = readBoolean(),
-    continuousMonitoringEnabled = readBoolean()
+    continuousMonitoringEnabled = readBoolean(),
+    activeLedgerId = readString()
+)
+
+private fun DataInputStream.readSettingsV3(): LocalSettingsEntity = LocalSettingsEntity(
+    id = readString(),
+    aiConsentGranted = readBoolean(),
+    enhancedContextGranted = readBoolean(),
+    continuousBillSyncCompleted = readBoolean(),
+    continuousMonitoringEnabled = readBoolean(),
+    activeLedgerId = DEFAULT_LEDGER_BOOK_ID
 )
 
 private inline fun <T> DataOutputStream.writeList(
@@ -562,11 +666,28 @@ private fun PaymentSource.toScope(): FundingAccountSourceScope = when (this) {
     PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
 }
 
+private fun defaultBackupLedgerBook(): LedgerBookEntity = LedgerBookEntity(
+    id = DEFAULT_LEDGER_BOOK_ID,
+    name = DEFAULT_LEDGER_BOOK_NAME,
+    createdAtEpochMillis = 0
+)
+
+private fun defaultBackupSettings(activeLedgerId: String): LocalSettingsEntity =
+    LocalSettingsEntity(
+        aiConsentGranted = false,
+        enhancedContextGranted = false,
+        continuousBillSyncCompleted = false,
+        continuousMonitoringEnabled = false,
+        activeLedgerId = activeLedgerId
+    )
+
 private const val BACKUP_PREFIX_V2 = "AUTO_ACCOUNTING_BACKUP_V2:"
 private const val BACKUP_PREFIX_V3 = "AUTO_ACCOUNTING_BACKUP_V3:"
+private const val BACKUP_PREFIX_V4 = "AUTO_ACCOUNTING_BACKUP_V4:"
 private const val BACKUP_MAGIC = 0x41414343
 private const val BACKUP_VERSION_V2 = 2
 private const val BACKUP_VERSION_V3 = 3
+private const val BACKUP_VERSION_V4 = 4
 private const val SUPPORTED_BACKUP_CURRENCY = "CNY"
 private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"

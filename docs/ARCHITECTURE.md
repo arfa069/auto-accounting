@@ -4,7 +4,7 @@
 
 The product is a local-first Android app with a small backend for identity, device registration, cloud configuration, SMS verification, account deletion, and AI categorization proxy/logging.
 
-The Android app owns ledger truth. The first backend must not sync or store the user's full ledger.
+The Android app owns all ledger-book truth. The first backend must not sync or store the user's ledger books or entries.
 
 ```mermaid
 flowchart LR
@@ -15,10 +15,12 @@ flowchart LR
   Capture --> Dedupe["Deduplication"]
   Dedupe --> Pending["Pending Entries"]
   Pending --> Review["Review Queue"]
-  Review --> Ledger["Local Ledger (Room)"]
+  Review --> Ledger["Current Ledger Book (Room)"]
   Manual["Manual Entry"] --> Ledger
-  Ledger --> Reports["Reports"]
-  Ledger --> Export["CSV / Encrypted Backup"]
+  Ledger --> Reports["Current-Book Reports"]
+  Ledger --> CSV["Current-Book CSV"]
+  Books["All Ledger Books + Shared Local Data"] --> Backup["Encrypted Backup"]
+  Ledger -. "belongs to" .-> Books
   App["Android App"] --> Backend["Ktor Backend"]
   Backend --> PG["PostgreSQL"]
   Backend --> SMS["SMS Provider"]
@@ -49,14 +51,15 @@ Keep capture parsing and deduplication testable without Android UI.
 
 Core tables:
 - `pending_entries`: captured candidates awaiting review.
-- `ledger_entries`: active and soft-deleted ledger entries with flow direction, current user fields, immutable capture provenance where available, and lifecycle timestamps.
+- `ledger_books`: named local ledger books with stable IDs and creation timestamps.
+- `ledger_entries`: active and soft-deleted ledger entries, each assigned to exactly one ledger book, with flow direction, current user fields, immutable capture provenance where available, and lifecycle timestamps.
 - `capture_events`: source evidence, capture reason, confidence state, raw text reference or encrypted raw text.
 - `dedupe_links`: relationships between duplicate candidates and merged entries.
 - `categories`: user categories.
 - `categorization_rules`: merchant/title/source/kind matching rules.
-- `funding_accounts`: reusable source-reported or user-created funding accounts; payment source may be absent for manual accounts.
+- `funding_accounts`: reusable source-reported or user-created funding accounts shared across ledger books; payment source may be absent for manual accounts.
 - `ignored_entries`: ignored pending entries with 30-day retention.
-- `settings`: local mode, permission flags, feature flags, AI consent cache.
+- `local_settings`: current ledger-book ID, AI consent, enhanced-context consent, and continuous-sync or monitoring settings.
 - `backup_metadata`: backup timestamps and restore history.
 
 Sensitive local data:
@@ -64,11 +67,19 @@ Sensitive local data:
 - Use encryption for backups and for any raw evidence stored outside ordinary app-private database guarantees.
 
 Ledger lifecycle invariants:
-- Automatically captured candidates still enter the review queue before the ledger; a user-authored manual entry may be written directly to the ledger after form validation.
+- Automatically captured candidates still enter the global review queue before a ledger book; a user-authored manual entry may be written directly to the current ledger book after form validation.
+- The current ledger-book ID is persisted. Manual creation and pending-entry confirmation capture their target ledger-book ID before starting the write so a concurrent selection change cannot redirect the entry.
+- Reports, CSV export, active ledger queries, and recently deleted queries are scoped to the current ledger book. Pending entries, ignored entries, categorization, and deduplication remain global.
+- Every ledger entry has a non-null restricted foreign key to one ledger book. An installation upgrading from the single-ledger schema creates the fixed "默认账本" record and assigns both active and soft-deleted entries to it.
+- The app always retains at least one ledger book. A ledger book is deletable only when it has neither active nor soft-deleted entries; deleting the current empty ledger book selects the earliest-created remaining book in the same transaction.
+- Categories and funding accounts are shared across ledger books. Funding accounts are updated without replacing their identity and are deletable only when no active/deleted ledger entry, pending entry, or ignored entry references them.
+- Pending-entry confirmation preserves an existing funding-account ID; otherwise it may reuse only an exact normalized-name and payment-source match and must not auto-create an account.
 - Amounts remain positive minor-unit integers. Independent flow direction determines inflow, outflow, or neutral reporting behavior.
 - Editing changes current user-visible fields without overwriting original capture source, entry origin, pending-entry reference, first confirmation time, or retained capture evidence.
-- Soft-deleted entries are excluded from active queries, CSV, and reports, remain recoverable for 30 days, and are then permanently removed.
-- Room migrations and encrypted-backup format upgrades must preserve existing ledger data and support importing the prior backup version.
+- Provenance and lifecycle fields remain persisted, but Release UI does not compose the debug-metadata section; Debug entry detail may display it in context.
+- Soft-deleted entries are excluded from the current book's active queries, CSV, and reports, remain recoverable within that book for 30 days, and are then permanently removed.
+- Room v5-to-v6 migration and encrypted-backup V4 preserve ledger ownership. V2/V3 backup import maps legacy entries into "默认账本"; validation of book IDs and references completes before any restore transaction changes local data, and restore inserts ledger books before dependent entries.
+- Clearing local data recreates exactly one empty "默认账本" and stores it as the current ledger book.
 
 ## 4. Capture Pipeline
 
@@ -167,7 +178,7 @@ Account deletion:
 - 7-day cooling-off period.
 - During cooling-off: login allowed, cancel allowed, cloud AI and device config writes paused.
 - At execution: delete account, devices, cloud config, AI logs.
-- Local ledger deletion remains a separate local action.
+- Deleting all local ledger books remains a separate protected local-data action.
 
 ## 9. Permission Architecture
 

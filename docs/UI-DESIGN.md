@@ -86,6 +86,7 @@ Evidence section:
 - Parsed fields.
 
 Actions:
+- Above the confirm action, show "确认后记入「<当前账本名>」".
 - Confirm into ledger.
 - Ignore.
 
@@ -109,6 +110,10 @@ The screen must show current user action when needed, such as opening the source
 
 ## 6. Ledger
 
+Header:
+- Use the current ledger-book name as the screen title.
+- The overflow menu lists Ledger Management, Funding Accounts, and Recently Deleted in that order.
+
 Top monthly summary:
 - Monthly expense.
 - Monthly income.
@@ -118,12 +123,27 @@ Primary action:
 - The raised center action in the home bottom navigation opens the manual-entry form.
 - The ledger screen does not duplicate this action with a local floating button.
 - Manual entry is not duplicated on the review-queue screen.
-- The ledger overflow menu contains a Recently Deleted entry.
 
 List:
 - Grouped by month.
 - Row fields: merchant/title, category, time, amount, source marker.
 - Tapping a row opens a read-only ledger-entry detail screen rather than editing immediately.
+- The list, summary, search, and filters use the current ledger book only.
+
+Ledger management:
+- List every ledger book with its name, entry count, and current indicator.
+- Selecting a ledger book persists the selection and returns to that book's ledger.
+- New ledger-book creation trims the name, rejects blank or duplicate names, and selects the new book immediately.
+- Delete requires confirmation. A book with active or recently deleted entries, or the last remaining book, shows a specific blocked-deletion reason instead of deleting.
+- This version does not expose ledger-book rename or move-entry actions.
+
+Funding accounts:
+- List all funding accounts shared across ledger books and provide create, edit, and delete actions.
+- The form contains a required name and an optional WeChat or Alipay payment source.
+- Reject an equal normalized name within the same payment source; allow equal names under different payment sources.
+- Editing preserves the existing account identity and does not rewrite historical ledger-entry payment sources.
+- Delete requires confirmation. When references exist, keep the account and show counts for active/deleted ledger entries, pending entries, and ignored entries.
+- Keep the inline New Funding Account action in the ledger-entry form and apply the same normalization and duplicate rules.
 
 Ledger-entry detail:
 - Show the current transaction fields first.
@@ -134,8 +154,8 @@ Ledger-entry detail:
 - The funding-account selector lists existing accounts and ends with a New Funding Account action.
 - Inline funding-account creation requires a name, allows payment source to remain empty, and selects the new account immediately.
 - The category selector uses existing categories and Uncategorized without an inline category-creation action.
-- Show original capture source, entry origin, and capture evidence separately when available.
-- Show creation or first-confirmation time and last-modified time without presenting a version-history timeline.
+- In Debug builds only, show entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence in a separate debug-metadata section when available.
+- In Release builds, do not compose or leave an entry point for that debug-metadata section; current transaction fields, edit, and delete remain available.
 - Editing begins through an explicit edit action.
 - Manual creation and editing reuse the same transaction form.
 - Form changes remain local until the user taps Save.
@@ -144,6 +164,7 @@ Ledger-entry detail:
 - After deletion, return to the ledger and show a "Moved to Recently Deleted" Snackbar with Undo.
 
 Recently deleted:
+- Scope the list to the current ledger book.
 - Show deletion time and the number of retention days remaining for each entry.
 - Each entry offers Restore and Permanently Delete actions.
 - Permanent deletion requires a confirmation that clearly states the entry cannot be recovered.
@@ -157,6 +178,7 @@ Search and filtering:
 ## 7. Reports
 
 First screen:
+- Scope every total, category share, and trend query to the current ledger book.
 - Current-month income/expense overview.
 - Category share.
 - Trend entry.
@@ -176,7 +198,7 @@ Category trend:
 
 Top area:
 - A compact account-state card links to Account Management.
-- Local mode reads "Local mode · ledger stored on this device".
+- Local mode reads "Local mode · ledgers stored on this device".
 - Signed-in mode shows a masked phone number and account state.
 - Do not add avatar, nickname, signature, or other personal-profile fields.
 
@@ -192,7 +214,7 @@ Each overview row contains one status summary and a navigation affordance only. 
 Account Management:
 - In local mode, explain the state and offer sign-in or registration.
 - When signed in, show masked account state, a normal sign-out action, and a visually separated account-deletion danger area.
-- Sign-out keeps the local ledger, while account deletion follows its separate cooling-off flow.
+- Sign-out keeps all local ledger books, while account deletion follows its separate cooling-off flow.
 
 Automatic Bookkeeping:
 - Order sections as state, required permissions, then user-started bill sync.
@@ -205,7 +227,7 @@ Categorization Rules:
 - After AI is enabled, show enhanced context as a separate opt-in. Turning off AI also turns off enhanced context; enabling AI again starts with minimal fields.
 
 Data and Backup:
-- Keep CSV export and encrypted-backup export/import in the normal area.
+- Keep current-ledger CSV export and all-ledger encrypted-backup export/import in the normal area; their descriptions must make the different scopes explicit.
 - Place Local Data Deletion at the bottom in a distinct danger area, retaining the backup reminder and typed confirmation.
 - Import first validates the backup and passphrase without changing local data; only a second explicit confirmation permits replacing the local snapshot.
 

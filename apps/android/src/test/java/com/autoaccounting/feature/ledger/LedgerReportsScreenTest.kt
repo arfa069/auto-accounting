@@ -4,12 +4,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.FlowDirection
+import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.FundingAccountSourceScope
 import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
@@ -32,10 +35,13 @@ class LedgerReportsScreenTest {
     @Test
     fun ledgerShowsMonthlySummarySearchFilterAndEntries() {
         composeRule.setContent {
-            LedgerScreen(entries = sampleEntries())
+            LedgerScreen(
+                entries = sampleEntries(),
+                activeLedgerName = "日常账本"
+            )
         }
 
-        composeRule.onNodeWithText("本地账本").assertIsDisplayed()
+        composeRule.onNodeWithText("日常账本").assertIsDisplayed()
         composeRule.onNodeWithText("本月支出 ¥41.90").assertIsDisplayed()
         composeRule.onNodeWithText("本月收入 ¥12.90").assertIsDisplayed()
         composeRule.onNodeWithText("净额 -¥29.00").assertIsDisplayed()
@@ -46,6 +52,208 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("筛选").performClick()
         composeRule.onNodeWithText("来源").assertIsDisplayed()
         composeRule.onNodeWithText("分类").assertIsDisplayed()
+    }
+
+    @Test
+    fun moreMenuProvidesLedgerFundingAccountAndRecentlyDeletedManagement() {
+        composeRule.setContent {
+            LedgerScreen(entries = emptyList())
+        }
+
+        composeRule.onNodeWithTag(LedgerTestTags.MORE_MENU).performClick()
+
+        composeRule.onNodeWithTag(LedgerTestTags.MANAGE_LEDGERS).assertIsDisplayed()
+        composeRule.onNodeWithTag(LedgerTestTags.MANAGE_FUNDING_ACCOUNTS).assertIsDisplayed()
+        composeRule.onNodeWithTag(LedgerTestTags.RECENTLY_DELETED).assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerManagementCreatesSwitchesAndBlocksUnsafeDelete() {
+        val createdName = AtomicReference<String?>()
+        val selectedId = AtomicReference<String?>()
+        val books = listOf(
+            LedgerBookUiModel(
+                id = "default",
+                name = "默认账本",
+                activeEntryCount = 1,
+                deletedEntryCount = 2,
+                isActive = true
+            ),
+            LedgerBookUiModel(
+                id = "travel",
+                name = "旅行账本"
+            )
+        )
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                ledgerBooks = books,
+                activeLedgerName = "默认账本",
+                onCreateLedger = { createdName.set(it) },
+                onSelectLedger = { selectedId.set(it) }
+            )
+        }
+
+        openLedgerManagement()
+        composeRule.onNodeWithText("当前账本").assertIsDisplayed()
+        composeRule.onNodeWithText("当前 1 笔，最近删除 2 笔").assertIsDisplayed()
+
+        composeRule.onNodeWithTag(LedgerTestTags.ADD_LEDGER).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.LEDGER_NAME).performTextInput(" 工作 ")
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_ADD_LEDGER).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { createdName.get() != null }
+        assertEquals("工作", createdName.get())
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.selectLedger("travel"))
+            .performScrollTo()
+            .performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { selectedId.get() != null }
+        assertEquals("travel", selectedId.get())
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteLedger("default")).performClick()
+        composeRule.onNodeWithText("无法删除账本").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "该账本仍有 1 笔当前账目和 2 笔最近删除账目，清空后才能删除。"
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun emptyLedgerDeleteRequiresConfirmationAndUsesResultCallback() {
+        val deletedId = AtomicReference<String?>()
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                ledgerBooks = listOf(
+                    LedgerBookUiModel("default", "默认账本", isActive = true),
+                    LedgerBookUiModel("travel", "旅行账本")
+                ),
+                onDeleteLedger = {
+                    deletedId.set(it)
+                    LedgerBookDeleteResult.Deleted
+                }
+            )
+        }
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteLedger("travel"))
+            .performScrollTo()
+            .performClick()
+        assertNull(deletedId.get())
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_LEDGER).performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { deletedId.get() != null }
+        assertEquals("travel", deletedId.get())
+    }
+
+    @Test
+    fun lastLedgerCannotBeDeleted() {
+        val deletedId = AtomicReference<String?>()
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                ledgerBooks = listOf(
+                    LedgerBookUiModel("default", "默认账本", isActive = true)
+                ),
+                onDeleteLedger = {
+                    deletedId.set(it)
+                    LedgerBookDeleteResult.Deleted
+                }
+            )
+        }
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteLedger("default")).performClick()
+
+        composeRule.onNodeWithText("无法删除账本").assertIsDisplayed()
+        composeRule.onNodeWithText("至少需要保留一个账本。").assertIsDisplayed()
+        assertNull(deletedId.get())
+    }
+
+    @Test
+    fun fundingAccountManagementCreatesAndEditsAccounts() {
+        val created = AtomicReference<Pair<String, PaymentSource?>?>()
+        val updated = AtomicReference<Triple<Long, String, PaymentSource?>?>()
+        val deletedId = AtomicReference<Long?>()
+        val account = fundingAccount(id = 7, label = "零钱", source = PaymentSource.WECHAT)
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                fundingAccounts = listOf(account),
+                onCreateFundingAccount = { label, source -> created.set(label to source) },
+                onUpdateFundingAccount = { id, label, source ->
+                    updated.set(Triple(id, label, source))
+                },
+                onDeleteFundingAccount = {
+                    deletedId.set(it)
+                    FundingAccountDeleteResult.Deleted
+                }
+            )
+        }
+
+        openFundingAccountManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.ADD_FUNDING_ACCOUNT).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput(" 工资卡 ")
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_SOURCE).performClick()
+        composeRule.onNodeWithText("支付宝").performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.SAVE_FUNDING_ACCOUNT).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { created.get() != null }
+        assertEquals("工资卡", created.get()?.first)
+        assertEquals(PaymentSource.ALIPAY, created.get()?.second)
+
+        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextClearance()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput("微信零钱")
+        composeRule.onNodeWithTag(LedgerTestTags.SAVE_FUNDING_ACCOUNT).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { updated.get() != null }
+        assertEquals(7L, updated.get()?.first)
+        assertEquals("微信零钱", updated.get()?.second)
+        assertEquals(PaymentSource.WECHAT, updated.get()?.third)
+
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        assertNull(deletedId.get())
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { deletedId.get() != null }
+        assertEquals(7L, deletedId.get())
+    }
+
+    @Test
+    fun fundingAccountDuplicateAndReferencesProvideClearBlockingMessages() {
+        val created = AtomicReference<Pair<String, PaymentSource?>?>()
+        val account = fundingAccount(id = 7, label = "零钱", source = PaymentSource.WECHAT)
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                fundingAccounts = listOf(account),
+                onCreateFundingAccount = { label, source -> created.set(label to source) },
+                onDeleteFundingAccount = {
+                    FundingAccountDeleteResult.Referenced(
+                        activeLedgerEntryCount = 1,
+                        deletedLedgerEntryCount = 2,
+                        pendingEntryCount = 3,
+                        ignoredEntryCount = 4
+                    )
+                }
+            )
+        }
+
+        openFundingAccountManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.ADD_FUNDING_ACCOUNT).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput("零钱")
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_SOURCE).performClick()
+        composeRule.onNodeWithText("微信").performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.SAVE_FUNDING_ACCOUNT).performClick()
+        composeRule.onNodeWithText("同一支付来源下已存在同名资金账户").assertIsDisplayed()
+        assertNull(created.get())
+
+        composeRule.onNodeWithText("取消").performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
+        composeRule.onNodeWithText("无法删除资金账户").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "该账户仍被 1 笔当前账目、2 笔最近删除账目、3 条待确认记录和 4 条忽略记录引用。"
+        ).assertIsDisplayed()
     }
 
     @Test
@@ -166,6 +374,7 @@ class LedgerReportsScreenTest {
         composeRule.setContent {
             LedgerScreen(
                 entries = listOf(captured),
+                showDebugMetadata = true,
                 onUpdateEntry = { _, input -> updatedInput.set(input) }
             )
         }
@@ -180,6 +389,54 @@ class LedgerReportsScreenTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000) { updatedInput.get() != null }
         assertEquals(2_000L, updatedInput.get()?.amountMinor)
+    }
+
+    @Test
+    fun debugMetadataIsAbsentByDefault() {
+        val captured = sampleEntries().first().copy(
+            originalCaptureSource = PaymentSource.WECHAT,
+            entryOrigin = EntryOrigin.NOTIFICATION,
+            originPendingEntryId = "pending-food",
+            evidenceSummary = "微信支付凭证",
+            confirmedAtEpochMillis = 1_783_513_260_000,
+            updatedAtEpochMillis = 1_783_513_260_000
+        )
+        composeRule.setContent {
+            LedgerScreen(entries = listOf(captured))
+        }
+
+        composeRule.onNodeWithText("午餐").performClick()
+        composeRule.onNodeWithText("录入方式").assertDoesNotExist()
+        composeRule.onNodeWithText("创建/首次确认").assertDoesNotExist()
+        composeRule.onNodeWithText("最后修改").assertDoesNotExist()
+        composeRule.onNodeWithText("原始采集信息").assertDoesNotExist()
+        composeRule.onNodeWithText("编辑").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("删除").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun debugMetadataIsVisibleWhenEnabled() {
+        val captured = sampleEntries().first().copy(
+            originalCaptureSource = PaymentSource.WECHAT,
+            entryOrigin = EntryOrigin.NOTIFICATION,
+            originPendingEntryId = "pending-food",
+            evidenceSummary = "微信支付凭证",
+            confirmedAtEpochMillis = 1_783_513_260_000,
+            updatedAtEpochMillis = 1_783_513_260_000
+        )
+        composeRule.setContent {
+            LedgerScreen(
+                entries = listOf(captured),
+                showDebugMetadata = true
+            )
+        }
+        composeRule.onNodeWithText("午餐").performClick()
+        composeRule.onNodeWithText("录入方式").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("创建/首次确认").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("最后修改").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("原始采集信息").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("原待确认 ID").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("微信支付凭证").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -229,6 +486,34 @@ class LedgerReportsScreenTest {
         composeRule.waitUntil(timeoutMillis = 5_000) { permanentlyDeletedId.get() != null }
         assertEquals("food", permanentlyDeletedId.get())
     }
+
+    private fun openLedgerManagement() {
+        composeRule.onNodeWithTag(LedgerTestTags.MORE_MENU).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.MANAGE_LEDGERS).performClick()
+        composeRule.onNodeWithText("账本管理").assertIsDisplayed()
+    }
+
+    private fun openFundingAccountManagement() {
+        composeRule.onNodeWithTag(LedgerTestTags.MORE_MENU).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.MANAGE_FUNDING_ACCOUNTS).performClick()
+        composeRule.onNodeWithText("资金账户").assertIsDisplayed()
+    }
+
+    private fun fundingAccount(
+        id: Long,
+        label: String,
+        source: PaymentSource?
+    ): FundingAccountEntity = FundingAccountEntity(
+        id = id,
+        sourceScope = when (source) {
+            PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
+            PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+            null -> FundingAccountSourceScope.USER
+        },
+        paymentSource = source,
+        label = label,
+        createdAtEpochMillis = 1
+    )
 
     private fun sampleEntries(): List<LedgerUiEntry> = listOf(
         LedgerUiEntry(

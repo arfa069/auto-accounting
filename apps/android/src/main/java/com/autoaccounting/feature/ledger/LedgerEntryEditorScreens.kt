@@ -72,6 +72,7 @@ import kotlinx.coroutines.launch
 internal fun LedgerEntryDetail(
     entry: LedgerUiEntry,
     fundingAccountLabel: String?,
+    showDebugMetadata: Boolean = false,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -94,14 +95,24 @@ internal fun LedgerEntryDetail(
         DetailLine("资金账户", fundingAccountLabel ?: "未选择")
         DetailLine("支付来源", entry.paymentSource.labelOrNone())
         DetailLine("备注", entry.note ?: "未填写")
-        DetailLine("录入方式", entry.entryOrigin.label())
-        DetailLine("创建/首次确认", formatLedgerEpoch(entry.confirmedAtEpochMillis))
-        DetailLine("最后修改", formatLedgerEpoch(entry.updatedAtEpochMillis))
-        if (entry.originalCaptureSource != null || !entry.evidenceSummary.isNullOrBlank()) {
-            Text("原始采集信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            DetailLine("原始来源", entry.originalCaptureSource.labelOrNone())
-            DetailLine("原待确认 ID", entry.originPendingEntryId ?: "无")
-            DetailLine("采集证据", entry.evidenceSummary ?: "无")
+        if (showDebugMetadata) {
+            DetailLine("录入方式", entry.entryOrigin.label())
+            DetailLine("创建/首次确认", formatLedgerEpoch(entry.confirmedAtEpochMillis))
+            DetailLine("最后修改", formatLedgerEpoch(entry.updatedAtEpochMillis))
+            if (
+                entry.originalCaptureSource != null ||
+                entry.originPendingEntryId != null ||
+                !entry.evidenceSummary.isNullOrBlank()
+            ) {
+                Text(
+                    "原始采集信息",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                DetailLine("原始来源", entry.originalCaptureSource.labelOrNone())
+                DetailLine("原待确认 ID", entry.originPendingEntryId ?: "无")
+                DetailLine("采集证据", entry.evidenceSummary ?: "无")
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onEdit) { Text("编辑") }

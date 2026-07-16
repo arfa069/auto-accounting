@@ -64,15 +64,25 @@ class ReviewQueuePersistenceTest {
     @Test
     fun observeStateRestoresPendingAndIgnoredMetadataForReviewQueue() = runBlocking {
         repository.seedSystemCategories()
+        val pendingFundingAccount =
+            repository.createFundingAccount("支付宝余额", PaymentSource.ALIPAY)
+        val ignoredFundingAccount =
+            repository.createFundingAccount("微信零钱", PaymentSource.WECHAT)
         repository.upsertPending(
             samplePending(
                 id = "pending-duplicate",
                 confidence = ConfidenceState.DUPLICATE_SUSPECT,
                 captureReason = CaptureReason.BILL_SYNC,
-                suggestedCategoryId = "food"
+                suggestedCategoryId = "food",
+                fundingAccountId = pendingFundingAccount.id
             )
         )
-        repository.upsertIgnored(sampleIgnored(id = "ignored-lunch"))
+        repository.upsertIgnored(
+            sampleIgnored(
+                id = "ignored-lunch",
+                fundingAccountId = ignoredFundingAccount.id
+            )
+        )
 
         val state = persistence.observeState().first()
 
@@ -83,6 +93,7 @@ class ReviewQueuePersistenceTest {
         assertEquals("账单同步", pending.captureReasonLabel)
         assertEquals(ConfidenceState.DUPLICATE_SUSPECT, pending.confidence)
         assertEquals("支付宝账单 午餐 35.90", pending.rawEvidenceText)
+        assertEquals(pendingFundingAccount.id, pending.fundingAccountId)
         assertEquals("支付宝余额", pending.fundingAccountLabel)
         assertEquals(listOf("商户=午餐", "金额=35.90"), pending.parsedFields)
         assertEquals(1, state.duplicateSuspectCount)
@@ -94,13 +105,16 @@ class ReviewQueuePersistenceTest {
         assertEquals("微信", ignored.entry.sourceLabel)
         assertEquals("通知捕获", ignored.entry.captureReasonLabel)
         assertEquals("微信支付收款凭证 午餐 35.90", ignored.entry.rawEvidenceText)
+        assertEquals(ignoredFundingAccount.id, ignored.entry.fundingAccountId)
         assertEquals("微信零钱", ignored.entry.fundingAccountLabel)
         assertEquals(listOf("商户=午餐", "金额=35.90"), ignored.entry.parsedFields)
     }
 
     @Test
     fun persistTransitionMovesPendingToIgnoredAndRecoversThroughRepository() = runBlocking {
-        repository.upsertPending(samplePending())
+        val fundingAccount =
+            repository.createFundingAccount("支付宝余额", PaymentSource.ALIPAY)
+        repository.upsertPending(samplePending(fundingAccountId = fundingAccount.id))
         val previous = persistence.observeState().first()
 
         val ignored = reduceReviewQueue(previous, ReviewQueueAction.Ignore("pending-lunch"))
@@ -111,6 +125,7 @@ class ReviewQueuePersistenceTest {
         assertEquals("pending-lunch", ignoredEntity.originalPendingEntryId)
         assertEquals(ConfidenceState.NEEDS_REVIEW, ignoredEntity.confidence)
         assertEquals("支付宝账单 午餐 35.90", ignoredEntity.evidenceSummary)
+        assertEquals(fundingAccount.id, ignoredEntity.fundingAccountId)
         assertEquals("支付宝余额", ignoredEntity.fundingAccountLabel)
         assertEquals("商户=午餐\n金额=35.90", ignoredEntity.parsedFieldsText)
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
@@ -124,6 +139,7 @@ class ReviewQueuePersistenceTest {
         val restored = database.pendingEntryDao().getById("pending-lunch")
         assertEquals("pending-lunch", restored?.id)
         assertEquals(CaptureReason.BILL_SYNC, restored?.captureReason)
+        assertEquals(fundingAccount.id, restored?.fundingAccountId)
         assertEquals("支付宝余额", restored?.fundingAccountLabel)
         assertEquals("商户=午餐\n金额=35.90", restored?.parsedFieldsText)
         assertNull(database.ignoredEntryDao().getById(ignoredEntity.id))
@@ -132,7 +148,14 @@ class ReviewQueuePersistenceTest {
     @Test
     fun persistTransitionConfirmsThroughRepositoryAndUndoRestoresPending() = runBlocking {
         repository.seedSystemCategories()
-        repository.upsertPending(samplePending(suggestedCategoryId = "food"))
+        val fundingAccount =
+            repository.createFundingAccount("支付宝余额", PaymentSource.ALIPAY)
+        repository.upsertPending(
+            samplePending(
+                suggestedCategoryId = "food",
+                fundingAccountId = fundingAccount.id
+            )
+        )
         val previous = persistence.observeState().first()
 
         val confirmed = reduceReviewQueue(previous, ReviewQueueAction.Confirm("pending-lunch"))
@@ -142,12 +165,50 @@ class ReviewQueuePersistenceTest {
         val ledgerEntry = database.ledgerEntryDao().listLedgerEntries().single()
         assertEquals("pending-lunch", ledgerEntry.originPendingEntryId)
         assertEquals("food", ledgerEntry.categoryId)
+        assertEquals(fundingAccount.id, ledgerEntry.fundingAccountId)
+        assertEquals(
+            fundingAccount.id,
+            persistence.ledgerEntriesForDedupe().single().fundingAccountId
+        )
 
         val undone = reduceReviewQueue(confirmed, ReviewQueueAction.UndoLastAction)
         persistence.persistTransition(confirmed, undone)
 
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
-        assertEquals("pending-lunch", database.pendingEntryDao().getById("pending-lunch")?.id)
+        val restored = database.pendingEntryDao().getById("pending-lunch")
+        assertEquals("pending-lunch", restored?.id)
+        assertEquals(fundingAccount.id, restored?.fundingAccountId)
+    }
+
+    @Test
+    fun persistingOnePendingActionDoesNotClearAnotherPendingFundingAccountId() = runBlocking {
+        val fundingAccount =
+            repository.createFundingAccount("支付宝银行卡", PaymentSource.ALIPAY)
+        repository.upsertPending(samplePending(id = "pending-target"))
+        repository.upsertPending(
+            samplePending(
+                id = "pending-unrelated",
+                fundingAccountLabel = "待识别账户"
+            )
+        )
+        val previous = persistence.observeState().first()
+        repository.upsertPending(
+            samplePending(
+                id = "pending-unrelated",
+                fundingAccountId = fundingAccount.id,
+                fundingAccountLabel = fundingAccount.label
+            )
+        )
+
+        val next = reduceReviewQueue(
+            previous,
+            ReviewQueueAction.Ignore("pending-target")
+        )
+        persistence.persistTransition(previous, next)
+
+        val unrelated = database.pendingEntryDao().getById("pending-unrelated")
+        assertEquals(fundingAccount.id, unrelated?.fundingAccountId)
+        assertEquals(fundingAccount.label, unrelated?.fundingAccountLabel)
     }
 
     @Test
@@ -180,7 +241,9 @@ class ReviewQueuePersistenceTest {
         id: String = "pending-lunch",
         confidence: ConfidenceState = ConfidenceState.NEEDS_REVIEW,
         captureReason: CaptureReason = CaptureReason.BILL_SYNC,
-        suggestedCategoryId: String? = null
+        suggestedCategoryId: String? = null,
+        fundingAccountId: Long? = null,
+        fundingAccountLabel: String? = "支付宝余额"
     ): PendingEntryEntity = PendingEntryEntity(
         id = id,
         source = PaymentSource.ALIPAY,
@@ -193,14 +256,17 @@ class ReviewQueuePersistenceTest {
         transactionTimeEpochMillis = NOW - 60_000,
         capturedAtEpochMillis = NOW,
         suggestedCategoryId = suggestedCategoryId,
-        fundingAccountId = null,
-        fundingAccountLabel = "支付宝余额",
+        fundingAccountId = fundingAccountId,
+        fundingAccountLabel = fundingAccountLabel,
         note = "客户会议",
         evidenceSummary = "支付宝账单 午餐 35.90",
         parsedFieldsText = "商户=午餐\n金额=35.90"
     )
 
-    private fun sampleIgnored(id: String): IgnoredEntryEntity = IgnoredEntryEntity(
+    private fun sampleIgnored(
+        id: String,
+        fundingAccountId: Long? = null
+    ): IgnoredEntryEntity = IgnoredEntryEntity(
         id = id,
         originalPendingEntryId = "pending-ignored",
         source = PaymentSource.WECHAT,
@@ -213,7 +279,7 @@ class ReviewQueuePersistenceTest {
         transactionTimeEpochMillis = NOW - 120_000,
         capturedAtEpochMillis = NOW - 60_000,
         suggestedCategoryId = null,
-        fundingAccountId = null,
+        fundingAccountId = fundingAccountId,
         fundingAccountLabel = "微信零钱",
         note = null,
         evidenceSummary = "微信支付收款凭证 午餐 35.90",

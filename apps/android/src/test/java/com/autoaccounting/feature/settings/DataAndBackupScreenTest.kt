@@ -35,6 +35,26 @@ class DataAndBackupScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun exportCopyDistinguishesCurrentLedgerCsvFromFullBackup() {
+        composeRule.setContent {
+            DataAndBackupScreen(
+                ledgerEntries = emptyList(),
+                currentLedgerName = "家庭账本",
+                onExportEncryptedBackup = { "backup" },
+                onValidateEncryptedBackup = { _, _ -> },
+                onImportEncryptedBackup = { _, _ -> },
+                onDeleteLocalData = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithText("CSV 仅导出当前账本「家庭账本」", substring = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("加密备份包含全部账本", substring = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun validBackupRequiresConfirmationBeforeRestore() {
         var validated = false
         var imported = false

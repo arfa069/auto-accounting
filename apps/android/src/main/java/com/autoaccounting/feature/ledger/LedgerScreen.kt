@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -75,11 +76,24 @@ fun LedgerScreen(
     deletedEntries: List<LedgerUiEntry> = emptyList(),
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
+    ledgerBooks: List<LedgerBookUiModel> = emptyList(),
+    activeLedgerName: String = "本地账本",
     onUpdateEntry: suspend (String, LedgerEntryInput) -> Unit = { _, _ -> },
     onDeleteEntry: suspend (String) -> Unit = {},
     onRestoreEntry: suspend (String) -> Unit = {},
     onPermanentlyDeleteEntry: suspend (String) -> Unit = {},
     onPurgeExpiredEntries: suspend () -> Unit = {},
+    onCreateLedger: suspend (String) -> Unit = {},
+    onSelectLedger: suspend (String) -> Unit = {},
+    onDeleteLedger: suspend (String) -> LedgerBookDeleteResult = {
+        LedgerBookDeleteResult.Deleted
+    },
+    onCreateFundingAccount: suspend (String, PaymentSource?) -> Unit = { _, _ -> },
+    onUpdateFundingAccount: suspend (Long, String, PaymentSource?) -> Unit = { _, _, _ -> },
+    onDeleteFundingAccount: suspend (Long) -> FundingAccountDeleteResult = {
+        FundingAccountDeleteResult.Deleted
+    },
+    showDebugMetadata: Boolean = false,
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -90,7 +104,12 @@ fun LedgerScreen(
     val selectedEntry = entries.firstOrNull { it.id == selectedEntryId }
     val page = LedgerPage(view, selectedEntryId)
 
-    BackHandler(enabled = view == LedgerView.DETAIL || view == LedgerView.DELETED) {
+    BackHandler(
+        enabled = view == LedgerView.DETAIL ||
+            view == LedgerView.DELETED ||
+            view == LedgerView.LEDGER_BOOKS ||
+            view == LedgerView.FUNDING_ACCOUNTS
+    ) {
         view = LedgerView.LIST
         selectedEntryId = null
     }
@@ -121,10 +140,13 @@ fun LedgerScreen(
             when (targetPage.view) {
                 LedgerView.LIST -> LedgerList(
                     entries = entries,
+                    activeLedgerName = activeLedgerName,
                     onEntryClick = {
                         selectedEntryId = it
                         view = LedgerView.DETAIL
                     },
+                    onLedgerBooksClick = { view = LedgerView.LEDGER_BOOKS },
+                    onFundingAccountsClick = { view = LedgerView.FUNDING_ACCOUNTS },
                     onRecentlyDeletedClick = { view = LedgerView.DELETED },
                     onNavigateHome = onNavigateHome
                 )
@@ -135,6 +157,7 @@ fun LedgerScreen(
                         fundingAccountLabel = fundingAccounts
                             .firstOrNull { it.id == entry.fundingAccountId }
                             ?.label,
+                        showDebugMetadata = showDebugMetadata,
                         onBack = {
                             selectedEntryId = null
                             view = LedgerView.LIST
@@ -191,6 +214,24 @@ fun LedgerScreen(
                         }
                     }
                 )
+
+                LedgerView.LEDGER_BOOKS -> LedgerBookManagementScreen(
+                    ledgerBooks = ledgerBooks,
+                    snackbarHostState = snackbarHostState,
+                    onBack = { view = LedgerView.LIST },
+                    onCreateLedger = onCreateLedger,
+                    onSelectLedger = onSelectLedger,
+                    onDeleteLedger = onDeleteLedger
+                )
+
+                LedgerView.FUNDING_ACCOUNTS -> FundingAccountManagementScreen(
+                    fundingAccounts = fundingAccounts,
+                    snackbarHostState = snackbarHostState,
+                    onBack = { view = LedgerView.LIST },
+                    onCreateFundingAccount = onCreateFundingAccount,
+                    onUpdateFundingAccount = onUpdateFundingAccount,
+                    onDeleteFundingAccount = onDeleteFundingAccount
+                )
             }
         }
 
@@ -204,7 +245,10 @@ fun LedgerScreen(
 @Composable
 private fun LedgerList(
     entries: List<LedgerUiEntry>,
+    activeLedgerName: String,
     onEntryClick: (String) -> Unit,
+    onLedgerBooksClick: () -> Unit,
+    onFundingAccountsClick: () -> Unit,
     onRecentlyDeletedClick: () -> Unit,
     onNavigateHome: () -> Unit
 ) {
@@ -246,12 +290,38 @@ private fun LedgerList(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("本地账本", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    activeLedgerName,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box {
-                        TextButton(onClick = { showMenu = true }) { Text("更多") }
+                        TextButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.testTag(LedgerTestTags.MORE_MENU)
+                        ) {
+                            Text("更多")
+                        }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             DropdownMenuItem(
+                                modifier = Modifier.testTag(LedgerTestTags.MANAGE_LEDGERS),
+                                text = { Text("账本管理") },
+                                onClick = {
+                                    showMenu = false
+                                    onLedgerBooksClick()
+                                }
+                            )
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag(LedgerTestTags.MANAGE_FUNDING_ACCOUNTS),
+                                text = { Text("资金账户") },
+                                onClick = {
+                                    showMenu = false
+                                    onFundingAccountsClick()
+                                }
+                            )
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag(LedgerTestTags.RECENTLY_DELETED),
                                 text = { Text("最近删除") },
                                 onClick = {
                                     showMenu = false
@@ -382,13 +452,14 @@ internal fun <T> SelectionMenu(
     options: List<T>,
     itemLabel: (T) -> String,
     leadingContent: (@Composable (T) -> Unit)? = null,
-    onSelected: (T) -> Unit
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth()
+            modifier = modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -440,7 +511,9 @@ private enum class LedgerView {
     LIST,
     DETAIL,
     EDIT,
-    DELETED
+    DELETED,
+    LEDGER_BOOKS,
+    FUNDING_ACCOUNTS
 }
 
 private data class LedgerPage(

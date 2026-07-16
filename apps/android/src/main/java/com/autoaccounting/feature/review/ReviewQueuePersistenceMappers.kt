@@ -21,6 +21,7 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     category = suggestedCategoryLabel
         ?: suggestedCategoryId?.let(DefaultCategories::nameForId)
         ?: suggestedCategoryId.orEmpty(),
+    fundingAccountId = fundingAccountId,
     fundingAccountLabel = fundingAccountLabel ?: fundingAccountId?.let { "账户 $it" }.orEmpty(),
     sourceLabel = source.toLabel(),
     kindLabel = transactionKind.toLabel(),
@@ -39,6 +40,7 @@ internal fun LedgerEntryEntity.toReviewEntryForDedupe(zoneId: ZoneId): ReviewQue
         title = merchantTitle,
         amountMinor = amountMinor,
         transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
+        fundingAccountId = fundingAccountId,
         sourceLabel = (paymentSource ?: originalCaptureSource)?.toLabel() ?: "未指定",
         kindLabel = transactionKind.toLabel(),
         captureReasonLabel = "已入账",
@@ -72,7 +74,7 @@ internal fun ReviewQueueEntry.toEntity(zoneId: ZoneId): PendingEntryEntity {
             ?: capturedAtEpochMillis,
         capturedAtEpochMillis = capturedAtEpochMillis,
         suggestedCategoryId = category.toCategoryIdOrNull(transactionKind),
-        fundingAccountId = null,
+        fundingAccountId = fundingAccountId,
         fundingAccountLabel = fundingAccountLabel.ifBlank { null },
         note = note,
         evidenceSummary = rawEvidenceText.ifBlank { null },
