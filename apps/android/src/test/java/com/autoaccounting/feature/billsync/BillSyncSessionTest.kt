@@ -26,6 +26,22 @@ class BillSyncSessionTest {
     }
 
     @Test
+    fun manualOcrConsentIsScopedToAnActiveWechatSession() {
+        val controller = BillSyncSessionController()
+
+        controller.start(BillSyncSource.WeChat, manualOcrAllowed = true)
+
+        assertTrue(controller.acceptsManualOcr(BillSyncSource.WeChat.packageName))
+        assertFalse(controller.acceptsManualOcr(BillSyncSource.Alipay.packageName))
+
+        controller.cancel()
+        assertFalse(controller.acceptsManualOcr(BillSyncSource.WeChat.packageName))
+
+        controller.start(BillSyncSource.Alipay, manualOcrAllowed = true)
+        assertFalse(controller.state.value.manualOcrAllowed)
+    }
+
+    @Test
     fun launchFailureIsReportedToTheUserStartedSyncSession() {
         val controller = BillSyncSessionController()
 
@@ -101,6 +117,34 @@ class BillSyncSessionTest {
         assertFalse(accepted)
         assertEquals(BillSyncSessionPhase.Failed, controller.state.value.phase)
         assertEquals("parse failed", controller.state.value.message)
+    }
+
+    @Test
+    fun timeoutOnlyFailsTheMatchingSessionWhileItIsWaitingForABillPage() = runBlocking {
+        val controller = BillSyncSessionController()
+        val timedOutSession = controller.start(BillSyncSource.WeChat)
+
+        assertTrue(controller.timeoutAwaitingBillPage(timedOutSession.sessionId))
+        assertEquals(BillSyncSessionPhase.Failed, controller.state.value.phase)
+        assertEquals("未识别到账单页，请重新补录", controller.state.value.message)
+
+        val currentSession = controller.start(BillSyncSource.Alipay)
+        assertFalse(controller.timeoutAwaitingBillPage(timedOutSession.sessionId))
+        assertEquals(currentSession, controller.state.value)
+    }
+
+    @Test
+    fun timeoutDoesNotInterruptProcessing() = runBlocking {
+        val controller = BillSyncSessionController()
+        val session = controller.start(BillSyncSource.WeChat)
+
+        controller.submitBillPage(
+            packageName = BillSyncSource.WeChat.packageName,
+            pageText = "bill page"
+        ) { _, _ -> successfulResult() }
+
+        assertFalse(controller.timeoutAwaitingBillPage(session.sessionId))
+        assertEquals(BillSyncSessionPhase.Completed, controller.state.value.phase)
     }
 
     private fun successfulResult(): BillSyncResult = BillSyncResult(

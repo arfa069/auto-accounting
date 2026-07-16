@@ -348,6 +348,90 @@ class BillPageParserTest {
     }
 
     @Test
+    fun completedPaymentResultPrefersExplicitActualAmountOverOriginalPrice() {
+        val entries = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                支付成功
+                测试商户
+                原价 ¥20.00
+                实付 ¥10.40
+                交易详情
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-17 01:30"
+        )
+
+        assertEquals(1, entries.size)
+        assertEquals(1_040L, entries.single().amountMinor)
+    }
+
+    @Test
+    fun parsesStructuredFieldsFromWechatMerchantHistoryDetail() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                肯德基
+                -¥10.40
+                当前状态
+                支付成功
+                支付时间
+                2026年07月12日 09:16:07
+                商品
+                KFC_PREWX10012651367114169061602
+                商户全称
+                百胜餐饮（广东）有限公司
+                收单机构
+                财付通支付科技有限公司
+                支付方式
+                零钱
+                交易单号
+                4500000279202607127462299679
+                商户单号
+                WX10012651367114169061602
+            """.trimIndent()
+        ).single()
+
+        assertEquals("KFC_PREWX10012651367114169061602", entry.merchantTitle)
+        assertEquals(1_040L, entry.amountMinor)
+        assertEquals("2026-07-12 09:16", entry.transactionTimeText)
+        assertEquals("零钱", entry.fundingAccountLabel)
+        assertTrue(entry.parsedFields.contains("当前状态=支付成功"))
+        assertTrue(entry.parsedFields.contains("商品=KFC_PREWX10012651367114169061602"))
+        assertTrue(entry.parsedFields.contains("商品名称=KFC_PREWX10012651367114169061602"))
+        assertTrue(entry.parsedFields.contains("商户或收款方=百胜餐饮（广东）有限公司"))
+        assertTrue(entry.parsedFields.contains("交易单号=4500000279202607127462299679"))
+        assertTrue(entry.parsedFields.contains("商户单号=WX10012651367114169061602"))
+    }
+
+    @Test
+    fun fallsBackToReceiptNoteAndJoinsWrappedWechatTransferOrderId() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                扫二维码付款-给陈波
+                -¥9.00
+                当前状态
+                支付成功
+                收款方备注
+                二维码收款
+                支付方式
+                零钱
+                转账时间
+                2026年7月12日 08:57:03
+                转账单号
+                10001073012026071201842745332618
+                0
+            """.trimIndent()
+        ).single()
+
+        assertEquals("扫二维码付款-给陈波", entry.merchantTitle)
+        assertTrue(entry.parsedFields.contains("商品=二维码收款"))
+        assertTrue(entry.parsedFields.contains("商品名称=扫二维码付款-给陈波"))
+        assertTrue(entry.parsedFields.contains("商户或收款方=扫二维码付款-给陈波"))
+        assertTrue(entry.parsedFields.contains("交易单号=100010730120260712018427453326180"))
+    }
+
+    @Test
     fun parsesWechatMerchantAndAmountFromStrongSuccessPageLayout() {
         val entries = BillPageParser().parse(
             source = BillSyncSource.WeChat,

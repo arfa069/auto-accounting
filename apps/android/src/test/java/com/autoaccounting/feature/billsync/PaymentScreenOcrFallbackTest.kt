@@ -8,6 +8,125 @@ import org.junit.Test
 
 class PaymentScreenOcrFallbackTest {
     @Test
+    fun manualOcrFallbackAcceptsUnreadableWechatApplicationWindowsRegardlessOfActivity() {
+        val historyDetailWindow = WechatWindowEvidence(
+            activityClassName = "com.tencent.mm.plugin.wallet_core.ui.WalletOrderInfoUI",
+            isApplicationWindow = true
+        )
+
+        assertTrue(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = historyDetailWindow
+            )
+        )
+        assertFalse(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "交易成功 ¥10.40",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = historyDetailWindow
+            )
+        )
+        assertTrue(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = historyDetailWindow.copy(
+                    activityClassName = "com.tencent.mm.ui.LauncherUI"
+                )
+            )
+        )
+        assertFalse(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.Alipay.packageName,
+                pageText = "",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = historyDetailWindow
+            )
+        )
+        assertFalse(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "",
+                sdkInt = Build.VERSION_CODES.Q,
+                windowEvidence = historyDetailWindow
+            )
+        )
+        assertFalse(
+            shouldAttemptManualWechatOcrFallback(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "",
+                sdkInt = Build.VERSION_CODES.R,
+                windowEvidence = historyDetailWindow.copy(isApplicationWindow = false)
+            )
+        )
+    }
+
+    @Test
+    fun manualOcrResultRequiresExactStatusPairAndOneUnambiguousAmount() {
+        val prepared = requireNotNull(
+            prepareManualWechatOcrResultText(
+                "当前状态\n支付成功\n¥10.40"
+            )
+        )
+        val parsed = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = prepared,
+            fallbackTransactionTimeText = "2026-07-17 01:30"
+        )
+
+        assertEquals(1, parsed.size)
+        assertEquals(1_040L, parsed.single().amountMinor)
+        assertEquals("微信支付", parsed.single().merchantTitle)
+        assertTrue(parsed.single().merchantTitleFromFallback)
+        assertTrue(hasCurrentStatusPaymentSuccessPair("当前状态：支付成功"))
+        assertTrue(hasCurrentStatusPaymentSuccessPair("当前状态\n支付成功"))
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("当前状态\n支付成功")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("当前状态\n支付成功\n¥10.40\n¥20.00")
+        )
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "当前状态：支付成功\n原价 ¥20.00\n实付 ¥10.40"
+            ) != null
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("成功\n¥10.40\n交易详情")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("当前状态\n商品\n支付成功\n¥10.40")
+        )
+        listOf(
+            "确认支付",
+            "立即支付",
+            "收银台",
+            "支付密码",
+            "待支付",
+            "处理中",
+            "支付失败",
+            "已取消"
+        ).forEach { deniedText ->
+            assertEquals(
+                deniedText,
+                null,
+                prepareManualWechatOcrResultText(
+                    "当前状态\n支付成功\n¥10.40\n$deniedText"
+                )
+            )
+        }
+    }
+
+    @Test
     fun ocrFallbackRequiresUnreadableWechatApplicationWindowOnAndroidElevenOrLater() {
         val applicationWindow = WechatWindowEvidence(
             activityClassName = WECHAT_MERCHANT_PAYMENT_ACTIVITY_CLASS,

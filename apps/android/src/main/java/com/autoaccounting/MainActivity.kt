@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,7 +46,7 @@ import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.signOutToLocalMode
 import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
-import com.autoaccounting.feature.billsync.startManualBillSync
+import com.autoaccounting.feature.billsync.ManualBillImportHost
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
@@ -308,6 +309,7 @@ fun AutoAccountingApp(
     }
     var selectedTab by remember { mutableStateOf<AppTab?>(null) }
     var manualEntryOpen by remember { mutableStateOf(false) }
+    var manualBillImportRequestId by remember { mutableLongStateOf(0L) }
     var profileDestination by remember { mutableStateOf<ProfileDestination?>(null) }
     var accountSession by remember(localModeSessionStore) {
         mutableStateOf(localModeSessionStore.restoreSession())
@@ -630,14 +632,9 @@ fun AutoAccountingApp(
                                             AiCategorizationSettings()
                                         },
                                         aiCategorizationGateway = DemoAiCategorizationGateway,
-                                        billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                                        onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                                        onLaunchBillSyncSource = onLaunchBillSyncSource,
+                                        onOpenBillImport = { manualBillImportRequestId += 1 },
                                         openPendingEntryId = pendingEntryNavigationId,
                                         openPendingEntryRequestId = reviewNavigationRequest,
-                                        continuousMonitoringState = continuousMonitoringState,
-                                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
                                         onNavigateHome = {
                                             selectedTab = null
                                             profileDestination = null
@@ -788,12 +785,7 @@ fun AutoAccountingApp(
                                             continuousMonitoringState = continuousMonitoringState,
                                             continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                                             onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
-                                            onStartManualBillSync = { source ->
-                                                startManualBillSync(
-                                                    source = source,
-                                                    launchSource = onLaunchBillSyncSource
-                                                )
-                                            },
+                                            onOpenBillImport = { manualBillImportRequestId += 1 },
                                             onBack = { profileDestination = null },
                                             modifier = Modifier.padding(innerPadding)
                                         )
@@ -853,6 +845,20 @@ fun AutoAccountingApp(
                             }
                         }
                     }
+                    ManualBillImportHost(
+                        openRequestId = manualBillImportRequestId,
+                        accessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                        accessibilityServiceConnected = billSyncAccessibilityServiceConnected,
+                        onOpenAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                        onLaunchSource = onLaunchBillSyncSource,
+                        onNavigateToReview = {
+                            selectedTab = AppTab.Review
+                            profileDestination = null
+                        },
+                        continuousMonitoringState = continuousMonitoringState,
+                        continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
+                    )
                 }
             }
         }

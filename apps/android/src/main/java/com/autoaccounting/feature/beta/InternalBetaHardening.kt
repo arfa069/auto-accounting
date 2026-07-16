@@ -97,7 +97,7 @@ fun buildInternalBetaReadinessReport(): InternalBetaReadinessReport = InternalBe
             id = BetaReadinessItemId.DeviceMatrixTesting,
             title = "设备矩阵测试",
             status = BetaReadinessStatus.NeedsManualValidation,
-            detail = "覆盖 Android 10-15、主流国产 ROM、通知监听和无障碍账单同步。"
+            detail = "覆盖 Android 10-15、主流国产 ROM、通知监听和无障碍账单补录。"
         ),
         BetaReadinessItem(
             id = BetaReadinessItemId.PermissionRetentionMeasurement,

@@ -1,6 +1,6 @@
 # 自动记账端到端流程研究
 
-> 研究日期：2026-07-13
+> 研究日期：2026-07-13；补录账单流程更新：2026-07-17
 >
 > 研究范围：当前仓库的 Android 功能入口、通知与无障碍采集、分类与去重、待确认/入账持久化，以及相关 Shared API、Ktor 与 JDBC 实现。
 >
@@ -28,9 +28,11 @@
                     ├─ 支付通知（微信/支付宝）
                     │    → 通知解析 → 本地规则 → 与账本/待确认去重 ─┐
                     │                                             │
-                    └─ 无障碍事件（支付结果/支付记录）              │
-                         → 节点文本；微信空节点时受限 OCR           │
-                         → 页面过滤 → 解析 → 本地规则 → 去重 ──────┤
+                     └─ 无障碍事件（支付结果/支付记录）              │
+                          → 节点文本；微信空节点时受限 OCR           │
+                          → 页面过滤 → 解析 → 本地规则 → 去重 ──────┤
+待确认/自动记账 → 补录账单 → 统一 Host → 权限与连接预检             │
+                           → 可选单次微信 OCR → 解析去重 ────────────┤
                                                                   ↓
                                                      Room pending_entries
                                                                   ↓
@@ -53,12 +55,12 @@
 ### 1. 用户可见入口与开关持久化
 
 - “我的”页枚举了“自动记账”目的地，点击后进入对应二级页（[`ProfileScreen.kt:30-68`](../../apps/android/src/main/java/com/autoaccounting/feature/profile/ProfileScreen.kt#L30-L68)）。
-- `MainActivity` 把权限状态、持续监控状态和手动账单同步入口注入 `AutomaticBookkeepingScreen`（[`MainActivity.kt:513-559`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L513-L559)）。
+- “待确认”和“自动记账”页都只上抛 `onOpenBillImport`；`MainActivity` 用同一个请求 ID 打开 App 顶层 `ManualBillImportHost`，并统一注入权限、服务连接、来源启动和持续监控状态（[`ReviewQueueScreen.kt:175-188`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueueScreen.kt#L175-L188)、[`AutomaticBookkeepingScreen.kt:133-135`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L133-L135)、[`MainActivity.kt:635-635`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L635-L635)、[`MainActivity.kt:788-788`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L788-L788)、[`MainActivity.kt:848-861`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L848-L861)）。
 - 开启按钮调用 `reduceContinuousMonitoringState(Enable)`；只有无障碍权限已授予且服务连接健康时，`enabled` 才会变为 `true`。关闭按钮直接派发 `Disable`（[`AutomaticBookkeepingScreen.kt:148-177`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L148-L177)、[`ContinuousMonitoringState.kt:104-128`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt#L104-L128)）。
 - 状态变化由 `MainActivity.persistContinuousMonitoringState` 写回 `LocalPreferencesRepository`；后者把开关持久化到 Room `local_settings.continuous_monitoring_enabled`。应用启动后又从同一 Flow 恢复状态（[`MainActivity.kt:337-341`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L337-L341)、[`MainActivity.kt:408-412`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L408-L412)、[`LocalPreferencesRepository.kt:52-60`](../../apps/android/src/main/java/com/autoaccounting/data/local/LocalPreferencesRepository.kt#L52-L60)、[`LedgerEntities.kt:179-186`](../../apps/android/src/main/java/com/autoaccounting/data/local/LedgerEntities.kt#L179-L186)）。
 - Android 13 及以上在成功开启后按需请求“记账结果通知”权限，但这个权限只控制结果通知展示，不参与 `enabled` 的计算（[`AutomaticBookkeepingScreen.kt:66-75`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L66-L75)、[`BookkeepingResultNotifier.kt:18-29`](../../apps/android/src/main/java/com/autoaccounting/feature/capture/BookkeepingResultNotifier.kt#L18-L29)）。
 
-这里有一个容易混淆的边界：页面的“已就绪”摘要要求通知监听和无障碍都健康，但真正启用无障碍自动捕获只以无障碍健康为硬门槛。源码测试明确把它描述为“自动捕获需要无障碍，但不要求先完成手动账单同步或开启通知监听”（[`ContinuousMonitoringState.kt:44-64`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt#L44-L64)、[`ContinuousMonitoringStateTest.kt:91-118`](../../apps/android/src/test/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringStateTest.kt#L91-L118)）。因此：
+这里有一个容易混淆的边界：页面的“已就绪”摘要要求通知监听和无障碍都健康，但真正启用无障碍自动捕获只以无障碍健康为硬门槛。源码测试明确把它描述为“自动捕获需要无障碍，但不要求先完成补录账单或开启通知监听”（[`ContinuousMonitoringState.kt:44-64`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt#L44-L64)、[`ContinuousMonitoringStateTest.kt:91-118`](../../apps/android/src/test/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringStateTest.kt#L91-L118)）。因此：
 
 - 通知监听是第二个独立采集来源；缺失时页面显示“需要处理”。
 - 它不是无障碍支付结果捕获的前置条件。
@@ -74,7 +76,7 @@
 ### 3. 自动分支 B：无障碍支付结果/记录页
 
 1. Manifest 注册了不可导出的 `BillSyncAccessibilityService`；服务配置只监听微信、支付宝的窗口内容/状态变化，并允许读取窗口内容和截图（[`AndroidManifest.xml:28-39`](../../apps/android/src/main/AndroidManifest.xml#L28-L39)、[`bill_sync_accessibility_service.xml:1-9`](../../apps/android/src/main/res/xml/bill_sync_accessibility_service.xml#L1-L9)）。
-2. Service 连接后持续从 Room 收集 `ContinuousMonitoringState`，并维护连接心跳。收到事件时，先判断是否存在手动同步会话；如果没有，则要求开关开启、无障碍权限健康且包名在白名单内（[`BillSyncAccessibilityService.kt:76-105`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L76-L105)）。
+2. Service 连接后持续从 Room 收集 `ContinuousMonitoringState`，并维护连接心跳。收到事件时，先判断是否存在手动补录会话；如果没有，则要求开关开启、无障碍权限健康且包名在白名单内（[`BillSyncAccessibilityService.kt:76-105`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L76-L105)）。
 3. Service 收集当前节点树的可见文本。自动分支通过 `decideContinuousMonitoringCapture` 排除聊天、普通消息、收银台、确认付款等页面，只放行明确的支付完成或支付记录表面（[`BillSyncAccessibilityService.kt:107-133`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L107-L133)、[`ContinuousMonitoringState.kt:149-180`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt#L149-L180)）。
 4. 页面先等待 500ms 稳定，再重新读取节点文本、复查权限和页面，最后做同页防抖；通过后调用 `BillSyncCaptureProcessor.processAutomatic`（[`BillSyncAccessibilityService.kt:301-345`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L301-L345)）。
 5. `BillPageParser` 解析金额、时间、交易类型、商户/交易对方和资金账户；若支付完成页没有显式交易时间，可使用本次捕获时间作为回退（[`BillPageParser.kt:67-80`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt#L67-L80)、[`BillPageParser.kt:119-208`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt#L119-L208)）。
@@ -86,18 +88,23 @@
 - 仅当包名是微信、节点文本为空且 Android 11 以上时才考虑 OCR；正式截屏前还要求屏幕亮起且未锁屏，并再次检查开关、权限和当前窗口（[`BillSyncAccessibilityService.kt:109-117`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L109-L117)、[`BillSyncAccessibilityService.kt:158-218`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L158-L218)、[`BillSyncAccessibilityService.kt:378-389`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L378-L389)）。
 - Android 14 以上截当前窗口，Android 11-13 截默认显示器；Bitmap 在识别后立即回收（[`BillSyncAccessibilityService.kt:269-299`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L269-L299)）。
 - OCR 结果仍走相同的页面判定、解析、去重和待确认流程，但调用 `processAutomatic(..., retainRawEvidence=false)`，不会把 OCR 原文写入待确认记录（[`BillSyncAccessibilityService.kt:236-266`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L236-L266)、[`BillSyncPipelineTest.kt:133-146`](../../apps/android/src/test/java/com/autoaccounting/feature/billsync/BillSyncPipelineTest.kt#L133-L146)）。
+- 手动补录的 OCR 是另一条显式授权路径：授权只随当前微信会话存活，适用于当前可见的微信历史账单详情且不依赖具体 Activity；自动 OCR 的窄 Activity 白名单不变。只有“当前状态”和“支付成功”构成同一字段关系（同行或相邻键值行）且金额唯一时放行；出现“确认支付、立即支付、收银台、支付密码、待支付、处理中、支付失败、已取消”任一词即优先拒绝。OCR 图片和原文同样不落库。
 
-### 4. 独立分支：手动账单同步
+### 4. 独立分支：补录账单
 
-手动同步是历史补录/故障兜底，不是自动记账前置步骤：
+补录账单是有限的历史补录/故障兜底，不是自动记账前置步骤：
 
-- “自动记账”页单列“手动账单同步”，用户主动选择微信或支付宝后才启动（[`AutomaticBookkeepingScreen.kt:138-143`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L138-L143)、[`AutomaticBookkeepingScreen.kt:225-246`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L225-L246)）。
-- `startManualBillSync` 建立只接受目标包名的会话并拉起来源应用（[`BillSyncSession.kt:40-48`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncSession.kt#L40-L48)、[`BillSyncSession.kt:132-145`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncSession.kt#L132-L145)）。
-- 无障碍 Service 优先把匹配事件交给手动会话；它复用同一个 `BillSyncCaptureProcessor`、去重和待确认持久化，只把采集原因标成“账单同步”（[`BillSyncAccessibilityService.kt:93-149`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L93-L149)、[`BillSyncCaptureProcessor.kt:19-40`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncCaptureProcessor.kt#L19-L40)）。
+- “待确认”和“自动记账”各保留一个“补录账单”入口，但来源选择、预检、进度和结果全部由 App 顶层同一个 `ManualBillImportHost` 管理（[`ReviewQueueScreen.kt:279-305`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueueScreen.kt#L279-L305)、[`AutomaticBookkeepingScreen.kt:199-209`](../../apps/android/src/main/java/com/autoaccounting/feature/monitoring/AutomaticBookkeepingScreen.kt#L199-L209)、[`ManualBillImportHost.kt:34-53`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L34-L53)）。
+- Host 先分别检查“权限已授予”和“服务已连接”。任一条件不满足都不会启动来源 App，并提供设置或重新检查入口（[`ManualBillImportHost.kt:55-64`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L55-L64)、[`ManualBillImportHost.kt:104-157`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L104-L157)）。
+- 健康时，`startManualBillSync` 建立只接受目标包名的会话并拉起微信或支付宝；UI 明确要求用户进入账单、交易详情或支付结果页并停留（[`ManualBillImportHost.kt:108-119`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L108-L119)、[`ManualBillImportHost.kt:212-240`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L212-L240)、[`BillSyncSession.kt:40-48`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncSession.kt#L40-L48)）。
+- 微信来源可由用户勾选“本次允许本机 OCR”；默认关闭，切换来源、取消、超时或重试后不再自动沿用。手动 OCR 不限定小程序或钱包 Activity，只处理当前可见历史账单详情；通过后尽量保留支付方式、商品/收款方备注、商品名称、商户或收款方、当前状态、交易时间、交易单号和商户单号。
+- 每次只读取当前可见页面，不自动滚动、翻页或扫描完整历史。等待上限为 90 秒，旧超时只会失败仍处于 `AwaitingBillPage` 的同一 `sessionId`，不会影响处理中的会话或新会话（[`ManualBillImportHost.kt:31-31`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L31-L31)、[`ManualBillImportHost.kt:75-81`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt#L75-L81)、[`BillSyncSession.kt:72-89`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncSession.kt#L72-L89)）。
+- 无障碍 Service 优先把匹配事件交给手动会话；它复用同一个 `BillSyncCaptureProcessor`、去重和待确认持久化，新记录的采集原因显示为“补录账单”（[`BillSyncAccessibilityService.kt:93-149`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L93-L149)、[`BillSyncCaptureProcessor.kt:19-22`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncCaptureProcessor.kt#L19-L22)）。
+- `ReviewQueueScreen` 不再观察补录会话或派发 `AddPending`；`BillSyncCaptureProcessor` 是写入入口，`MainActivity` 只通过 `ReviewQueuePersistence.observeState()` 的 Room Flow 刷新 `reviewState`（[`BillSyncCaptureProcessor.kt:70-98`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncCaptureProcessor.kt#L70-L98)、[`MainActivity.kt:462-469`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L462-L469)、[`ReviewQueueScreen.kt:175-189`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueueScreen.kt#L175-L189)）。
 
 ### 5. Room 待确认落库
 
-两条自动采集分支和手动同步最终都进入 `ReviewQueuePersistence.persistTransition`：
+两条自动采集分支和手动补录最终都进入 `ReviewQueuePersistence.persistTransition`：
 
 - 新待确认项经 mapper 转成 `PendingEntryEntity`，保留来源、采集原因、置信度、金额、商户、时间、分类建议、资金账户标签和必要证据（[`ReviewQueuePersistenceMappers.kt:56-75`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueuePersistenceMappers.kt#L56-L75)）。
 - `persistTransition` 对下一状态中的每个待确认项调用 `repository.upsertPending`；被忽略的项写入 `ignored_entries` 后删除原 `pending_entries`（[`ReviewQueuePersistence.kt:40-89`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueuePersistence.kt#L40-L89)）。
@@ -180,12 +187,12 @@ POST /ai/categorize（表单参数）
 
 ## 重要分支与边界
 
-- **永不自动直写账本**：通知、无障碍、OCR 和手动账单同步均只创建/合并待确认项；用户确认才迁移到 `ledger_entries`。
+- **永不自动直写账本**：通知、无障碍、OCR 和补录账单均只创建/合并待确认项；用户确认才迁移到 `ledger_entries`。
 - **两种自动采集来源并行但共享去重边界**：通知和无障碍可能观察到同一交易；共享 `Mutex` 串行处理，跨来源高置信匹配合并证据（[`CrossSourceCaptureConcurrencyTest.kt:53-105`](../../apps/android/src/test/java/com/autoaccounting/feature/review/CrossSourceCaptureConcurrencyTest.kt#L53-L105)）。
 - **通知权限和通知监听不是同一件事**：通知监听读取来源应用通知；`POST_NOTIFICATIONS` 只负责本应用显示处理结果。拒绝后者不会阻断 Room 持久化。
-- **无障碍自动捕获和手动同步共用 Service，但入口和会话不同**：自动分支看持久化开关与权限健康；手动分支看用户启动的 `BillSyncSession`。
+- **无障碍自动捕获和手动补录共用 Service，但入口和会话不同**：自动分支看持久化开关与权限健康；手动分支看用户启动的 `BillSyncSession`。
 - **页面白名单与安全排除**：仅微信/支付宝，且付款发起、收银台、聊天输入等页面被拒绝；解析失败不创建待确认项。
-- **OCR 是受限兜底**：仅微信空节点、Android 11 以上、解锁亮屏；图片立即释放，OCR 原文不落库。
+- **OCR 是受限兜底**：仅微信空节点、Android 11 以上、解锁亮屏；自动路径保持窄 Activity 白名单，手动路径仅在用户明确授权的当前会话内覆盖可见历史账单详情且不限定 Activity；图片立即释放，OCR 原文不落库。
 - **分类分两层**：自动采集只应用本地规则；云 AI 是待确认编辑时的可选建议，且当前仍是 Demo gateway，不是自动流程的一部分。
 - **账本是设备本地事实源**：登录与后端账户能力不改变 `pending_entries`/`ledger_entries` 的 Room 存储位置。
 
@@ -193,7 +200,10 @@ POST /ai/categorize（表单参数）
 
 | 测试 | 证明的行为 |
 |---|---|
-| [`ContinuousMonitoringStateTest.kt:91-159`](../../apps/android/src/test/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringStateTest.kt#L91-L159) | 自动捕获硬门槛是无障碍健康；无需手动同步或通知监听；受支持支付页可放行 |
+| [`ContinuousMonitoringStateTest.kt:91-159`](../../apps/android/src/test/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringStateTest.kt#L91-L159) | 自动捕获硬门槛是无障碍健康；无需先补录账单或开启通知监听；受支持支付页可放行 |
+| [`ManualBillImportHostTest.kt:30-179`](../../apps/android/src/test/java/com/autoaccounting/feature/billsync/ManualBillImportHostTest.kt#L30-L179) | 权限缺失、服务未连接都不会启动来源；健康流程显示操作指引、结果和重试；Host 会触发等待超时 |
+| [`BillSyncSessionTest.kt:107-137`](../../apps/android/src/test/java/com/autoaccounting/feature/billsync/BillSyncSessionTest.kt#L107-L137) | 超时只命中同一等待会话，不影响新会话或已完成处理 |
+| [`MainActivityTest.kt:258-281`](../../apps/android/src/test/java/com/autoaccounting/MainActivityTest.kt#L258-L281) | 待确认与自动记账两个入口打开同一个 App 顶层补录 Host |
 | [`PaymentNotificationCaptureProcessorTest.kt:61-97`](../../apps/android/src/test/java/com/autoaccounting/feature/capture/PaymentNotificationCaptureProcessorTest.kt#L61-L97) | 有效通知写入待确认并合并重复；无关通知不会落库 |
 | [`BillSyncCaptureProcessorTest.kt:99-152`](../../apps/android/src/test/java/com/autoaccounting/feature/billsync/BillSyncCaptureProcessorTest.kt#L99-L152) | 解析失败不改变队列/账本；自动支付结果应用本地规则且仍停留在待确认 |
 | [`CrossSourceCaptureConcurrencyTest.kt:53-105`](../../apps/android/src/test/java/com/autoaccounting/feature/review/CrossSourceCaptureConcurrencyTest.kt#L53-L105) | 通知与无障碍并发捕获只持久化一条合并记录 |

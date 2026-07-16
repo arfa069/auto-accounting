@@ -12,8 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.autoaccounting.feature.billsync.BillSyncSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,23 +48,25 @@ class AutomaticBookkeepingScreenTest {
     }
 
     @Test
-    fun manualBillSyncStartsTheSelectedPaymentSource() {
-        var startedSource: BillSyncSource? = null
+    fun manualBillImportOpensTheUnifiedFlow() {
+        var billImportOpened = false
         composeRule.setContent {
             AutomaticBookkeepingScreen(
                 billSyncAccessibilityAccessGranted = true,
                 continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
                     billSyncAccessibilityGranted = true
                 ),
-                onStartManualBillSync = { startedSource = it }
+                onOpenBillImport = { billImportOpened = true }
             )
         }
 
-        composeRule.onNodeWithTag("manual-bill-sync-WeChat")
+        composeRule.onNodeWithTag("manual-bill-import")
             .performScrollTo()
             .performClick()
 
-        assertEquals(BillSyncSource.WeChat, startedSource)
+        assertTrue(billImportOpened)
+        composeRule.onAllNodesWithText("补录账单").assertCountEquals(2)
+        composeRule.onAllNodesWithText("账单同步").assertCountEquals(0)
     }
 
     @Test

@@ -90,7 +90,7 @@ class ReviewQueuePersistenceTest {
         val pending = state.pendingEntries.single()
         assertEquals("餐饮", pending.category)
         assertEquals("支付宝", pending.sourceLabel)
-        assertEquals("账单同步", pending.captureReasonLabel)
+        assertEquals("补录账单", pending.captureReasonLabel)
         assertEquals(ConfidenceState.DUPLICATE_SUSPECT, pending.confidence)
         assertEquals("支付宝账单 午餐 35.90", pending.rawEvidenceText)
         assertEquals(pendingFundingAccount.id, pending.fundingAccountId)

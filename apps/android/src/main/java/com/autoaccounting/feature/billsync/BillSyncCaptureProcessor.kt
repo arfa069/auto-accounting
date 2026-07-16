@@ -19,7 +19,17 @@ class BillSyncCaptureProcessor(
     suspend fun process(
         source: BillSyncSource,
         pageText: String
-    ): BillSyncResult = processWithReason(source, pageText, "账单同步")
+    ): BillSyncResult = processWithReason(source, pageText, "补录账单")
+
+    suspend fun processManualOcr(
+        source: BillSyncSource,
+        pageText: String
+    ): BillSyncResult = processWithReason(
+        source = source,
+        pageText = pageText,
+        captureReasonLabel = MANUAL_OCR_CAPTURE_REASON,
+        retainRawEvidence = false
+    )
 
     suspend fun processAutomatic(
         source: BillSyncSource,

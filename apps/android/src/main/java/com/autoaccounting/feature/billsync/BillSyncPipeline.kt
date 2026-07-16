@@ -39,6 +39,8 @@ enum class AutomaticCaptureVerification {
     RequireRecentNotification
 }
 
+internal const val MANUAL_OCR_CAPTURE_REASON = "本机 OCR 补录"
+
 class BillSyncPipeline(
     private val parser: BillPageParser = BillPageParser(),
     private val captureTimeFormatter: (Long) -> String = ::formatCaptureTime
@@ -49,7 +51,7 @@ class BillSyncPipeline(
         existingPendingEntries: List<ReviewQueueEntry>,
         existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
         capturedAtEpochMillis: Long,
-        captureReasonLabel: String = "账单同步",
+        captureReasonLabel: String = "补录账单",
         retainRawEvidence: Boolean = true,
         automaticCaptureVerification: AutomaticCaptureVerification =
             AutomaticCaptureVerification.Standard
@@ -238,9 +240,18 @@ class BillSyncPipeline(
             sourceLabel = sourceLabel,
             kindLabel = transactionKindLabel,
             captureReasonLabel = captureReasonLabel,
-            confidence = ConfidenceState.HIGH,
+            confidence = if (
+                captureReasonLabel == MANUAL_OCR_CAPTURE_REASON && merchantTitleFromFallback
+            ) {
+                ConfidenceState.NEEDS_REVIEW
+            } else {
+                ConfidenceState.HIGH
+            },
             capturedAtEpochMillis = capturedAtEpochMillis,
             captureTimeText = captureTimeFormatter(capturedAtEpochMillis),
+            note = "商户未识别，请人工确认".takeIf {
+                captureReasonLabel == MANUAL_OCR_CAPTURE_REASON && merchantTitleFromFallback
+            },
             rawEvidenceText = rawLine.takeIf { retainRawEvidence }.orEmpty(),
             parsedFields = parsedFields
         )

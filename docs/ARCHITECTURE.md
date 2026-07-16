@@ -10,6 +10,7 @@ The Android app owns all ledger-book truth. The first backend must not sync or s
 flowchart LR
   WeChat["WeChat / Alipay"] --> Notify["Notification Listener"]
   WeChat --> A11y["Accessibility Nodes / Restricted Local OCR"]
+  Import["User-started Bill Import"] --> A11y
   Notify --> Capture["Capture Pipeline"]
   A11y --> Capture
   Capture --> Dedupe["Deduplication"]
@@ -39,7 +40,8 @@ Recommended modules:
 - `feature:ledger`: ledger list, search, filters, entry detail.
 - `feature:reports`: monthly overview, category share, category trend.
 - `feature:capture-notification`: notification listener integration.
-- `feature:capture-accessibility`: automatic payment-result capture and manual bill sync.
+- `feature:capture-accessibility`: automatic payment-result capture and manual bill import.
+- `feature:billsync`: shared `ManualBillImportHost`, import session state, source launch, supported-page parsing, and accessibility capture handoff.
 - `feature:categorization`: local rules and AI categorization client.
 - `feature:account`: login, registration, recovery, local mode, deletion.
 - `feature:monitoring`: automatic-bookkeeping state, compact permission and background-reliability settings, service health, and payment-surface observation decisions.
@@ -84,7 +86,7 @@ Ledger lifecycle invariants:
 ## 4. Capture Pipeline
 
 Pipeline stages:
-1. Source event arrives from notification listener, automatic accessibility capture, or manual bill sync.
+1. Source event arrives from notification listener, automatic accessibility capture, or manual bill import.
 2. Parser extracts candidate fields and raw evidence.
 3. Normalizer maps source-specific text into transaction kind, merchant/title, amount, time, funding account, and source.
 4. Deduplication compares against pending entries and ledger entries.
@@ -94,6 +96,7 @@ Pipeline stages:
 
 Key rule:
 - The capture pipeline never writes directly to confirmed ledger entries.
+- Manual import UI never writes or merges pending entries itself. `BillSyncCaptureProcessor` persists through `ReviewQueuePersistence`, and app UI refreshes from the Room Flow.
 - Initial local rules are seeded as editable Room records; migrations and first-install callbacks must not overwrite later user edits.
 
 ## 5. Deduplication
@@ -101,7 +104,7 @@ Key rule:
 High-confidence auto-merge:
 - Same source order id, if available.
 - Strong match on source, amount, merchant/title, transaction time, and kind.
-- Known notification-to-bill-sync pair for the same source transaction.
+- Known notification-to-manual-import pair for the same source transaction.
 
 Low-confidence duplicate candidate:
 - Similar amount and time but weak merchant/title.
@@ -184,7 +187,7 @@ Account deletion:
 
 Permission center tracks:
 - Notification listener state.
-- Accessibility service state for automatic capture and bill sync.
+- Accessibility service state for automatic capture and manual bill import.
 - Automatic capture enabled state.
 - Accessibility-service connection heartbeat.
 - Detectable battery-optimization and battery-saver state.
@@ -192,9 +195,16 @@ Permission center tracks:
 
 Important boundaries:
 - Notification listener only creates pending entries from WeChat/Alipay payment notifications.
-- Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual sync or notification-listener access.
+- Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual import or notification-listener access.
 - Automatic capture reads accessibility nodes first. A blank WeChat accessibility surface may use one transient screenshot with bundled local OCR: Android 14 or later captures only the active app window, while Android 11-13 uses the display screenshot API. The bitmap and raw OCR text are released after parsing and are not persisted, uploaded, or logged.
-- Manual bill sync remains user-started and is not part of the normal payment flow.
+- Manual bill import remains user-started and is not part of the normal payment flow.
+- A blank WeChat application page may enter the manual OCR path only when the current import session carries explicit OCR consent. This covers currently visible WeChat history-bill detail pages without depending on a specific Activity class; automatic OCR keeps its narrower trusted-activity list.
+- Manual OCR accepts only the field relationship `当前状态: 支付成功` (same line or adjacent key/value lines) together with one unambiguous transaction amount. `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, and `已取消` are hard denials and win over positive evidence.
+- Accepted history details preserve normalized payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id when present. The bitmap and raw OCR text remain transient.
+- Review Queue and Automatic Bookkeeping dispatch the same app-level import request; neither owns a separate session dialog or persistence path.
+- Permission grant and live service connection are independent preconditions. A missing condition prevents source launch and exposes recovery actions.
+- Each import reads only the current supported visible page. It does not navigate, scroll, paginate, or promise a full history scan.
+- A 90-second timeout can fail only the same session while it remains in `AwaitingBillPage`; processing, cancelled, completed, and newer sessions are unaffected.
 - On Android 13 or later, result-notification permission is requested when automatic bookkeeping is enabled; denial must not prevent local capture or persistence.
 - The app must not read chat content, send messages, initiate payments, or initiate transfers.
 
@@ -213,7 +223,7 @@ Backend checks:
 
 Manual beta checks:
 - WeChat/Alipay notification capture on several domestic Android ROMs.
-- Manual bill sync with clear stepwise progress.
+- Manual bill import from both entries with shared preflight, 90-second timeout, and clear stepwise progress.
 - Automatic payment-result capture opt-in/off switch and result notifications.
 - Backup export/import.
 - Account deletion cooling-off and cancel flow.

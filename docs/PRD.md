@@ -17,7 +17,8 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 ## 3. Core Decisions
 
 - Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
-- Automatic capture is the primary flow after explicit opt-in; user-started bill sync remains a history backfill and fallback path.
+- Automatic capture is the primary flow after explicit opt-in; user-started bill import (`补录账单`) remains a limited backfill and fallback path.
+- A user may explicitly allow local OCR for one WeChat import session when a currently visible WeChat history-bill detail page exposes no accessibility text. The manual path does not depend on a mini-program or wallet Activity class, does not broaden automatic OCR, and never persists or uploads screenshots or raw OCR text.
 - All automatically captured transactions first become pending entries.
 - Ledger books are local-first; future cloud sync is reserved but not implemented in the first backend.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
@@ -36,7 +37,7 @@ Primary user:
 - Is willing to grant sensitive permissions if the app clearly explains why.
 
 Core jobs:
-- Capture payment activity automatically or through manual bill sync.
+- Capture payment activity automatically or through manual bill import.
 - Review pending entries quickly.
 - Correct amount, time, transaction kind, category, funding account, merchant/title, and note.
 - Build categorization rules from repeated corrections.
@@ -53,11 +54,18 @@ Sources:
 - Alipay notifications.
 - WeChat payment-result and payment-record pages after automatic capture is enabled.
 - Alipay payment-result and payment-record pages after automatic capture is enabled.
-- User-started accessibility bill sync for history backfill.
+- User-started accessibility bill import from the currently visible WeChat or Alipay bill surface.
 
 Capture output:
 - Pending entries only.
-- Capture reason: notification capture, bill sync, duplicate merge, or related reason.
+- Capture reason: notification capture, manual bill import, duplicate merge, or related reason.
+- Manual bill import reads only the currently visible supported page. It does not auto-scroll, paginate, or promise a complete history scan.
+- Both the Review Queue and Automatic Bookkeeping entries open one app-level import flow.
+- The flow checks accessibility grant and live service connection separately before source selection or app launch.
+- After source launch, the user has 90 seconds to enter and remain on a bill, transaction-detail, or payment-result page. Timeout affects only the matching session while it is still waiting.
+- The accessibility processor and `ReviewQueuePersistence` are the only manual-import write path; UI observes the Room Flow and never creates pending entries a second time.
+- Manual WeChat OCR creates a candidate only when `当前状态` and `支付成功` form the same field relationship and one unambiguous amount is present. Any of `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, or `已取消` rejects the page.
+- When present, normalized output includes payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id.
 - Confidence state: high confidence, needs review, duplicate suspect.
 
 Transaction kinds:
@@ -68,8 +76,10 @@ Transaction kinds:
 
 Homepage:
 - The review queue is the first tab and primary workflow.
-- Top summary shows pending total, duplicate suspect count, today's newly captured count, and a bill sync button.
-- All pending entries appear in a single "quick confirm" list.
+- The header shows the target ledger-book name and an ignored-records action.
+- One summary card shows pending total, duplicate suspect count, and today's pending count.
+- A separate full-width `补录账单` card opens the shared manual-import flow.
+- All pending entries appear in a single "待确认记录" list.
 - Sorting: duplicate suspect and low-confidence entries first, then capture time descending.
 
 List item fields:
@@ -245,14 +255,14 @@ The Automatic Bookkeeping page shows, in order:
 - Automatic-bookkeeping accessibility service.
 - Non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
 - Continuous-monitoring health summary.
-- User-started bill sync as a separate backfill action.
+- A single `补录账单` action that opens the same app-level import flow as the Review Queue.
 
 The Automatic Bookkeeping overview status is:
 - Ready when automatic bookkeeping is enabled, notification listening and accessibility are available, and continuous monitoring is healthy.
 - Needs attention when automatic bookkeeping is enabled but a required permission or service is unavailable; it names the specific cause.
 - Off when the user has disabled automatic bookkeeping, regardless of retained permissions.
 
-On Android 13 or later, bookkeeping-result notification permission is requested when the user enables automatic bookkeeping; denial does not block capture or persistence and therefore does not make the overview status need attention. Bill sync remains a user-started action and is not a standing permission.
+On Android 13 or later, bookkeeping-result notification permission is requested when the user enables automatic bookkeeping; denial does not block capture or persistence and therefore does not make the overview status need attention. Manual bill import remains user-started and is not a standing permission.
 
 The permission and background-settings section shows compact rows with a title, one-sentence purpose, short status, and settings action. Background-running and auto-start state cannot be read reliably across manufacturers, so they remain “please check” guidance and never block automatic bookkeeping.
 
@@ -304,7 +314,7 @@ Profile overview:
 
 Profile entries:
 - Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
-- Automatic Bookkeeping: state, permissions, continuous-monitoring health, and user-started bill sync as defined in section 5.8.
+- Automatic Bookkeeping: state, permissions, continuous-monitoring health, and user-started bill import as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
 - Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
 - Compliance and Privacy: entry points for the privacy policy, personal-information collection list, third-party-service list, and permission explanations. Each document opens separately and is available in local mode.
@@ -355,7 +365,7 @@ Core metrics:
 
 Supporting metrics:
 - Review queue completion rate.
-- Manual bill sync completion and failure reasons.
+- Manual bill-import completion and failure reasons.
 - Automatic payment-result capture success, failure, and dedupe outcomes.
 - Swipe confirm/ignore undo rate.
 - AI categorization opt-in rate.

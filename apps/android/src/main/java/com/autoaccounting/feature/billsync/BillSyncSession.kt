@@ -19,6 +19,7 @@ data class BillSyncSessionState(
     val sessionId: Long = 0,
     val phase: BillSyncSessionPhase = BillSyncSessionPhase.Idle,
     val source: BillSyncSource? = null,
+    val manualOcrAllowed: Boolean = false,
     val steps: List<BillSyncStep> = emptyList(),
     val result: BillSyncResult? = null,
     val message: String? = null
@@ -37,11 +38,15 @@ class BillSyncSessionController {
         mutableState.value = BillSyncSessionState(sessionId = mutableState.value.sessionId)
     }
 
-    fun start(source: BillSyncSource): BillSyncSessionState {
+    fun start(
+        source: BillSyncSource,
+        manualOcrAllowed: Boolean = false
+    ): BillSyncSessionState {
         val next = BillSyncSessionState(
             sessionId = mutableState.value.sessionId + 1,
             phase = BillSyncSessionPhase.AwaitingBillPage,
             source = source,
+            manualOcrAllowed = manualOcrAllowed && source == BillSyncSource.WeChat,
             steps = listOf(BillSyncStep.OpenSource)
         )
         mutableState.value = next
@@ -55,7 +60,7 @@ class BillSyncSessionController {
             sessionId = current.sessionId + 1,
             phase = BillSyncSessionPhase.Cancelled,
             steps = current.steps + BillSyncStep.Cancelled,
-            message = "账单同步已取消"
+            message = "补录已取消"
         )
     }
 
@@ -69,10 +74,34 @@ class BillSyncSessionController {
         )
     }
 
+    suspend fun timeoutAwaitingBillPage(
+        sessionId: Long,
+        message: String = "未识别到账单页，请重新补录"
+    ): Boolean = transitionMutex.withLock {
+        val current = mutableState.value
+        if (
+            current.sessionId != sessionId ||
+            current.phase != BillSyncSessionPhase.AwaitingBillPage
+        ) {
+            return@withLock false
+        }
+        mutableState.value = current.copy(
+            phase = BillSyncSessionPhase.Failed,
+            steps = current.steps + BillSyncStep.Failed,
+            message = message
+        )
+        true
+    }
+
     fun acceptsPackage(packageName: String): Boolean {
         val current = mutableState.value
         return current.phase == BillSyncSessionPhase.AwaitingBillPage &&
             current.source?.packageName == packageName
+    }
+
+    fun acceptsManualOcr(packageName: String): Boolean {
+        val current = mutableState.value
+        return current.manualOcrAllowed && acceptsPackage(packageName)
     }
 
     suspend fun submitBillPage(
@@ -121,7 +150,7 @@ class BillSyncSessionController {
                 mutableState.value = processingState.copy(
                     phase = BillSyncSessionPhase.Failed,
                     steps = processingState.steps + BillSyncStep.Failed,
-                    message = error.message ?: "账单同步失败"
+                    message = error.message ?: "补录失败"
                 )
             }
         }
@@ -131,10 +160,11 @@ class BillSyncSessionController {
 
 fun startManualBillSync(
     source: BillSyncSource,
+    manualOcrAllowed: Boolean = false,
     launchSource: (BillSyncSource) -> Boolean,
     controller: BillSyncSessionController = BillSyncSessions.controller
 ) {
-    controller.start(source)
+    controller.start(source, manualOcrAllowed)
     if (!launchSource(source)) {
         controller.fail("未找到${source.label}，无法打开账单页面")
     }

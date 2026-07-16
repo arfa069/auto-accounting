@@ -76,6 +76,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
     private val ocrSessionGuard = PaymentScreenOcrSessionGuard()
     private var lastWechatOcrAttemptAtElapsedMillis = 0L
+    private var lastManualWechatOcrAttemptAtElapsedMillis = 0L
     @Volatile
     private var activeWechatWindowIdentity: WechatWindowIdentity? = null
 
@@ -128,6 +129,19 @@ class BillSyncAccessibilityService : AccessibilityService() {
         val windowEvidence = activeRoot?.let { root ->
             currentWechatWindowEvidence(root.windowId, windowIdentity)
         }
+        val shouldEvaluateManualOcr = manualBillSyncAcceptsPackage &&
+            BillSyncSessions.controller.acceptsManualOcr(packageName) &&
+            windowEvidence != null &&
+            shouldAttemptManualWechatOcrFallback(
+                packageName = packageName,
+                pageText = pageText,
+                sdkInt = Build.VERSION.SDK_INT,
+                windowEvidence = windowEvidence
+            )
+        if (shouldEvaluateManualOcr) {
+            captureManualWechatOcrFallback(packageName)
+            return
+        }
         val shouldEvaluateOcr = shouldConsiderContinuousMonitoring &&
             windowEvidence != null &&
             isWechatOcrFallbackCandidate(
@@ -175,8 +189,101 @@ class BillSyncAccessibilityService : AccessibilityService() {
                     process = processor::process
                 )
             }.onFailure { error ->
-                BillSyncSessions.controller.fail(error.message ?: "账单同步失败")
+                BillSyncSessions.controller.fail(error.message ?: "补录失败")
                 Log.w(TAG, "Bill sync capture failed", error)
+            }
+        }
+    }
+
+    private fun captureManualWechatOcrFallback(packageName: String) {
+        if (!isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)) {
+            return
+        }
+        if (wechatOcrCaptureJob?.isActive == true) return
+        val nowElapsedMillis = SystemClock.elapsedRealtime()
+        if (
+            nowElapsedMillis - lastManualWechatOcrAttemptAtElapsedMillis <
+            MANUAL_OCR_ATTEMPT_COOLDOWN_MILLIS
+        ) {
+            return
+        }
+        lastManualWechatOcrAttemptAtElapsedMillis = nowElapsedMillis
+
+        wechatOcrCaptureJob = serviceScope.launch {
+            try {
+                delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+                val activeRoot = rootInActiveWindow ?: return@launch
+                if (
+                    activeRoot.packageName?.toString() != packageName ||
+                    !BillSyncSessions.controller.acceptsManualOcr(packageName) ||
+                    !isScreenReadyForWechatOcr(
+                        powerManager.isInteractive,
+                        keyguardManager.isKeyguardLocked
+                    )
+                ) {
+                    return@launch
+                }
+
+                val windowId = activeRoot.windowId
+                val windowIdentity = activeWechatWindowIdentity
+                    ?.takeIf { identity -> identity.windowId == windowId }
+                val windowEvidence = currentWechatWindowEvidence(windowId, windowIdentity)
+                if (
+                    !shouldAttemptManualWechatOcrFallback(
+                        packageName = packageName,
+                        pageText = activeRoot.collectVisibleText(),
+                        sdkInt = Build.VERSION.SDK_INT,
+                        windowEvidence = windowEvidence
+                    )
+                ) {
+                    return@launch
+                }
+
+                val screenshot = captureScreenBitmap(windowId) ?: return@launch
+                try {
+                    val currentRoot = rootInActiveWindow
+                    val currentWindowIdentity = activeWechatWindowIdentity
+                        ?.takeIf { identity -> identity.windowId == windowId }
+                    val currentWindowEvidence = currentWechatWindowEvidence(
+                        windowId = windowId,
+                        windowIdentity = currentWindowIdentity
+                    )
+                    if (
+                        currentRoot == null ||
+                        currentRoot.packageName?.toString() != packageName ||
+                        currentRoot.windowId != windowId ||
+                        !BillSyncSessions.controller.acceptsManualOcr(packageName) ||
+                        !isScreenReadyForWechatOcr(
+                            powerManager.isInteractive,
+                            keyguardManager.isKeyguardLocked
+                        ) ||
+                        !shouldAttemptManualWechatOcrFallback(
+                            packageName = packageName,
+                            pageText = currentRoot.collectVisibleText(),
+                            sdkInt = Build.VERSION.SDK_INT,
+                            windowEvidence = currentWindowEvidence
+                        )
+                    ) {
+                        return@launch
+                    }
+
+                    val preparedPageText = prepareManualWechatOcrResultText(
+                        ocrRecognizer.recognize(screenshot)
+                    ) ?: return@launch
+                    BillSyncSessions.controller.submitBillPage(
+                        packageName = packageName,
+                        pageText = preparedPageText,
+                        process = processor::processManualOcr
+                    )
+                } finally {
+                    screenshot.recycle()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.w(TAG, "Manual local OCR capture failed", error)
+            } finally {
+                wechatOcrCaptureJob = null
             }
         }
     }
@@ -483,6 +590,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         const val TAG = "BillSyncService"
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
+        const val MANUAL_OCR_ATTEMPT_COOLDOWN_MILLIS = 1_000L
         const val OCR_SESSION_RESET_SETTLE_MILLIS = 3_000L
     }
 }
@@ -499,6 +607,16 @@ internal fun shouldAttemptWechatOcrFallback(
     sdkInt = sdkInt,
     windowEvidence = windowEvidence
 ) && (windowEvidence.isApplicationWindow || hasRecentPaymentNotification)
+
+internal fun shouldAttemptManualWechatOcrFallback(
+    packageName: String,
+    pageText: String,
+    sdkInt: Int,
+    windowEvidence: WechatWindowEvidence
+): Boolean = packageName == BillSyncSource.WeChat.packageName &&
+    sdkInt >= Build.VERSION_CODES.R &&
+    windowEvidence.isApplicationWindow &&
+    hasOnlyGenericWechatAccessibilityText(pageText)
 
 private fun isWechatOcrFallbackCandidate(
     packageName: String,

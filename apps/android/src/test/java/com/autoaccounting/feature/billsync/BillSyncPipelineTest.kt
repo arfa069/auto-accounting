@@ -32,7 +32,7 @@ class BillSyncPipelineTest {
         )
         assertEquals(1, result.createdEntries.size)
         assertEquals("午餐", result.createdEntries.single().title)
-        assertEquals("账单同步", result.createdEntries.single().captureReasonLabel)
+        assertEquals("补录账单", result.createdEntries.single().captureReasonLabel)
         assertEquals(ConfidenceState.HIGH, result.createdEntries.single().confidence)
     }
 

@@ -27,18 +27,18 @@ The review queue is the first destination in navigation order. Permission status
 ## 3. Review Queue
 
 First screen:
-- Top status summary.
-- Bill sync button.
-- Pending list.
+- Header with Home, `待确认`, ignored records, and `确认后记入「<当前账本名>」`.
+- One status summary card.
+- A separate full-width `补录账单` action card.
+- One pending-record list.
 
 Top summary:
 - Pending total.
 - Duplicate suspect count.
-- Today's newly captured count.
-- Sync action.
+- Today's pending count.
 
 Pending list:
-- A single Quick confirm group contains every pending entry.
+- A single `待确认记录` group contains every pending entry.
 - Confidence state remains visible on each row.
 
 Default sorting:
@@ -90,14 +90,26 @@ Actions:
 - Confirm into ledger.
 - Ignore.
 
-## 5. Bill Sync Flow
+## 5. Manual Bill Import Flow
 
 Entry points:
-- Review page top action.
-- Profile tools entry.
+- Review Queue `补录账单` card.
+- Automatic Bookkeeping `补录账单` action.
+- Both entries open one app-level `ManualBillImportHost`; source selection and progress are not duplicated inside either screen.
+
+Preflight:
+- Check accessibility permission first. If missing, explain the limited purpose and show Settings.
+- Check the live accessibility-service connection separately. If disconnected, do not launch a source; show Recheck, Settings, and Close.
+- Source-app launch failure becomes an explicit retryable result.
+- WeChat import offers an unchecked, per-session local-OCR consent for currently visible history-bill detail pages with no readable accessibility nodes. State that screenshots and raw OCR text are not saved or uploaded.
 
 Progress UI:
 - Stepwise progress, not silent background work.
+- State clearly that each run reads only the currently visible page and does not auto-scroll, paginate, or scan all history.
+- After opening WeChat or Alipay, ask the user to enter a bill, transaction-detail, or payment-result page, remain briefly, and return after recognition.
+- Waiting expires after 90 seconds only for the matching session still awaiting a bill page.
+- The authorized manual path covers WeChat history-bill details without depending on a mini-program or wallet Activity class; automatic OCR keeps its narrower Activity allowlist.
+- OCR requires the exact field relationship `当前状态: 支付成功` (same line or adjacent key/value lines) plus one unambiguous amount. `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, and `已取消` reject the page even if the positive pair is also visible.
 
 Steps:
 - Open source.
@@ -106,7 +118,12 @@ Steps:
 - Deduplicate.
 - Create pending entries.
 
-The screen must show current user action when needed, such as opening the source app or staying on a bill page.
+Completion:
+- Show added and deduplicated counts.
+- Primary action: `查看待确认`.
+- Secondary action: Close.
+- If automatic bookkeeping is off, offer `开启自动记账` as an additional secondary action.
+- UI displays progress only. `BillSyncCaptureProcessor` and `ReviewQueuePersistence` write Room; the Review Queue refreshes from Room Flow.
 
 ## 6. Ledger
 
@@ -221,7 +238,7 @@ Account Management:
 - Sign-out keeps all local ledger books, while account deletion follows its separate cooling-off flow.
 
 Automatic Bookkeeping:
-- Order sections as state, required permissions, then user-started bill sync.
+- Order sections as state, required permissions, then user-started bill import.
 - Overview status is Ready, Needs attention with a specific reason, or Off. Result notifications do not block capture and do not produce Needs attention.
 - Keep the accessibility description explicit: it is limited to payment-result and permitted bill pages, and does not read chats or ordinary messages.
 
@@ -295,7 +312,7 @@ First screen items:
 - Notification listening.
 - Automatic-bookkeeping accessibility service.
 - Background running, auto-start, battery optimization, and battery-saver suggestions.
-- User-started bill sync appears after the permission section, not as a permission.
+- User-started bill import appears after the permission section, not as a permission.
 
 Each item:
 - Title.

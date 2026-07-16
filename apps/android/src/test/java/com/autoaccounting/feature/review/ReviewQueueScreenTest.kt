@@ -20,16 +20,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.account.AccountSession
-import com.autoaccounting.feature.billsync.BillSyncPipeline
-import com.autoaccounting.feature.billsync.BillSyncSessionController
-import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -236,7 +230,7 @@ class ReviewQueueScreenTest {
 
     @Test
     fun summaryShowsApprovedCountsAndBillImportAction() {
-        val sessionController = BillSyncSessionController()
+        var billImportOpened = false
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(
@@ -246,9 +240,7 @@ class ReviewQueueScreenTest {
                     ),
                     todayStartEpochMillis = NOW - 1
                 ),
-                billSyncAccessibilityAccessGranted = true,
-                onLaunchBillSyncSource = { true },
-                billSyncSessionController = sessionController
+                onOpenBillImport = { billImportOpened = true }
             )
         }
 
@@ -257,14 +249,9 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithText("今日待确认 2").assertIsDisplayed()
         composeRule.onAllNodesWithText("已确认 0").assertCountEquals(0)
         composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.onNodeWithText("选择同步来源").assertIsDisplayed()
-        composeRule.onNodeWithText("微信").performClick()
-        completeBillSync(sessionController, BillSyncSource.WeChat)
-        composeRule.onNodeWithText("打开来源").assertIsDisplayed()
-        composeRule.onNodeWithText("读取账单").assertIsDisplayed()
-        composeRule.onNodeWithText("已创建 1 条，已去重 0 条").assertIsDisplayed()
-        composeRule.onNodeWithText("关闭").performClick()
-        composeRule.onNodeWithText("3 条待确认").assertIsDisplayed()
+
+        assertTrue(billImportOpened)
+        composeRule.onAllNodesWithText("选择账单来源").assertCountEquals(0)
     }
 
     @Test
@@ -320,67 +307,6 @@ class ReviewQueueScreenTest {
 
         composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(23)
         composeRule.onNodeWithTag("detail-pending-20").assertIsDisplayed()
-    }
-
-    @Test
-    fun billSyncWithoutPermissionOpensSettingsAndDoesNotLaunchSource() {
-        var settingsOpened = false
-        var sourceLaunched = false
-        val sessionController = BillSyncSessionController()
-        composeRule.setContent {
-            ReviewQueueScreen(
-                initialState = ReviewQueueState(),
-                billSyncAccessibilityAccessGranted = false,
-                onOpenBillSyncAccessibilitySettings = { settingsOpened = true },
-                onLaunchBillSyncSource = {
-                    sourceLaunched = true
-                    true
-                },
-                billSyncSessionController = sessionController
-            )
-        }
-
-        composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.onNodeWithText("微信").performClick()
-
-        assertTrue(settingsOpened)
-        assertTrue(!sourceLaunched)
-    }
-
-    @Test
-    fun billSyncFailureRendersProgressAndErrorWithoutChangingQueue() {
-        val sessionController = BillSyncSessionController()
-        composeRule.setContent {
-            ReviewQueueScreen(
-                initialState = ReviewQueueState(),
-                billSyncAccessibilityAccessGranted = true,
-                onLaunchBillSyncSource = { true },
-                billSyncSessionController = sessionController
-            )
-        }
-
-        composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.onNodeWithText("支付宝").performClick()
-        runBlocking {
-            sessionController.submitBillPage(
-                packageName = BillSyncSource.Alipay.packageName,
-                pageText = "not a bill page"
-            ) { source, pageText ->
-                BillSyncPipeline().sync(
-                    source = source,
-                    pageText = pageText,
-                    existingPendingEntries = emptyList(),
-                    capturedAtEpochMillis = NOW
-                )
-            }
-        }
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("解析账单").assertIsDisplayed()
-        composeRule.onNodeWithText("同步失败").assertIsDisplayed()
-        composeRule.onNodeWithText("未识别到账单记录，请确认已打开对应账单页面").assertIsDisplayed()
-        composeRule.onNodeWithText("关闭").performClick()
-        composeRule.onNodeWithText("0 条待确认").assertIsDisplayed()
     }
 
     @Test
@@ -455,64 +381,6 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithTag("edit-category").assertTextContains("交通")
     }
 
-    @Test
-    fun billSyncCompletionCanPromptAdvancedMonitoringButFirstScreenDoesNotShowIt() {
-        var monitoringState = ContinuousMonitoringState()
-        val sessionController = BillSyncSessionController()
-        composeRule.setContent {
-            ReviewQueueScreen(
-                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
-                billSyncAccessibilityAccessGranted = true,
-                onLaunchBillSyncSource = { true },
-                billSyncSessionController = sessionController,
-                continuousMonitoringState = monitoringState,
-                continuousMonitoringPermissionHealth = healthyPermissions,
-                onContinuousMonitoringStateChange = { monitoringState = it }
-            )
-        }
-
-        composeRule.onAllNodesWithText("连续监控").assertCountEquals(0)
-        composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.onNodeWithText("微信").performClick()
-        completeBillSync(sessionController, BillSyncSource.WeChat)
-        composeRule.onNodeWithText("关闭").performClick()
-
-        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(3)
-        composeRule.onAllNodesWithText("开启自动记账").assertCountEquals(2)
-        composeRule.onNodeWithText("支付完成后自动识别结果页并生成待确认记录，可随时关闭。")
-            .assertIsDisplayed()
-        composeRule.onNodeWithTag("enable-automatic-capture-after-sync").performClick()
-
-        assertTrue(monitoringState.enabled)
-    }
-
-    private fun completeBillSync(
-        controller: BillSyncSessionController,
-        source: BillSyncSource
-    ) {
-        runBlocking {
-            controller.submitBillPage(
-                packageName = source.packageName,
-                pageText = when (source) {
-                    BillSyncSource.WeChat ->
-                        "2026-07-08 18:30 晚餐 支出 ¥42.50 微信零钱"
-                    BillSyncSource.Alipay ->
-                        "2026-07-08 18:30 晚餐 支出 42.50元 支付宝余额"
-                }
-            ) { actualSource, pageText ->
-                BillSyncPipeline(
-                    captureTimeFormatter = { "2026-07-08 18:31" }
-                ).sync(
-                    source = actualSource,
-                    pageText = pageText,
-                    existingPendingEntries = emptyList(),
-                    capturedAtEpochMillis = NOW
-                )
-            }
-        }
-        composeRule.waitForIdle()
-    }
-
     private fun scrollToFirstPendingEntry() {
         composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
     }
@@ -540,9 +408,6 @@ class ReviewQueueScreenTest {
 
     private companion object {
         const val NOW = 1_783_468_800_000L
-        val healthyPermissions = ContinuousMonitoringPermissionHealth(
-            billSyncAccessibilityGranted = true
-        )
     }
 
     private class FixedAiCategorizationGateway(

@@ -84,6 +84,36 @@ internal fun isVerifiedWechatOcrResultActivity(activityClassName: String?): Bool
         activityClassName == WECHAT_TRANSFER_RESULT_ACTIVITY_CLASS ||
         activityClassName == WECHAT_RED_PACKET_DETAIL_ACTIVITY_CLASS
 
+internal fun prepareManualWechatOcrResultText(pageText: String): String? {
+    val lines = pageText.lineSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toList()
+    val normalizedText = lines.joinToString("\n")
+    if (normalizedText.isBlank()) return null
+
+    val compactText = normalizedText.filterNot(Char::isWhitespace)
+    if (MANUAL_OCR_DENY_KEYWORDS.any(compactText::contains)) return null
+    if (!hasCurrentStatusPaymentSuccessPair(lines)) return null
+    if (!hasUnambiguousTransactionAmount(normalizedText)) return null
+    return normalizedText
+}
+
+internal fun hasCurrentStatusPaymentSuccessPair(pageText: String): Boolean =
+    hasCurrentStatusPaymentSuccessPair(
+        pageText.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+    )
+
+private fun hasCurrentStatusPaymentSuccessPair(lines: List<String>): Boolean {
+    val normalizedLines = lines.map { line ->
+        line.filterNot(Char::isWhitespace).replace(":", "").replace("：", "")
+    }
+    return normalizedLines.any { it == "当前状态支付成功" } ||
+        normalizedLines.windowed(2).any { pair ->
+            pair[0] == "当前状态" && pair[1] == "支付成功"
+        }
+}
+
 private fun isTrustedWechatTransferResultWindow(
     windowEvidence: WechatWindowEvidence
 ): Boolean = windowEvidence.isApplicationWindow &&
@@ -139,3 +169,14 @@ internal fun ReviewQueueEntry.wasCapturedWithinWechatNotificationWindow(
     return this.capturedAtEpochMillis > 0 &&
         notificationAgeMillis in 0..WECHAT_RECENT_NOTIFICATION_WINDOW_MILLIS
 }
+
+private val MANUAL_OCR_DENY_KEYWORDS = listOf(
+    "确认支付",
+    "立即支付",
+    "收银台",
+    "支付密码",
+    "待支付",
+    "处理中",
+    "支付失败",
+    "已取消"
+)

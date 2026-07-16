@@ -172,6 +172,72 @@ class BillSyncCaptureProcessorTest {
     }
 
     @Test
+    fun manualWechatOcrKeepsRawTextOffDiskAndFlagsMissingMerchantForReview() = runBlocking {
+        val pageText = requireNotNull(
+            prepareManualWechatOcrResultText("当前状态\n支付成功\n¥10.40")
+        )
+
+        val result = processor.processManualOcr(
+            source = BillSyncSource.WeChat,
+            pageText = pageText
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("微信支付", entry.merchantTitle)
+        assertEquals(1_040L, entry.amountMinor)
+        assertEquals(ConfidenceState.NEEDS_REVIEW, entry.confidence)
+        assertEquals("商户未识别，请人工确认", entry.note)
+        assertEquals(null, entry.evidenceSummary)
+        assertTrue(entry.parsedFieldsText.orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun manualWechatOcrPersistsStructuredHistoryBillFieldsWithoutRawEvidence() = runBlocking {
+        val pageText = requireNotNull(
+            prepareManualWechatOcrResultText(
+                """
+                    肯德基
+                    -¥10.40
+                    当前状态
+                    支付成功
+                    支付时间
+                    2026年07月12日 09:16:07
+                    商品
+                    KFC_PREWX10012651367114169061602
+                    商户全称
+                    百胜餐饮（广东）有限公司
+                    支付方式
+                    零钱
+                    交易单号
+                    4500000279202607127462299679
+                    商户单号
+                    WX10012651367114169061602
+                """.trimIndent()
+            )
+        )
+
+        val result = processor.processManualOcr(
+            source = BillSyncSource.WeChat,
+            pageText = pageText
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("KFC_PREWX10012651367114169061602", entry.merchantTitle)
+        assertEquals(1_040L, entry.amountMinor)
+        assertEquals("零钱", entry.fundingAccountLabel)
+        assertEquals(CaptureReason.BILL_SYNC, entry.captureReason)
+        assertEquals(null, entry.evidenceSummary)
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("当前状态=支付成功"))
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("商品=KFC_PREWX10012651367114169061602"))
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("商品名称=KFC_PREWX10012651367114169061602"))
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("商户或收款方=百胜餐饮（广东）有限公司"))
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("交易单号=4500000279202607127462299679"))
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("商户单号=WX10012651367114169061602"))
+    }
+
+    @Test
     fun sentRedPacketFindsUniqueRecentNotificationThatHasNotBeenLinkedToOcr() = runBlocking {
         val fingerprint = requireNotNull(
             wechatOcrPaymentFingerprint(

@@ -255,6 +255,31 @@ class MainActivityTest {
     }
 
     @Test
+    fun reviewAndAutomaticBookkeepingOpenTheSameBillImportHost() {
+        composeRule.setContent {
+            AutoAccountingApp(
+                billSyncAccessibilityAccessGranted = true,
+                billSyncAccessibilityServiceConnected = true,
+                onLaunchBillSyncSource = { true }
+            )
+        }
+
+        composeRule.onNodeWithTag("app-tab-Review").performClick()
+        composeRule.onNodeWithText("补录账单").performClick()
+        composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
+        composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
+        composeRule.onNodeWithText("取消").performClick()
+
+        composeRule.onNodeWithTag("return-home").performClick()
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
+        composeRule.onNodeWithTag("manual-bill-import").performScrollTo().performClick()
+
+        composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
+        composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
+    }
+
+    @Test
     fun disconnectedAccessibilityKeepsPersistedAutomaticBookkeepingIntentEnabled() {
         val preferencesRepository = LocalPreferencesRepository(
             AutoAccountingDatabaseProvider.get(context)

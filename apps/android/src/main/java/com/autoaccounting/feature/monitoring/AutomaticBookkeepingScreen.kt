@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.autoaccounting.feature.billsync.BillSyncSource
 
 @Composable
 fun AutomaticBookkeepingScreen(
@@ -44,7 +43,7 @@ fun AutomaticBookkeepingScreen(
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
-    onStartManualBillSync: (BillSyncSource) -> Unit = {},
+    onOpenBillImport: () -> Unit = {},
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -131,12 +130,8 @@ fun AutomaticBookkeepingScreen(
                 )
             }
         }
-        Text("手动账单同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ManualBillSyncCard(
-            accessibilityGranted = billSyncAccessibilityAccessGranted,
-            onOpenAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-            onStart = onStartManualBillSync
-        )
+        Text("补录账单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        ManualBillImportCard(onOpen = onOpenBillImport)
     }
 }
 
@@ -201,26 +196,15 @@ private fun PermissionSettingRow(
 }
 
 @Composable
-private fun ManualBillSyncCard(
-    accessibilityGranted: Boolean,
-    onOpenAccessibilitySettings: () -> Unit,
-    onStart: (BillSyncSource) -> Unit
-) {
+private fun ManualBillImportCard(onOpen: () -> Unit) {
     SettingsCard {
-        Text("补录遗漏交易", fontWeight = FontWeight.SemiBold)
-        Text("仅在你主动发起时读取支付来源的账单页", style = MaterialTheme.typography.bodyMedium)
-        if (accessibilityGranted) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onStart(BillSyncSource.WeChat) }, modifier = Modifier.testTag("manual-bill-sync-WeChat")) {
-                    Text("同步微信账单")
-                }
-                Button(onClick = { onStart(BillSyncSource.Alipay) }, modifier = Modifier.testTag("manual-bill-sync-Alipay")) {
-                    Text("同步支付宝账单")
-                }
-            }
-        } else {
-            Text("请先开启自动记账无障碍权限", color = MaterialTheme.colorScheme.error)
-            OutlinedButton(onClick = onOpenAccessibilitySettings) { Text("打开无障碍设置") }
+        Text("从账单页导入", fontWeight = FontWeight.SemiBold)
+        Text("读取你主动打开的微信或支付宝账单页，结果进入待确认。", style = MaterialTheme.typography.bodyMedium)
+        Button(
+            onClick = onOpen,
+            modifier = Modifier.testTag("manual-bill-import")
+        ) {
+            Text("补录账单")
         }
     }
 }

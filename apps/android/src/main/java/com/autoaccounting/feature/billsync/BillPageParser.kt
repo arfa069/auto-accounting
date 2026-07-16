@@ -139,7 +139,12 @@ class BillPageParser {
             }
         }
         val selectedMatches = if (pageText.isCompletedPaymentResultSurface()) {
-            amountMatches.take(1)
+            amountMatches
+                .filter { (lineIndex, _) ->
+                    lines[lineIndex].hasTransactionAmountOverrideKeyword()
+                }
+                .ifEmpty { amountMatches }
+                .take(1)
         } else {
             amountMatches
         }
@@ -164,15 +169,24 @@ class BillPageParser {
         amountText: String,
         fallbackTransactionTimeText: String?
     ): ParsedBillEntry? {
-        val start = (amountLineIndex - RECORD_WINDOW_BEFORE_LINES).coerceAtLeast(0)
-        val end = (amountLineIndex + RECORD_WINDOW_AFTER_LINES).coerceAtMost(lines.lastIndex)
+        val fullPageText = lines.joinToString("\n")
+        val isCompletedPaymentResult = fullPageText.isCompletedPaymentResultSurface()
+        val start = if (isCompletedPaymentResult) {
+            0
+        } else {
+            (amountLineIndex - RECORD_WINDOW_BEFORE_LINES).coerceAtLeast(0)
+        }
+        val end = if (isCompletedPaymentResult) {
+            lines.lastIndex
+        } else {
+            (amountLineIndex + RECORD_WINDOW_AFTER_LINES).coerceAtMost(lines.lastIndex)
+        }
         val windowLines = lines.subList(start, end + 1)
         val windowText = windowLines.joinToString("\n")
         val linesBeforeAmount = windowLines.take(amountLineIndex - start)
         if (windowText.hasPaymentInitiationKeyword()) return null
 
         val amountMinor = parseAmountMinor(amountText) ?: return null
-        val isCompletedPaymentResult = windowText.isCompletedPaymentResultSurface()
         val explicitTransactionTimeText = windowLines.firstNotNullOfOrNull {
             it.extractTransactionTimeText()
         }
@@ -193,7 +207,31 @@ class BillPageParser {
             ?: return null
         val fundingAccountLabel = extractFundingAccountLabel(windowText, windowLines)
             ?: source.defaultFundingAccountLabel
+        val productText = extractMultilineValueAfterLabels(windowLines, PRODUCT_LABELS)
+            ?: extractValueAfterLabels(windowLines, RECEIPT_NOTE_LABELS)
+            ?: merchantTitle
+        val counterpartyText = extractMerchantOrPayee(windowText, windowLines) ?: merchantTitle
+        val currentStatus = extractImmediateValueAfterLabels(windowLines, STATUS_LABELS)
+        val transactionOrderId = extractIdentifierAfterLabels(
+            windowLines,
+            TRANSACTION_ORDER_LABELS
+        )
+        val merchantOrderId = extractIdentifierAfterLabels(windowLines, MERCHANT_ORDER_LABELS)
         val rawLine = windowLines.joinToString(" ")
+        val parsedFields = buildList {
+            add("来源=${source.label}")
+            add("商户=$merchantTitle")
+            add("金额=${amountMinorToText(amountMinor)}")
+            add("类型=$transactionKindLabel")
+            add("交易时间=$transactionTimeText")
+            add("支付方式=$fundingAccountLabel")
+            add("商品=$productText")
+            add("商品名称=$merchantTitle")
+            add("商户或收款方=$counterpartyText")
+            currentStatus?.let { add("当前状态=$it") }
+            transactionOrderId?.let { add("交易单号=$it") }
+            merchantOrderId?.let { add("商户单号=$it") }
+        }
 
         return ParsedBillEntry(
             sourceLabel = source.label,
@@ -203,12 +241,7 @@ class BillPageParser {
             fundingAccountLabel = fundingAccountLabel,
             transactionTimeText = transactionTimeText,
             rawLine = rawLine,
-            parsedFields = listOf(
-                "来源=${source.label}",
-                "商户=$merchantTitle",
-                "金额=${amountMinorToText(amountMinor)}",
-                "类型=$transactionKindLabel"
-            ),
+            parsedFields = parsedFields,
             transactionTimeFromFallback = fallbackTimeText != null,
             merchantTitleFromFallback = extractedMerchantTitle == null
         )
@@ -238,6 +271,37 @@ private fun String.normalizedLines(): List<String> = lineSequence()
 
 private fun MatchResult.amountText(): String? =
     groupValues.drop(1).firstOrNull { it.isNotBlank() }
+
+internal fun hasUnambiguousTransactionAmount(pageText: String): Boolean {
+    val amounts = pageText.normalizedLines()
+        .flatMap { line ->
+            if (line.isNonTransactionAmountLine()) {
+                emptyList()
+            } else {
+                explicitPaymentAmountRegex.findAll(line)
+                    .filterNot { match -> match.isNonTransactionAmountMatch(line) }
+                    .mapNotNull { match ->
+                        match.amountText()?.let { amountText ->
+                            runCatching {
+                                BigDecimal(amountText.trim().removePrefix("+"))
+                                    .abs()
+                                    .setScale(2, RoundingMode.HALF_UP)
+                                    .movePointRight(2)
+                                    .longValueExact()
+                            }.getOrNull()?.let { amountMinor ->
+                                amountMinor to line.hasTransactionAmountOverrideKeyword()
+                            }
+                        }
+                    }
+                    .toList()
+            }
+        }
+    if (amounts.map { (amountMinor, _) -> amountMinor }.distinct().size == 1) return true
+    return amounts.filter { (_, isPreferred) -> isPreferred }
+        .map { (amountMinor, _) -> amountMinor }
+        .distinct()
+        .size == 1
+}
 
 private fun String.isSupportedPaymentRecordSurface(): Boolean =
     PAYMENT_RECORD_SURFACE_KEYWORDS.any { contains(it) }
@@ -325,9 +389,26 @@ private fun extractMerchantTitle(
 ): String? {
     if (hasWechatSentRedPacketSuccessSignature(windowText)) return "红包"
 
+    extractMultilineValueAfterLabels(lines, PRODUCT_LABELS)?.let { return it }
+
     val p2pTitle = extractP2pTitle(windowText)
     if (p2pTitle != null) return p2pTitle
 
+    linesBeforeAmount
+        .asReversed()
+        .firstOrNull { it.isMeaningfulPaymentRecordTitle() }
+        ?.let { return it }
+
+    extractMerchantOrPayee(windowText, lines)?.let { return it }
+
+    if (windowText.contains("发出红包") || windowText.contains("红包已发出")) {
+        return "红包"
+    }
+
+    return null
+}
+
+private fun extractMerchantOrPayee(windowText: String, lines: List<String>): String? {
     merchantInlineRegex.find(windowText)
         ?.groupValues
         ?.getOrNull(1)
@@ -335,15 +416,7 @@ private fun extractMerchantTitle(
         ?.takeIf { it.isMeaningfulPaymentRecordValue() }
         ?.let { return it }
 
-    extractValueAfterLabels(lines, MERCHANT_LABELS)?.let { return it }
-
-    if (windowText.contains("发出红包") || windowText.contains("红包已发出")) {
-        return "红包"
-    }
-
-    return linesBeforeAmount
-        .asReversed()
-        .firstOrNull { it.isMeaningfulPaymentRecordTitle() }
+    return extractValueAfterLabels(lines, MERCHANT_LABELS)
 }
 
 private fun extractP2pTitle(windowText: String): String? {
@@ -395,6 +468,76 @@ private fun extractValueAfterLabels(
     return null
 }
 
+private fun extractImmediateValueAfterLabels(
+    lines: List<String>,
+    labels: List<String>
+): String? {
+    for ((index, line) in lines.withIndex()) {
+        for (label in labels) {
+            val inlineValue = line.valueAfterLabel(label) ?: continue
+            if (inlineValue.isNotBlank()) return inlineValue
+            return lines.getOrNull(index + 1)
+                ?.trim()
+                ?.takeIf { value -> value.isNotBlank() && !value.isKnownFieldLine() }
+        }
+    }
+    return null
+}
+
+private fun extractMultilineValueAfterLabels(
+    lines: List<String>,
+    labels: List<String>
+): String? {
+    for ((index, line) in lines.withIndex()) {
+        for (label in labels) {
+            val inlineValue = line.valueAfterLabel(label) ?: continue
+
+            val values = buildList {
+                inlineValue.takeIf(String::isNotBlank)?.let(::add)
+                lines.drop(index + 1)
+                    .takeWhile { nextLine -> !nextLine.isKnownFieldLine() }
+                    .take(MAX_MULTILINE_FIELD_LINES)
+                    .forEach(::add)
+            }
+            return values.joinToString(" ").trim().takeIf(String::isNotBlank)
+        }
+    }
+    return null
+}
+
+private fun extractIdentifierAfterLabels(
+    lines: List<String>,
+    labels: List<String>
+): String? {
+    for ((index, line) in lines.withIndex()) {
+        for (label in labels) {
+            val inlineValue = line.valueAfterLabel(label) ?: continue
+
+            val identifierParts = buildList {
+                inlineValue.filterNot(Char::isWhitespace)
+                    .takeIf(String::isNotBlank)
+                    ?.let(::add)
+                lines.drop(index + 1)
+                    .takeWhile { nextLine ->
+                        !nextLine.isKnownFieldLine() &&
+                            nextLine.filterNot(Char::isWhitespace).matches(IDENTIFIER_PART_REGEX)
+                    }
+                    .map { it.filterNot(Char::isWhitespace) }
+                    .forEach(::add)
+            }
+            return identifierParts.joinToString("").takeIf(String::isNotBlank)
+        }
+    }
+    return null
+}
+
+private fun String.isKnownFieldLine(): Boolean {
+    val line = trim()
+    return FIELD_LABELS.any { label ->
+        line.trimEnd(':', '：') == label || line.valueAfterLabel(label) != null
+    }
+}
+
 private fun String.valueAfterLabel(label: String): String? {
     if (!startsWith(label)) return null
     val value = removePrefix(label)
@@ -408,7 +551,7 @@ private fun String.isMeaningfulPaymentRecordValue(): Boolean {
     if (value.isBlank()) return false
     if (explicitPaymentAmountRegex.containsMatchIn(value)) return false
     if (value.extractTransactionTimeText() != null) return false
-    if (value in FIELD_LABELS) return false
+    if (value.isKnownFieldLine()) return false
     if (PAYMENT_RECORD_NOISE_VALUES.any { value == it }) return false
     if (PAYMENT_RECORD_NOISE_CONTAINS.any { value.contains(it) }) return false
     return true
@@ -426,6 +569,9 @@ private fun String.isNonTransactionAmountLine(): Boolean {
     return NON_TRANSACTION_AMOUNT_KEYWORDS.any { text.contains(it) } &&
         TRANSACTION_AMOUNT_OVERRIDE_KEYWORDS.none { text.contains(it) }
 }
+
+private fun String.hasTransactionAmountOverrideKeyword(): Boolean =
+    TRANSACTION_AMOUNT_OVERRIDE_KEYWORDS.any(::contains)
 
 private fun MatchResult.isNonTransactionAmountMatch(line: String): Boolean {
     val amountPrefix = line.substring(0, range.first.coerceAtMost(line.length)).takeLast(8)
@@ -507,6 +653,7 @@ private val TRANSACTION_AMOUNT_OVERRIDE_KEYWORDS = listOf(
 )
 
 private val MERCHANT_LABELS = listOf(
+    "商户全称",
     "商户",
     "商家",
     "收款方",
@@ -527,15 +674,30 @@ private val FUNDING_LABELS = listOf(
     "付款账户"
 )
 
-private val FIELD_LABELS = MERCHANT_LABELS + FUNDING_LABELS + listOf(
+private val PRODUCT_LABELS = listOf(
+    "商品名称",
+    "商品"
+)
+
+private val RECEIPT_NOTE_LABELS = listOf("收款方备注")
+
+private val STATUS_LABELS = listOf("当前状态", "交易状态")
+
+private val TRANSACTION_ORDER_LABELS = listOf("交易单号", "转账单号")
+
+private val MERCHANT_ORDER_LABELS = listOf("商户单号")
+
+private val FIELD_LABELS = MERCHANT_LABELS + FUNDING_LABELS + PRODUCT_LABELS +
+    RECEIPT_NOTE_LABELS + STATUS_LABELS + TRANSACTION_ORDER_LABELS +
+    MERCHANT_ORDER_LABELS + listOf(
     "金额",
     "交易金额",
     "付款金额",
     "交易时间",
+    "转账时间",
     "支付时间",
     "创建时间",
-    "当前状态",
-    "交易状态"
+    "收单机构"
 )
 
 private val PAYMENT_RECORD_NOISE_VALUES = listOf(
@@ -556,6 +718,7 @@ private val PAYMENT_RECORD_NOISE_VALUES = listOf(
     "红包记录",
     "详情",
     "完成",
+    "成功",
     "支出",
     "收入",
     "退款",
@@ -587,7 +750,7 @@ private val PAYMENT_RECORD_TITLE_NOISE_VALUES = listOf(
 )
 
 private val merchantInlineRegex = Regex(
-    pattern = """(?:商户|商家|收款方|付款方|对方账户|对方|交易对象|收款人|付款人)[:：]\s*([^\n，,]+)"""
+    pattern = """(?:商户全称|商户|商家|收款方|付款方|对方账户|对方|交易对象|收款人|付款人)[:：]\s*([^\n，,]+)"""
 )
 
 private val fundingInlineRegex = Regex(
@@ -597,6 +760,10 @@ private val fundingInlineRegex = Regex(
 private val explicitPaymentAmountRegex = Regex(
     pattern = """(?:[¥￥]\s*([+-]?\d+(?:\.\d{1,2})?)|([+-]?\d+(?:\.\d{1,2})?)\s*元)"""
 )
+
+private val IDENTIFIER_PART_REGEX = Regex("[A-Za-z0-9]+")
+
+private const val MAX_MULTILINE_FIELD_LINES = 3
 
 private val BillSyncSource.genericPaymentTitle: String
     get() = "${label}支付"
