@@ -23,6 +23,7 @@ import com.autoaccounting.feature.ledger.LedgerTestTags
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -124,6 +125,28 @@ class MainActivityTest {
     }
 
     @Test
+    fun reviewTitleAlignsVerticallyWithLedgerTitle() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-tab-Review").performClick()
+        val reviewTitleTop = composeRule.onNodeWithText("待确认")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        composeRule.onNodeWithTag("return-home").performClick()
+        composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+        val ledgerTitleTop = composeRule.onNodeWithText("默认账本")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertEquals(ledgerTitleTop, reviewTitleTop, 0.5f)
+    }
+
+    @Test
     fun systemBackFromEachPrimaryPageReturnsHome() {
         composeRule.setContent {
             AutoAccountingApp()
@@ -198,7 +221,7 @@ class MainActivityTest {
             AutoAccountingApp(reviewNavigationRequest = 1L)
         }
 
-        composeRule.onNodeWithText("待确认队列").assertIsDisplayed()
+        composeRule.onNodeWithText("待确认").assertIsDisplayed()
     }
 
     @Test

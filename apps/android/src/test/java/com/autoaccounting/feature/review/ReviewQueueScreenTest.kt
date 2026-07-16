@@ -2,13 +2,16 @@ package com.autoaccounting.feature.review
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTopPositionInRootIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -49,7 +52,9 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("确认后记入「家庭账本」，误操作可撤销").assertIsDisplayed()
+        composeRule.onNodeWithTag("review-header-row").assertHeightIsEqualTo(52.dp)
+        composeRule.onNodeWithTag("review-header-row").assertTopPositionInRootIsEqualTo(20.dp)
+        composeRule.onNodeWithText("确认后记入「家庭账本」").assertIsDisplayed()
     }
 
     @Test
@@ -57,6 +62,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
             down(center)
@@ -84,6 +90,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
             swipeWithVelocity(
@@ -102,6 +109,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
             down(center)
@@ -120,6 +128,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performTouchInput {
             down(center)
@@ -151,6 +160,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("confirm-pending-lunch").performClick()
 
@@ -164,13 +174,15 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("ignore-pending-lunch").performClick()
-        composeRule.onNodeWithText("忽略列表").performClick()
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(0)
+        composeRule.onNodeWithText("忽略记录").performClick()
         composeRule.onNodeWithText("午餐").assertIsDisplayed()
         composeRule.onNodeWithTag("recover-ignored-pending-lunch").performClick()
 
-        composeRule.onNodeWithText("待确认 1").assertIsDisplayed()
+        composeRule.onNodeWithText("1 条待确认").assertIsDisplayed()
     }
 
     @Test
@@ -178,6 +190,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithTag("edit-title").performTextClearance()
@@ -203,6 +216,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithTag("edit-title").performTextClearance()
@@ -221,7 +235,7 @@ class ReviewQueueScreenTest {
     }
 
     @Test
-    fun summaryShowsSpecCountsAndSyncAction() {
+    fun summaryShowsApprovedCountsAndBillImportAction() {
         val sessionController = BillSyncSessionController()
         composeRule.setContent {
             ReviewQueueScreen(
@@ -238,10 +252,11 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("待确认 2").assertIsDisplayed()
+        composeRule.onNodeWithText("2 条待确认").assertIsDisplayed()
         composeRule.onNodeWithText("疑似重复 1").assertIsDisplayed()
-        composeRule.onNodeWithText("今日新增 2").assertIsDisplayed()
-        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("今日待确认 2").assertIsDisplayed()
+        composeRule.onAllNodesWithText("已确认 0").assertCountEquals(0)
+        composeRule.onNodeWithText("补录账单").performClick()
         composeRule.onNodeWithText("选择同步来源").assertIsDisplayed()
         composeRule.onNodeWithText("微信").performClick()
         completeBillSync(sessionController, BillSyncSource.WeChat)
@@ -249,11 +264,11 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithText("读取账单").assertIsDisplayed()
         composeRule.onNodeWithText("已创建 1 条，已去重 0 条").assertIsDisplayed()
         composeRule.onNodeWithText("关闭").performClick()
-        composeRule.onNodeWithText("待确认 3").assertIsDisplayed()
+        composeRule.onNodeWithText("3 条待确认").assertIsDisplayed()
     }
 
     @Test
-    fun allPendingEntriesAppearInSingleQuickConfirmList() {
+    fun allPendingEntriesAppearInSingleReviewList() {
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(
@@ -266,22 +281,45 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("快速确认").assertIsDisplayed()
+        composeRule.onNodeWithText("待确认记录").assertIsDisplayed()
+        composeRule.onAllNodesWithText("快速确认").assertCountEquals(0)
         composeRule.onAllNodesWithText("需细看").assertCountEquals(0)
-        composeRule.onNodeWithTag("detail-high").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("detail-needs-review").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("detail-duplicate").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
+        composeRule.onNodeWithTag("detail-duplicate").assertIsDisplayed()
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(5)
+        composeRule.onNodeWithTag("detail-needs-review").assertIsDisplayed()
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(6)
+        composeRule.onNodeWithTag("detail-high").assertIsDisplayed()
     }
 
     @Test
-    fun emptyQueueShowsOnlyQuickConfirmEmptyState() {
+    fun emptyQueueKeepsSummaryAndBillImportEntry() {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState())
         }
 
-        composeRule.onNodeWithText("快速确认").assertIsDisplayed()
-        composeRule.onNodeWithText("快速确认列表为空").assertIsDisplayed()
+        composeRule.onNodeWithText("0 条待确认").assertIsDisplayed()
+        composeRule.onNodeWithText("补录账单").assertIsDisplayed()
+        composeRule.onNodeWithText("待确认记录").assertIsDisplayed()
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
+        composeRule.onNodeWithText("暂无待确认记录").assertIsDisplayed()
         composeRule.onAllNodesWithText("需细看").assertCountEquals(0)
+    }
+
+    @Test
+    fun largeQueueCanScrollToLastPendingEntry() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(
+                    pendingEntries = (1..20).map { index ->
+                        sampleEntry(id = "pending-$index").copy(title = "记录 $index")
+                    }
+                )
+            )
+        }
+
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(23)
+        composeRule.onNodeWithTag("detail-pending-20").assertIsDisplayed()
     }
 
     @Test
@@ -302,7 +340,7 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("补录账单").performClick()
         composeRule.onNodeWithText("微信").performClick()
 
         assertTrue(settingsOpened)
@@ -321,7 +359,7 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("补录账单").performClick()
         composeRule.onNodeWithText("支付宝").performClick()
         runBlocking {
             sessionController.submitBillPage(
@@ -342,7 +380,7 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithText("同步失败").assertIsDisplayed()
         composeRule.onNodeWithText("未识别到账单记录，请确认已打开对应账单页面").assertIsDisplayed()
         composeRule.onNodeWithText("关闭").performClick()
-        composeRule.onNodeWithText("待确认 0").assertIsDisplayed()
+        composeRule.onNodeWithText("0 条待确认").assertIsDisplayed()
     }
 
     @Test
@@ -350,9 +388,11 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithText("通知捕获").assertIsDisplayed()
         composeRule.onNodeWithText("需复核").assertIsDisplayed()
+        composeRule.onNodeWithText("2026-07-08 12:20 · 微信 · 微信零钱").assertIsDisplayed()
     }
 
     @Test
@@ -360,6 +400,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithText("查看证据").performClick()
@@ -373,6 +414,7 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithText("已确认 午餐").assertIsDisplayed()
 
         composeRule.onNodeWithText("撤销").performClick()
+        scrollToFirstPendingEntry()
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithText("忽略此条").performClick()
         composeRule.onNodeWithText("已忽略 午餐").assertIsDisplayed()
@@ -383,6 +425,7 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithTag("edit-category").performTextClearance()
@@ -391,7 +434,7 @@ class ReviewQueueScreenTest {
 
         composeRule.onNodeWithText("保存为分类规则？").assertIsDisplayed()
         composeRule.onNodeWithText("这次不保存").performClick()
-        composeRule.onNodeWithText("工作餐").assertIsDisplayed()
+        composeRule.onNodeWithTag("detail-pending-lunch").assertTextContains("工作餐")
     }
 
     @Test
@@ -404,6 +447,7 @@ class ReviewQueueScreenTest {
                 aiCategorizationGateway = FixedAiCategorizationGateway("交通")
             )
         }
+        scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithText("AI 建议分类").performClick()
@@ -428,11 +472,12 @@ class ReviewQueueScreenTest {
         }
 
         composeRule.onAllNodesWithText("连续监控").assertCountEquals(0)
-        composeRule.onNodeWithText("账单同步").performClick()
+        composeRule.onNodeWithText("补录账单").performClick()
         composeRule.onNodeWithText("微信").performClick()
         completeBillSync(sessionController, BillSyncSource.WeChat)
         composeRule.onNodeWithText("关闭").performClick()
 
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(3)
         composeRule.onAllNodesWithText("开启自动记账").assertCountEquals(2)
         composeRule.onNodeWithText("支付完成后自动识别结果页并生成待确认记录，可随时关闭。")
             .assertIsDisplayed()
@@ -466,6 +511,10 @@ class ReviewQueueScreenTest {
             }
         }
         composeRule.waitForIdle()
+    }
+
+    private fun scrollToFirstPendingEntry() {
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
     }
 
     private fun sampleEntry(

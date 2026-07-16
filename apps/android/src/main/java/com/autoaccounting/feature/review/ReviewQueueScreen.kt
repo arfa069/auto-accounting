@@ -6,8 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,7 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -44,7 +49,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -231,6 +235,7 @@ fun ReviewQueueScreen(
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         ReviewQueueContent(
@@ -378,56 +383,254 @@ private fun ReviewQueueContent(
 ) {
     val sortedEntries = state.sortedPendingEntries
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .testTag("review-queue-list"),
+        contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        item(key = "review-header") {
+            ReviewHeader(
+                targetLedgerName = targetLedgerName,
+                onShowIgnoredList = onShowIgnoredList,
+                onNavigateHome = onNavigateHome
+            )
+        }
+
+        item(key = "review-summary") {
+            ReviewSummaryCard(state)
+        }
+
+        item(key = "bill-import") {
+            BillImportEntry(onClick = onStartBillSync)
+        }
+
+        if (showPostBillSyncMonitoringPrompt) {
+            item(key = "post-sync-monitoring-prompt") {
+                PostBillSyncMonitoringPrompt(
+                    onEnable = onEnableContinuousMonitoring,
+                    onDismiss = onDismissContinuousMonitoringPrompt
+                )
+            }
+        }
+
+        item(key = "review-list-header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "待确认队列",
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = "待确认记录",
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "确认后记入「$targetLedgerName」，误操作可撤销",
-                    style = MaterialTheme.typography.bodyMedium
+                    text = "向右滑确认 · 向左滑忽略",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = onShowIgnoredList) {
-                    Text("忽略列表")
+        }
+
+        if (sortedEntries.isEmpty()) {
+            item(key = "review-empty") {
+                EmptyStatePanel("暂无待确认记录")
+            }
+        } else {
+            items(
+                items = sortedEntries,
+                key = { entry -> entry.id }
+            ) { entry ->
+                ReviewEntryRow(
+                    entry = entry,
+                    onConfirm = { onAction(ReviewQueueAction.Confirm(entry.id)) },
+                    onIgnore = { onAction(ReviewQueueAction.Ignore(entry.id)) },
+                    onEdit = { onEdit(entry) }
+                )
+            }
+        }
+
+        item(key = "review-list-bottom-space") {
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun ReviewHeader(
+    targetLedgerName: String,
+    onShowIgnoredList: () -> Unit,
+    onNavigateHome: () -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("review-header-row"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "待确认",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onShowIgnoredList) {
+                    Text("忽略记录")
                 }
                 HomeReturnButton(onClick = onNavigateHome)
             }
         }
+        Text(
+            text = "确认后记入「$targetLedgerName」",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
 
-        ReviewSummary(state, onStartBillSync)
+@Composable
+private fun ReviewSummaryCard(state: ReviewQueueState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "当前任务",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "${state.pendingEntries.size} 条待确认",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LabelPill(
+                        text = "疑似重复 ${state.duplicateSuspectCount}",
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    LabelPill(
+                        text = "今日待确认 ${state.todaysNewlyCapturedCount}",
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "✓",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        }
+    }
+}
 
-        if (showPostBillSyncMonitoringPrompt) {
-            PostBillSyncMonitoringPrompt(
-                onEnable = onEnableContinuousMonitoring,
-                onDismiss = onDismissContinuousMonitoringPrompt
+@Composable
+private fun BillImportEntry(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("bill-import-entry")
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(14.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "账",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = "补录账单",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "从微信或支付宝账单页导入",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
             )
         }
+    }
+}
 
-        ReviewEntryGroup(
-            title = "快速确认",
-            subtitle = "所有待确认记录，可快速滑动或点确认",
-            entries = sortedEntries,
-            emptyText = "快速确认列表为空",
-            onAction = onAction,
-            onEdit = onEdit
+@Composable
+private fun LabelPill(
+    text: String,
+    containerColor: Color,
+    contentColor: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = containerColor
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor
         )
     }
 }
@@ -458,77 +661,6 @@ private fun PostBillSyncMonitoringPrompt(
                 }
                 OutlinedButton(onClick = onDismiss) {
                     Text("暂不开启")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReviewSummary(
-    state: ReviewQueueState,
-    onStartBillSync: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SummaryChip("待确认 ${state.pendingEntries.size}", Modifier.weight(1f))
-            SummaryChip("疑似重复 ${state.duplicateSuspectCount}", Modifier.weight(1f))
-            SummaryChip("今日新增 ${state.todaysNewlyCapturedCount}", Modifier.weight(1f))
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SummaryChip("已确认 ${state.confirmedEntries.size}", Modifier.weight(1f))
-            Button(onClick = onStartBillSync, modifier = Modifier.weight(1f)) {
-                Text("账单同步")
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryChip(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
-}
-
-@Composable
-private fun ReviewEntryGroup(
-    title: String,
-    subtitle: String,
-    entries: List<ReviewQueueEntry>,
-    emptyText: String,
-    onAction: (ReviewQueueAction) -> Unit,
-    onEdit: (ReviewQueueEntry) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        if (entries.isEmpty()) {
-            EmptyStatePanel(emptyText)
-        } else {
-            entries.forEach { entry ->
-                key(entry.id) {
-                    ReviewEntryRow(
-                        entry = entry,
-                        onConfirm = { onAction(ReviewQueueAction.Confirm(entry.id)) },
-                        onIgnore = { onAction(ReviewQueueAction.Ignore(entry.id)) },
-                        onEdit = { onEdit(entry) }
-                    )
                 }
             }
         }
@@ -584,7 +716,7 @@ private fun ReviewEntryRow(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -601,22 +733,35 @@ private fun ReviewEntryRow(
                             modifier = Modifier.size(44.dp)
                         )
                         Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Text(entry.title, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "${entry.sourceLabel} · ${entry.kindLabel} · ${entry.category}",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "${entry.transactionTimeText} · ${entry.sourceLabel} · " +
+                                    entry.fundingAccountLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    entry.captureReasonLabel,
-                                    style = MaterialTheme.typography.bodySmall
+                                val confidenceColors = confidenceColors(entry.confidence)
+                                LabelPill(
+                                    text = confidenceLabel(entry.confidence),
+                                    containerColor = confidenceColors.first,
+                                    contentColor = confidenceColors.second
                                 )
-                                Text(
-                                    confidenceLabel(entry.confidence),
-                                    style = MaterialTheme.typography.bodySmall
+                                LabelPill(
+                                    text = entry.category.ifBlank { "未分类" },
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
+                            Text(
+                                text = entry.captureReasonLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             entry.note?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall)
                             }
@@ -627,8 +772,13 @@ private fun ReviewEntryRow(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
                             onClick = onIgnore,
                             modifier = Modifier.testTag("ignore-${entry.id}")
                         ) {
@@ -645,6 +795,18 @@ private fun ReviewEntryRow(
             }
         }
     )
+}
+
+@Composable
+private fun confidenceColors(confidence: ConfidenceState): Pair<Color, Color> = when (confidence) {
+    ConfidenceState.DUPLICATE_SUSPECT ->
+        MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+
+    ConfidenceState.NEEDS_REVIEW ->
+        MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+
+    ConfidenceState.HIGH ->
+        MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
 }
 
 private const val SWIPE_ACTION_THRESHOLD_FRACTION = 0.4f
