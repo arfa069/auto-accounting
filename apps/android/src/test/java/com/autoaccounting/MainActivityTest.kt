@@ -112,6 +112,23 @@ class MainActivityTest {
     }
 
     @Test
+    fun systemBackFromEachPrimaryPageReturnsHome() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        listOf("Review", "Ledger", "Reports", "Profile").forEach { tab ->
+            composeRule.onNodeWithTag("app-tab-$tab").performClick()
+
+            composeRule.runOnIdle {
+                composeRule.activity.onBackPressedDispatcher.onBackPressed()
+            }
+
+            composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun reviewNavigationRequestStillOpensReviewQueue() {
         composeRule.setContent {
             AutoAccountingApp(reviewNavigationRequest = 1L)

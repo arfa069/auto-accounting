@@ -446,6 +446,14 @@ fun AutoAccountingApp(
                 }
             } else {
                 BackHandler(
+                    enabled = selectedTab != null &&
+                        (selectedTab != AppTab.Profile || profileDestination == null) &&
+                        !manualEntryOpen
+                ) {
+                    selectedTab = null
+                }
+
+                BackHandler(
                     enabled = selectedTab == AppTab.Profile && profileDestination != null
                 ) {
                     profileDestination = null
