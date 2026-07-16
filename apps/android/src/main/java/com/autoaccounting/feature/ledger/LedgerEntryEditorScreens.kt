@@ -11,14 +11,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -27,11 +33,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.autoaccounting.ui.components.TextButton
 import androidx.compose.runtime.Composable
@@ -45,11 +53,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.FundingAccountEntity
@@ -146,22 +155,431 @@ internal fun ManualLedgerEntryScreen(
     modifier: Modifier = Modifier
 ) {
     val initial = remember { LedgerEntryFormState.newEntry() }
+    var state by remember(initial) { mutableStateOf(initial) }
+    var confirmDiscard by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {
+        ledgerCategoryOptions(categories, state.flowDirection, state.transactionKind)
+    }
+
+    LaunchedEffect(categoryOptions, state.categoryId) {
+        if (categoryOptions.none { it.id == state.categoryId }) {
+            state = state.copy(categoryId = LocalLedgerRepository.DEFAULT_CATEGORY_ID)
+        }
+    }
+
+    fun requestExit() {
+        if (state != initial) confirmDiscard = true else onExit()
+    }
+
+    fun saveEntry() {
+        scope.launch {
+            runCatching { state.toInput(System.currentTimeMillis()) }
+                .mapCatching { input -> onCreateEntry(input) }
+                .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+        }
+    }
+
+    BackHandler { requestExit() }
 
     Box(modifier = modifier.fillMaxSize()) {
-        LedgerEntryForm(
-            title = "新增一笔",
-            initial = initial,
-            categories = categories,
-            fundingAccounts = fundingAccounts,
-            onExit = onExit,
-            onSave = onCreateEntry,
-            snackbarHostState = snackbarHostState
-        )
+        Column(modifier = Modifier.fillMaxSize()) {
+            ManualEntryHeader(onBack = ::requestExit)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ManualAmountCard(
+                    state = state,
+                    onStateChange = { state = it }
+                )
+                ManualTransactionCard(
+                    state = state,
+                    categoryOptions = categoryOptions,
+                    onStateChange = { state = it },
+                    onSelectTime = {
+                        showDateTimePicker(context, state.transactionTimeEpochMillis) {
+                            state = state.copy(transactionTimeEpochMillis = it)
+                        }
+                    }
+                )
+                ManualAccountCard(
+                    state = state,
+                    fundingAccounts = fundingAccounts,
+                    onStateChange = { state = it }
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            ManualEntryActions(
+                onCancel = ::requestExit,
+                onSave = ::saveEntry
+            )
+        }
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 88.dp)
         )
+    }
+
+    DiscardChangesDialog(
+        visible = confirmDiscard,
+        onDismiss = { confirmDiscard = false },
+        onDiscard = onExit
+    )
+}
+
+@Composable
+private fun ManualEntryHeader(onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .size(42.dp)
+                .testTag("manual-entry-back")
+                .clickable(onClick = onBack),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("‹", style = MaterialTheme.typography.headlineSmall)
+            }
+        }
+        Text(
+            text = "新增一笔",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun ManualAmountCard(
+    state: LedgerEntryFormState,
+    onStateChange: (LedgerEntryFormState) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            FlowDirectionSelector(
+                selected = state.flowDirection,
+                directions = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
+                onSelected = { direction -> onStateChange(state.copy(flowDirection = direction)) }
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "金额（CNY）",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                BasicTextField(
+                    value = state.amountText,
+                    onValueChange = { onStateChange(state.copy(amountText = it)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("manual-entry-amount"),
+                    textStyle = MaterialTheme.typography.displaySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "¥ ",
+                                style = MaterialTheme.typography.displaySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (state.amountText.isEmpty()) {
+                                    Text(
+                                        text = "0.00",
+                                        style = MaterialTheme.typography.displaySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    }
+                )
+                HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualTransactionCard(
+    state: LedgerEntryFormState,
+    categoryOptions: List<CategoryEntity>,
+    onStateChange: (LedgerEntryFormState) -> Unit,
+    onSelectTime: () -> Unit
+) {
+    ManualEntryCard(title = "交易信息") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = state.merchantTitle,
+                onValueChange = { onStateChange(state.copy(merchantTitle = it)) },
+                label = { Text("商户/标题（可选）") },
+                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 72.dp)
+                    .testTag("manual-entry-merchant")
+            )
+            ManualSelectionField(
+                label = "交易类型",
+                selected = state.transactionKind,
+                options = TransactionKind.entries,
+                itemLabel = TransactionKind::label,
+                onSelected = { onStateChange(state.copy(transactionKind = it)) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ManualSelectionField(
+                label = "分类",
+                selected = state.categoryId,
+                options = categoryOptions.map { it.id },
+                itemLabel = { id ->
+                    DefaultCategories.nameForId(id)
+                        ?: categoryOptions.firstOrNull { it.id == id }?.name
+                        ?: "未分类"
+                },
+                leadingContent = { id ->
+                    val category = categoryOptions.firstOrNull { it.id == id }
+                    CategoryArtwork(
+                        categoryId = id,
+                        categoryName = category?.name,
+                        transactionKind = category?.kind,
+                        modifier = Modifier.size(28.dp)
+                    )
+                },
+                onSelected = { onStateChange(state.copy(categoryId = it)) },
+                modifier = Modifier.weight(1f)
+            )
+            ManualValueField(
+                label = "交易时间",
+                value = formatLedgerEpoch(state.transactionTimeEpochMillis),
+                onClick = onSelectTime,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ManualAccountCard(
+    state: LedgerEntryFormState,
+    fundingAccounts: List<FundingAccountEntity>,
+    onStateChange: (LedgerEntryFormState) -> Unit
+) {
+    ManualEntryCard(title = "账户与备注") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ManualSelectionField(
+                label = "支付来源",
+                selected = state.paymentSource,
+                options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY),
+                itemLabel = { it.labelOrNone() },
+                onSelected = { onStateChange(state.copy(paymentSource = it)) },
+                modifier = Modifier.weight(1f)
+            )
+            ManualSelectionField(
+                label = "资金账户",
+                selected = state.fundingAccountId,
+                options = listOf<Long?>(null) + fundingAccounts.map { it.id },
+                itemLabel = { id -> fundingAccounts.firstOrNull { it.id == id }?.label ?: "未选择" },
+                onSelected = { onStateChange(state.copy(fundingAccountId = it)) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        OutlinedTextField(
+            value = state.note,
+            onValueChange = { onStateChange(state.copy(note = it)) },
+            label = { Text("备注（可选）") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("manual-entry-note")
+        )
+    }
+}
+
+@Composable
+private fun ManualEntryCard(
+    title: String,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun <T> ManualSelectionField(
+    label: String,
+    selected: T,
+    options: List<T>,
+    itemLabel: (T) -> String,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    leadingContent: (@Composable (T) -> Unit)? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        ManualValueField(
+            label = label,
+            value = itemLabel(selected),
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            leadingContent = leadingContent?.let { content -> { content(selected) } }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 420.dp),
+            shape = RoundedCornerShape(12.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            leadingContent?.let {
+                                it(option)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(itemLabel(option))
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualValueField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingContent: (@Composable () -> Unit)? = null
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 72.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                leadingContent?.invoke()
+                if (leadingContent != null) Spacer(Modifier.width(8.dp))
+                Text(
+                    text = value,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualEntryActions(
+    onCancel: () -> Unit,
+    onSave: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()
+            .testTag("manual-entry-actions"),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp)
+            ) { Text("取消", fontWeight = FontWeight.SemiBold) }
+            Button(
+                onClick = onSave,
+                modifier = Modifier
+                    .weight(1.65f)
+                    .height(52.dp)
+            ) { Text("保存账目", fontWeight = FontWeight.SemiBold) }
+        }
     }
 }
 
@@ -229,26 +647,7 @@ internal fun LedgerEntryForm(
             modifier = Modifier.fillMaxWidth()
         )
         val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {
-            val matchingCategories = categories.filter { category ->
-                when {
-                    category.kind == null -> true
-                    state.transactionKind == TransactionKind.REFUND ->
-                        category.kind == TransactionKind.REFUND
-                    state.flowDirection == FlowDirection.INFLOW ->
-                        category.kind == TransactionKind.INCOME
-                    state.flowDirection == FlowDirection.OUTFLOW ->
-                        category.kind == TransactionKind.EXPENSE
-                    else -> true
-                }
-            }
-            (matchingCategories + CategoryEntity(
-                id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
-                name = "未分类",
-                kind = null,
-                sortOrder = Int.MAX_VALUE,
-                isSystem = true,
-                createdAtEpochMillis = 0
-            )).distinctBy { it.id }
+            ledgerCategoryOptions(categories, state.flowDirection, state.transactionKind)
         }
         LaunchedEffect(categoryOptions, state.categoryId) {
             if (categoryOptions.none { it.id == state.categoryId }) {
@@ -331,27 +730,17 @@ internal fun LedgerEntryForm(
         }
     }
 
-    if (confirmDiscard) {
-        AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("放弃未保存的修改？") },
-            text = { Text("离开后，本次修改不会保存。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDiscard = false
-                        onExit()
-                    }
-                ) { Text("放弃修改") }
-            },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") } }
-        )
-    }
+    DiscardChangesDialog(
+        visible = confirmDiscard,
+        onDismiss = { confirmDiscard = false },
+        onDiscard = onExit
+    )
 }
 
 @Composable
 private fun FlowDirectionSelector(
     selected: FlowDirection,
+    directions: List<FlowDirection> = FlowDirection.entries,
     onSelected: (FlowDirection) -> Unit
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -362,7 +751,7 @@ private fun FlowDirectionSelector(
             .clip(shape)
             .border(1.5.dp, FlowSelectorInk, shape)
     ) {
-        FlowDirection.entries.forEachIndexed { index, direction ->
+        directions.forEachIndexed { index, direction ->
             val isSelected = selected == direction
             val selectedColor = when (direction) {
                 FlowDirection.INFLOW -> FlowSelectorIncome
@@ -379,7 +768,8 @@ private fun FlowDirectionSelector(
                     .weight(1f)
                     .fillMaxHeight()
                     .background(if (isSelected) selectedColor else FlowSelectorSurface)
-                    .clickable { onSelected(direction) },
+                    .clickable { onSelected(direction) }
+                    .testTag("manual-direction-${direction.name}"),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -388,7 +778,7 @@ private fun FlowDirectionSelector(
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                 )
             }
-            if (index < FlowDirection.entries.lastIndex) {
+            if (index < directions.lastIndex) {
                 Box(
                     modifier = Modifier
                         .width(1.5.dp)
@@ -398,6 +788,53 @@ private fun FlowDirectionSelector(
             }
         }
     }
+}
+
+private fun ledgerCategoryOptions(
+    categories: List<CategoryEntity>,
+    flowDirection: FlowDirection,
+    transactionKind: TransactionKind
+): List<CategoryEntity> {
+    val matchingCategories = categories.filter { category ->
+        when {
+            category.kind == null -> true
+            transactionKind == TransactionKind.REFUND -> category.kind == TransactionKind.REFUND
+            flowDirection == FlowDirection.INFLOW -> category.kind == TransactionKind.INCOME
+            flowDirection == FlowDirection.OUTFLOW -> category.kind == TransactionKind.EXPENSE
+            else -> true
+        }
+    }
+    return (matchingCategories + CategoryEntity(
+        id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
+        name = "未分类",
+        kind = null,
+        sortOrder = Int.MAX_VALUE,
+        isSystem = true,
+        createdAtEpochMillis = 0
+    )).distinctBy { it.id }
+}
+
+@Composable
+private fun DiscardChangesDialog(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onDiscard: () -> Unit
+) {
+    if (!visible) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("放弃未保存的修改？") },
+        text = { Text("离开后，本次修改不会保存。") },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    onDiscard()
+                }
+            ) { Text("放弃修改") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("继续编辑") } }
+    )
 }
 
 private val FlowSelectorInk = Color(0xFF202A44)

@@ -71,7 +71,7 @@ class MainActivityTest {
         composeRule.onNodeWithText("新增一笔").assertIsDisplayed()
         composeRule.onNodeWithTag("app-bottom-navigation").assertDoesNotExist()
 
-        composeRule.onNodeWithText("取消").performScrollTo().performClick()
+        composeRule.onNodeWithText("取消").performClick()
 
         composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
         composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()

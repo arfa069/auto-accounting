@@ -404,9 +404,16 @@ class LedgerReportsScreenTest {
         }
 
         composeRule.onNodeWithText("新增一笔").assertIsDisplayed()
-        composeRule.onNodeWithText("金额（CNY）").performTextInput("12.34")
-        composeRule.onNodeWithText("商户/标题（可选）").performTextInput("早餐")
-        composeRule.onNodeWithText("保存").performScrollTo().performClick()
+        composeRule.onNodeWithText("新建资金账户").assertDoesNotExist()
+        composeRule.onNodeWithText("不计收支").assertDoesNotExist()
+        composeRule.onNodeWithTag("manual-direction-OUTFLOW").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-direction-INFLOW").assertIsDisplayed()
+        composeRule.onNodeWithText("交易信息").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-actions").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("12.34")
+        composeRule.onNodeWithTag("manual-entry-merchant").performScrollTo().performTextInput("早餐")
+        composeRule.onNodeWithText("账户与备注").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("保存账目").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) { savedInput.get() != null }
         assertNotNull(savedInput.get())
@@ -427,8 +434,8 @@ class LedgerReportsScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("金额（CNY）").performTextInput("0")
-        composeRule.onNodeWithText("保存").performScrollTo().performClick()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("0")
+        composeRule.onNodeWithText("保存账目").performClick()
 
         composeRule.onNodeWithText("金额必须大于 0").assertIsDisplayed()
         assertNull(savedInput.get())
@@ -445,8 +452,8 @@ class LedgerReportsScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("商户/标题（可选）").performTextInput("未保存")
-        composeRule.onNodeWithText("取消").performScrollTo().performClick()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("未保存")
+        composeRule.onNodeWithText("取消").performClick()
 
         composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
         composeRule.onNodeWithText("继续编辑").performClick()
