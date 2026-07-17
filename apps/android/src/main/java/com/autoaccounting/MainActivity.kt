@@ -726,7 +726,6 @@ fun AutoAccountingApp(
                                                     error("资金账户不存在")
                                             }
                                         },
-                                        showDebugMetadata = BuildConfig.DEBUG,
                                         onNavigateHome = {
                                             selectedTab = null
                                             profileDestination = null

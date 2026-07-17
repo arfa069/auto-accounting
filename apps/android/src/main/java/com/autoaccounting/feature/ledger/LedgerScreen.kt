@@ -93,7 +93,6 @@ fun LedgerScreen(
     onDeleteFundingAccount: suspend (Long) -> FundingAccountDeleteResult = {
         FundingAccountDeleteResult.Deleted
     },
-    showDebugMetadata: Boolean = false,
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -105,8 +104,7 @@ fun LedgerScreen(
     val page = LedgerPage(view, selectedEntryId)
 
     BackHandler(
-        enabled = view == LedgerView.DETAIL ||
-            view == LedgerView.DELETED ||
+        enabled = view == LedgerView.DELETED ||
             view == LedgerView.LEDGER_BOOKS ||
             view == LedgerView.FUNDING_ACCOUNTS
     ) {
@@ -122,7 +120,7 @@ fun LedgerScreen(
 
     LaunchedEffect(view, selectedEntryId, selectedEntry) {
         if (
-            (view == LedgerView.DETAIL || view == LedgerView.EDIT) &&
+            view == LedgerView.EDIT &&
             selectedEntryId != null &&
             selectedEntry == null
         ) {
@@ -143,7 +141,7 @@ fun LedgerScreen(
                     activeLedgerName = activeLedgerName,
                     onEntryClick = {
                         selectedEntryId = it
-                        view = LedgerView.DETAIL
+                        view = LedgerView.EDIT
                     },
                     onLedgerBooksClick = { view = LedgerView.LEDGER_BOOKS },
                     onFundingAccountsClick = { view = LedgerView.FUNDING_ACCOUNTS },
@@ -151,18 +149,21 @@ fun LedgerScreen(
                     onNavigateHome = onNavigateHome
                 )
 
-                LedgerView.DETAIL -> targetEntry?.let { entry ->
-                    LedgerEntryDetail(
-                        entry = entry,
-                        fundingAccountLabel = fundingAccounts
-                            .firstOrNull { it.id == entry.fundingAccountId }
-                            ?.label,
-                        showDebugMetadata = showDebugMetadata,
-                        onBack = {
+                LedgerView.EDIT -> targetEntry?.let { entry ->
+                    LedgerEntryForm(
+                        title = "编辑账目",
+                        initial = LedgerEntryFormState.from(entry),
+                        categories = categories,
+                        fundingAccounts = fundingAccounts,
+                        onExit = {
                             selectedEntryId = null
                             view = LedgerView.LIST
                         },
-                        onEdit = { view = LedgerView.EDIT },
+                        onSave = { input ->
+                            onUpdateEntry(entry.id, input)
+                            selectedEntryId = null
+                            view = LedgerView.LIST
+                        },
                         onDelete = {
                             scope.launch {
                                 runCatching { onDeleteEntry(entry.id) }
@@ -179,20 +180,6 @@ fun LedgerScreen(
                                     }
                                     .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
                             }
-                        }
-                    )
-                }
-
-                LedgerView.EDIT -> targetEntry?.let { entry ->
-                    LedgerEntryForm(
-                        title = "编辑账目",
-                        initial = LedgerEntryFormState.from(entry),
-                        categories = categories,
-                        fundingAccounts = fundingAccounts,
-                        onExit = { view = LedgerView.DETAIL },
-                        onSave = { input ->
-                            onUpdateEntry(entry.id, input)
-                            view = LedgerView.DETAIL
                         },
                         snackbarHostState = snackbarHostState
                     )
@@ -259,7 +246,14 @@ private fun LedgerList(
     var categoryFilter by remember { mutableStateOf("") }
     var kindFilter by remember { mutableStateOf("") }
 
-    val monthKey = latestMonthKey(entries)
+    val availableMonthKeys = entries.map { it.monthKey }.distinct().sorted()
+    var monthKey by remember { mutableStateOf(latestMonthKey(entries)) }
+    LaunchedEffect(availableMonthKeys) {
+        if (monthKey !in availableMonthKeys) {
+            monthKey = availableMonthKeys.lastOrNull() ?: latestMonthKey(entries)
+        }
+    }
+    val monthIndex = availableMonthKeys.indexOf(monthKey)
     val summary = monthlySummary(entries, monthKey)
     val hasCurrentMonthEntries = entries.any { it.monthKey == monthKey }
     val hasActiveFilters = searchText.isNotBlank() ||
@@ -351,7 +345,29 @@ private fun LedgerList(
                     onKindChange = { kindFilter = it }
                 )
             }
-            Text("$monthKey 明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = { monthKey = availableMonthKeys[monthIndex - 1] },
+                    enabled = monthIndex > 0
+                ) {
+                    Text("上一月")
+                }
+                Text(
+                    "$monthKey 明细",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(
+                    onClick = { monthKey = availableMonthKeys[monthIndex + 1] },
+                    enabled = monthIndex in 0 until availableMonthKeys.lastIndex
+                ) {
+                    Text("下一月")
+                }
+            }
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -448,15 +464,6 @@ private fun LedgerEntryRow(entry: LedgerUiEntry, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun DetailLine(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(16.dp))
-        Text(value)
-    }
-}
-
-@Composable
 internal fun <T> SelectionMenu(
     label: String,
     selected: T,
@@ -520,7 +527,6 @@ internal fun <T> SelectionMenu(
 
 private enum class LedgerView {
     LIST,
-    DETAIL,
     EDIT,
     DELETED,
     LEDGER_BOOKS,

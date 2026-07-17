@@ -60,6 +60,29 @@ class LedgerReportsScreenTest {
     }
 
     @Test
+    fun ledgerCanNavigateToHistoricalMonthEntries() {
+        val historicalEntry = sampleEntries().first().copy(
+            id = "historical-payment",
+            title = "历史支付",
+            amountMinor = 22_400,
+            monthKey = "2026-06",
+            transactionTimeText = "2026-06-01 16:57"
+        )
+        composeRule.setContent {
+            LedgerScreen(entries = sampleEntries() + historicalEntry)
+        }
+
+        composeRule.onNodeWithText("2026-07 明细").assertIsDisplayed()
+        composeRule.onNodeWithText("上一月").performClick()
+
+        composeRule.onNodeWithText("2026-06 明细").assertIsDisplayed()
+        composeRule.onNodeWithText("历史支付").assertIsDisplayed()
+        composeRule.onNodeWithText("本月支出 ¥224.00").assertIsDisplayed()
+        composeRule.onNodeWithText("下一月").performClick()
+        composeRule.onNodeWithText("2026-07 明细").assertIsDisplayed()
+    }
+
+    @Test
     fun ledgerKeepsHeaderVisibleWhenEntryListScrolls() {
         val entries = List(20) { index ->
             sampleEntries().first().copy(
@@ -473,7 +496,8 @@ class LedgerReportsScreenTest {
         }
 
         composeRule.onNodeWithText("午餐").performClick()
-        composeRule.onNodeWithText("删除").performScrollTo().performClick()
+        composeRule.onNodeWithText("编辑账目").assertIsDisplayed()
+        composeRule.onNodeWithTag("edit-entry-delete").performScrollTo().performClick()
         composeRule.onNodeWithText("移入最近删除").performClick()
         composeRule.onNodeWithText("撤销").performClick()
 
@@ -483,7 +507,7 @@ class LedgerReportsScreenTest {
     }
 
     @Test
-    fun capturedEntryCanBeEditedWithoutHidingItsProvenance() {
+    fun capturedEntryOpensEditorAndCanBeUpdated() {
         val updatedInput = AtomicReference<LedgerEntryInput?>()
         val captured = sampleEntries().first().copy(
             paymentSource = PaymentSource.WECHAT,
@@ -501,69 +525,23 @@ class LedgerReportsScreenTest {
         composeRule.setContent {
             LedgerScreen(
                 entries = listOf(captured),
-                showDebugMetadata = true,
                 onUpdateEntry = { _, input -> updatedInput.set(input) }
             )
         }
 
         composeRule.onNodeWithText("午餐").performClick()
-        composeRule.onNodeWithText("原始采集信息").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("微信支付凭证").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("编辑").performScrollTo().performClick()
-        composeRule.onNodeWithText("金额（CNY）").performTextClearance()
-        composeRule.onNodeWithText("金额（CNY）").performTextInput("20.00")
-        composeRule.onNodeWithText("保存").performScrollTo().performClick()
+        composeRule.onNodeWithText("编辑账目").assertIsDisplayed()
+        composeRule.onNodeWithText("交易信息").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-direction-NEUTRAL").assertIsDisplayed()
+        composeRule.onNodeWithText("账户与备注").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-actions").assertIsDisplayed()
+        composeRule.onNodeWithText("新建资金账户").assertDoesNotExist()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("20.00")
+        composeRule.onNodeWithText("保存修改").performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) { updatedInput.get() != null }
         assertEquals(2_000L, updatedInput.get()?.amountMinor)
-    }
-
-    @Test
-    fun debugMetadataIsAbsentByDefault() {
-        val captured = sampleEntries().first().copy(
-            originalCaptureSource = PaymentSource.WECHAT,
-            entryOrigin = EntryOrigin.NOTIFICATION,
-            originPendingEntryId = "pending-food",
-            evidenceSummary = "微信支付凭证",
-            confirmedAtEpochMillis = 1_783_513_260_000,
-            updatedAtEpochMillis = 1_783_513_260_000
-        )
-        composeRule.setContent {
-            LedgerScreen(entries = listOf(captured))
-        }
-
-        composeRule.onNodeWithText("午餐").performClick()
-        composeRule.onNodeWithText("录入方式").assertDoesNotExist()
-        composeRule.onNodeWithText("创建/首次确认").assertDoesNotExist()
-        composeRule.onNodeWithText("最后修改").assertDoesNotExist()
-        composeRule.onNodeWithText("原始采集信息").assertDoesNotExist()
-        composeRule.onNodeWithText("编辑").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("删除").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun debugMetadataIsVisibleWhenEnabled() {
-        val captured = sampleEntries().first().copy(
-            originalCaptureSource = PaymentSource.WECHAT,
-            entryOrigin = EntryOrigin.NOTIFICATION,
-            originPendingEntryId = "pending-food",
-            evidenceSummary = "微信支付凭证",
-            confirmedAtEpochMillis = 1_783_513_260_000,
-            updatedAtEpochMillis = 1_783_513_260_000
-        )
-        composeRule.setContent {
-            LedgerScreen(
-                entries = listOf(captured),
-                showDebugMetadata = true
-            )
-        }
-        composeRule.onNodeWithText("午餐").performClick()
-        composeRule.onNodeWithText("录入方式").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("创建/首次确认").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("最后修改").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("原始采集信息").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("原待确认 ID").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("微信支付凭证").performScrollTo().assertIsDisplayed()
     }
 
     @Test

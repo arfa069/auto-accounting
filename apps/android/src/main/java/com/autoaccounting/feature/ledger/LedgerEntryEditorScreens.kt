@@ -78,75 +78,6 @@ import kotlin.math.max
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun LedgerEntryDetail(
-    entry: LedgerUiEntry,
-    fundingAccountLabel: String?,
-    showDebugMetadata: Boolean = false,
-    onBack: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var confirmDelete by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        TextButton(onClick = onBack) { Text("返回账本") }
-        Text(entry.title.ifBlank { "未填写标题" }, style = MaterialTheme.typography.headlineSmall)
-        DetailLine("金额", formatMoney(entry.amountMinor))
-        DetailLine("资金方向", entry.flowDirection.label())
-        DetailLine("交易类型", entry.kindLabel)
-        DetailLine("交易时间", entry.transactionTimeText)
-        DetailLine("分类", entry.category)
-        DetailLine("资金账户", fundingAccountLabel ?: "未选择")
-        DetailLine("支付来源", entry.paymentSource.labelOrNone())
-        DetailLine("备注", entry.note ?: "未填写")
-        if (showDebugMetadata) {
-            DetailLine("录入方式", entry.entryOrigin.label())
-            DetailLine("创建/首次确认", formatLedgerEpoch(entry.confirmedAtEpochMillis))
-            DetailLine("最后修改", formatLedgerEpoch(entry.updatedAtEpochMillis))
-            if (
-                entry.originalCaptureSource != null ||
-                entry.originPendingEntryId != null ||
-                !entry.evidenceSummary.isNullOrBlank()
-            ) {
-                Text(
-                    "原始采集信息",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                DetailLine("原始来源", entry.originalCaptureSource.labelOrNone())
-                DetailLine("原待确认 ID", entry.originPendingEntryId ?: "无")
-                DetailLine("采集证据", entry.evidenceSummary ?: "无")
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onEdit) { Text("编辑") }
-            OutlinedButton(onClick = { confirmDelete = true }) { Text("删除") }
-        }
-    }
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("删除这笔账？") },
-            text = { Text("账目将移入最近删除，可在 30 天内恢复。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        onDelete()
-                    }
-                ) { Text("移入最近删除") }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } }
-        )
-    }
-}
-
-@Composable
 internal fun ManualLedgerEntryScreen(
     categories: List<CategoryEntity>,
     fundingAccounts: List<FundingAccountEntity>,
@@ -155,9 +86,48 @@ internal fun ManualLedgerEntryScreen(
     modifier: Modifier = Modifier
 ) {
     val initial = remember { LedgerEntryFormState.newEntry() }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        LedgerEntryEditorContent(
+            title = "新增一笔",
+            initial = initial,
+            categories = categories,
+            fundingAccounts = fundingAccounts,
+            flowDirections = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
+            allowCreateFundingAccount = false,
+            saveLabel = "保存账目",
+            onExit = onExit,
+            onSave = onCreateEntry,
+            onDelete = null,
+            snackbarHostState = snackbarHostState
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 88.dp)
+        )
+    }
+}
+
+@Composable
+private fun LedgerEntryEditorContent(
+    title: String,
+    initial: LedgerEntryFormState,
+    categories: List<CategoryEntity>,
+    fundingAccounts: List<FundingAccountEntity>,
+    flowDirections: List<FlowDirection>,
+    allowCreateFundingAccount: Boolean,
+    saveLabel: String,
+    onExit: () -> Unit,
+    onSave: suspend (LedgerEntryInput) -> Unit,
+    onDelete: (() -> Unit)?,
+    snackbarHostState: SnackbarHostState
+) {
     var state by remember(initial) { mutableStateOf(initial) }
     var confirmDiscard by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
+    var confirmDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {
@@ -177,54 +147,59 @@ internal fun ManualLedgerEntryScreen(
     fun saveEntry() {
         scope.launch {
             runCatching { state.toInput(System.currentTimeMillis()) }
-                .mapCatching { input -> onCreateEntry(input) }
+                .mapCatching { input -> onSave(input) }
                 .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
         }
     }
 
     BackHandler { requestExit() }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            ManualEntryHeader(onBack = ::requestExit)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                ManualAmountCard(
-                    state = state,
-                    onStateChange = { state = it }
-                )
-                ManualTransactionCard(
-                    state = state,
-                    categoryOptions = categoryOptions,
-                    onStateChange = { state = it },
-                    onSelectTime = {
-                        showDateTimePicker(context, state.transactionTimeEpochMillis) {
-                            state = state.copy(transactionTimeEpochMillis = it)
-                        }
-                    }
-                )
-                ManualAccountCard(
-                    state = state,
-                    fundingAccounts = fundingAccounts,
-                    onStateChange = { state = it }
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-            ManualEntryActions(
-                onCancel = ::requestExit,
-                onSave = ::saveEntry
-            )
-        }
-        SnackbarHost(
-            hostState = snackbarHostState,
+    Column(modifier = Modifier.fillMaxSize()) {
+        ManualEntryHeader(title = title, onBack = ::requestExit)
+        Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 88.dp)
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            ManualAmountCard(
+                state = state,
+                directions = flowDirections,
+                onStateChange = { state = it }
+            )
+            ManualTransactionCard(
+                state = state,
+                categoryOptions = categoryOptions,
+                onStateChange = { state = it },
+                onSelectTime = {
+                    showDateTimePicker(context, state.transactionTimeEpochMillis) {
+                        state = state.copy(transactionTimeEpochMillis = it)
+                    }
+                }
+            )
+            ManualAccountCard(
+                state = state,
+                fundingAccounts = fundingAccounts,
+                allowCreateFundingAccount = allowCreateFundingAccount,
+                onStateChange = { state = it }
+            )
+            if (onDelete != null) {
+                OutlinedButton(
+                    onClick = { confirmDelete = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit-entry-delete")
+                ) {
+                    Text("删除账目")
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        ManualEntryActions(
+            saveLabel = saveLabel,
+            onCancel = ::requestExit,
+            onSave = ::saveEntry
         )
     }
 
@@ -233,10 +208,28 @@ internal fun ManualLedgerEntryScreen(
         onDismiss = { confirmDiscard = false },
         onDiscard = onExit
     )
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除这笔账？") },
+            text = { Text("账目将移入最近删除，可在 30 天内恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete?.invoke()
+                    }
+                ) { Text("移入最近删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            }
+        )
+    }
 }
 
 @Composable
-private fun ManualEntryHeader(onBack: () -> Unit) {
+private fun ManualEntryHeader(title: String, onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -258,7 +251,7 @@ private fun ManualEntryHeader(onBack: () -> Unit) {
             }
         }
         Text(
-            text = "新增一笔",
+            text = title,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -268,6 +261,7 @@ private fun ManualEntryHeader(onBack: () -> Unit) {
 @Composable
 private fun ManualAmountCard(
     state: LedgerEntryFormState,
+    directions: List<FlowDirection>,
     onStateChange: (LedgerEntryFormState) -> Unit
 ) {
     Card(
@@ -283,7 +277,7 @@ private fun ManualAmountCard(
         ) {
             FlowDirectionSelector(
                 selected = state.flowDirection,
-                directions = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
+                directions = directions,
                 onSelected = { direction -> onStateChange(state.copy(flowDirection = direction)) }
             )
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -402,6 +396,7 @@ private fun ManualTransactionCard(
 private fun ManualAccountCard(
     state: LedgerEntryFormState,
     fundingAccounts: List<FundingAccountEntity>,
+    allowCreateFundingAccount: Boolean,
     onStateChange: (LedgerEntryFormState) -> Unit
 ) {
     ManualEntryCard(title = "账户与备注") {
@@ -417,14 +412,53 @@ private fun ManualAccountCard(
                 onSelected = { onStateChange(state.copy(paymentSource = it)) },
                 modifier = Modifier.weight(1f)
             )
-            ManualSelectionField(
-                label = "资金账户",
-                selected = state.fundingAccountId,
-                options = listOf<Long?>(null) + fundingAccounts.map { it.id },
-                itemLabel = { id -> fundingAccounts.firstOrNull { it.id == id }?.label ?: "未选择" },
-                onSelected = { onStateChange(state.copy(fundingAccountId = it)) },
-                modifier = Modifier.weight(1f)
-            )
+            if (state.creatingFundingAccount) {
+                OutlinedTextField(
+                    value = state.newFundingAccountLabel,
+                    onValueChange = { onStateChange(state.copy(newFundingAccountLabel = it)) },
+                    label = { Text("新资金账户名称") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                ManualSelectionField(
+                    label = "资金账户",
+                    selected = state.fundingAccountId,
+                    options = listOf<Long?>(null) + fundingAccounts.map { it.id },
+                    itemLabel = { id ->
+                        fundingAccounts.firstOrNull { it.id == id }?.label ?: "未选择"
+                    },
+                    onSelected = { onStateChange(state.copy(fundingAccountId = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        if (allowCreateFundingAccount) {
+            TextButton(
+                onClick = {
+                    onStateChange(
+                        if (state.creatingFundingAccount) {
+                            state.copy(
+                                creatingFundingAccount = false,
+                                newFundingAccountLabel = ""
+                            )
+                        } else {
+                            state.copy(
+                                creatingFundingAccount = true,
+                                fundingAccountId = null
+                            )
+                        }
+                    )
+                }
+            ) {
+                Text(
+                    if (state.creatingFundingAccount) {
+                        "改为选择已有账户"
+                    } else {
+                        "新建资金账户"
+                    }
+                )
+            }
         }
         OutlinedTextField(
             value = state.note,
@@ -551,6 +585,7 @@ private fun ManualValueField(
 
 @Composable
 private fun ManualEntryActions(
+    saveLabel: String,
     onCancel: () -> Unit,
     onSave: () -> Unit
 ) {
@@ -578,7 +613,7 @@ private fun ManualEntryActions(
                 modifier = Modifier
                     .weight(1.65f)
                     .height(52.dp)
-            ) { Text("保存账目", fontWeight = FontWeight.SemiBold) }
+            ) { Text(saveLabel, fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -591,149 +626,21 @@ internal fun LedgerEntryForm(
     fundingAccounts: List<FundingAccountEntity>,
     onExit: () -> Unit,
     onSave: suspend (LedgerEntryInput) -> Unit,
+    onDelete: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
-    var state by remember(initial) { mutableStateOf(initial) }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val isDirty = state != initial
-
-    fun requestExit() {
-        if (isDirty) confirmDiscard = true else onExit()
-    }
-
-    BackHandler { requestExit() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("资金方向")
-        FlowDirectionSelector(
-            selected = state.flowDirection,
-            onSelected = { direction -> state = state.copy(flowDirection = direction) }
-        )
-        SelectionMenu(
-            label = "交易类型",
-            selected = state.transactionKind,
-            options = TransactionKind.entries,
-            itemLabel = TransactionKind::label,
-            onSelected = { state = state.copy(transactionKind = it) }
-        )
-        OutlinedTextField(
-            value = state.amountText,
-            onValueChange = { state = state.copy(amountText = it) },
-            label = { Text("金额（CNY）") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedButton(
-            onClick = {
-                showDateTimePicker(context, state.transactionTimeEpochMillis) {
-                    state = state.copy(transactionTimeEpochMillis = it)
-                }
-            }
-        ) { Text("交易时间 ${formatLedgerEpoch(state.transactionTimeEpochMillis)}") }
-        OutlinedTextField(
-            value = state.merchantTitle,
-            onValueChange = { state = state.copy(merchantTitle = it) },
-            label = { Text("商户/标题（可选）") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {
-            ledgerCategoryOptions(categories, state.flowDirection, state.transactionKind)
-        }
-        LaunchedEffect(categoryOptions, state.categoryId) {
-            if (categoryOptions.none { it.id == state.categoryId }) {
-                state = state.copy(categoryId = LocalLedgerRepository.DEFAULT_CATEGORY_ID)
-            }
-        }
-        SelectionMenu(
-            label = "分类",
-            selected = state.categoryId,
-            options = categoryOptions.map { it.id },
-            itemLabel = { id ->
-                DefaultCategories.nameForId(id)
-                    ?: categoryOptions.firstOrNull { it.id == id }?.name
-                    ?: "未分类"
-            },
-            leadingContent = { id ->
-                val category = categoryOptions.firstOrNull { it.id == id }
-                CategoryArtwork(
-                    categoryId = id,
-                    categoryName = category?.name,
-                    transactionKind = category?.kind,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            onSelected = { state = state.copy(categoryId = it) }
-        )
-        SelectionMenu(
-            label = "支付来源",
-            selected = state.paymentSource,
-            options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY),
-            itemLabel = { it.labelOrNone() },
-            onSelected = { state = state.copy(paymentSource = it) }
-        )
-        if (state.creatingFundingAccount) {
-            OutlinedTextField(
-                value = state.newFundingAccountLabel,
-                onValueChange = { state = state.copy(newFundingAccountLabel = it) },
-                label = { Text("新资金账户名称") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            TextButton(
-                onClick = {
-                    state = state.copy(creatingFundingAccount = false, newFundingAccountLabel = "")
-                }
-            ) { Text("改为选择已有账户") }
-        } else {
-            SelectionMenu(
-                label = "资金账户",
-                selected = state.fundingAccountId,
-                options = listOf<Long?>(null) + fundingAccounts.map { it.id },
-                itemLabel = { id -> fundingAccounts.firstOrNull { it.id == id }?.label ?: "未选择" },
-                onSelected = { state = state.copy(fundingAccountId = it) }
-            )
-            TextButton(
-                onClick = {
-                    state = state.copy(
-                        creatingFundingAccount = true,
-                        fundingAccountId = null
-                    )
-                }
-            ) { Text("新建资金账户") }
-        }
-        OutlinedTextField(
-            value = state.note,
-            onValueChange = { state = state.copy(note = it) },
-            label = { Text("备注（可选）") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    scope.launch {
-                        runCatching { state.toInput(System.currentTimeMillis()) }
-                            .mapCatching { input -> onSave(input) }
-                            .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
-                    }
-                }
-            ) { Text("保存") }
-            OutlinedButton(onClick = ::requestExit) { Text("取消") }
-        }
-    }
-
-    DiscardChangesDialog(
-        visible = confirmDiscard,
-        onDismiss = { confirmDiscard = false },
-        onDiscard = onExit
+    LedgerEntryEditorContent(
+        title = title,
+        initial = initial,
+        categories = categories,
+        fundingAccounts = fundingAccounts,
+        flowDirections = FlowDirection.entries,
+        allowCreateFundingAccount = false,
+        saveLabel = "保存修改",
+        onExit = onExit,
+        onSave = onSave,
+        onDelete = onDelete,
+        snackbarHostState = snackbarHostState
     )
 }
 
