@@ -94,14 +94,13 @@ Actions:
 
 Entry points:
 - Review Queue `补录账单` card.
-- Automatic Bookkeeping `补录账单` action.
-- Both entries open one app-level `ManualBillImportHost`; source selection and progress are not duplicated inside either screen.
+- The entry opens the app-level `ManualBillImportHost`; source selection and progress are not duplicated inside the Review Queue screen.
 
 Preflight:
 - Check accessibility permission first. If missing, explain the limited purpose and show Settings.
 - Check the live accessibility-service connection separately. If disconnected, do not launch a source; show Recheck, Settings, and Close.
 - Source-app launch failure becomes an explicit retryable result.
-- WeChat import offers an unchecked, per-session local-OCR consent for currently visible history-bill detail pages with no readable accessibility nodes. State that screenshots and raw OCR text are not saved or uploaded.
+- Selecting WeChat or Alipay automatically authorizes local OCR for that import session; the authorization expires when the session ends. State that screenshots and raw OCR text are not saved or uploaded.
 
 Progress UI:
 - Stepwise progress, not silent background work.
@@ -142,9 +141,9 @@ Primary action:
 - Manual entry is not duplicated on the review-queue screen.
 
 List:
-- Grouped by month.
+- Show one available month at a time with `上一月` and `下一月` controls; disable navigation beyond the first or last month containing entries.
 - Row fields: merchant/title, category, time, amount, source marker.
-- Tapping a row opens a read-only ledger-entry detail screen rather than editing immediately.
+- Tapping a row opens the shared ledger-entry editor directly.
 - The list, summary, search, and filters use the current ledger book only.
 
 Ledger management:
@@ -160,24 +159,21 @@ Funding accounts:
 - Reject an equal normalized name within the same payment source; allow equal names under different payment sources.
 - Editing preserves the existing account identity and does not rewrite historical ledger-entry payment sources.
 - Delete requires confirmation. When references exist, keep the account and show counts for active/deleted ledger entries, pending entries, and ignored entries.
-- Keep the inline New Funding Account action in the ledger-entry form and apply the same normalization and duplicate rules.
+- Funding accounts are created only from the independent Funding Accounts page; creation is not exposed from ledger-entry creation or editing.
 
-Ledger-entry detail:
+Ledger-entry editor:
 - Show the current transaction fields first.
 - Show flow direction separately from transaction kind and amount.
 - Display currency as CNY without offering a currency selector in the first version.
 - Amount input accepts a positive value with at most two decimal places; flow direction controls the displayed sign.
 - The date-time picker does not allow a value later than the current device time.
-- The funding-account selector lists existing accounts and ends with a New Funding Account action.
-- Inline funding-account creation requires a name, allows payment source to remain empty, and selects the new account immediately.
+- The funding-account selector lists existing accounts; it does not provide inline account creation.
 - The category selector uses existing categories and Uncategorized without an inline category-creation action.
-- In Debug builds only, show entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence in a separate debug-metadata section when available.
-- In Release builds, do not compose or leave an entry point for that debug-metadata section; current transaction fields, edit, and delete remain available.
-- Editing begins through an explicit edit action.
+- Entry origin, lifecycle timestamps, original capture source, original pending-entry ID, and capture evidence remain persisted but are not composed in the current ledger UI.
 - Manual creation and editing reuse the same transaction form.
 - Form changes remain local until the user taps Save.
 - Navigating back with unsaved changes opens a choice to discard changes or continue editing.
-- The overflow menu contains Delete; confirmation explains that the entry moves to Recently Deleted for 30 days.
+- The editor contains Delete; confirmation explains that the entry moves to Recently Deleted for 30 days.
 - After deletion, return to the ledger and show a "Moved to Recently Deleted" Snackbar with Undo.
 
 Recently deleted:
@@ -238,7 +234,7 @@ Account Management:
 - Sign-out keeps all local ledger books, while account deletion follows its separate cooling-off flow.
 
 Automatic Bookkeeping:
-- Order sections as state, required permissions, then user-started bill import.
+- Order sections as state, then required permissions and background-reliability guidance.
 - Overview status is Ready, Needs attention with a specific reason, or Off. Result notifications do not block capture and do not produce Needs attention.
 - Keep the accessibility description explicit: it is limited to payment-result and permitted bill pages, and does not read chats or ordinary messages.
 
@@ -312,7 +308,6 @@ First screen items:
 - Notification listening.
 - Automatic-bookkeeping accessibility service.
 - Background running, auto-start, battery optimization, and battery-saver suggestions.
-- User-started bill import appears after the permission section, not as a permission.
 
 Each item:
 - Title.

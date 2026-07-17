@@ -18,7 +18,7 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 - Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
 - Automatic capture is the primary flow after explicit opt-in; user-started bill import (`补录账单`) remains a limited backfill and fallback path.
-- A user may explicitly allow local OCR for one WeChat import session when a currently visible WeChat history-bill detail page exposes no accessibility text. The manual path does not depend on a mini-program or wallet Activity class, does not broaden automatic OCR, and never persists or uploads screenshots or raw OCR text.
+- Selecting a source for one manual-import session automatically authorizes local OCR for that session. The current fallback is limited to supported visible pages with no usable accessibility text, does not broaden automatic OCR, and never persists or uploads screenshots or raw OCR text.
 - All automatically captured transactions first become pending entries.
 - Ledger books are local-first; future cloud sync is reserved but not implemented in the first backend.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
@@ -60,7 +60,7 @@ Capture output:
 - Pending entries only.
 - Capture reason: notification capture, manual bill import, duplicate merge, or related reason.
 - Manual bill import reads only the currently visible supported page. It does not auto-scroll, paginate, or promise a complete history scan.
-- Both the Review Queue and Automatic Bookkeeping entries open one app-level import flow.
+- The Review Queue entry opens one app-level import flow; Automatic Bookkeeping contains only automatic-capture state and settings.
 - The flow checks accessibility grant and live service connection separately before source selection or app launch.
 - After source launch, the user has 90 seconds to enter and remain on a bill, transaction-detail, or payment-result page. Timeout affects only the matching session while it is still waiting.
 - The accessibility processor and `ReviewQueuePersistence` are the only manual-import write path; UI observes the Room Flow and never creates pending entries a second time.
@@ -255,7 +255,6 @@ The Automatic Bookkeeping page shows, in order:
 - Automatic-bookkeeping accessibility service.
 - Non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
 - Continuous-monitoring health summary.
-- A single `补录账单` action that opens the same app-level import flow as the Review Queue.
 
 The Automatic Bookkeeping overview status is:
 - Ready when automatic bookkeeping is enabled, notification listening and accessibility are available, and continuous monitoring is healthy.
@@ -314,7 +313,7 @@ Profile overview:
 
 Profile entries:
 - Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
-- Automatic Bookkeeping: state, permissions, continuous-monitoring health, and user-started bill import as defined in section 5.8.
+- Automatic Bookkeeping: state, permissions, and continuous-monitoring health as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
 - Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
 - Compliance and Privacy: entry points for the privacy policy, personal-information collection list, third-party-service list, and permission explanations. Each document opens separately and is available in local mode.

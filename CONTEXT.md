@@ -137,7 +137,7 @@ Debug-build-only tools for internal-beta checks such as logs, device matrices, p
 _Avoid_: User settings, hidden release entry
 
 **Ledger Entry Debug Metadata**:
-Persisted lifecycle and capture-provenance fields such as entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence. They may appear in the corresponding entry detail only in Debug builds and are not composed in Release UI.
+Persisted lifecycle and capture-provenance fields such as entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence. The current ledger UI does not compose these fields; editing user-visible transaction fields must preserve them.
 _Avoid_: Normal transaction details, centralized transaction log
 
 **Store Compliance Package**:
@@ -205,7 +205,7 @@ The app's recurring animal companion, using a cat-like personality and visual di
 _Avoid_: Generic animal, pet theme
 
 **Auto Bookkeeping**:
-A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, non-blocking background-reliability guidance, continuous-monitoring health, and user-started bill sync. Bookkeeping-result notifications are requested when needed after enabling rather than shown as a separate setting.
+A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, non-blocking background-reliability guidance, and continuous-monitoring health. Bookkeeping-result notifications are requested when needed after enabling rather than shown as a separate setting; user-started bill import remains on the Review Queue.
 _Avoid_: Permission center, permission tab
 
 **Permission Center**:

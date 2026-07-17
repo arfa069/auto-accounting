@@ -24,6 +24,15 @@
 
 先运行与改动最相关的最窄任务；跨模块或影响较大的改动在提交前再运行完整 `build`。
 
+## Android 真机测试（ADB）
+
+1. 运行 `adb devices -l` 确认目标真机状态为 `device`，记录序列号；连接多台设备时，以下所有命令都必须使用 `adb -s <serial> ...` 指定目标。
+2. 运行 `adb -s <serial> shell wm size` 记录设备逻辑分辨率，并用 `adb -s <serial> shell dumpsys package com.autoaccounting` 确认已安装版本、权限与包状态符合测试前提。
+3. 测试开始前运行 `adb -s <serial> logcat -c` 清空旧日志；需要由代理操作应用时，先用 `adb -s <serial> shell am force-stop com.autoaccounting` 重置进程，再用 `adb -s <serial> shell monkey -p com.autoaccounting -c android.intent.category.LAUNCHER 1` 启动应用。
+4. 按验收用例使用 `adb -s <serial> shell input tap <x> <y>`、`swipe`、`text` 和 `keyevent` 操作界面；普通页面的关键状态可运行 `adb -s <serial> shell uiautomator dump /sdcard/window.xml` 与 `adb -s <serial> shell screencap -p /sdcard/screen.png`，再将 XML 和截图拉取到版本库外的本机临时目录作为证据。
+5. 涉及权限、后台服务或通知捕获时，分别使用 `adb -s <serial> shell dumpsys accessibility`、`dumpsys package com.autoaccounting` 和相关系统服务的 `dumpsys` 输出核对真实状态；Xiaomi/MIUI 上验证无障碍服务时禁止使用 `uiautomator dump`，避免测试工具临时重建服务并制造错误状态，此时只使用普通截图和 `dumpsys`。复现后用 `adb -s <serial> logcat -d` 获取日志，并在展示或保存前过滤无关内容、脱敏敏感数据。
+6. 对照验收条件检查界面文本、页面跳转、持久化结果和关键日志，报告实际结果与证据；未经用户明确许可，不修改系统授权、不清除应用数据、不卸载应用，也不执行验收用例之外的真机操作。
+
 ## 编码风格与命名
 
 遵循 Kotlin 官方代码风格（`kotlin.code.style=official`），使用四空格缩进。类、对象及 Compose 函数使用 `PascalCase`；普通函数和属性使用 `camelCase`；包名使用 `com.autoaccounting` 下的全小写名称。

@@ -223,7 +223,7 @@ Backend checks:
 
 Manual beta checks:
 - WeChat/Alipay notification capture on several domestic Android ROMs.
-- Manual bill import from both entries with shared preflight, 90-second timeout, and clear stepwise progress.
+- Manual bill import from the Review Queue entry with shared preflight, 90-second timeout, and clear stepwise progress.
 - Automatic payment-result capture opt-in/off switch and result notifications.
 - Backup export/import.
 - Account deletion cooling-off and cancel flow.
