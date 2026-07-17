@@ -13,7 +13,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,25 +47,13 @@ class AutomaticBookkeepingScreenTest {
     }
 
     @Test
-    fun manualBillImportOpensTheUnifiedFlow() {
-        var billImportOpened = false
+    fun manualBillImportIsNotShownOnAutomaticBookkeepingPage() {
         composeRule.setContent {
-            AutomaticBookkeepingScreen(
-                billSyncAccessibilityAccessGranted = true,
-                continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-                    billSyncAccessibilityGranted = true
-                ),
-                onOpenBillImport = { billImportOpened = true }
-            )
+            AutomaticBookkeepingScreen()
         }
 
-        composeRule.onNodeWithTag("manual-bill-import")
-            .performScrollTo()
-            .performClick()
-
-        assertTrue(billImportOpened)
-        composeRule.onAllNodesWithText("补录账单").assertCountEquals(2)
-        composeRule.onAllNodesWithText("账单同步").assertCountEquals(0)
+        composeRule.onAllNodesWithText("补录账单").assertCountEquals(0)
+        composeRule.onAllNodesWithText("从账单页导入").assertCountEquals(0)
     }
 
     @Test

@@ -255,7 +255,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun reviewAndAutomaticBookkeepingOpenTheSameBillImportHost() {
+    fun billImportRemainsOnReviewAndIsAbsentFromAutomaticBookkeeping() {
         composeRule.setContent {
             AutoAccountingApp(
                 billSyncAccessibilityAccessGranted = true,
@@ -273,10 +273,10 @@ class MainActivityTest {
         composeRule.onNodeWithTag("return-home").performClick()
         composeRule.onNodeWithTag("app-tab-Profile").performClick()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
-        composeRule.onNodeWithTag("manual-bill-import").performScrollTo().performClick()
 
-        composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
-        composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-bill-import").assertDoesNotExist()
+        composeRule.onNodeWithText("补录账单").assertDoesNotExist()
+        composeRule.onNodeWithTag("manual-bill-import-host").assertDoesNotExist()
     }
 
     @Test

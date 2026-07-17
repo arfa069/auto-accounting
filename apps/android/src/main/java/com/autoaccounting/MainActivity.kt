@@ -784,7 +784,6 @@ fun AutoAccountingApp(
                                             continuousMonitoringState = continuousMonitoringState,
                                             continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
                                             onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
-                                            onOpenBillImport = { manualBillImportRequestId += 1 },
                                             onBack = { profileDestination = null },
                                             modifier = Modifier.padding(innerPadding)
                                         )

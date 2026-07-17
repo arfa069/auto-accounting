@@ -43,7 +43,6 @@ fun AutomaticBookkeepingScreen(
     continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
         ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
-    onOpenBillImport: () -> Unit = {},
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -130,8 +129,6 @@ fun AutomaticBookkeepingScreen(
                 )
             }
         }
-        Text("补录账单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ManualBillImportCard(onOpen = onOpenBillImport)
     }
 }
 
@@ -192,20 +189,6 @@ private fun PermissionSettingRow(
         }
         Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         Text("›", style = MaterialTheme.typography.titleLarge)
-    }
-}
-
-@Composable
-private fun ManualBillImportCard(onOpen: () -> Unit) {
-    SettingsCard {
-        Text("从账单页导入", fontWeight = FontWeight.SemiBold)
-        Text("读取你主动打开的微信或支付宝账单页，结果进入待确认。", style = MaterialTheme.typography.bodyMedium)
-        Button(
-            onClick = onOpen,
-            modifier = Modifier.testTag("manual-bill-import")
-        ) {
-            Text("补录账单")
-        }
     }
 }
 
