@@ -1,5 +1,6 @@
 package com.autoaccounting.feature.billsync
 
+import com.autoaccounting.feature.monitoring.hasAlipayPaymentResultPageSignature
 import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
 import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
 import java.math.BigDecimal
@@ -51,7 +52,7 @@ fun observeBillSyncPage(
     ) {
         return BillSyncPageObservation.BlockedPaymentInitiation
     }
-    if (normalizedText.hasCompletedPaymentResultEvidence()) {
+    if (normalizedText.hasCompletedPaymentResultEvidence(source)) {
         return BillSyncPageObservation.PaymentResult
     }
     if (BillPageParser().parse(source, normalizedText).isNotEmpty()) {
@@ -125,7 +126,10 @@ class BillPageParser {
         fallbackTransactionTimeText: String?
     ): List<ParsedBillEntry> {
         val pageText = lines.joinToString("\n")
-        if (!pageText.isSupportedPaymentRecordSurface() && !pageText.isCompletedPaymentResultSurface()) {
+        if (
+            !pageText.isSupportedPaymentRecordSurface() &&
+            !pageText.isCompletedPaymentResultSurface(source)
+        ) {
             return emptyList()
         }
         if (pageText.hasPaymentInitiationKeyword()) return emptyList()
@@ -138,7 +142,7 @@ class BillPageParser {
                 amountMatches += amountLineIndex to match
             }
         }
-        val selectedMatches = if (pageText.isCompletedPaymentResultSurface()) {
+        val selectedMatches = if (pageText.isCompletedPaymentResultSurface(source)) {
             amountMatches
                 .filter { (lineIndex, _) ->
                     lines[lineIndex].hasTransactionAmountOverrideKeyword()
@@ -170,7 +174,7 @@ class BillPageParser {
         fallbackTransactionTimeText: String?
     ): ParsedBillEntry? {
         val fullPageText = lines.joinToString("\n")
-        val isCompletedPaymentResult = fullPageText.isCompletedPaymentResultSurface()
+        val isCompletedPaymentResult = fullPageText.isCompletedPaymentResultSurface(source)
         val start = if (isCompletedPaymentResult) {
             0
         } else {
@@ -306,10 +310,15 @@ internal fun hasUnambiguousTransactionAmount(pageText: String): Boolean {
 private fun String.isSupportedPaymentRecordSurface(): Boolean =
     PAYMENT_RECORD_SURFACE_KEYWORDS.any { contains(it) }
 
-private fun String.isCompletedPaymentResultSurface(): Boolean =
-    PAYMENT_COMPLETION_KEYWORDS.any { contains(it) } ||
-        hasWechatReceivedRedPacketSuccessSignature(this) ||
-        hasWechatSentRedPacketSuccessSignature(this)
+private fun String.isCompletedPaymentResultSurface(source: BillSyncSource): Boolean = when (source) {
+    BillSyncSource.Alipay ->
+        PAYMENT_COMPLETION_KEYWORDS.any { contains(it) } &&
+            hasAlipayPaymentResultPageSignature(this)
+    BillSyncSource.WeChat ->
+        PAYMENT_COMPLETION_KEYWORDS.any { contains(it) } ||
+            hasWechatReceivedRedPacketSuccessSignature(this) ||
+            hasWechatSentRedPacketSuccessSignature(this)
+}
 
 private fun String.hasPaymentInitiationKeyword(): Boolean =
     PAYMENT_INITIATION_KEYWORDS.any { contains(it) }
@@ -319,8 +328,8 @@ private fun String.hasPaymentRecordEvidence(): Boolean =
         lineSequence().any { it.extractTransactionTimeText() != null } &&
         inferTransactionKindLabel() != null
 
-private fun String.hasCompletedPaymentResultEvidence(): Boolean =
-    isCompletedPaymentResultSurface() &&
+private fun String.hasCompletedPaymentResultEvidence(source: BillSyncSource): Boolean =
+    isCompletedPaymentResultSurface(source) &&
         explicitPaymentAmountRegex.containsMatchIn(this) &&
         inferTransactionKindLabel() != null
 

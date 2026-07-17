@@ -46,6 +46,7 @@ Recommended modules:
 - `feature:account`: login, registration, recovery, local mode, deletion.
 - `feature:monitoring`: automatic-bookkeeping state, compact permission and background-reliability settings, service health, and payment-surface observation decisions.
 - `feature:settings`: data/backup and related profile settings.
+- `feature:diagnostics`: sensitive event contract, secret redaction, encrypted local segments, diagnostic UI, clear, and passphrase export.
 
 Keep capture parsing and deduplication testable without Android UI.
 
@@ -196,11 +197,11 @@ Permission center tracks:
 Important boundaries:
 - Notification listener only creates pending entries from WeChat/Alipay payment notifications.
 - Automatic accessibility capture runs only after explicit opt-in and observes allowlisted payment-result or payment-record pages; it does not require a prior manual import or notification-listener access.
-- Automatic capture reads accessibility nodes first. A blank WeChat accessibility surface may use one transient screenshot with bundled local OCR: Android 14 or later captures only the active app window, while Android 11-13 uses the display screenshot API. The bitmap and raw OCR text are released after parsing and are not persisted, uploaded, or logged.
+- Automatic capture reads accessibility nodes first. A blank WeChat accessibility surface may use one transient screenshot with bundled local OCR: Android 14 or later captures only the active app window, while Android 11-13 uses the display screenshot API. The bitmap is released after recognition and is never persisted or uploaded. Raw OCR text does not enter the ledger database; the separately enabled encrypted diagnostic store may retain text only for an accepted payment surface or active manual-import session.
 - Manual bill import remains user-started and is not part of the normal payment flow.
 - A blank WeChat application page may enter the manual OCR path only when the current import session carries explicit OCR consent. This covers currently visible WeChat history-bill detail pages without depending on a specific Activity class; automatic OCR keeps its narrower trusted-activity list.
 - Manual OCR accepts only the field relationship `当前状态: 支付成功` (same line or adjacent key/value lines) together with one unambiguous transaction amount. `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, and `已取消` are hard denials and win over positive evidence.
-- Accepted history details preserve normalized payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id when present. The bitmap and raw OCR text remain transient.
+- Accepted history details preserve normalized payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id when present. The bitmap remains transient; raw OCR text remains outside the ledger and may persist only in the separately enabled encrypted diagnostic store for the active manual-import session.
 - Review Queue and Automatic Bookkeeping dispatch the same app-level import request; neither owns a separate session dialog or persistence path.
 - Permission grant and live service connection are independent preconditions. A missing condition prevents source launch and exposes recovery actions.
 - Each import reads only the current supported visible page. It does not navigate, scroll, paginate, or promise a full history scan.
@@ -208,7 +209,19 @@ Important boundaries:
 - On Android 13 or later, result-notification permission is requested when automatic bookkeeping is enabled; denial must not prevent local capture or persistence.
 - The app must not read chat content, send messages, initiate payments, or initiate transfers.
 
-## 10. Build And Verification Targets
+## 10. Sensitive Diagnostic Logging
+
+The binding decision is [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md); operator and producer guidance lives in [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md).
+
+- `feature/diagnostics` owns the event contract, authentication-secret redaction, 256 KB event cap, 5-second suppression, Android Keystore encryption, `.aadlog` segmentation, querying, clearing, and `.aadiag` export.
+- Services and processors pass a random `traceId` through notification/accessibility/OCR/parser/dedupe/persistence. Manual import additionally uses the existing `sessionId`; candidate IDs are never reused as trace IDs because they can encode transaction data.
+- Producers call `DiagnosticRecorder` best-effort. Recorder/storage failures emit only a fixed metadata error and never fail capture, dedupe, or persistence.
+- Each JSON event is redacted and size-limited before being independently encrypted with a random AES-GCM IV. Files live under `noBackupFilesDir`, use 1 MB segments, and rotate oldest segments only after total ciphertext exceeds 10 MB.
+- Debug defaults enabled. Release defaults disabled and requires informed user confirmation. Closing the switch keeps history; clear deletes all segments and the Keystore key.
+- The ledger V4 backup and diagnostic export share the PBKDF2-HMAC-SHA256/AES-256-GCM primitive but retain separate prefixes and formats: `AUTO_ACCOUNTING_BACKUP_V4:` and `AUTO_ACCOUNTING_DIAGNOSTICS_V1:`.
+- Logcat receives metadata, stable reasons, counts, and correlation IDs only. Sensitive payloads and full exception messages never go to Logcat.
+
+## 11. Build And Verification Targets
 
 Android checks:
 - Unit tests for parsers, normalizers, dedupe, categorization rules.
@@ -225,5 +238,6 @@ Manual beta checks:
 - WeChat/Alipay notification capture on several domestic Android ROMs.
 - Manual bill import from the Review Queue entry with shared preflight, 90-second timeout, and clear stepwise progress.
 - Automatic payment-result capture opt-in/off switch and result notifications.
+- Diagnostic opt-in, masking lifecycle, encrypted export/decryption, clear semantics, and payment-scope rejection.
 - Backup export/import.
 - Account deletion cooling-off and cancel flow.

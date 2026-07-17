@@ -31,8 +31,16 @@ data class BillSyncResult(
     val mergedEntries: List<ReviewQueueEntry> = emptyList(),
     val duplicateSkippedCount: Int,
     val summary: String,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val failureReason: BillSyncFailureReason? = null
 )
+
+enum class BillSyncFailureReason {
+    PaymentResultMissingRequiredFields,
+    PaymentInitiationBlocked,
+    PaymentRecordMissingRequiredFields,
+    UnsupportedOrUnrelatedPage
+}
 
 enum class AutomaticCaptureVerification {
     Standard,
@@ -70,15 +78,19 @@ class BillSyncPipeline(
             fallbackTransactionTimeText = captureTimeFormatter(capturedAtEpochMillis)
         )
         if (parsedEntries.isEmpty()) {
-            val errorMessage = when (observeBillSyncPage(source, pageText)) {
+            val (failureReason, errorMessage) = when (observeBillSyncPage(source, pageText)) {
                 BillSyncPageObservation.PaymentResult ->
-                    "识别到支付结果页，但缺少明确金额或交易类型，未创建待确认记录"
+                    BillSyncFailureReason.PaymentResultMissingRequiredFields to
+                        "识别到支付结果页，但缺少明确金额或交易类型，未创建待确认记录"
                 BillSyncPageObservation.BlockedPaymentInitiation ->
-                    "当前页面像是付款或转账发起页，出于安全保护未采集；请打开账单、交易详情或支付信息页面"
+                    BillSyncFailureReason.PaymentInitiationBlocked to
+                        "当前页面像是付款或转账发起页，出于安全保护未采集；请打开账单、交易详情或支付信息页面"
                 BillSyncPageObservation.PaymentRecord ->
-                    "识别到支付记录页面，但缺少金额、时间、类型或对象，请打开完整交易详情页"
+                    BillSyncFailureReason.PaymentRecordMissingRequiredFields to
+                        "识别到支付记录页面，但缺少金额、时间、类型或对象，请打开完整交易详情页"
                 BillSyncPageObservation.Ignored ->
-                    "未识别到账单记录，请确认已打开对应账单页面"
+                    BillSyncFailureReason.UnsupportedOrUnrelatedPage to
+                        "未识别到账单记录，请确认已打开对应账单页面"
             }
             return BillSyncResult(
                 steps = listOf(
@@ -90,7 +102,8 @@ class BillSyncPipeline(
                 createdEntries = emptyList(),
                 duplicateSkippedCount = 0,
                 summary = "未创建待确认记录",
-                errorMessage = errorMessage
+                errorMessage = errorMessage,
+                failureReason = failureReason
             )
         }
         val createdEntries = mutableListOf<ReviewQueueEntry>()

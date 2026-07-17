@@ -47,7 +47,8 @@ Suggested rows:
 - AI categorization payload: cloud AI suggestions; optional.
 - Enhanced AI context: improve cloud AI accuracy; optional.
 - AI categorization logs: internal beta improvement; optional through AI consent and must be revisited before public submission.
-- Crash/log data: stability troubleshooting; internal beta and app quality.
+- Internal-beta readiness and quality metrics: locally derived readiness status and aggregate QA inputs shown only in Debug Developer Tools; this is not a separate raw-log store.
+- Sensitive diagnostic logs: payment notification/page/OCR text, parsed transaction fields, capture evidence, and complete exceptions for troubleshooting. Debug defaults on; Release defaults off and requires a separate informed opt-in.
 - App distribution statistics: store delivery and basic distribution measurement.
 
 Important classification:
@@ -63,7 +64,17 @@ Notification listening:
 Automatic-bookkeeping accessibility service:
 - Purpose: observe allowlisted WeChat and Alipay payment-result/payment-record pages after explicit opt-in, and read bill pages during user-started history backfill.
 - The privacy policy must state that the app does not read chats or ordinary messages, send messages, or initiate payments, transfers, or refunds.
-- For a blank WeChat accessibility surface, the app may take one transient screenshot for bundled on-device OCR. Android 14 or later limits capture to the active app window; Android 11-13 uses the display screenshot API. The image and raw OCR text must not be persisted, uploaded, or written to logs.
+- For a blank WeChat accessibility surface, the app may take one transient screenshot for bundled on-device OCR. Android 14 or later limits capture to the active app window; Android 11-13 uses the display screenshot API. The image must never be persisted or uploaded. Raw OCR text remains outside the ledger/database; when the user separately enables sensitive diagnostic logs, text from an accepted payment surface or active manual-import session may be retained only in the encrypted local diagnostic store.
+
+Sensitive diagnostic logging:
+- The binding design and operator controls are documented in [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md) and [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md).
+- Available in Debug and Release. Debug defaults on; Release defaults off and requires an explicit confirmation under Compliance and Privacy.
+- Payment-related notification text, accepted payment-page/manual-session text, accepted OCR output, amount, merchant, note, payment account/method, order identifiers, capture evidence, and complete exceptions may be recorded.
+- Ordinary notifications, chats, unsupported packages, and unrelated pages record rejection metadata only, never visible text.
+- Screenshots are never stored. Authentication secrets such as passwords, verification codes, tokens, cookies, Authorization headers, API keys, backup passphrases, signing keys, and private keys are always redacted before write.
+- Events are individually encrypted with Android Keystore AES-256-GCM in `noBackupFilesDir`; 1 MB segments rotate only when total ciphertext exceeds 10 MB. Logs are not uploaded or included in ledger/system backup.
+- Closing the switch stops new events without deleting history. Clear removes segments and the Keystore key. Local-data deletion also removes the Release preference, while exported Downloads files remain the user's responsibility.
+- Export requires a non-persisted passphrase of at least eight characters, confirmation, and produces an independently encrypted `.aadiag` file.
 
 Automatic capture:
 - Explicit opt-in.
@@ -88,7 +99,7 @@ Cloud AI:
 First-version third-party categories:
 - SMS provider.
 - Cloud AI provider.
-- Crash/log provider.
+- No diagnostic-log provider: sensitive diagnostics remain on-device and are never uploaded by this feature.
 - App distribution statistics provider.
 - Google ML Kit Chinese Text Recognition bundled model: on-device OCR only; transient payment-screen pixels and recognized text are not sent by the app to a cloud OCR service.
 
@@ -116,7 +127,7 @@ Retention must be written by data type:
 - Account data: retained while account exists; deleted after account deletion cooling-off completes.
 - Registered device and cloud configuration: retained while account exists; deleted after account deletion completes.
 - AI categorization logs: retained during internal beta; retention must be revisited before public submission.
-- Crash/log data: short-term retention should be defined before implementation.
+- Internal-beta readiness and quality metrics: retained only as ordinary local app state or explicit QA records; they do not create a separate raw-log store.
 - SMS verification data: retain only as needed for verification, fraud prevention, audit, and security.
 
 ## 7. User Rights And Controls
@@ -148,6 +159,7 @@ Local data deletion:
 - Show backup reminder first.
 - Require typed confirmation phrase "删除本机数据".
 - Delete local ledger and app data from the device.
+- Delete diagnostic segments, their Keystore key, and the Release enable preference. Warn that `.aadiag` files already exported to Downloads are not automatically deleted.
 
 ## 9. Store Review Risks
 
@@ -165,7 +177,8 @@ Mitigations:
 - Use clear permission copy.
 - Provide structured privacy materials.
 - Keep automatic capture behind a clear user-controlled switch.
-- Restrict local OCR to blank WeChat surfaces on Android 11 or later, require payment-completion plus currency evidence before persistence, and release the screenshot and raw OCR text immediately after parsing.
+- Restrict local OCR to blank WeChat surfaces on Android 11 or later, require payment-completion plus currency evidence before persistence, and release the screenshot immediately after recognition. OCR text is retained only in the separately enabled encrypted diagnostic store and only within the accepted payment/manual-session boundary.
+- Make the diagnostic entry visible in both builds, keep sensitive values masked by default, re-mask on background/exit, apply `FLAG_SECURE` while revealed, and require passphrase-encrypted export.
 - Show stepwise bill sync progress.
 - Default to local rules and keep cloud AI off.
 - Do not include ad or marketing tracking SDKs.

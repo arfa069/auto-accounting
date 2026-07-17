@@ -20,6 +20,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
+import com.autoaccounting.feature.diagnostics.DiagnosticComponent
+import com.autoaccounting.feature.diagnostics.DiagnosticEvent
+import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
+import com.autoaccounting.feature.diagnostics.DiagnosticLevel
+import com.autoaccounting.feature.diagnostics.DiagnosticRecorder
+import com.autoaccounting.feature.diagnostics.DiagnosticSource
+import com.autoaccounting.feature.diagnostics.NoOpDiagnosticRecorder
+import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
@@ -43,7 +51,8 @@ fun ManualBillImportHost(
         ContinuousMonitoringPermissionHealth(),
     onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
     sessionController: BillSyncSessionController = BillSyncSessions.controller,
-    waitingTimeoutMillis: Long = MANUAL_BILL_IMPORT_TIMEOUT_MILLIS
+    waitingTimeoutMillis: Long = MANUAL_BILL_IMPORT_TIMEOUT_MILLIS,
+    diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder
 ) {
     var dialogOpen by remember { mutableStateOf(false) }
     var handledOpenRequestId by remember { mutableLongStateOf(0L) }
@@ -70,6 +79,75 @@ fun ManualBillImportHost(
         handledOpenRequestId = openRequestId
         retry()
         dialogOpen = true
+        diagnosticRecorder.record(
+            DiagnosticEvent(
+                metadata = DiagnosticEventMetadata(
+                    level = if (precheckFailure == null) DiagnosticLevel.Info else DiagnosticLevel.Warning,
+                    component = DiagnosticComponent.ManualImport,
+                    event = "manual_import_precheck",
+                    traceId = newDiagnosticTraceId(),
+                    source = DiagnosticSource.System,
+                    outcome = if (precheckFailure == null) "success" else "blocked",
+                    reason = precheckFailure?.name ?: "ready"
+                )
+            )
+        )
+    }
+
+    LaunchedEffect(sessionState.sessionId, sessionState.phase) {
+        if (sessionState.phase == BillSyncSessionPhase.Idle) return@LaunchedEffect
+        val source = when (sessionState.source) {
+            BillSyncSource.WeChat -> DiagnosticSource.WeChat
+            BillSyncSource.Alipay -> DiagnosticSource.Alipay
+            null -> DiagnosticSource.Unknown
+        }
+        val (event, outcome, reason) = when (sessionState.phase) {
+            BillSyncSessionPhase.AwaitingBillPage -> Triple(
+                "manual_import_session_started",
+                "started",
+                "source_launched"
+            )
+            BillSyncSessionPhase.Processing -> Triple(
+                "manual_import_processing",
+                "started",
+                "bill_page_submitted"
+            )
+            BillSyncSessionPhase.Completed -> Triple(
+                "manual_import_completed",
+                "success",
+                "completed"
+            )
+            BillSyncSessionPhase.Cancelled -> Triple(
+                "manual_import_cancelled",
+                "cancelled",
+                "user_cancelled"
+            )
+            BillSyncSessionPhase.Failed -> Triple(
+                "manual_import_failed",
+                "failed",
+                sessionState.result?.failureReason?.name ?: "timeout_or_launch_failure"
+            )
+            BillSyncSessionPhase.Idle -> return@LaunchedEffect
+        }
+        diagnosticRecorder.record(
+            DiagnosticEvent(
+                metadata = DiagnosticEventMetadata(
+                    level = if (sessionState.phase == BillSyncSessionPhase.Failed) {
+                        DiagnosticLevel.Warning
+                    } else {
+                        DiagnosticLevel.Info
+                    },
+                    component = DiagnosticComponent.ManualImport,
+                    event = event,
+                    traceId = newDiagnosticTraceId(),
+                    sessionId = sessionState.sessionId.toString(),
+                    source = source,
+                    outcome = outcome,
+                    reason = reason,
+                    count = sessionState.result?.createdEntries?.size
+                )
+            )
+        )
     }
 
     LaunchedEffect(sessionState.sessionId, sessionState.phase, waitingTimeoutMillis) {

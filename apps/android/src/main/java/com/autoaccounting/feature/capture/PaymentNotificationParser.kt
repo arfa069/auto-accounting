@@ -17,36 +17,107 @@ data class ParsedPaymentNotification(
     val transactionKindLabel: String,
     val fundingAccountLabel: String,
     val rawEvidenceText: String,
-    val parsedFields: List<String>
+    val parsedFields: List<String>,
+    val note: String? = null,
+    val paymentMethod: String? = null,
+    val orderNumber: String? = null,
+    val merchantOrderNumber: String? = null
+)
+
+enum class PaymentNotificationRejectionReason {
+    UnsupportedSource,
+    NonPaymentNotification,
+    MissingAmount,
+    MissingTransactionKind
+}
+
+data class PaymentNotificationParseResult(
+    val parsed: ParsedPaymentNotification? = null,
+    val rejectionReason: PaymentNotificationRejectionReason? = null,
+    val isPaymentRelated: Boolean = false
 )
 
 class PaymentNotificationParser {
-    fun parse(event: PaymentNotificationEvent): ParsedPaymentNotification? {
-        val source = event.paymentSource() ?: return null
+    fun parse(event: PaymentNotificationEvent): ParsedPaymentNotification? =
+        parseDetailed(event).parsed
+
+    fun parseDetailed(event: PaymentNotificationEvent): PaymentNotificationParseResult {
+        val source = event.paymentSource() ?: return PaymentNotificationParseResult(
+            rejectionReason = PaymentNotificationRejectionReason.UnsupportedSource
+        )
         val rawText = listOf(event.title, event.text)
             .filter { it.isNotBlank() }
             .joinToString(" ")
-        val amountMinor = parseAmountMinor(rawText) ?: return null
-        val kindLabel = rawText.transactionKindLabel() ?: return null
+        if (!rawText.hasPaymentNotificationSignature()) {
+            return PaymentNotificationParseResult(
+                rejectionReason = PaymentNotificationRejectionReason.NonPaymentNotification
+            )
+        }
+        val amountMinor = parseAmountMinor(rawText) ?: return PaymentNotificationParseResult(
+            rejectionReason = PaymentNotificationRejectionReason.MissingAmount,
+            isPaymentRelated = true
+        )
+        val kindLabel = rawText.transactionKindLabel() ?: return PaymentNotificationParseResult(
+            rejectionReason = PaymentNotificationRejectionReason.MissingTransactionKind,
+            isPaymentRelated = true
+        )
         val counterpartyTitle = extractCounterpartyTitle(rawText)
             ?: FALLBACK_COUNTERPARTY
+        val account = rawText.extractLabeledValue("(?:付款账户|支付账户|付款账号|支付账号|账号)")
+        val paymentMethod = rawText.extractLabeledValue("(?:付款方式|支付方式)") ?: source.label
+        val note = rawText.extractLabeledValue("(?:备注|商品说明)")
+        val merchantOrderNumber = rawText.extractLabeledValue("商户订单号")
+        val orderNumber = rawText.extractLabeledValue("(?:交易单号|交易号|(?<!商户)订单号)")
 
-        return ParsedPaymentNotification(
-            sourceLabel = source.label,
-            merchantTitle = counterpartyTitle,
-            amountMinor = amountMinor,
-            transactionKindLabel = kindLabel,
-            fundingAccountLabel = source.defaultFundingAccountLabel,
-            rawEvidenceText = rawText,
-            parsedFields = listOf(
-                "来源=${source.label}",
-                "商户=$counterpartyTitle",
-                "金额=${amountMinorToText(amountMinor)}",
-                "类型=$kindLabel"
-            )
+        return PaymentNotificationParseResult(
+            parsed = ParsedPaymentNotification(
+                sourceLabel = source.label,
+                merchantTitle = counterpartyTitle,
+                amountMinor = amountMinor,
+                transactionKindLabel = kindLabel,
+                fundingAccountLabel = account ?: source.defaultFundingAccountLabel,
+                rawEvidenceText = rawText,
+                parsedFields = buildList {
+                    add("来源=${source.label}")
+                    add("商户=$counterpartyTitle")
+                    add("金额=${amountMinorToText(amountMinor)}")
+                    add("类型=$kindLabel")
+                    account?.let { add("paymentAccount=$it") }
+                    add("paymentMethod=$paymentMethod")
+                    orderNumber?.let { add("orderNumber=$it") }
+                    merchantOrderNumber?.let { add("merchantOrderNumber=$it") }
+                },
+                note = note,
+                paymentMethod = paymentMethod,
+                orderNumber = orderNumber,
+                merchantOrderNumber = merchantOrderNumber
+            ),
+            isPaymentRelated = true
         )
     }
 }
+
+private fun String.hasPaymentNotificationSignature(): Boolean {
+    val paymentWord = Regex("支付|付款|收款|到账|交易|转账|红包|退款|扣款|消费")
+    val amount = Regex("(?:¥|￥|\\d+(?:\\.\\d{1,2})?\\s*元)")
+    val paymentOutcome = Regex("成功|到账|退款|转账|红包|已支付|已付款")
+    return paymentWord.containsMatchIn(this) &&
+        (amount.containsMatchIn(this) || paymentOutcome.containsMatchIn(this))
+}
+
+private fun String.extractLabeledValue(labelPattern: String): String? =
+    Regex(
+        "(?:$labelPattern)\\s*[:：]\\s*" +
+            "([^\\n\\r，,；;]{1,80}?)(?=\\s+(?:$ALL_DETAIL_LABELS)\\s*[:：]|$)"
+    )
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
+private const val ALL_DETAIL_LABELS =
+    "付款账户|支付账户|付款账号|支付账号|账号|付款方式|支付方式|备注|商品说明|商户订单号|交易单号|交易号|订单号"
 
 internal const val FALLBACK_COUNTERPARTY = "未知来源"
 

@@ -453,7 +453,7 @@ class BillSyncPipelineTest {
             captureTimeFormatter = { "2026-07-08 13:10" }
         ).sync(
             source = BillSyncSource.Alipay,
-            pageText = "支付成功\n¥35.90",
+            pageText = "支付成功\n¥35.90\n付款方式\n支付宝余额",
             existingPendingEntries = listOf(notification),
             capturedAtEpochMillis = NOW,
             captureReasonLabel = "支付结果自动捕获"
@@ -480,7 +480,7 @@ class BillSyncPipelineTest {
             captureTimeFormatter = { "2026-07-08 13:10" }
         ).sync(
             source = BillSyncSource.Alipay,
-            pageText = "支付成功\n¥35.90",
+            pageText = "支付成功\n¥35.90\n付款方式\n支付宝余额",
             existingPendingEntries = listOf(previouslyMergedNotification),
             capturedAtEpochMillis = NOW,
             captureReasonLabel = "支付结果自动捕获"
@@ -510,7 +510,7 @@ class BillSyncPipelineTest {
             captureTimeFormatter = { "2026-07-08 13:10" }
         ).sync(
             source = BillSyncSource.Alipay,
-            pageText = "支付成功\n¥35.90",
+            pageText = "支付成功\n¥35.90\n付款方式\n支付宝余额",
             existingPendingEntries = notifications,
             capturedAtEpochMillis = NOW,
             captureReasonLabel = "支付结果自动捕获"
@@ -533,7 +533,7 @@ class BillSyncPipelineTest {
             captureTimeFormatter = { "2026-07-08 13:21" }
         ).sync(
             source = BillSyncSource.Alipay,
-            pageText = "支付成功\n¥35.90",
+            pageText = "支付成功\n¥35.90\n付款方式\n支付宝余额",
             existingPendingEntries = listOf(notification),
             capturedAtEpochMillis = NOW,
             captureReasonLabel = "支付结果自动捕获"

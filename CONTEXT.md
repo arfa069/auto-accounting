@@ -125,7 +125,7 @@ The user flow for regaining account access by verifying the phone number and set
 _Avoid_: SMS login, customer support reset
 
 **Local Data Deletion**:
-The separate user-confirmed removal of all ledger books and app data stored on the Android device, followed by recreation of one empty default ledger book.
+The separate user-confirmed removal of all ledger books and app data stored on the Android device, including diagnostic segments, their Keystore key, and the Release diagnostic preference, followed by recreation of one empty default ledger book. Diagnostic exports already written to Downloads remain outside this operation.
 _Avoid_: Account deletion, logout
 
 **Internal Beta**:
@@ -133,8 +133,12 @@ A feature-complete test release for controlled users before public store submiss
 _Avoid_: MVP, prototype, store release
 
 **Developer Tools**:
-Debug-build-only tools for internal-beta checks such as logs, device matrices, permission retention, and quality metrics. They are not available in release builds or the normal user-facing profile area.
+Debug-build-only tools for internal-beta readiness, device matrices, permission retention, and quality metrics. They are not available in release builds or the normal user-facing profile area, and they are distinct from the user-controlled Diagnostic Logs entry.
 _Avoid_: User settings, hidden release entry
+
+**Diagnostic Logs**:
+A user-controlled Compliance and Privacy entry for encrypted, on-device troubleshooting events. It is available in Debug and Release, defaults on only in Debug, never uploads logs, never stores screenshots, and always redacts authentication secrets before writing or exporting sensitive transaction context.
+_Avoid_: Developer Tools, Logcat, crash reporting, ledger evidence
 
 **Ledger Entry Debug Metadata**:
 Persisted lifecycle and capture-provenance fields such as entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence. The current ledger UI does not compose these fields; editing user-visible transaction fields must preserve them.

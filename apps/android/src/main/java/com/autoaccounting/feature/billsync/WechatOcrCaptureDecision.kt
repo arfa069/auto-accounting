@@ -21,8 +21,13 @@ internal data class WechatWindowEvidence(
 
 internal data class WechatOcrCaptureDecision(
     val shouldCapture: Boolean,
-    val verification: AutomaticCaptureVerification = AutomaticCaptureVerification.Standard
+    val verification: AutomaticCaptureVerification = AutomaticCaptureVerification.Standard,
+    val rejectionReason: WechatOcrRejectionReason? = null
 )
+
+internal enum class WechatOcrRejectionReason {
+    NoSupportedPaymentSignature
+}
 
 internal data class WechatOcrPaymentFingerprint(
     val merchantTitle: String,
@@ -60,7 +65,10 @@ internal fun decideWechatOcrCapture(
         )
     }
     if (!hasWechatMerchantPaymentSuccessSignature(pageText)) {
-        return WechatOcrCaptureDecision(shouldCapture = false)
+        return WechatOcrCaptureDecision(
+            shouldCapture = false,
+            rejectionReason = WechatOcrRejectionReason.NoSupportedPaymentSignature
+        )
     }
 
     val hasTrustedWindow = isTrustedWechatMerchantPaymentWindow(windowEvidence)

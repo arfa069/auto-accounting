@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import com.autoaccounting.feature.beta.InternalBetaReadinessScreen
+import com.autoaccounting.feature.diagnostics.DiagnosticLogsScreen
 import com.autoaccounting.ui.components.SlidePageTransition
 
 enum class ComplianceMaterialPage(val title: String) {
@@ -44,14 +45,20 @@ fun ComplianceAndPrivacyScreen(
 ) {
     var selectedPage by remember { mutableStateOf<ComplianceMaterialPage?>(null) }
     var showDeveloperTools by remember { mutableStateOf(false) }
+    var showDiagnosticLogs by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = selectedPage != null || showDeveloperTools) {
+    BackHandler(enabled = selectedPage != null || showDeveloperTools || showDiagnosticLogs) {
         selectedPage = null
         showDeveloperTools = false
+        showDiagnosticLogs = false
     }
 
     val page = selectedPage?.let(CompliancePage::Material)
-        ?: if (showDeveloperTools) CompliancePage.DeveloperTools else CompliancePage.Overview
+        ?: when {
+            showDeveloperTools -> CompliancePage.DeveloperTools
+            showDiagnosticLogs -> CompliancePage.DiagnosticLogs
+            else -> CompliancePage.Overview
+        }
 
     SlidePageTransition(
         targetState = page,
@@ -66,6 +73,11 @@ fun ComplianceAndPrivacyScreen(
 
             CompliancePage.DeveloperTools -> DeveloperToolsScreen(
                 onBack = { showDeveloperTools = false }
+            )
+
+            CompliancePage.DiagnosticLogs -> DiagnosticLogsScreen(
+                isDebugBuild = isDebugBuild,
+                onBack = { showDiagnosticLogs = false }
             )
 
             CompliancePage.Overview -> Column(
@@ -85,6 +97,12 @@ fun ComplianceAndPrivacyScreen(
                         onClick = { selectedPage = materialPage }
                     )
                 }
+                EntryCard(
+                    title = "诊断日志",
+                    summary = "本机加密的自动记账诊断记录、筛选、导出与清空",
+                    tag = "diagnostic-logs-entry",
+                    onClick = { showDiagnosticLogs = true }
+                )
                 if (isDebugBuild) {
                     EntryCard(
                         title = "开发者工具",
@@ -104,6 +122,8 @@ private sealed interface CompliancePage {
     data class Material(val page: ComplianceMaterialPage) : CompliancePage
 
     data object DeveloperTools : CompliancePage
+
+    data object DiagnosticLogs : CompliancePage
 }
 
 @Composable

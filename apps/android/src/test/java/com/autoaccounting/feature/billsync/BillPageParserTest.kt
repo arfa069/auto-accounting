@@ -280,6 +280,25 @@ class BillPageParserTest {
     }
 
     @Test
+    fun ignoresAlipayHomeRecentPaymentMessages() {
+        val homeText = """
+            支付宝 首页
+            扫一扫 收付款 出行 卡包
+            花呗 手机营业厅 余额宝 转账
+            最近消息 25条新消息
+            aitoken-小店 付款成功 ¥85.00 1小时前
+            拼多多平台商户 付款成功 ¥5.39 2小时前
+            首页 理财 消息 我的
+        """.trimIndent()
+
+        assertTrue(BillPageParser().parse(BillSyncSource.Alipay, homeText).isEmpty())
+        assertEquals(
+            BillSyncPageObservation.Ignored,
+            observeBillSyncPage(BillSyncSource.Alipay, homeText)
+        )
+    }
+
+    @Test
     fun ignoresBalanceAmountWhenTransactionAmountIsAlsoVisible() {
         val entries = BillPageParser().parse(
             source = BillSyncSource.Alipay,

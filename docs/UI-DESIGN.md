@@ -100,7 +100,7 @@ Preflight:
 - Check accessibility permission first. If missing, explain the limited purpose and show Settings.
 - Check the live accessibility-service connection separately. If disconnected, do not launch a source; show Recheck, Settings, and Close.
 - Source-app launch failure becomes an explicit retryable result.
-- Selecting WeChat or Alipay automatically authorizes local OCR for that import session; the authorization expires when the session ends. State that screenshots and raw OCR text are not saved or uploaded.
+- Selecting WeChat or Alipay automatically authorizes local OCR for that import session; the authorization expires when the session ends. State that screenshots are never saved or uploaded and OCR text does not enter the ledger; if sensitive diagnostics are separately enabled, accepted text may be retained in the encrypted local log.
 
 Progress UI:
 - Stepwise progress, not silent background work.
@@ -249,8 +249,8 @@ Data and Backup:
 - Import first validates the backup and passphrase without changing local data; only a second explicit confirmation permits replacing the local snapshot.
 
 Compliance and Privacy:
-- Show separate rows for Privacy Policy, Personal Information Collection List, Third-Party Service List, and Permission Explanations; each opens its own full document.
-- Do not expose store-review materials, logs, device matrices, permission-retention checks, or quality metrics here. These belong to Debug-build Developer Tools only.
+- Show separate rows for Privacy Policy, Personal Information Collection List, Third-Party Service List, Permission Explanations, and Diagnostic Logs; each opens its own page and remains available in local mode.
+- Diagnostic Logs is a user-controlled entry in both builds and follows section 12. Store-review materials, device matrices, permission-retention checks, and quality metrics remain Debug-build Developer Tools only.
 
 ## 9. Login, Registration, Recovery
 
@@ -326,7 +326,16 @@ Fixed copy:
 - Background reliability suggestions never block automatic bookkeeping because auto-start and background-run state cannot be read reliably across manufacturers.
 - Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
 
-## 12. Visual System
+## 12. Diagnostic Logs
+
+- “合规与隐私”在 Debug、Release 都显示“诊断日志”；原“开发者工具”仍仅 Debug 可见。
+- Release 首次开启前明确列出记录字段、排障用途、10 MB 上限、超过上限才轮转、设备内加密、关闭/清空方式和加密导出风险。
+- 列表默认加载最新 1000 条并只显示时间、级别、组件、事件、结果、原因、计数、`traceId`/`sessionId`。支持级别、组件与统一文本筛选（事件、原因、关联 ID）。
+- 交易内容默认显示为遮罩；用户再次确认后仅在当前页面会话显示。离页或进入后台立即重新遮罩，显示期间窗口启用 `FLAG_SECURE`。
+- 操作包括启停、刷新、至少 8 位口令并二次确认的 `.aadiag` 导出、二次确认清空。关闭不删除历史；清空删除密文和设备密钥。
+- 导出成功后提示 Downloads 文件不会随本机数据删除，需要用户自行保管或删除。
+
+## 13. Visual System
 
 Color semantics:
 - Expense: warm color.

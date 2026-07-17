@@ -186,7 +186,8 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
             ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
     }
     if (hasCompletedPayment) {
-        return ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+        return hasAlipayPaymentResultPageSignature(text) &&
+            ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
     }
     if (hasChatOrGenericMessage &&
         PAYMENT_MESSAGE_CENTER_KEYWORDS.none { keyword -> text.contains(keyword) }
@@ -204,6 +205,9 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
                 PAYMENT_MESSAGE_CENTER_KEYWORDS.any { keyword -> text.contains(keyword) }
             )
 }
+
+internal fun hasAlipayPaymentResultPageSignature(screenText: String): Boolean =
+    ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS.any { keyword -> screenText.contains(keyword) }
 
 private val PAYMENT_SOURCE_PACKAGES = setOf(
     "com.tencent.mm",
@@ -274,6 +278,21 @@ private val PAYMENT_RECORD_CONTEXT_KEYWORDS = listOf(
     "payment record",
     "payment history",
     "receipt"
+)
+
+private val ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS = listOf(
+    "收款方",
+    "付款方式",
+    "支付方式",
+    "交易时间",
+    "订单号",
+    "交易单号",
+    "支付信息",
+    "支付凭证",
+    "交易详情",
+    "账单详情",
+    "查看账单",
+    "返回首页"
 )
 
 private val TRANSFER_OR_RED_PACKET_KEYWORDS = listOf(

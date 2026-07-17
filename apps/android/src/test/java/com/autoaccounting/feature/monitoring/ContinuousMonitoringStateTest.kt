@@ -301,7 +301,21 @@ class ContinuousMonitoringStateTest {
         val resultWithNavigationChrome = decide(
             state,
             "com.eg.android.AlipayGphone",
-            "支付成功 ¥20.00 首页 消息 我的"
+            "支付成功 ¥20.00 收款方 测试门店 首页 消息 我的"
+        )
+        val homeRecentMessages = decide(
+            state,
+            "com.eg.android.AlipayGphone",
+            """
+                支付宝 首页
+                扫一扫 收付款 出行 卡包
+                生活缴费 高德打车 红包 我的快递
+                花呗 手机营业厅 余额宝 转账
+                最近消息 25条新消息
+                aitoken-小店 付款成功 ¥85.00 1小时前
+                拼多多平台商户 付款成功 ¥5.39 2小时前
+                首页 理财 消息 我的
+            """.trimIndent()
         )
         val completedTransferInsideChat = decide(
             state,
@@ -319,6 +333,7 @@ class ContinuousMonitoringStateTest {
             ContinuousMonitoringObservation.PaymentRelated,
             resultWithNavigationChrome.observation
         )
+        assertEquals(ContinuousMonitoringObservation.Ignored, homeRecentMessages.observation)
         assertEquals(ContinuousMonitoringObservation.Ignored, genericMessage.observation)
         assertEquals(ContinuousMonitoringObservation.Ignored, completedTransferInsideChat.observation)
     }

@@ -21,21 +21,6 @@ data class InternalBetaMetrics(
     val permissionRetention: Double
 )
 
-data class BetaCrashLogEntry(
-    val message: String
-)
-
-class LocalBetaCrashLogSink {
-    private val mutableEntries = mutableListOf<BetaCrashLogEntry>()
-
-    val entries: List<BetaCrashLogEntry>
-        get() = mutableEntries.toList()
-
-    fun record(message: String) {
-        mutableEntries += BetaCrashLogEntry(redactSensitiveValue(message))
-    }
-}
-
 enum class BetaReadinessItemId {
     CrashAndLogIntegration,
     DeviceMatrixTesting,
@@ -91,7 +76,7 @@ fun buildInternalBetaReadinessReport(): InternalBetaReadinessReport = InternalBe
             id = BetaReadinessItemId.CrashAndLogIntegration,
             title = "本地崩溃/日志脱敏",
             status = BetaReadinessStatus.Ready,
-            detail = "内测阶段先记录脱敏日志，不把 token、API key 或私钥写入日志。"
+            detail = "真实诊断仓库使用设备内加密分段；认证秘密写入前脱敏，敏感内容不进入 Logcat。"
         ),
         BetaReadinessItem(
             id = BetaReadinessItemId.DeviceMatrixTesting,
@@ -167,13 +152,6 @@ fun scanForSecretLikeValues(files: List<File>): List<SecretFinding> {
 private fun ratio(numerator: Int, denominator: Int): Double {
     if (denominator <= 0) return 0.0
     return numerator.toDouble() / denominator.toDouble()
-}
-
-private fun redactSensitiveValue(message: String): String {
-    return message
-        .replace(Regex("""sk-[A-Za-z0-9_-]{8,}"""), "[REDACTED]")
-        .replace(Regex("""token\s*=\s*[^,\s]+""", RegexOption.IGNORE_CASE), "token=[REDACTED]")
-        .replace(Regex("""api[_-]?key\s*=\s*[^,\s]+""", RegexOption.IGNORE_CASE), "apiKey=[REDACTED]")
 }
 
 private fun File.sourceFiles(): List<File> {

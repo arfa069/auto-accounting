@@ -14,6 +14,8 @@ import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.reduceReviewQueue
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
+import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -37,6 +39,7 @@ class PaymentNotificationCaptureProcessorTest {
     private lateinit var database: AutoAccountingDatabase
     private lateinit var persistence: ReviewQueuePersistence
     private lateinit var processor: PaymentNotificationCaptureProcessor
+    private lateinit var diagnostics: InMemoryDiagnosticRecorder
 
     @Before
     fun setUp() {
@@ -50,12 +53,14 @@ class PaymentNotificationCaptureProcessorTest {
             nowProvider = { NOW },
             zoneId = ZoneId.of("UTC")
         )
+        diagnostics = InMemoryDiagnosticRecorder()
         processor = PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
                 captureTimeFormatter = { "2026-07-08 12:21" }
             ),
             reviewQueuePersistence = persistence,
-            preferencesRepository = LocalPreferencesRepository(database)
+            preferencesRepository = LocalPreferencesRepository(database),
+            diagnosticRecorder = diagnostics
         )
     }
 
@@ -101,6 +106,27 @@ class PaymentNotificationCaptureProcessorTest {
 
         assertNull(result)
         assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+        assertTrue(diagnostics.events.single().sensitivePayload.fields.isEmpty())
+    }
+
+    @Test
+    fun ordinaryWechatChatNeverStoresNotificationBodyInDiagnostics() = runBlocking {
+        processor.process(
+            PaymentNotificationEvent(
+                packageName = "com.tencent.mm",
+                title = "张三",
+                text = "晚上一起吃饭吗？",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertTrue(diagnostics.events.single().sensitivePayload.fields.isEmpty())
+        assertTrue(
+            diagnostics.events.none {
+                it.sensitivePayload.fields[DiagnosticSensitiveField.NotificationText]
+                    ?.contains("晚上一起吃饭吗") == true
+            }
+        )
     }
 
     @Test

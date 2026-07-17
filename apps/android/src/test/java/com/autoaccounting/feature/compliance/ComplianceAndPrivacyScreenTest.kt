@@ -45,6 +45,7 @@ class ComplianceAndPrivacyScreenTest {
 
         composeRule.onAllNodesWithText("开发者工具").assertCountEquals(0)
         composeRule.onAllNodesWithText("设备矩阵测试").assertCountEquals(0)
+        composeRule.onNodeWithTag("diagnostic-logs-entry").performScrollTo().assertIsDisplayed()
     }
 
     @Test

@@ -12,6 +12,8 @@ import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueState
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
+import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -35,6 +37,7 @@ class BillSyncCaptureProcessorTest {
     private lateinit var database: AutoAccountingDatabase
     private lateinit var persistence: ReviewQueuePersistence
     private lateinit var processor: BillSyncCaptureProcessor
+    private lateinit var diagnostics: InMemoryDiagnosticRecorder
 
     @Before
     fun setUp() {
@@ -48,13 +51,15 @@ class BillSyncCaptureProcessorTest {
             nowProvider = { NOW },
             zoneId = ZoneId.of("UTC")
         )
+        diagnostics = InMemoryDiagnosticRecorder()
         processor = BillSyncCaptureProcessor(
             pipeline = BillSyncPipeline(
                 captureTimeFormatter = { "2026-07-08 12:30" }
             ),
             reviewQueuePersistence = persistence,
             preferencesRepository = LocalPreferencesRepository(database),
-            clock = { NOW }
+            clock = { NOW },
+            diagnosticRecorder = diagnostics
         )
     }
 
@@ -235,6 +240,19 @@ class BillSyncCaptureProcessorTest {
         assertTrue(entry.parsedFieldsText.orEmpty().contains("商户或收款方=百胜餐饮（广东）有限公司"))
         assertTrue(entry.parsedFieldsText.orEmpty().contains("交易单号=4500000279202607127462299679"))
         assertTrue(entry.parsedFieldsText.orEmpty().contains("商户单号=WX10012651367114169061602"))
+        val diagnosticFields = diagnostics.events.flatMap {
+            it.sensitivePayload.fields.entries
+        }.associate { it.key to it.value }
+        assertTrue(diagnosticFields.getValue(DiagnosticSensitiveField.OcrText).contains("肯德基"))
+        assertEquals("零钱", diagnosticFields[DiagnosticSensitiveField.PaymentMethod])
+        assertEquals(
+            "4500000279202607127462299679",
+            diagnosticFields[DiagnosticSensitiveField.OrderNumber]
+        )
+        assertEquals(
+            "WX10012651367114169061602",
+            diagnosticFields[DiagnosticSensitiveField.MerchantOrderNumber]
+        )
     }
 
     @Test

@@ -54,6 +54,12 @@ import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
+import com.autoaccounting.feature.diagnostics.DiagnosticLogs
+import com.autoaccounting.feature.diagnostics.DiagnosticComponent
+import com.autoaccounting.feature.diagnostics.DiagnosticEvent
+import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
+import com.autoaccounting.feature.diagnostics.DiagnosticLevel
+import com.autoaccounting.feature.diagnostics.DiagnosticSource
 import com.autoaccounting.feature.capture.NotificationListenerPermission
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
 import com.autoaccounting.feature.capture.shouldRequestBookkeepingResultNotificationPermission
@@ -289,6 +295,9 @@ fun AutoAccountingApp(
     val localModeSessionStore = remember(context.applicationContext) {
         LocalModeSessionStore(context.applicationContext)
     }
+    val diagnosticLogs = remember(context.applicationContext) {
+        DiagnosticLogs.get(context.applicationContext)
+    }
     val reviewQueuePersistence = remember(localLedgerRepository) {
         ReviewQueuePersistence(localLedgerRepository)
     }
@@ -429,7 +438,22 @@ fun AutoAccountingApp(
     }
 
     fun persistContinuousMonitoringState(nextState: ContinuousMonitoringState) {
+        val previousState = continuousMonitoringState
         continuousMonitoringState = nextState
+        if (previousState.enabled != nextState.enabled) {
+            diagnosticLogs.record(
+                DiagnosticEvent(
+                    metadata = DiagnosticEventMetadata(
+                        level = DiagnosticLevel.Info,
+                        component = DiagnosticComponent.Monitoring,
+                        event = "automatic_bookkeeping_toggle",
+                        source = DiagnosticSource.System,
+                        outcome = if (nextState.enabled) "enabled" else "disabled",
+                        reason = if (nextState.enabled) "user_enabled" else "user_disabled"
+                    )
+                )
+            )
+        }
         coroutineScope.launch {
             localPreferencesRepository.updateContinuousMonitoringState(nextState)
         }
@@ -452,6 +476,22 @@ fun AutoAccountingApp(
         if (refreshedState != continuousMonitoringState) {
             // Permission health is runtime state; only explicit user actions persist enabled.
             continuousMonitoringState = refreshedState
+            diagnosticLogs.record(
+                DiagnosticEvent(
+                    metadata = DiagnosticEventMetadata(
+                        level = if (refreshedState.blockReason == null) {
+                            DiagnosticLevel.Info
+                        } else {
+                            DiagnosticLevel.Warning
+                        },
+                        component = DiagnosticComponent.Monitoring,
+                        event = "automatic_bookkeeping_permission_health",
+                        source = DiagnosticSource.System,
+                        outcome = if (refreshedState.blockReason == null) "healthy" else "blocked",
+                        reason = refreshedState.blockReason?.name ?: "permissions_healthy"
+                    )
+                )
+            )
         }
     }
 
@@ -823,7 +863,11 @@ fun AutoAccountingApp(
                                                 ledgerCategories = emptyList()
                                                 fundingAccounts = emptyList()
                                                 coroutineScope.launch {
-                                                    localLedgerRepository.clearLocalData()
+                                                    try {
+                                                        localLedgerRepository.clearLocalData()
+                                                    } finally {
+                                                        diagnosticLogs.clear(keepEnabledPreference = false)
+                                                    }
                                                 }
                                             },
                                             onBack = { profileDestination = null },
@@ -855,7 +899,8 @@ fun AutoAccountingApp(
                         },
                         continuousMonitoringState = continuousMonitoringState,
                         continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState
+                        onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
+                        diagnosticRecorder = diagnosticLogs
                     )
                 }
             }

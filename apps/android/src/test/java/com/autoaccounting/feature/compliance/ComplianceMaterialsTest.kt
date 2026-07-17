@@ -34,7 +34,7 @@ class ComplianceMaterialsTest {
             accessibilityCopy.purpose
         )
         assertEquals(
-            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片和原文不保存、不上传。",
+            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。用户主动开启诊断日志时，仅支付页或当前补录会话的 OCR 文字可在本机加密留存。",
             accessibilityCopy.boundary
         )
         assertEquals(
@@ -44,9 +44,10 @@ class ComplianceMaterialsTest {
 
         val storeNotes = AUTO_ACCOUNTING_COMPLIANCE.storeReviewNotes.associateBy { it.title }
         assertEquals(
-            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片和 OCR 原文不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
+            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。用户另行主动开启诊断日志后，仅允许页面/会话的 OCR 文字可在设备内加密留存。",
             storeNotes.getValue("无障碍审核说明").body
         )
+        assertTrue(storeNotes.containsKey("诊断日志审核说明"))
         assertTrue(
             AUTO_ACCOUNTING_COMPLIANCE.thirdPartyServices.any { service ->
                 service.name.contains("ML Kit") && service.processingMethod.contains("不保存、不上传")

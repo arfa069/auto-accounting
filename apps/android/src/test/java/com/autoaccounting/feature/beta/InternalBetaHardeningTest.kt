@@ -29,18 +29,6 @@ class InternalBetaHardeningTest {
     }
 
     @Test
-    fun localCrashLogRedactsSecretsBeforeStoring() {
-        val sink = LocalBetaCrashLogSink()
-
-        sink.record("request failed with token=secret-token and sk-test-value")
-
-        val entry = sink.entries.single()
-        assertTrue(entry.message.contains("[REDACTED]"))
-        assertTrue(!entry.message.contains("secret-token"))
-        assertTrue(!entry.message.contains("sk-test-value"))
-    }
-
-    @Test
     fun betaReadinessChecklistCoversAllHardeningAreas() {
         val report = buildInternalBetaReadinessReport()
 

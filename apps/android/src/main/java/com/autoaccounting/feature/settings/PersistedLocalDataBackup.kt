@@ -22,18 +22,13 @@ import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.data.local.defaultFlowDirection
+import com.autoaccounting.data.crypto.PassphraseAesGcm
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.nio.charset.StandardCharsets
-import java.security.SecureRandom
 import java.util.Base64
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -198,16 +193,14 @@ internal fun encryptPersistedLocalData(
 ): String {
     require(passphrase.isNotBlank()) { "Backup passphrase is required" }
     val plainText = snapshot.toBytes()
-    val salt = ByteArray(KDF_SALT_BYTES).also { secureRandom.nextBytes(it) }
-    val iv = ByteArray(GCM_IV_BYTES).also { secureRandom.nextBytes(it) }
-    val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
-    cipher.init(
-        Cipher.ENCRYPT_MODE,
-        keyFromPassphrase(passphrase, salt),
-        GCMParameterSpec(GCM_TAG_BITS, iv)
-    )
-    val encrypted = cipher.doFinal(plainText)
-    return BACKUP_PREFIX_V4 + Base64.getEncoder().encodeToString(salt + iv + encrypted)
+    val passphraseChars = passphrase.toCharArray()
+    return try {
+        BACKUP_PREFIX_V4 + Base64.getEncoder().encodeToString(
+            PassphraseAesGcm.encrypt(plainText, passphraseChars)
+        )
+    } finally {
+        passphraseChars.fill('\u0000')
+    }
 }
 
 internal fun decryptPersistedLocalData(
@@ -222,17 +215,12 @@ internal fun decryptPersistedLocalData(
         else -> error("Unsupported backup format")
     }
     val bytes = Base64.getDecoder().decode(backupText.removePrefix(prefix))
-    require(bytes.size > KDF_SALT_BYTES + GCM_IV_BYTES) { "Invalid backup payload" }
-    val salt = bytes.copyOfRange(0, KDF_SALT_BYTES)
-    val iv = bytes.copyOfRange(KDF_SALT_BYTES, KDF_SALT_BYTES + GCM_IV_BYTES)
-    val encrypted = bytes.copyOfRange(KDF_SALT_BYTES + GCM_IV_BYTES, bytes.size)
-    val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
-    cipher.init(
-        Cipher.DECRYPT_MODE,
-        keyFromPassphrase(passphrase, salt),
-        GCMParameterSpec(GCM_TAG_BITS, iv)
-    )
-    return snapshotFromBytes(cipher.doFinal(encrypted))
+    val passphraseChars = passphrase.toCharArray()
+    return try {
+        snapshotFromBytes(PassphraseAesGcm.decrypt(bytes, passphraseChars))
+    } finally {
+        passphraseChars.fill('\u0000')
+    }
 }
 
 private fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
@@ -641,26 +629,6 @@ private fun DataOutputStream.writeNullableLong(value: Long?) {
 private fun DataInputStream.readNullableLong(): Long? =
     if (readBoolean()) readLong() else null
 
-private fun keyFromPassphrase(
-    passphrase: String,
-    salt: ByteArray
-): SecretKeySpec {
-    val spec = PBEKeySpec(
-        passphrase.toCharArray(),
-        salt,
-        KDF_ITERATIONS,
-        AES_KEY_BITS
-    )
-    return try {
-        val key = SecretKeyFactory.getInstance(PBKDF2_ALGORITHM)
-            .generateSecret(spec)
-            .encoded
-        SecretKeySpec(key, "AES")
-    } finally {
-        spec.clearPassword()
-    }
-}
-
 private fun PaymentSource.toScope(): FundingAccountSourceScope = when (this) {
     PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
     PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
@@ -689,13 +657,5 @@ private const val BACKUP_VERSION_V2 = 2
 private const val BACKUP_VERSION_V3 = 3
 private const val BACKUP_VERSION_V4 = 4
 private const val SUPPORTED_BACKUP_CURRENCY = "CNY"
-private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
-private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
-private const val KDF_SALT_BYTES = 16
-private const val KDF_ITERATIONS = 120_000
-private const val AES_KEY_BITS = 256
-private const val GCM_IV_BYTES = 12
-private const val GCM_TAG_BITS = 128
 private const val MAX_BACKUP_RECORDS = 1_000_000
 private const val MAX_BACKUP_STRING_BYTES = 16 * 1024 * 1024
-private val secureRandom = SecureRandom()

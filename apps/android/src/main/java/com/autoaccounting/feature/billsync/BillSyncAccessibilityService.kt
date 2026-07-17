@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -16,6 +15,16 @@ import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
 import com.autoaccounting.feature.capture.toBookkeepingResultNotification
+import com.autoaccounting.feature.diagnostics.DiagnosticComponent
+import com.autoaccounting.feature.diagnostics.DiagnosticEvent
+import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
+import com.autoaccounting.feature.diagnostics.DiagnosticLevel
+import com.autoaccounting.feature.diagnostics.DiagnosticLogs
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitivePayload
+import com.autoaccounting.feature.diagnostics.DiagnosticSource
+import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
+import com.autoaccounting.feature.diagnostics.toDiagnosticExceptionDetails
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
@@ -57,11 +66,13 @@ class BillSyncAccessibilityService : AccessibilityService() {
             reviewQueuePersistence = ReviewQueuePersistence(
                 LocalLedgerRepository(database)
             ),
-            preferencesRepository = preferencesRepository
+            preferencesRepository = preferencesRepository,
+            diagnosticRecorder = diagnostics
         )
     }
 
     private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
+    private val diagnostics by lazy { DiagnosticLogs.get(this) }
     private val ocrRecognizerDelegate = lazy { PaymentScreenOcrRecognizer() }
     private val ocrRecognizer by ocrRecognizerDelegate
     private val powerManager by lazy { getSystemService(PowerManager::class.java) }
@@ -82,6 +93,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        recordMetadata("service_connected", "connected", "service_connected")
         ContinuousMonitoringServiceHealth.markServiceConnected(this, true)
         healthHeartbeatJob?.cancel()
         healthHeartbeatJob = serviceScope.launch {
@@ -156,7 +168,15 @@ class BillSyncAccessibilityService : AccessibilityService() {
             captureWechatOcrFallback(packageName)
             return
         }
-        if (pageText.isBlank()) return
+        if (pageText.isBlank()) {
+            recordMetadata(
+                event = "accessibility_event_rejected",
+                outcome = "rejected",
+                reason = "blank_visible_text",
+                source = packageName.diagnosticSource()
+            )
+            return
+        }
 
         if (packageName == BillSyncSource.WeChat.packageName) {
             scheduleWechatOcrGuardReset(packageName)
@@ -179,40 +199,101 @@ class BillSyncAccessibilityService : AccessibilityService() {
     ) {
         val source = BillSyncSource.fromPackageName(packageName) ?: return
         val observation = observeBillSyncPage(source, pageText)
-        if (observation == BillSyncPageObservation.Ignored) return
+        if (observation == BillSyncPageObservation.Ignored) {
+            recordMetadata(
+                event = "manual_page_rejected",
+                outcome = "rejected",
+                reason = "unrelated_page",
+                source = source.diagnosticSource()
+            )
+            return
+        }
+        val traceId = newDiagnosticTraceId()
+        val sessionId = BillSyncSessions.controller.state.value.sessionId
 
         serviceScope.launch {
             runCatching {
                 BillSyncSessions.controller.submitBillPage(
                     packageName = packageName,
                     pageText = pageText,
-                    process = processor::process
+                    process = { billSource, text ->
+                        processor.process(billSource, text, traceId, sessionId)
+                    }
                 )
             }.onFailure { error ->
                 BillSyncSessions.controller.fail(error.message ?: "补录失败")
-                Log.w(TAG, "Bill sync capture failed", error)
+                recordFailure("manual_capture_failed", traceId, source, sessionId, error)
             }
         }
     }
 
     private fun captureManualWechatOcrFallback(packageName: String) {
         if (!isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)) {
+            recordMetadata(
+                "manual_ocr_rejected",
+                "rejected",
+                "screen_off_or_locked",
+                sessionId = BillSyncSessions.controller.state.value.sessionId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return
         }
-        if (wechatOcrCaptureJob?.isActive == true) return
+        if (wechatOcrCaptureJob?.isActive == true) {
+            recordMetadata(
+                "manual_ocr_rejected",
+                "rejected",
+                "ocr_job_active",
+                sessionId = BillSyncSessions.controller.state.value.sessionId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return
+        }
         val nowElapsedMillis = SystemClock.elapsedRealtime()
         if (
             nowElapsedMillis - lastManualWechatOcrAttemptAtElapsedMillis <
             MANUAL_OCR_ATTEMPT_COOLDOWN_MILLIS
         ) {
+            recordMetadata(
+                "manual_ocr_rejected",
+                "rejected",
+                "cooldown",
+                sessionId = BillSyncSessions.controller.state.value.sessionId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return
         }
         lastManualWechatOcrAttemptAtElapsedMillis = nowElapsedMillis
+        val traceId = newDiagnosticTraceId()
+        val sessionId = BillSyncSessions.controller.state.value.sessionId
+        recordMetadata(
+            event = "manual_ocr_started",
+            outcome = "started",
+            reason = "manual_session",
+            traceId = traceId,
+            sessionId = sessionId,
+            source = packageName.diagnosticSource(),
+            component = DiagnosticComponent.Ocr
+        )
 
         wechatOcrCaptureJob = serviceScope.launch {
             try {
                 delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
-                val activeRoot = rootInActiveWindow ?: return@launch
+                val activeRoot = rootInActiveWindow
+                if (activeRoot == null) {
+                    recordMetadata(
+                        "manual_ocr_rejected",
+                        "rejected",
+                        "active_window_unavailable",
+                        traceId,
+                        sessionId,
+                        packageName.diagnosticSource(),
+                        DiagnosticComponent.Ocr
+                    )
+                    return@launch
+                }
                 if (
                     activeRoot.packageName?.toString() != packageName ||
                     !BillSyncSessions.controller.acceptsManualOcr(packageName) ||
@@ -221,6 +302,15 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         keyguardManager.isKeyguardLocked
                     )
                 ) {
+                    recordMetadata(
+                        "manual_ocr_rejected",
+                        "rejected",
+                        "settled_context_invalid",
+                        traceId,
+                        sessionId,
+                        packageName.diagnosticSource(),
+                        DiagnosticComponent.Ocr
+                    )
                     return@launch
                 }
 
@@ -236,10 +326,31 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         windowEvidence = windowEvidence
                     )
                 ) {
+                    recordMetadata(
+                        "manual_ocr_rejected",
+                        "rejected",
+                        "window_verification_failed",
+                        traceId,
+                        sessionId,
+                        packageName.diagnosticSource(),
+                        DiagnosticComponent.Ocr
+                    )
                     return@launch
                 }
 
-                val screenshot = captureScreenBitmap(windowId) ?: return@launch
+                val screenshot = captureScreenBitmap(windowId)
+                if (screenshot == null) {
+                    recordMetadata(
+                        "manual_ocr_rejected",
+                        "rejected",
+                        "screenshot_unavailable",
+                        traceId,
+                        sessionId,
+                        packageName.diagnosticSource(),
+                        DiagnosticComponent.Ocr
+                    )
+                    return@launch
+                }
                 try {
                     val currentRoot = rootInActiveWindow
                     val currentWindowIdentity = activeWechatWindowIdentity
@@ -264,16 +375,39 @@ class BillSyncAccessibilityService : AccessibilityService() {
                             windowEvidence = currentWindowEvidence
                         )
                     ) {
+                        recordMetadata(
+                            "manual_ocr_rejected",
+                            "rejected",
+                            "window_changed_before_ocr",
+                            traceId,
+                            sessionId,
+                            packageName.diagnosticSource(),
+                            DiagnosticComponent.Ocr
+                        )
                         return@launch
                     }
 
                     val preparedPageText = prepareManualWechatOcrResultText(
                         ocrRecognizer.recognize(screenshot)
-                    ) ?: return@launch
+                    )
+                    if (preparedPageText == null) {
+                        recordMetadata(
+                            "manual_ocr_rejected",
+                            "rejected",
+                            "ocr_output_unusable",
+                            traceId,
+                            sessionId,
+                            packageName.diagnosticSource(),
+                            DiagnosticComponent.Ocr
+                        )
+                        return@launch
+                    }
                     BillSyncSessions.controller.submitBillPage(
                         packageName = packageName,
                         pageText = preparedPageText,
-                        process = processor::processManualOcr
+                        process = { billSource, text ->
+                            processor.processManualOcr(billSource, text, traceId, sessionId)
+                        }
                     )
                 } finally {
                     screenshot.recycle()
@@ -281,7 +415,13 @@ class BillSyncAccessibilityService : AccessibilityService() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                Log.w(TAG, "Manual local OCR capture failed", error)
+                recordFailure(
+                    "manual_ocr_failed",
+                    traceId,
+                    BillSyncSource.WeChat,
+                    sessionId,
+                    error
+                )
             } finally {
                 wechatOcrCaptureJob = null
             }
@@ -290,32 +430,92 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     private fun captureWechatOcrFallback(packageName: String) {
         if (!isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)) {
+            recordMetadata(
+                "automatic_ocr_rejected",
+                "rejected",
+                "screen_off_or_locked",
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return
         }
-        if (wechatOcrCaptureJob?.isActive == true) return
+        if (wechatOcrCaptureJob?.isActive == true) {
+            recordMetadata(
+                "automatic_ocr_rejected",
+                "rejected",
+                "ocr_job_active",
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return
+        }
         val nowElapsedMillis = SystemClock.elapsedRealtime()
         if (nowElapsedMillis - lastWechatOcrAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS) {
+            recordMetadata(
+                "automatic_ocr_rejected",
+                "rejected",
+                "cooldown",
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return
         }
         lastWechatOcrAttemptAtElapsedMillis = nowElapsedMillis
+        val traceId = newDiagnosticTraceId()
+        recordMetadata(
+            event = "automatic_ocr_started",
+            outcome = "started",
+            reason = "verified_window_candidate",
+            traceId = traceId,
+            source = packageName.diagnosticSource(),
+            component = DiagnosticComponent.Ocr
+        )
 
         wechatOcrCaptureJob = serviceScope.launch {
             try {
                 delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
                 val activeRoot = rootInActiveWindow
                 val activePackageName = activeRoot?.packageName?.toString()
-                if (activePackageName != packageName) return@launch
+                if (activePackageName != packageName) {
+                    recordMetadata(
+                        "automatic_ocr_rejected",
+                        "rejected",
+                        "active_window_changed",
+                        traceId = traceId,
+                        source = packageName.diagnosticSource(),
+                        component = DiagnosticComponent.Ocr
+                    )
+                    return@launch
+                }
                 if (
                     !isScreenReadyForWechatOcr(
                         powerManager.isInteractive,
                         keyguardManager.isKeyguardLocked
                     )
                 ) {
+                    recordMetadata(
+                        "automatic_ocr_rejected",
+                        "rejected",
+                        "screen_off_or_locked_after_wait",
+                        traceId = traceId,
+                        source = packageName.diagnosticSource(),
+                        component = DiagnosticComponent.Ocr
+                    )
                     return@launch
                 }
 
                 val permissionHealth = currentContinuousMonitoringPermissionHealth()
-                if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return@launch
+                if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) {
+                    recordMetadata(
+                        "automatic_ocr_rejected",
+                        "rejected",
+                        "monitoring_blocked_after_wait",
+                        traceId = traceId,
+                        source = packageName.diagnosticSource(),
+                        component = DiagnosticComponent.Ocr
+                    )
+                    return@launch
+                }
 
                 val windowId = requireNotNull(activeRoot).windowId
                 val windowIdentity = activeWechatWindowIdentity
@@ -333,9 +533,28 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         hasRecentPaymentNotification = hasRecentPaymentNotification
                     )
                 ) {
+                    recordMetadata(
+                        "automatic_ocr_rejected",
+                        "rejected",
+                        "window_verification_failed",
+                        traceId = traceId,
+                        source = packageName.diagnosticSource(),
+                        component = DiagnosticComponent.Ocr
+                    )
                     return@launch
                 }
-                val screenshot = captureScreenBitmap(windowId) ?: return@launch
+                val screenshot = captureScreenBitmap(windowId)
+                if (screenshot == null) {
+                    recordMetadata(
+                        "automatic_ocr_rejected",
+                        "rejected",
+                        "screenshot_unavailable",
+                        traceId = traceId,
+                        source = packageName.diagnosticSource(),
+                        component = DiagnosticComponent.Ocr
+                    )
+                    return@launch
+                }
                 try {
                     val currentRoot = rootInActiveWindow
                     if (
@@ -343,6 +562,14 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         currentRoot.packageName?.toString() != packageName ||
                         currentRoot.windowId != windowId
                     ) {
+                        recordMetadata(
+                            "automatic_ocr_rejected",
+                            "rejected",
+                            "window_changed_before_ocr",
+                            traceId = traceId,
+                            source = packageName.diagnosticSource(),
+                            component = DiagnosticComponent.Ocr
+                        )
                         return@launch
                     }
                     if (
@@ -351,6 +578,14 @@ class BillSyncAccessibilityService : AccessibilityService() {
                             keyguardManager.isKeyguardLocked
                         )
                     ) {
+                        recordMetadata(
+                            "automatic_ocr_rejected",
+                            "rejected",
+                            "screen_off_or_locked_before_ocr",
+                            traceId = traceId,
+                            source = packageName.diagnosticSource(),
+                            component = DiagnosticComponent.Ocr
+                        )
                         return@launch
                     }
                     val currentWindowIdentity = activeWechatWindowIdentity
@@ -371,13 +606,22 @@ class BillSyncAccessibilityService : AccessibilityService() {
                             hasRecentPaymentNotification = currentHasRecentPaymentNotification
                         )
                     ) {
+                        recordMetadata(
+                            "automatic_ocr_rejected",
+                            "rejected",
+                            "window_reverification_failed",
+                            traceId = traceId,
+                            source = packageName.diagnosticSource(),
+                            component = DiagnosticComponent.Ocr
+                        )
                         return@launch
                     }
                     val pageText = ocrRecognizer.recognize(screenshot)
                     captureOcrPaymentResult(
                         packageName = packageName,
                         pageText = pageText,
-                        windowEvidence = currentWindowEvidence
+                        windowEvidence = currentWindowEvidence,
+                        traceId = traceId
                     )
                 } finally {
                     screenshot.recycle()
@@ -385,7 +629,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                Log.w(TAG, "Local OCR payment capture failed", error)
+                recordFailure("automatic_ocr_failed", traceId, BillSyncSource.WeChat, null, error)
             } finally {
                 wechatOcrCaptureJob = null
             }
@@ -410,15 +654,47 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private suspend fun captureOcrPaymentResult(
         packageName: String,
         pageText: String,
-        windowEvidence: WechatWindowEvidence
+        windowEvidence: WechatWindowEvidence,
+        traceId: String
     ): Boolean {
-        if (pageText.isBlank()) return false
+        if (pageText.isBlank()) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                "blank_ocr_text",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return false
+        }
         val ocrDecision = decideWechatOcrCapture(
             pageText = pageText,
             windowEvidence = windowEvidence
         )
-        if (!ocrDecision.shouldCapture) return false
-        val transactionFingerprint = wechatOcrPaymentFingerprint(pageText) ?: return false
+        if (!ocrDecision.shouldCapture) {
+            recordMetadata(
+                event = "ocr_output_rejected",
+                outcome = "rejected",
+                reason = ocrDecision.rejectionReason?.name ?: "unknown_rejection",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return false
+        }
+        val transactionFingerprint = wechatOcrPaymentFingerprint(pageText)
+        if (transactionFingerprint == null) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                "payment_fingerprint_missing",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return false
+        }
         val hasNewMatchingNotification = transactionFingerprint.isRedPacket &&
             processor.hasUniqueUnlinkedRecentWechatNotification(transactionFingerprint)
         if (
@@ -427,10 +703,28 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 hasNewMatchingNotification = hasNewMatchingNotification
             )
         ) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                "session_duplicate",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return false
         }
         val permissionHealth = currentContinuousMonitoringPermissionHealth()
-        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) return false
+        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                "monitoring_blocked",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return false
+        }
         val decision = decideContinuousMonitoringCapture(
             state = continuousMonitoringState,
             event = ContinuousMonitoringEvent(
@@ -439,7 +733,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
             ),
             permissionHealth = permissionHealth
         )
-        if (!decision.shouldCapture) return false
+        if (!decision.shouldCapture) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                decision.observation.name,
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
+            return false
+        }
         if (
             !automaticCaptureDebouncer.shouldProcess(
                 packageName = packageName,
@@ -447,6 +751,14 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 bypassDuplicateWindow = hasNewMatchingNotification
             )
         ) {
+            recordMetadata(
+                "ocr_output_rejected",
+                "rejected",
+                "debounced",
+                traceId = traceId,
+                source = packageName.diagnosticSource(),
+                component = DiagnosticComponent.Ocr
+            )
             return false
         }
 
@@ -460,12 +772,22 @@ class BillSyncAccessibilityService : AccessibilityService() {
                     AutomaticCaptureVerification.RequireRecentNotification
                 } else {
                     ocrDecision.verification
-                }
+                },
+                traceId = traceId
             )
         }.onSuccess { result ->
-            result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
+            result.toBookkeepingResultNotification(source.label)?.let { notification ->
+                recordMetadata(
+                    "result_notification_requested",
+                    "requested",
+                    notification.javaClass.simpleName.ifBlank { "bookkeeping_result" },
+                    traceId = traceId,
+                    source = source.diagnosticSource()
+                )
+                resultNotifier.notify(notification)
+            }
         }.onFailure { error ->
-            Log.w(TAG, "Automatic OCR payment capture failed", error)
+            recordFailure("automatic_ocr_processor_failed", traceId, source, null, error)
         }
         val processed = outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
         if (processed) {
@@ -511,6 +833,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         pageText: String,
         permissionHealth: ContinuousMonitoringPermissionHealth
     ) {
+        val traceId = newDiagnosticTraceId()
         val decision = decideContinuousMonitoringCapture(
             state = continuousMonitoringState,
             event = ContinuousMonitoringEvent(
@@ -519,9 +842,41 @@ class BillSyncAccessibilityService : AccessibilityService() {
             ),
             permissionHealth = permissionHealth
         )
-        if (!decision.shouldCapture) return
+        if (!decision.shouldCapture) {
+            val source = BillSyncSource.fromPackageName(packageName)
+            val observation = source?.let { observeBillSyncPage(it, pageText) }
+                ?: BillSyncPageObservation.Ignored
+            recordPageDecision(
+                event = "accessibility_page_rejected",
+                traceId = traceId,
+                packageName = packageName,
+                reason = if (observation == BillSyncPageObservation.Ignored) {
+                    decision.observation.name
+                } else {
+                    observation.name
+                },
+                pageText = pageText.takeIf { observation != BillSyncPageObservation.Ignored }
+            )
+            return
+        }
 
-        if (automaticCaptureJob?.isActive == true) return
+        if (automaticCaptureJob?.isActive == true) {
+            recordMetadata(
+                "accessibility_stability_wait_rejected",
+                "rejected",
+                "stability_job_active",
+                traceId = traceId,
+                source = packageName.diagnosticSource()
+            )
+            return
+        }
+        recordMetadata(
+            "accessibility_stability_wait_started",
+            "started",
+            "payment_related",
+            traceId = traceId,
+            source = packageName.diagnosticSource()
+        )
         automaticCaptureJob = serviceScope.launch {
             delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
             automaticCaptureJob = null
@@ -539,16 +894,51 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 ),
                 permissionHealth = refreshedPermissionHealth
             )
-            if (!refreshedDecision.shouldCapture) return@launch
-            if (!automaticCaptureDebouncer.shouldProcess(packageName, settledPageText)) return@launch
+            if (!refreshedDecision.shouldCapture) {
+                recordPageDecision(
+                    event = "accessibility_window_rejected",
+                    traceId = traceId,
+                    packageName = packageName,
+                    reason = refreshedDecision.observation.name,
+                    pageText = settledPageText.takeIf {
+                        BillSyncSource.fromPackageName(packageName)?.let { source ->
+                            observeBillSyncPage(source, settledPageText) != BillSyncPageObservation.Ignored
+                        } == true
+                    }
+                )
+                return@launch
+            }
+            if (!automaticCaptureDebouncer.shouldProcess(packageName, settledPageText)) {
+                recordMetadata(
+                    "accessibility_page_rejected",
+                    "rejected",
+                    "debounced",
+                    traceId = traceId,
+                    source = packageName.diagnosticSource()
+                )
+                return@launch
+            }
 
             val source = BillSyncSource.fromPackageName(packageName) ?: return@launch
             runCatching {
-                processor.processAutomatic(source = source, pageText = settledPageText)
+                processor.processAutomatic(
+                    source = source,
+                    pageText = settledPageText,
+                    traceId = traceId
+                )
             }.onSuccess { result ->
-                result.toBookkeepingResultNotification(source.label)?.let(resultNotifier::notify)
+                result.toBookkeepingResultNotification(source.label)?.let { notification ->
+                    recordMetadata(
+                        "result_notification_requested",
+                        "requested",
+                        notification.javaClass.simpleName.ifBlank { "bookkeeping_result" },
+                        traceId = traceId,
+                        source = source.diagnosticSource()
+                    )
+                    resultNotifier.notify(notification)
+                }
             }.onFailure { error ->
-                Log.w(TAG, "Automatic payment capture failed", error)
+                recordFailure("automatic_page_capture_failed", traceId, source, null, error)
             }
         }
     }
@@ -572,10 +962,12 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
 
     override fun onInterrupt() {
+        recordMetadata("service_interrupted", "failed", "accessibility_interrupted")
         BillSyncSessions.controller.fail("无障碍服务已中断")
     }
 
     override fun onDestroy() {
+        recordMetadata("service_destroyed", "stopped", "service_destroyed")
         healthHeartbeatJob?.cancel()
         healthHeartbeatJob = null
         ContinuousMonitoringServiceHealth.markServiceConnected(this, false)
@@ -587,12 +979,103 @@ class BillSyncAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
-        const val TAG = "BillSyncService"
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
         const val MANUAL_OCR_ATTEMPT_COOLDOWN_MILLIS = 1_000L
         const val OCR_SESSION_RESET_SETTLE_MILLIS = 3_000L
     }
+
+    private fun recordMetadata(
+        event: String,
+        outcome: String,
+        reason: String,
+        traceId: String = newDiagnosticTraceId(),
+        sessionId: Long? = null,
+        source: DiagnosticSource = DiagnosticSource.System,
+        component: DiagnosticComponent = DiagnosticComponent.AccessibilityService
+    ) {
+        diagnostics.record(
+            DiagnosticEvent(
+                metadata = DiagnosticEventMetadata(
+                    level = DiagnosticLevel.Info,
+                    component = component,
+                    event = event,
+                    traceId = traceId,
+                    sessionId = sessionId?.toString(),
+                    source = source,
+                    outcome = outcome,
+                    reason = reason
+                )
+            )
+        )
+    }
+
+    private fun recordFailure(
+        event: String,
+        traceId: String,
+        source: BillSyncSource,
+        sessionId: Long?,
+        error: Throwable
+    ) {
+        diagnostics.record(
+            DiagnosticEvent(
+                metadata = DiagnosticEventMetadata(
+                    level = DiagnosticLevel.Error,
+                    component = DiagnosticComponent.AccessibilityService,
+                    event = event,
+                    traceId = traceId,
+                    sessionId = sessionId?.toString(),
+                    source = source.diagnosticSource(),
+                    outcome = "failed",
+                    reason = event
+                ),
+                sensitivePayload = DiagnosticSensitivePayload(
+                    mapOf(
+                        DiagnosticSensitiveField.ExceptionDetails to
+                            error.toDiagnosticExceptionDetails()
+                    )
+                )
+            )
+        )
+    }
+
+    private fun recordPageDecision(
+        event: String,
+        traceId: String,
+        packageName: String,
+        reason: String,
+        pageText: String?
+    ) {
+        diagnostics.record(
+            DiagnosticEvent(
+                metadata = DiagnosticEventMetadata(
+                    level = DiagnosticLevel.Info,
+                    component = DiagnosticComponent.AccessibilityService,
+                    event = event,
+                    traceId = traceId,
+                    source = packageName.diagnosticSource(),
+                    outcome = "rejected",
+                    reason = reason
+                ),
+                sensitivePayload = pageText?.let {
+                    DiagnosticSensitivePayload(
+                        mapOf(DiagnosticSensitiveField.PageText to it)
+                    )
+                } ?: DiagnosticSensitivePayload()
+            )
+        )
+    }
+}
+
+private fun String.diagnosticSource(): DiagnosticSource = when (this) {
+    BillSyncSource.WeChat.packageName -> DiagnosticSource.WeChat
+    BillSyncSource.Alipay.packageName -> DiagnosticSource.Alipay
+    else -> DiagnosticSource.Unknown
+}
+
+private fun BillSyncSource.diagnosticSource(): DiagnosticSource = when (this) {
+    BillSyncSource.WeChat -> DiagnosticSource.WeChat
+    BillSyncSource.Alipay -> DiagnosticSource.Alipay
 }
 
 internal fun shouldAttemptWechatOcrFallback(
