@@ -19,22 +19,19 @@ internal class PaymentScreenOcrRecognizer : Closeable {
             .addOnSuccessListener { result ->
                 val lines = result.textBlocks.flatMap { block -> block.lines }
                 val observations = lines.map { line ->
+                    val bounds = line.boundingBox
                     OcrLineObservation(
                         text = line.text,
-                        height = line.boundingBox?.height().orZero()
+                        height = bounds?.height().orZero(),
+                        left = bounds?.left,
+                        top = bounds?.top,
+                        bottom = bounds?.bottom
                     )
                 }
-                val amountLineIndex = selectProminentPaymentAmountLine(
+                val normalizedText = normalizePaymentScreenOcrText(
                     lines = observations,
                     imageHeight = bitmap.height
                 )
-                val normalizedText = lines.mapIndexed { index, line ->
-                    if (index == amountLineIndex) {
-                        normalizeOcrAmountLine(line.text) ?: line.text
-                    } else {
-                        line.text
-                    }
-                }.joinToString("\n")
                 continuation.resume(normalizedText)
             }
             .addOnFailureListener(continuation::resumeWithException)
@@ -47,8 +44,62 @@ internal class PaymentScreenOcrRecognizer : Closeable {
 
 internal data class OcrLineObservation(
     val text: String,
-    val height: Int
+    val height: Int,
+    val left: Int? = null,
+    val top: Int? = null,
+    val bottom: Int? = null
 )
+
+internal fun normalizePaymentScreenOcrText(
+    lines: List<OcrLineObservation>,
+    imageHeight: Int
+): String {
+    val visuallyOrderedLines = orderOcrLinesByVisualRows(lines)
+    val amountLineIndex = selectProminentPaymentAmountLine(
+        lines = visuallyOrderedLines,
+        imageHeight = imageHeight
+    )
+    return visuallyOrderedLines.mapIndexed { index, line ->
+        if (index == amountLineIndex) {
+            normalizeOcrAmountLine(line.text) ?: line.text
+        } else {
+            line.text
+        }
+    }.joinToString("\n")
+}
+
+internal fun orderOcrLinesByVisualRows(
+    lines: List<OcrLineObservation>
+): List<OcrLineObservation> {
+    val positionedLines = lines.filter { line ->
+        line.left != null && line.top != null && line.bottom != null
+    }
+    if (positionedLines.size < 2) return lines
+
+    val rows = mutableListOf<MutableList<OcrLineObservation>>()
+    positionedLines.sortedBy(OcrLineObservation::verticalCenter).forEach { line ->
+        val currentRow = rows.lastOrNull()
+        if (currentRow != null && currentRow.isSameVisualRow(line)) {
+            currentRow += line
+        } else {
+            rows += mutableListOf(line)
+        }
+    }
+    return rows.flatMap { row -> row.sortedBy { line -> requireNotNull(line.left) } } +
+        lines.filterNot(positionedLines::contains)
+}
+
+private val OcrLineObservation.verticalCenter: Int
+    get() = (requireNotNull(top) + requireNotNull(bottom)) / 2
+
+private fun List<OcrLineObservation>.isSameVisualRow(
+    candidate: OcrLineObservation
+): Boolean {
+    val rowCenter = sumOf(OcrLineObservation::verticalCenter) / size
+    val maximumHeight = maxOf(maxOf(OcrLineObservation::height), candidate.height)
+    return kotlin.math.abs(rowCenter - candidate.verticalCenter) <=
+        maximumHeight * VISUAL_ROW_CENTER_TOLERANCE_RATIO
+}
 
 internal fun selectProminentPaymentAmountLine(
     lines: List<OcrLineObservation>,
@@ -84,6 +135,7 @@ private fun Int?.orZero(): Int = this ?: 0
 
 private const val MINIMUM_AMOUNT_HEIGHT_RATIO = 0.018
 private const val MINIMUM_PROMINENCE_RATIO = 1.5
+private const val VISUAL_ROW_CENTER_TOLERANCE_RATIO = 0.75
 private val OCR_AMOUNT_LINE_REGEX = Regex(
     pattern = """(?:[¥￥Yy]\s*)?([0-9Oo]+)(?:\s*[.．,，]\s*([0-9Oo]{1,2}))?"""
 )

@@ -404,6 +404,25 @@ class BillPageParserTest {
     }
 
     @Test
+    fun currentStatusPaymentSuccessOverridesUnrelatedIncomeText() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                当前状态
+                支付成功
+                收入统计
+                -¥224.00
+                支付时间
+                2026年06月01日 16:57:25
+                商品
+                测试商品
+            """.trimIndent()
+        ).single()
+
+        assertEquals("支出", entry.transactionKindLabel)
+    }
+
+    @Test
     fun fallsBackToReceiptNoteAndJoinsWrappedWechatTransferOrderId() {
         val entry = BillPageParser().parse(
             source = BillSyncSource.WeChat,

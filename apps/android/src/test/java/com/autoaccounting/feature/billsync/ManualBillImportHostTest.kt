@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
@@ -107,6 +106,7 @@ class ManualBillImportHostTest {
         composeRule.onNodeWithText("请在 90 秒内进入账单、交易详情或支付结果页面。")
             .assertIsDisplayed()
         assertEquals(BillSyncSource.WeChat, launchedSource)
+        assertTrue(controller.state.value.manualOcrAllowed)
 
         runBlocking {
             controller.submitBillPage(
@@ -139,7 +139,7 @@ class ManualBillImportHostTest {
     }
 
     @Test
-    fun ocrConsentIsExplicitAndPassedOnlyToTheCurrentWechatSession() {
+    fun sourceButtonAutomaticallyAllowsOcrForTheCurrentSession() {
         val controller = BillSyncSessionController()
         composeRule.setContent {
             ManualBillImportHost(
@@ -153,9 +153,8 @@ class ManualBillImportHostTest {
 
         assertFalse(controller.state.value.manualOcrAllowed)
         composeRule.onNodeWithText("本次允许本机 OCR 识别微信历史账单详情页")
-            .assertIsDisplayed()
-        composeRule.onNodeWithTag("manual-bill-import-ocr-consent").performClick()
-        composeRule.onNodeWithText("微信").performClick()
+            .assertDoesNotExist()
+        composeRule.onNodeWithText("支付宝").performClick()
 
         assertTrue(controller.state.value.manualOcrAllowed)
         composeRule.onNodeWithText("本次已允许本机 OCR；离开此次补录后自动失效。")

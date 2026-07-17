@@ -46,7 +46,7 @@ class BillSyncSessionController {
             sessionId = mutableState.value.sessionId + 1,
             phase = BillSyncSessionPhase.AwaitingBillPage,
             source = source,
-            manualOcrAllowed = manualOcrAllowed && source == BillSyncSource.WeChat,
+            manualOcrAllowed = manualOcrAllowed,
             steps = listOf(BillSyncStep.OpenSource)
         )
         mutableState.value = next

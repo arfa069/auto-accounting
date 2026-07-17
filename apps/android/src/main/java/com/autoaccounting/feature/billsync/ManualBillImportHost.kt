@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,7 +50,6 @@ fun ManualBillImportHost(
     var precheckFailure by remember {
         mutableStateOf<ManualBillImportPrecheckFailure?>(null)
     }
-    var manualOcrAllowed by remember { mutableStateOf(false) }
     val sessionState by sessionController.state.collectAsState()
 
     fun currentPrecheckFailure(): ManualBillImportPrecheckFailure? = when {
@@ -62,7 +60,6 @@ fun ManualBillImportHost(
 
     fun retry() {
         sessionController.reset()
-        manualOcrAllowed = false
         precheckFailure = currentPrecheckFailure()
     }
 
@@ -108,8 +105,6 @@ fun ManualBillImportHost(
             ManualBillImportDialogContent(
                 precheckFailure = precheckFailure,
                 sessionState = sessionState,
-                manualOcrAllowed = manualOcrAllowed,
-                onManualOcrAllowedChange = { manualOcrAllowed = it },
                 onSourceSelected = { source ->
                     val failure = currentPrecheckFailure()
                     if (failure != null) {
@@ -117,7 +112,7 @@ fun ManualBillImportHost(
                     } else {
                         startManualBillSync(
                             source = source,
-                            manualOcrAllowed = manualOcrAllowed,
+                            manualOcrAllowed = true,
                             launchSource = onLaunchSource,
                             controller = sessionController
                         )
@@ -202,8 +197,6 @@ fun ManualBillImportHost(
 private fun ManualBillImportDialogContent(
     precheckFailure: ManualBillImportPrecheckFailure?,
     sessionState: BillSyncSessionState,
-    manualOcrAllowed: Boolean,
-    onManualOcrAllowedChange: (Boolean) -> Unit,
     onSourceSelected: (BillSyncSource) -> Unit
 ) {
     if (precheckFailure != null) {
@@ -221,23 +214,6 @@ private fun ManualBillImportDialogContent(
         BillSyncSessionPhase.Idle -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("每次仅读取当前可见页面，不会自动滚动、翻页或扫描全部历史。")
             Text("识别结果只会加入待确认，不会直接记入账本。")
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = manualOcrAllowed,
-                    onCheckedChange = onManualOcrAllowedChange,
-                    modifier = Modifier.testTag("manual-bill-import-ocr-consent")
-                )
-                Column {
-                    Text("本次允许本机 OCR 识别微信历史账单详情页")
-                    Text(
-                        "仅瞬时识别当前微信页面；图片和 OCR 原文不保存、不上传。",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { onSourceSelected(BillSyncSource.WeChat) }) {
                     Text("微信")

@@ -26,7 +26,7 @@ class BillSyncSessionTest {
     }
 
     @Test
-    fun manualOcrConsentIsScopedToAnActiveWechatSession() {
+    fun manualOcrPermissionIsScopedToTheSelectedActiveSession() {
         val controller = BillSyncSessionController()
 
         controller.start(BillSyncSource.WeChat, manualOcrAllowed = true)
@@ -38,7 +38,8 @@ class BillSyncSessionTest {
         assertFalse(controller.acceptsManualOcr(BillSyncSource.WeChat.packageName))
 
         controller.start(BillSyncSource.Alipay, manualOcrAllowed = true)
-        assertFalse(controller.state.value.manualOcrAllowed)
+        assertTrue(controller.acceptsManualOcr(BillSyncSource.Alipay.packageName))
+        assertFalse(controller.acceptsManualOcr(BillSyncSource.WeChat.packageName))
     }
 
     @Test

@@ -328,6 +328,7 @@ private fun String.inferTransactionKindLabel(): String? = when {
     hasWechatSentRedPacketSuccessSignature(this) -> "支出"
     hasWechatReceivedRedPacketSuccessSignature(this) -> "收入"
     contains("退款") -> "退款"
+    hasCurrentStatusPaymentSuccessPair(this) -> "支出"
     contains("收入") ||
         contains("收款到账") ||
         contains("收款成功") ||
