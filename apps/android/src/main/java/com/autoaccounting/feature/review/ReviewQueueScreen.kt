@@ -28,6 +28,8 @@ import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +62,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.R
+import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.DefaultCategories
+import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.categorization.AiCategorizationClient
@@ -80,6 +85,7 @@ fun ReviewQueueScreen(
         pendingEntries = sampleReviewQueueEntries()
     ),
     targetLedgerName: String = "默认账本",
+    categories: List<CategoryEntity> = emptyList(),
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
@@ -94,6 +100,7 @@ fun ReviewQueueScreen(
         state = state,
         onStateChange = { state = it },
         targetLedgerName = targetLedgerName,
+        categories = categories,
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
         accountSession = accountSession,
@@ -111,6 +118,7 @@ fun ReviewQueueScreen(
     state: ReviewQueueState,
     onStateChange: (ReviewQueueState) -> Unit,
     targetLedgerName: String = "默认账本",
+    categories: List<CategoryEntity> = emptyList(),
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
@@ -191,6 +199,7 @@ fun ReviewQueueScreen(
     editingEntry?.let { entry ->
         ReviewEditDialog(
             entry = entry,
+            categories = categories,
             onDismiss = { editingEntry = null },
             onConfirm = {
                 dispatch(ReviewQueueAction.Confirm(entry.id))
@@ -742,9 +751,94 @@ private fun String.toCategoryTransactionKind(): TransactionKind = when (trim()) 
     else -> TransactionKind.EXPENSE
 }
 
+private fun reviewCategoryOptions(
+    categories: List<CategoryEntity>,
+    transactionKind: String
+): List<CategoryEntity> {
+    val kind = transactionKind.toCategoryTransactionKind()
+    val matchingCategories = categories.filter { category ->
+        category.kind == null || category.kind == kind
+    }
+    return (matchingCategories + CategoryEntity(
+        id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
+        name = "未分类",
+        kind = null,
+        sortOrder = Int.MAX_VALUE,
+        isSystem = true,
+        createdAtEpochMillis = 0
+    )).distinctBy { it.id }
+}
+
+private fun CategoryEntity.reviewDisplayName(): String =
+    DefaultCategories.nameForId(id) ?: name
+
+@Composable
+private fun ReviewCategoryPicker(
+    category: String,
+    transactionKind: String,
+    categories: List<CategoryEntity>,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = remember(categories, transactionKind) {
+        reviewCategoryOptions(categories, transactionKind)
+    }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .testTag("edit-category")
+        ) {
+            CategoryArtwork(
+                categoryName = category,
+                transactionKind = transactionKind.toCategoryTransactionKind(),
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "分类：${category.ifBlank { "未分类" }}",
+                modifier = Modifier.weight(1f)
+            )
+            Text("⌄", style = MaterialTheme.typography.titleMedium)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CategoryArtwork(
+                                categoryId = option.id,
+                                categoryName = option.name,
+                                transactionKind = option.kind,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(option.reviewDisplayName())
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(option.reviewDisplayName())
+                    }
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ReviewEditDialog(
     entry: ReviewQueueEntry,
+    categories: List<CategoryEntity>,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     onIgnore: () -> Unit,
@@ -866,21 +960,11 @@ private fun ReviewEditDialog(
                         .fillMaxWidth()
                         .testTag("edit-kind")
                 )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("分类") },
-                    leadingIcon = {
-                        CategoryArtwork(
-                            categoryName = category,
-                            transactionKind = transactionKind.toCategoryTransactionKind(),
-                            modifier = Modifier.size(32.dp)
-                        )
-                    },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-category")
+                ReviewCategoryPicker(
+                    category = category,
+                    transactionKind = transactionKind,
+                    categories = categories,
+                    onSelected = { category = it }
                 )
                 OutlinedTextField(
                     value = fundingAccount,

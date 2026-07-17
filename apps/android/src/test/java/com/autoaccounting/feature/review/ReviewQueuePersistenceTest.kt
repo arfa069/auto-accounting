@@ -237,13 +237,38 @@ class ReviewQueuePersistenceTest {
         assertEquals("work-meal", restored.category)
     }
 
+    @Test
+    fun legacyDedupeMessagesAreNotExposedAsUserNotes() = runBlocking {
+        repository.upsertPending(
+            samplePending(
+                id = "pending-suspect",
+                confidence = ConfidenceState.DUPLICATE_SUSPECT,
+                note = "可能与 午餐 重复，请确认后再入账"
+            )
+        )
+        repository.upsertPending(
+            samplePending(
+                id = "pending-merged",
+                confidence = ConfidenceState.HIGH,
+                captureReason = CaptureReason.DUPLICATE_MERGE,
+                note = "已合并通知捕获和账单同步证据"
+            )
+        )
+
+        val restored = persistence.observeState().first().pendingEntries.associateBy { it.id }
+
+        assertNull(restored.getValue("pending-suspect").note)
+        assertNull(restored.getValue("pending-merged").note)
+    }
+
     private fun samplePending(
         id: String = "pending-lunch",
         confidence: ConfidenceState = ConfidenceState.NEEDS_REVIEW,
         captureReason: CaptureReason = CaptureReason.BILL_SYNC,
         suggestedCategoryId: String? = null,
         fundingAccountId: Long? = null,
-        fundingAccountLabel: String? = "支付宝余额"
+        fundingAccountLabel: String? = "支付宝余额",
+        note: String? = "客户会议"
     ): PendingEntryEntity = PendingEntryEntity(
         id = id,
         source = PaymentSource.ALIPAY,
@@ -258,7 +283,7 @@ class ReviewQueuePersistenceTest {
         suggestedCategoryId = suggestedCategoryId,
         fundingAccountId = fundingAccountId,
         fundingAccountLabel = fundingAccountLabel,
-        note = "客户会议",
+        note = note,
         evidenceSummary = "支付宝账单 午餐 35.90",
         parsedFieldsText = "商户=午餐\n金额=35.90"
     )

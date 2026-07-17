@@ -29,7 +29,7 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     confidence = confidence,
     capturedAtEpochMillis = capturedAtEpochMillis,
     captureTimeText = formatReviewDateTime(capturedAtEpochMillis, zoneId),
-    note = note,
+    note = note.withoutLegacyDedupeMessage(confidence, captureReason),
     rawEvidenceText = evidenceSummary.orEmpty(),
     parsedFields = parsedFieldsText.decodeParsedFields()
 )
@@ -198,6 +198,20 @@ private fun List<String>.encodeParsedFields(): String? =
 
 private fun String?.decodeParsedFields(): List<String> =
     this?.takeIf { it.isNotBlank() }?.split(PARSED_FIELD_SEPARATOR).orEmpty()
+
+private fun String?.withoutLegacyDedupeMessage(
+    confidence: ConfidenceState,
+    captureReason: CaptureReason
+): String? {
+    val value = this ?: return null
+    val isLegacySuspectWarning = confidence == ConfidenceState.DUPLICATE_SUSPECT &&
+        value.startsWith("可能与 ") &&
+        value.endsWith(" 重复，请确认后再入账")
+    val isLegacyMergeMessage = captureReason == CaptureReason.DUPLICATE_MERGE &&
+        value.startsWith("已合并") &&
+        value.endsWith("证据")
+    return value.takeUnless { isLegacySuspectWarning || isLegacyMergeMessage }
+}
 
 private val REVIEW_DATE_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

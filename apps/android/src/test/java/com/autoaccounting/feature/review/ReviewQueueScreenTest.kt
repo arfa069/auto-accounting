@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertTopPositionInRootIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -18,7 +19,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeWithVelocity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
+import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
@@ -349,18 +352,47 @@ class ReviewQueueScreenTest {
     @Test
     fun categoryCorrectionAsksBeforeSavingRule() {
         composeRule.setContent {
-            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("shopping", "购物", TransactionKind.EXPENSE, 20)
+                )
+            )
         }
         scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithTag("edit-category").performTextClearance()
-        composeRule.onNodeWithTag("edit-category").performTextInput("工作餐")
+        composeRule.onNodeWithTag("edit-category").performScrollTo().performClick()
+        composeRule.onNodeWithText("购物").performClick()
         composeRule.onNodeWithText("保存").performClick()
 
         composeRule.onNodeWithText("保存为分类规则？").assertIsDisplayed()
         composeRule.onNodeWithText("这次不保存").performClick()
-        composeRule.onNodeWithTag("detail-pending-lunch").assertTextContains("工作餐")
+        composeRule.onNodeWithTag("detail-pending-lunch").assertTextContains("购物")
+    }
+
+    @Test
+    fun duplicateReviewUsesCategoryPickerAndStartsWithEmptyNote() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(
+                    pendingEntries = listOf(
+                        sampleEntry(confidence = ConfidenceState.DUPLICATE_SUSPECT)
+                    )
+                ),
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("shopping", "购物", TransactionKind.EXPENSE, 20)
+                )
+            )
+        }
+        scrollToFirstPendingEntry()
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.onNodeWithTag("edit-note").assertTextEquals("备注", "")
+        composeRule.onNodeWithTag("edit-category").performScrollTo().performClick()
+        composeRule.onNodeWithText("购物").assertIsDisplayed()
     }
 
     @Test
@@ -378,8 +410,24 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithText("AI 建议分类").performClick()
 
-        composeRule.onNodeWithTag("edit-category").assertTextContains("交通")
+        composeRule.onNodeWithTag("edit-category")
+            .performScrollTo()
+            .assertTextContains("分类：交通")
     }
+
+    private fun category(
+        id: String,
+        name: String,
+        kind: TransactionKind,
+        sortOrder: Int
+    ): CategoryEntity = CategoryEntity(
+        id = id,
+        name = name,
+        kind = kind,
+        sortOrder = sortOrder,
+        isSystem = true,
+        createdAtEpochMillis = NOW
+    )
 
     private fun scrollToFirstPendingEntry() {
         composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)

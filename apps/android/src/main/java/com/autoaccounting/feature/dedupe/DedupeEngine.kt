@@ -88,7 +88,7 @@ class DedupeEngine {
             captureReasonLabel = "重复合并",
             category = category.ifBlank { candidate.category },
             fundingAccountLabel = fundingAccountLabel.ifBlank { candidate.fundingAccountLabel },
-            note = "已合并${captureReasonLabel}和${candidate.captureReasonLabel}证据",
+            note = note ?: candidate.note,
             rawEvidenceText = listOf(rawEvidenceText, candidate.rawEvidenceText)
                 .filter { it.isNotBlank() }
                 .joinToString(separator = "\n---\n"),
@@ -110,7 +110,6 @@ class DedupeEngine {
     private fun ReviewQueueEntry.markDuplicateSuspect(match: ReviewQueueEntry): ReviewQueueEntry =
         copy(
             confidence = ConfidenceState.DUPLICATE_SUSPECT,
-            note = "可能与 ${match.title} 重复，请确认后再入账",
             parsedFields = (parsedFields + "疑似重复=${match.title}").distinct()
         )
 

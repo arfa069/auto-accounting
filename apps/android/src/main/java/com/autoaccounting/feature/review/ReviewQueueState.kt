@@ -294,7 +294,7 @@ fun sampleReviewQueueEntries(): List<ReviewQueueEntry> = listOf(
         confidence = ConfidenceState.DUPLICATE_SUSPECT,
         capturedAtEpochMillis = SAMPLE_NOW_EPOCH_MILLIS - 5 * 60_000,
         captureTimeText = "2026-07-08 09:36",
-        note = "可能和补录账单记录重复",
+        note = null,
         rawEvidenceText = "支付宝账单 同步记录 相似订单待核对 128.00",
         parsedFields = listOf("来源=支付宝", "金额=128.00", "类型=支出")
     ),

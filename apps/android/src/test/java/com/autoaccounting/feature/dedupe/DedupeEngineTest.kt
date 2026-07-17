@@ -3,6 +3,7 @@ package com.autoaccounting.feature.dedupe
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,6 +29,7 @@ class DedupeEngineTest {
         assertEquals("notification-1", merged.id)
         assertEquals("重复合并", merged.captureReasonLabel)
         assertEquals(ConfidenceState.HIGH, merged.confidence)
+        assertNull(merged.note)
         assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
         assertTrue(merged.rawEvidenceText.contains("微信账单"))
         assertTrue(merged.parsedFields.contains("匹配原因=来源、金额、时间、类型、标题一致"))
@@ -52,8 +54,38 @@ class DedupeEngineTest {
         assertEquals("bill-1", suspect.id)
         assertEquals(ConfidenceState.DUPLICATE_SUSPECT, suspect.confidence)
         assertEquals("账单同步", suspect.captureReasonLabel)
-        assertTrue(suspect.note.orEmpty().contains("可能与 午餐 重复"))
+        assertNull(suspect.note)
         assertTrue(suspect.parsedFields.contains("疑似重复=午餐"))
+    }
+
+    @Test
+    fun duplicateSuspectPreservesUserNote() {
+        val existing = entry(title = "午餐")
+        val candidate = entry(
+            id = "bill-1",
+            title = "商户订单",
+            captureReason = "账单同步",
+            note = "客户会议"
+        )
+
+        val suspect = DedupeEngine().addCandidate(listOf(existing), candidate)
+            .pendingEntries.first()
+
+        assertEquals("客户会议", suspect.note)
+    }
+
+    @Test
+    fun highConfidenceMergePreservesUserNote() {
+        val notification = entry(note = "客户会议")
+        val billSync = entry(
+            id = "bill-1",
+            captureReason = "账单同步"
+        )
+
+        val merged = DedupeEngine().addCandidate(listOf(notification), billSync)
+            .pendingEntries.single()
+
+        assertEquals("客户会议", merged.note)
     }
 
     @Test
@@ -144,7 +176,8 @@ class DedupeEngineTest {
         source: String = "微信",
         kind: String = "支出",
         captureReason: String = "通知捕获",
-        rawEvidence: String = "微信支付收款凭证 午餐 35.90"
+        rawEvidence: String = "微信支付收款凭证 午餐 35.90",
+        note: String? = null
     ): ReviewQueueEntry = ReviewQueueEntry(
         id = id,
         title = title,
@@ -158,6 +191,7 @@ class DedupeEngineTest {
         confidence = ConfidenceState.HIGH,
         capturedAtEpochMillis = NOW,
         captureTimeText = "2026-07-08 12:21",
+        note = note,
         rawEvidenceText = rawEvidence,
         parsedFields = listOf("商户=$title", "金额=35.90", "类型=$kind")
     )

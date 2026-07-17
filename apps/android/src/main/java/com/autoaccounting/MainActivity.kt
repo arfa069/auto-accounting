@@ -660,6 +660,7 @@ fun AutoAccountingApp(
                                     AppTab.Review -> ReviewQueueScreen(
                                         state = reviewState,
                                         targetLedgerName = activeLedgerName,
+                                        categories = ledgerCategories,
                                         onStateChange = ::persistReviewState,
                                         modifier = Modifier.padding(innerPadding),
                                         onCategorizationRuleRequested = { rule ->
