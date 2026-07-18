@@ -104,6 +104,7 @@ import com.autoaccounting.feature.settings.DataAndBackupScreen
 import com.autoaccounting.ui.components.AppBottomNavigationBar
 import com.autoaccounting.ui.components.AppBottomNavigationItem
 import com.autoaccounting.ui.components.SlidePageTransition
+import com.autoaccounting.ui.requestHighRefreshRate
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
 import kotlinx.coroutines.flow.first
@@ -166,6 +167,7 @@ class MainActivity : ComponentActivity() {
                 pendingEntryNavigationId = pendingEntryNavigationId.value
             )
         }
+        requestHighRefreshRate()
     }
 
     override fun onNewIntent(intent: Intent) {
