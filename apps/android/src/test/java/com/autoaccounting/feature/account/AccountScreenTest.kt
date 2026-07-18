@@ -1,8 +1,9 @@
 package com.autoaccounting.feature.account
 
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -20,7 +21,43 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class AccountScreenTest {
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun systemBackFollowsAccountPageHierarchy() {
+        composeRule.setContent {
+            AccountScreen(accountRepository = FakeAccountRepository())
+        }
+
+        composeRule.onNodeWithText("登录").performClick()
+        composeRule.onNodeWithText("登录账号").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("创建账号").assertIsDisplayed()
+
+        composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.onNodeWithText("完成注册").performScrollTo().assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("继续使用本地模式").assertIsDisplayed()
+
+        composeRule.onNodeWithText("登录").performClick()
+        composeRule.onNodeWithText("忘记密码").performScrollTo().performClick()
+        composeRule.onNodeWithText("重置密码").performScrollTo().assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("登录账号").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("隐私与合规材料").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithText("隐私与合规材料").performScrollTo().performClick()
+        composeRule.onNodeWithText("隐私政策").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("继续使用本地模式").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.onNodeWithText("进入本地模式").assertIsDisplayed()
+        pressSystemBack()
+        composeRule.onNodeWithText("登录").assertIsDisplayed()
+    }
 
     @Test
     fun agreementBlocksLocalModeEntryUntilChecked() {
@@ -137,5 +174,11 @@ class AccountScreenTest {
 
         composeRule.onNodeWithText("网络连接失败", substring = true).assertIsDisplayed()
         composeRule.onAllNodesWithText("60 秒后重试").assertCountEquals(0)
+    }
+
+    private fun pressSystemBack() {
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
     }
 }

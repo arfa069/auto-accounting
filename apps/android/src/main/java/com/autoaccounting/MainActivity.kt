@@ -368,6 +368,7 @@ fun AutoAccountingApp(
             }
         )
     }
+    var accountEntryReturnSession by remember { mutableStateOf<AccountSession?>(null) }
     var accountDeletionState by remember(initialAccountRestore) {
         mutableStateOf(
             (initialAccountRestore as? AccountSessionRestoreResult.Restored)
@@ -680,8 +681,17 @@ fun AutoAccountingApp(
                                 accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
                             }
                             accountSession = session
+                            accountEntryReturnSession = null
                             selectedTab = if (reviewNavigationRequest > 0) AppTab.Review else null
                             profileDestination = null
+                        },
+                        onBack = accountEntryReturnSession?.let { returnSession ->
+                            {
+                                accountSession = returnSession
+                                accountEntryReturnSession = null
+                                selectedTab = AppTab.Profile
+                                profileDestination = ProfileDestination.AccountManagement
+                            }
                         }
                     )
                 }
@@ -921,6 +931,7 @@ fun AutoAccountingApp(
                                             deletionState = accountDeletionState,
                                             accountRepository = accountRepository,
                                             onSignInOrRegister = {
+                                                accountEntryReturnSession = activeAccountSession
                                                 profileDestination = null
                                                 accountSession = null
                                                 accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)

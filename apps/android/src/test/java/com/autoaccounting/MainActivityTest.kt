@@ -338,6 +338,29 @@ class MainActivityTest {
     }
 
     @Test
+    fun systemBackFromAccountEntryReturnsToAccountManagement() {
+        composeRule.setContent {
+            AutoAccountingApp()
+        }
+
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("profile-account-status-card").performClick()
+        composeRule.onNodeWithText("登录或注册").performClick()
+        composeRule.onNodeWithText("登录").performClick()
+
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.onNodeWithText("创建账号").assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.onNodeWithText("账户管理").assertIsDisplayed()
+        composeRule.onNodeWithText("登录或注册").assertIsDisplayed()
+    }
+
+    @Test
     fun automaticBookkeepingEntryOpensItsDedicatedPage() {
         composeRule.setContent {
             AutoAccountingApp()

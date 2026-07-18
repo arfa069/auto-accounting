@@ -1,5 +1,6 @@
 package com.autoaccounting.feature.account
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +53,8 @@ fun AccountScreen(
     initialState: AccountUiState = AccountUiState(),
     accountRepository: AccountRepository,
     persistSession: (AccountCredentials) -> Boolean = { true },
-    onSessionChange: (AccountSession) -> Unit = {}
+    onSessionChange: (AccountSession) -> Unit = {},
+    onBack: (() -> Unit)? = null
 ) {
     var state by remember { mutableStateOf(initialState) }
     var showComplianceMaterials by remember { mutableStateOf(false) }
@@ -86,6 +88,17 @@ fun AccountScreen(
             }.copy(operationInProgress = false)
             state = completed
             completed.session?.let(onSessionChange)
+        }
+    }
+
+    BackHandler(
+        enabled = showComplianceMaterials || state.flow != AccountFlow.Landing || onBack != null
+    ) {
+        when {
+            showComplianceMaterials -> showComplianceMaterials = false
+            state.flow == AccountFlow.Recovery -> dispatch(AccountAction.ShowLogin)
+            state.flow != AccountFlow.Landing -> dispatch(AccountAction.BackToLanding)
+            else -> onBack?.invoke()
         }
     }
 
