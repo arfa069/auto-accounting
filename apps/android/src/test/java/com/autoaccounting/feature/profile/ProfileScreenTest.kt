@@ -1,5 +1,12 @@
 package com.autoaccounting.feature.profile
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -8,6 +15,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountManagementScreen
 import com.autoaccounting.feature.account.AccountRuntimeState
@@ -62,6 +72,41 @@ class ProfileScreenTest {
     }
 
     @Test
+    fun overviewRemainsReachableAcrossWindowWidthsAndLargeFonts() {
+        var forcedSize by mutableStateOf(DpSize(400.dp, 500.dp))
+        var fontScale by mutableFloatStateOf(1f)
+        composeRule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(forcedSize) then
+                    DeviceConfigurationOverride.FontScale(fontScale)
+            ) {
+                ProfileOverviewScreen(
+                    session = AccountSession.LocalMode,
+                    onDestinationSelected = {}
+                )
+            }
+        }
+
+        listOf(
+            TestConfiguration(DpSize(400.dp, 500.dp)),
+            TestConfiguration(DpSize(610.dp, 500.dp)),
+            TestConfiguration(DpSize(900.dp, 1_000.dp)),
+            TestConfiguration(DpSize(400.dp, 500.dp), fontScale = 1.5f)
+        ).forEach { configuration ->
+            composeRule.runOnIdle {
+                forcedSize = configuration.size
+                fontScale = configuration.fontScale
+            }
+            composeRule.onNodeWithTag("profile-account-status-card")
+                .performScrollTo()
+                .assertIsDisplayed()
+            composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun signedInAccountManagementKeepsSignOutSeparateFromAccountDeletion() {
         var signedOut = false
         composeRule.setContent {
@@ -86,4 +131,9 @@ class ProfileScreenTest {
         assertTrue(signedOut)
         composeRule.onNodeWithText("申请注销账号").assertIsDisplayed()
     }
+
+    private data class TestConfiguration(
+        val size: DpSize,
+        val fontScale: Float = 1f
+    )
 }

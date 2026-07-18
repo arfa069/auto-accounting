@@ -46,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -587,6 +588,42 @@ internal data class LedgerEntryFormState(
     }
 
     companion object {
+        val Saver = listSaver<LedgerEntryFormState, Any>(
+            save = { state ->
+                listOf(
+                    state.flowDirection.name,
+                    state.transactionKind.name,
+                    state.amountText,
+                    state.transactionTimeEpochMillis,
+                    state.merchantTitle,
+                    state.categoryId,
+                    state.fundingAccountId ?: NO_FUNDING_ACCOUNT_ID,
+                    state.creatingFundingAccount,
+                    state.newFundingAccountLabel,
+                    state.note,
+                    state.paymentSource?.name.orEmpty()
+                )
+            },
+            restore = { values ->
+                LedgerEntryFormState(
+                    flowDirection = FlowDirection.valueOf(values[0] as String),
+                    transactionKind = TransactionKind.valueOf(values[1] as String),
+                    amountText = values[2] as String,
+                    transactionTimeEpochMillis = values[3] as Long,
+                    merchantTitle = values[4] as String,
+                    categoryId = values[5] as String,
+                    fundingAccountId = (values[6] as Long)
+                        .takeUnless { it == NO_FUNDING_ACCOUNT_ID },
+                    creatingFundingAccount = values[7] as Boolean,
+                    newFundingAccountLabel = values[8] as String,
+                    note = values[9] as String,
+                    paymentSource = (values[10] as String)
+                        .takeIf(String::isNotEmpty)
+                        ?.let(PaymentSource::valueOf)
+                )
+            }
+        )
+
         fun newEntry(nowEpochMillis: Long = System.currentTimeMillis()): LedgerEntryFormState =
             LedgerEntryFormState(
                 flowDirection = FlowDirection.OUTFLOW,
@@ -615,6 +652,8 @@ internal data class LedgerEntryFormState(
             note = entry.note.orEmpty(),
             paymentSource = entry.paymentSource
         )
+
+        private const val NO_FUNDING_ACCOUNT_ID = Long.MIN_VALUE
     }
 }
 

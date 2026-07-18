@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,7 +86,9 @@ internal fun ManualLedgerEntryScreen(
     onCreateEntry: suspend (LedgerEntryInput) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val initial = remember { LedgerEntryFormState.newEntry() }
+    val initial = rememberSaveable(saver = LedgerEntryFormState.Saver) {
+        LedgerEntryFormState.newEntry()
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -129,9 +132,11 @@ internal fun SharedLedgerEntryForm(
         (LedgerEntryFormState) -> Unit
     ) -> Unit = { _, _ -> }
 ) {
-    var state by remember(initial) { mutableStateOf(initial) }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var state by rememberSaveable(initial, stateSaver = LedgerEntryFormState.Saver) {
+        mutableStateOf(initial)
+    }
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {

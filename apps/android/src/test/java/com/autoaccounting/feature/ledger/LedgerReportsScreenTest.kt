@@ -8,6 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -520,6 +522,31 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
         composeRule.onNodeWithText("继续编辑").performClick()
         composeRule.onNodeWithText("未保存").assertIsDisplayed()
+    }
+
+    @Test
+    fun manualEntryDraftIsRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            ManualLedgerEntryScreen(
+                categories = emptyList(),
+                fundingAccounts = emptyList(),
+                onExit = {},
+                onCreateEntry = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("12.34")
+        composeRule.onNodeWithTag("manual-entry-merchant")
+            .performScrollTo()
+            .performTextInput("未保存早餐")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithTag("manual-entry-amount").assertTextContains("12.34")
+        composeRule.onNodeWithTag("manual-entry-merchant").assertTextContains("未保存早餐")
+        composeRule.onNodeWithTag("manual-entry-back").performClick()
+        composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
     }
 
     @Test
