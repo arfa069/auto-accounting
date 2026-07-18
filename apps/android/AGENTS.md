@@ -8,6 +8,7 @@
 - `src/main/java/com/autoaccounting/feature/<feature>/`：按业务功能组织状态、界面、解析器和流程。
 - `src/main/res/` 与 `AndroidManifest.xml`：应用资源、权限、Activity 及系统 Service 声明。
 - `src/test/java/`：按生产包路径镜像组织 JVM、Robolectric、Compose 与 Room 测试。
+- `src/androidTest/java/`：运行在真机或模拟器上的 Instrumentation 测试；用于验证真实 Android SQLite 或系统边界。
 
 ## 实现约束
 
@@ -26,3 +27,21 @@
 ```
 
 随后运行 `.\gradlew.bat :apps:android:testDebugUnitTest`；涉及资源、Manifest、权限或发布配置时，再运行 `.\gradlew.bat :apps:android:assembleDebug`。
+
+Compose 行为测试放在 `src/test` 并通过 Robolectric 运行。可恢复 UI 状态使用 `StateRestorationTester` 验证；窗口适配使用 `DeviceConfigurationOverride`，至少覆盖 400、610、900 dp 宽度以及 1.5 倍字体。
+
+运行设备端 Room 测试：
+
+```powershell
+.\gradlew.bat :apps:android:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.autoaccounting.data.local.AutoAccountingDatabaseInstrumentedTest"
+```
+
+连接多台设备时先设置当前 PowerShell 进程的 `ANDROID_SERIAL`。如果 Unified Test Platform 依赖暂时无法下载，可先运行 `:apps:android:assembleDebug :apps:android:assembleDebugAndroidTest`，再按根指南要求使用带 `-s <serial>` 的 ADB 安装两个 APK，并通过 `am instrument` 运行同一测试类；不得把网络失败误报成测试通过。
+
+生成 Android JVM/Robolectric 覆盖率：
+
+```powershell
+.\gradlew.bat :apps:android:jacocoDebugTestReport
+```
+
+HTML 报告位于 `apps/android/build/reports/jacoco/jacocoDebugTestReport/html/index.html`，XML 报告位于同级任务目录。根目录的 `.\gradlew.bat coverageReport` 会同时生成 Android、后端和共享 API 三个模块的报告。

@@ -7,9 +7,11 @@ coreKtx = "1.17.0"
 room = "2.8.4"
 archCore = "2.2.0"
 androidxTest = "1.6.1"
+androidxTestRunner = "1.6.2"
 ktor = "3.2.3"
 logback = "1.5.18"
 junit = "4.13.2"
+jacoco = "0.8.13"
 robolectric = "4.15.1"
 postgres = "42.7.4"
 h2 = "2.2.224"
@@ -40,6 +42,7 @@ androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 junit = { module = "junit:junit", version.ref = "junit" }
 ktor-server-core = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }
