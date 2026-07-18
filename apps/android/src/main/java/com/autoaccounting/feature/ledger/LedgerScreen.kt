@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -73,6 +75,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LedgerScreen(
     entries: List<LedgerUiEntry>,
+    entryListState: LazyListState = rememberLazyListState(),
     deletedEntries: List<LedgerUiEntry> = emptyList(),
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
@@ -138,6 +141,7 @@ fun LedgerScreen(
             when (targetPage.view) {
                 LedgerView.LIST -> LedgerList(
                     entries = entries,
+                    entryListState = entryListState,
                     activeLedgerName = activeLedgerName,
                     onEntryClick = {
                         selectedEntryId = it
@@ -232,6 +236,7 @@ fun LedgerScreen(
 @Composable
 private fun LedgerList(
     entries: List<LedgerUiEntry>,
+    entryListState: LazyListState,
     activeLedgerName: String,
     onEntryClick: (String) -> Unit,
     onLedgerBooksClick: () -> Unit,
@@ -369,6 +374,7 @@ private fun LedgerList(
                 }
             }
             LazyColumn(
+                state = entryListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)

@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +61,7 @@ private val ReportIncomeAccent = Color(0xFF087F70)
 @Composable
 fun ReportsScreen(
     entries: List<LedgerUiEntry>,
+    categoryRankingListState: LazyListState = rememberLazyListState(),
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -66,7 +70,6 @@ fun ReportsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -92,12 +95,18 @@ fun ReportsScreen(
         ReportOverview(summary)
         CategoryShareDonut(
             expenseMinor = summary.expenseMinor,
-            slices = categorySlices
+            slices = categorySlices,
+            modifier = Modifier.testTag(ReportTestTags.CATEGORY_CHART)
         )
-        CategoryRanking(categoryTotals)
+        CategoryRanking(
+            totals = categoryTotals,
+            listState = categoryRankingListState,
+            modifier = Modifier.weight(1f)
+        )
         CashFlowPanel(
             anchorMonthKey = anchorMonthKey,
-            totals = cashFlowTotals
+            totals = cashFlowTotals,
+            modifier = Modifier.testTag(ReportTestTags.CASH_FLOW)
         )
     }
 }
@@ -136,10 +145,11 @@ private fun ReportMetric(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun CategoryShareDonut(
     expenseMinor: Long,
-    slices: List<CategoryShareSlice>
+    slices: List<CategoryShareSlice>,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shape = RoundedCornerShape(8.dp)
@@ -276,33 +286,51 @@ private fun CategoryLegendRow(
 }
 
 @Composable
-private fun CategoryRanking(totals: List<CategoryTotal>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun CategoryRanking(
+    totals: List<CategoryTotal>,
+    listState: LazyListState,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text("分类排行", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (totals.isEmpty()) {
-            Text("本月暂无支出分类", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            totals.forEach { total ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .testTag(ReportTestTags.CATEGORY_RANKING_LIST),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (totals.isEmpty()) {
+                item {
+                    Text("本月暂无支出分类", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                items(totals, key = { it.category }) { total ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
                     ) {
-                        CategoryArtwork(
-                            categoryName = total.category,
-                            transactionKind = TransactionKind.EXPENSE,
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clearAndSetSemantics {}
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("${total.category} ${formatMoney(total.amountMinor)}")
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CategoryArtwork(
+                                categoryName = total.category,
+                                transactionKind = TransactionKind.EXPENSE,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clearAndSetSemantics {}
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("${total.category} ${formatMoney(total.amountMinor)}")
+                        }
                     }
                 }
             }
@@ -313,9 +341,13 @@ private fun CategoryRanking(totals: List<CategoryTotal>) {
 @Composable
 private fun CashFlowPanel(
     anchorMonthKey: String,
-    totals: List<MonthlyCashFlowTotal>
+    totals: List<MonthlyCashFlowTotal>,
+    modifier: Modifier = Modifier
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text("7 个月收支", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -323,7 +355,9 @@ private fun CashFlowPanel(
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
                 CashFlowHeader()
                 totals.forEach { total ->
                     CashFlowRow(
@@ -341,26 +375,26 @@ private fun CashFlowHeader() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         Text(
             text = "月份",
             modifier = Modifier.weight(1.05f),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = "支出",
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = ReportExpenseAccent
         )
         Text(
             text = "收入",
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = ReportIncomeAccent
         )
     }
@@ -390,13 +424,13 @@ private fun CashFlowRow(
             .semantics(mergeDescendants = true) {
                 contentDescription = rowDescription
             }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = total.monthKey,
             modifier = Modifier.weight(1.05f),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             fontWeight = if (isAnchorMonth) FontWeight.SemiBold else FontWeight.Normal
         )
         Text(
@@ -404,14 +438,14 @@ private fun CashFlowRow(
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
             color = ReportExpenseAccent,
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodySmall
         )
         Text(
             text = formatMoney(total.incomeMinor),
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
             color = ReportIncomeAccent,
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
@@ -432,3 +466,9 @@ private fun buildDonutDescription(
 
 private fun formatPercentage(percentageTenths: Int): String =
     "${percentageTenths / 10}.${percentageTenths % 10}%"
+
+internal object ReportTestTags {
+    const val CATEGORY_CHART = "report-category-chart"
+    const val CATEGORY_RANKING_LIST = "report-category-ranking-list"
+    const val CASH_FLOW = "report-cash-flow"
+}

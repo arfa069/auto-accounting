@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -303,6 +304,8 @@ fun AutoAccountingApp(
     }
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val ledgerEntryListState = rememberLazyListState()
+    val reportCategoryRankingListState = rememberLazyListState()
     val tabs = listOf(
         AppTab.Review,
         AppTab.Ledger,
@@ -685,6 +688,7 @@ fun AutoAccountingApp(
 
                                     AppTab.Ledger -> LedgerScreen(
                                         entries = ledgerEntries,
+                                        entryListState = ledgerEntryListState,
                                         deletedEntries = deletedLedgerEntries,
                                         categories = ledgerCategories,
                                         fundingAccounts = fundingAccounts,
@@ -777,6 +781,7 @@ fun AutoAccountingApp(
 
                                     AppTab.Reports -> ReportsScreen(
                                         entries = ledgerEntries,
+                                        categoryRankingListState = reportCategoryRankingListState,
                                         onNavigateHome = {
                                             selectedTab = null
                                             profileDestination = null

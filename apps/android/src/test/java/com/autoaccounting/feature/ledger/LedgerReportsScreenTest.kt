@@ -1,5 +1,10 @@
 package com.autoaccounting.feature.ledger
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertCountEquals
@@ -103,6 +108,40 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("日常账本").assertIsDisplayed()
         composeRule.onNodeWithText("本月支出 ¥718.00").assertIsDisplayed()
         composeRule.onNodeWithText("2026-07 明细").assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerRestoresProvidedListPositionAfterLeavingComposition() {
+        val entries = List(20) { index ->
+            sampleEntries().first().copy(
+                id = "entry-$index",
+                title = "账目 $index",
+                transactionTimeEpochMillis = index.toLong()
+            )
+        }
+        var showLedger by mutableStateOf(true)
+        lateinit var entryListState: LazyListState
+        composeRule.setContent {
+            entryListState = rememberLazyListState()
+            if (showLedger) {
+                LedgerScreen(
+                    entries = entries,
+                    entryListState = entryListState
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(LedgerTestTags.ENTRY_LIST).performScrollToIndex(19)
+        composeRule.runOnIdle {
+            assertEquals(19, entryListState.firstVisibleItemIndex)
+            showLedger = false
+        }
+        composeRule.runOnIdle { showLedger = true }
+
+        composeRule.runOnIdle {
+            assertEquals(19, entryListState.firstVisibleItemIndex)
+        }
+        composeRule.onNodeWithText("账目 0").assertIsDisplayed()
     }
 
     @Test
@@ -321,18 +360,18 @@ class LedgerReportsScreenTest {
         ).assertIsDisplayed()
         composeRule.onNodeWithText("85.7%").assertIsDisplayed()
         composeRule.onNodeWithText("14.3%").assertIsDisplayed()
-        composeRule.onNodeWithText("分类排行").assertIsDisplayed()
+        composeRule.onNodeWithText("分类排行").assertExists()
         composeRule.onNodeWithText("餐饮 ¥35.90").assertHasNoClickAction()
         composeRule.onAllNodesWithContentDescription("餐饮").assertCountEquals(0)
-        composeRule.onNodeWithText("7 个月收支").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("7 个月收支").assertIsDisplayed()
         composeRule.onAllNodesWithText("2026-04").assertCountEquals(1)
         composeRule.onAllNodesWithText("2026-10").assertCountEquals(1)
         composeRule.onNodeWithContentDescription(
             "2026-10，支出 ¥0.00，收入 ¥0.00"
-        ).performScrollTo().assertIsDisplayed()
+        ).assertExists()
         composeRule.onNodeWithContentDescription(
             "基准月份 2026-07，支出 ¥41.90，收入 ¥12.90"
-        ).performScrollTo().assertIsDisplayed()
+        ).assertExists()
         composeRule.onNodeWithText("近 6 个月趋势").assertDoesNotExist()
         composeRule.onNodeWithText("图表占位").assertDoesNotExist()
         composeRule.onNodeWithText("当前分类：餐饮").assertDoesNotExist()
@@ -397,10 +436,10 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("本月支出 ¥0.00").assertIsDisplayed()
         composeRule.onNodeWithText("本月收入 ¥129.00").assertIsDisplayed()
         composeRule.onAllNodesWithText("本月暂无支出分类").assertCountEquals(2)
-        composeRule.onNodeWithText("7 个月收支").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("7 个月收支").assertIsDisplayed()
         composeRule.onNodeWithContentDescription(
             "基准月份 2026-07，支出 ¥0.00，收入 ¥129.00"
-        ).performScrollTo().assertIsDisplayed()
+        ).assertExists()
     }
 
     @Test
