@@ -86,6 +86,7 @@ class DedupeEngine {
         copy(
             confidence = ConfidenceState.HIGH,
             captureReasonLabel = "重复合并",
+            categoryId = categoryId ?: candidate.categoryId,
             category = category.ifBlank { candidate.category },
             fundingAccountLabel = fundingAccountLabel.ifBlank { candidate.fundingAccountLabel },
             note = note ?: candidate.note,

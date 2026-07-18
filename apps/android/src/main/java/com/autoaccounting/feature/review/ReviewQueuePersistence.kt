@@ -104,13 +104,15 @@ class ReviewQueuePersistence(
         confirmed: ReviewQueueConfirmedEntry,
         targetLedgerBookId: String
     ) {
+        repository.upsertPending(confirmed.entry.toEntity(zoneId))
         val result = runCatching {
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
                 ledgerBookId = targetLedgerBookId,
-                categoryId = confirmed.entry.category.toCategoryIdOrNull(
-                    confirmed.entry.kindLabel.toTransactionKind()
-                ),
+                categoryId = confirmed.entry.categoryId
+                    ?: confirmed.entry.category.toCategoryIdOrNull(
+                        confirmed.entry.kindLabel.toTransactionKind()
+                    ),
                 note = confirmed.entry.note
             )
         }
@@ -119,9 +121,10 @@ class ReviewQueuePersistence(
             repository.confirmPending(
                 pendingEntryId = confirmed.originPendingId,
                 ledgerBookId = targetLedgerBookId,
-                categoryId = confirmed.entry.category.toCategoryIdOrNull(
-                    confirmed.entry.kindLabel.toTransactionKind()
-                ),
+                categoryId = confirmed.entry.categoryId
+                    ?: confirmed.entry.category.toCategoryIdOrNull(
+                        confirmed.entry.kindLabel.toTransactionKind()
+                    ),
                 note = confirmed.entry.note
             )
         }

@@ -18,6 +18,7 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     title = merchantTitle,
     amountMinor = amountMinor,
     transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
+    categoryId = suggestedCategoryId,
     category = suggestedCategoryLabel
         ?: suggestedCategoryId?.let(DefaultCategories::nameForId)
         ?: suggestedCategoryId.orEmpty(),
@@ -73,7 +74,7 @@ internal fun ReviewQueueEntry.toEntity(zoneId: ZoneId): PendingEntryEntity {
         transactionTimeEpochMillis = parseReviewDateTime(transactionTimeText, zoneId)
             ?: capturedAtEpochMillis,
         capturedAtEpochMillis = capturedAtEpochMillis,
-        suggestedCategoryId = category.toCategoryIdOrNull(transactionKind),
+        suggestedCategoryId = categoryId ?: category.toCategoryIdOrNull(transactionKind),
         fundingAccountId = fundingAccountId,
         fundingAccountLabel = fundingAccountLabel.ifBlank { null },
         note = note,
@@ -183,10 +184,10 @@ private fun String.toCaptureReason(): CaptureReason = when (trim()) {
     else -> CaptureReason.NOTIFICATION
 }
 
-private fun formatReviewDateTime(epochMillis: Long, zoneId: ZoneId): String =
+internal fun formatReviewDateTime(epochMillis: Long, zoneId: ZoneId): String =
     REVIEW_DATE_TIME_FORMATTER.withZone(zoneId).format(Instant.ofEpochMilli(epochMillis))
 
-private fun parseReviewDateTime(text: String, zoneId: ZoneId): Long? = runCatching {
+internal fun parseReviewDateTime(text: String, zoneId: ZoneId): Long? = runCatching {
     java.time.LocalDateTime.parse(text.trim(), REVIEW_DATE_TIME_FORMATTER)
         .atZone(zoneId)
         .toInstant()

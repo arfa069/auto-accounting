@@ -38,6 +38,7 @@ data class ReviewQueueEntry(
     val title: String = "",
     val amountMinor: Long = 0,
     val transactionTimeText: String = "",
+    val categoryId: String? = null,
     val category: String = "",
     val fundingAccountId: Long? = null,
     val fundingAccountLabel: String = "",
@@ -111,7 +112,9 @@ sealed interface ReviewQueueAction {
         val amountText: String,
         val timeText: String,
         val transactionKind: String,
+        val categoryId: String?,
         val category: String,
+        val fundingAccountId: Long?,
         val fundingAccount: String,
         val note: String
     ) : ReviewQueueAction
@@ -248,10 +251,9 @@ fun reduceReviewQueue(
                         transactionTimeText = action.timeText.trim()
                             .ifBlank { entry.transactionTimeText },
                         kindLabel = action.transactionKind.trim().ifBlank { entry.kindLabel },
+                        categoryId = action.categoryId,
                         category = action.category.trim().ifBlank { entry.category },
-                        fundingAccountId = entry.fundingAccountId.takeIf {
-                            normalizedFundingAccount == entry.fundingAccountLabel.trim()
-                        },
+                        fundingAccountId = action.fundingAccountId,
                         fundingAccountLabel = normalizedFundingAccount,
                         note = action.note.trim().ifBlank { null }
                     )

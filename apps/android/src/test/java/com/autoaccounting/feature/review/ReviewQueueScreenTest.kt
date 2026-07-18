@@ -21,18 +21,23 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.FundingAccountSourceScope
+import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -149,7 +154,7 @@ class ReviewQueueScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("编辑待确认记录").assertIsDisplayed()
+        composeRule.onNodeWithText("编辑待确认账目").assertIsDisplayed()
     }
 
     @Test
@@ -183,29 +188,47 @@ class ReviewQueueScreenTest {
     }
 
     @Test
-    fun detailEditUpdatesPendingRow() {
+    fun sharedEditorConfirmsSelectedCategoryAndFundingAccount() {
+        val nextState = AtomicReference<ReviewQueueState?>()
         composeRule.setContent {
-            ReviewQueueScreen(initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())))
+            ReviewQueueScreen(
+                state = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                onStateChange = { nextState.set(it) },
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("shopping", "购物", TransactionKind.EXPENSE, 20)
+                ),
+                fundingAccounts = listOf(
+                    fundingAccount(42, "微信零钱", PaymentSource.WECHAT),
+                    fundingAccount(84, "支付宝余额", PaymentSource.ALIPAY)
+                )
+            )
         }
         scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithTag("edit-title").performTextClearance()
-        composeRule.onNodeWithTag("edit-title").performTextInput("工作餐")
-        composeRule.onNodeWithTag("edit-amount").performTextClearance()
-        composeRule.onNodeWithTag("edit-amount").performTextInput("45.80")
-        composeRule.onNodeWithTag("edit-time").performTextClearance()
-        composeRule.onNodeWithTag("edit-time").performTextInput("2026-07-08 12:30")
-        composeRule.onNodeWithTag("edit-kind").performTextClearance()
-        composeRule.onNodeWithTag("edit-kind").performTextInput("退款")
-        composeRule.onNodeWithTag("edit-funding-account").performTextClearance()
-        composeRule.onNodeWithTag("edit-funding-account").performTextInput("微信零钱")
-        composeRule.onNodeWithTag("edit-note").performTextInput("客户会议")
-        composeRule.onNodeWithText("保存").performClick()
+        composeRule.onNodeWithText("编辑待确认账目").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("工作餐")
+        composeRule.onNodeWithTag("manual-entry-amount").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("45.80")
+        composeRule.onNodeWithTag("manual-entry-category").performScrollTo().performClick()
+        composeRule.onNodeWithText("购物").performClick()
+        composeRule.onNodeWithTag("manual-entry-funding-account").performScrollTo().performClick()
+        composeRule.onNodeWithText("支付宝余额").performClick()
+        composeRule.onNodeWithTag("manual-entry-note").performTextInput("客户会议")
+        composeRule.onNodeWithText("确认入账").performClick()
+        composeRule.onNodeWithText("这次不保存").performClick()
 
-        composeRule.onNodeWithText("工作餐").assertIsDisplayed()
-        composeRule.onNodeWithText("¥45.80").assertIsDisplayed()
-        composeRule.onNodeWithText("客户会议").assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 5_000) { nextState.get() != null }
+        val confirmed = requireNotNull(nextState.get()).confirmedEntries.single().entry
+        assertEquals("工作餐", confirmed.title)
+        assertEquals(4_580L, confirmed.amountMinor)
+        assertEquals("shopping", confirmed.categoryId)
+        assertEquals("购物", confirmed.category)
+        assertEquals(84L, confirmed.fundingAccountId)
+        assertEquals("支付宝余额", confirmed.fundingAccountLabel)
+        assertEquals("客户会议", confirmed.note)
     }
 
     @Test
@@ -216,16 +239,19 @@ class ReviewQueueScreenTest {
         scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithTag("edit-title").performTextClearance()
-        composeRule.onNodeWithTag("edit-title").performTextInput("工作餐")
-        composeRule.onNodeWithTag("edit-amount").performTextClearance()
-        composeRule.onNodeWithTag("edit-amount").performTextInput("abc")
-        composeRule.onNodeWithText("保存").performClick()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("工作餐")
+        composeRule.onNodeWithTag("manual-entry-amount").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-amount").performTextInput("abc")
+        composeRule.onNodeWithText("确认入账").performClick()
 
-        composeRule.onNodeWithText("金额格式不正确").assertIsDisplayed()
-        composeRule.onNodeWithText("编辑待确认记录").assertIsDisplayed()
+        composeRule.onNodeWithText("金额必须大于 0，且最多保留两位小数").assertIsDisplayed()
+        composeRule.onNodeWithText("编辑待确认账目").assertIsDisplayed()
 
         composeRule.onNodeWithText("取消").performClick()
+        composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
+        composeRule.onNodeWithText("放弃修改").performClick()
+        scrollToFirstPendingEntry()
         composeRule.onNodeWithText("午餐").assertIsDisplayed()
         composeRule.onNodeWithText("¥35.90").assertIsDisplayed()
         composeRule.onAllNodesWithText("工作餐").assertCountEquals(0)
@@ -341,12 +367,6 @@ class ReviewQueueScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText("确认入账").performClick()
         composeRule.onNodeWithText("已确认 午餐").assertIsDisplayed()
-
-        composeRule.onNodeWithText("撤销").performClick()
-        scrollToFirstPendingEntry()
-        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithText("忽略此条").performClick()
-        composeRule.onNodeWithText("已忽略 午餐").assertIsDisplayed()
     }
 
     @Test
@@ -363,13 +383,13 @@ class ReviewQueueScreenTest {
         scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithTag("edit-category").performScrollTo().performClick()
+        composeRule.onNodeWithTag("manual-entry-category").performScrollTo().performClick()
         composeRule.onNodeWithText("购物").performClick()
-        composeRule.onNodeWithText("保存").performClick()
+        composeRule.onNodeWithText("确认入账").performClick()
 
         composeRule.onNodeWithText("保存为分类规则？").assertIsDisplayed()
         composeRule.onNodeWithText("这次不保存").performClick()
-        composeRule.onNodeWithTag("detail-pending-lunch").assertTextContains("购物")
+        composeRule.onNodeWithText("已确认 午餐").assertIsDisplayed()
     }
 
     @Test
@@ -390,8 +410,8 @@ class ReviewQueueScreenTest {
         scrollToFirstPendingEntry()
 
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
-        composeRule.onNodeWithTag("edit-note").assertTextEquals("备注", "")
-        composeRule.onNodeWithTag("edit-category").performScrollTo().performClick()
+        composeRule.onNodeWithTag("manual-entry-note").assertTextEquals("备注（可选）", "")
+        composeRule.onNodeWithTag("manual-entry-category").performScrollTo().performClick()
         composeRule.onNodeWithText("购物").assertIsDisplayed()
     }
 
@@ -400,6 +420,10 @@ class ReviewQueueScreenTest {
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry().copy(category = ""))),
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("transport", "交通", TransactionKind.EXPENSE, 20)
+                ),
                 accountSession = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
                 aiSettings = AiCategorizationSettings(aiConsentGranted = true),
                 aiCategorizationGateway = FixedAiCategorizationGateway("交通")
@@ -410,9 +434,30 @@ class ReviewQueueScreenTest {
         composeRule.onNodeWithTag("detail-pending-lunch").performClick()
         composeRule.onNodeWithText("AI 建议分类").performClick()
 
-        composeRule.onNodeWithTag("edit-category")
+        composeRule.onNodeWithTag("manual-entry-category")
             .performScrollTo()
-            .assertTextContains("分类：交通")
+            .assertTextContains("交通")
+    }
+
+    @Test
+    fun sharedEditorListsExistingFundingAccounts() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                fundingAccounts = listOf(
+                    fundingAccount(42, "微信零钱", PaymentSource.WECHAT),
+                    fundingAccount(84, "支付宝余额", PaymentSource.ALIPAY)
+                )
+            )
+        }
+        scrollToFirstPendingEntry()
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.onNodeWithTag("manual-entry-funding-account")
+            .performScrollTo()
+            .assertTextContains("微信零钱")
+            .performClick()
+        composeRule.onNodeWithText("支付宝余额").assertIsDisplayed()
     }
 
     private fun category(
@@ -429,6 +474,21 @@ class ReviewQueueScreenTest {
         createdAtEpochMillis = NOW
     )
 
+    private fun fundingAccount(
+        id: Long,
+        label: String,
+        source: PaymentSource
+    ): FundingAccountEntity = FundingAccountEntity(
+        id = id,
+        sourceScope = when (source) {
+            PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
+            PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+        },
+        paymentSource = source,
+        label = label,
+        createdAtEpochMillis = NOW
+    )
+
     private fun scrollToFirstPendingEntry() {
         composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
     }
@@ -441,7 +501,9 @@ class ReviewQueueScreenTest {
         title = "午餐",
         amountMinor = 3590,
         transactionTimeText = "2026-07-08 12:20",
+        categoryId = "food",
         category = "餐饮",
+        fundingAccountId = 42L,
         fundingAccountLabel = "微信零钱",
         sourceLabel = "微信",
         kindLabel = "支出",

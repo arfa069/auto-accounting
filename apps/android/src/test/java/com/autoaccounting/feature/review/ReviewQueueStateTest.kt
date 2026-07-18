@@ -78,7 +78,9 @@ class ReviewQueueStateTest {
                 amountText = "45.80",
                 timeText = "2026-07-08 12:30",
                 transactionKind = "退款",
+                categoryId = "food",
                 category = "餐饮",
+                fundingAccountId = 42L,
                 fundingAccount = "微信零钱",
                 note = "客户会议"
             )
@@ -89,6 +91,7 @@ class ReviewQueueStateTest {
         assertEquals(4580, edited.amountMinor)
         assertEquals("2026-07-08 12:30", edited.transactionTimeText)
         assertEquals("退款", edited.kindLabel)
+        assertEquals("food", edited.categoryId)
         assertEquals("餐饮", edited.category)
         assertEquals(42L, edited.fundingAccountId)
         assertEquals("微信零钱", edited.fundingAccountLabel)
@@ -107,7 +110,9 @@ class ReviewQueueStateTest {
                 amountText = "35.90",
                 timeText = "2026-07-08 12:20",
                 transactionKind = "支出",
+                categoryId = "food",
                 category = "餐饮",
+                fundingAccountId = null,
                 fundingAccount = "支付宝余额",
                 note = ""
             )
@@ -130,7 +135,9 @@ class ReviewQueueStateTest {
                 amountText = "35.90",
                 timeText = "2026-07-08 12:20",
                 transactionKind = "支出",
+                categoryId = "food",
                 category = "餐饮",
+                fundingAccountId = null,
                 fundingAccount = "",
                 note = ""
             )
@@ -154,7 +161,9 @@ class ReviewQueueStateTest {
                 amountText = "abc",
                 timeText = "2026-07-08 12:30",
                 transactionKind = "退款",
+                categoryId = "food",
                 category = "餐饮",
+                fundingAccountId = 42L,
                 fundingAccount = "微信零钱",
                 note = "客户会议"
             )
@@ -246,6 +255,7 @@ class ReviewQueueStateTest {
         title = "午餐",
         amountMinor = 3590,
         transactionTimeText = "2026-07-08 12:20",
+        categoryId = "food",
         category = "餐饮",
         fundingAccountId = 42L,
         fundingAccountLabel = "微信零钱",

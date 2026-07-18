@@ -661,6 +661,7 @@ fun AutoAccountingApp(
                                         state = reviewState,
                                         targetLedgerName = activeLedgerName,
                                         categories = ledgerCategories,
+                                        fundingAccounts = fundingAccounts,
                                         onStateChange = ::persistReviewState,
                                         modifier = Modifier.padding(innerPadding),
                                         onCategorizationRuleRequested = { rule ->

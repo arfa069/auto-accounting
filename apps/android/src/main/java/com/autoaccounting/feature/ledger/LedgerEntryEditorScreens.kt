@@ -89,7 +89,7 @@ internal fun ManualLedgerEntryScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     Box(modifier = modifier.fillMaxSize()) {
-        LedgerEntryEditorContent(
+        SharedLedgerEntryForm(
             title = "新增一笔",
             initial = initial,
             categories = categories,
@@ -112,7 +112,7 @@ internal fun ManualLedgerEntryScreen(
 }
 
 @Composable
-private fun LedgerEntryEditorContent(
+internal fun SharedLedgerEntryForm(
     title: String,
     initial: LedgerEntryFormState,
     categories: List<CategoryEntity>,
@@ -123,7 +123,11 @@ private fun LedgerEntryEditorContent(
     onExit: () -> Unit,
     onSave: suspend (LedgerEntryInput) -> Unit,
     onDelete: (() -> Unit)?,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    leadingContent: @Composable (
+        LedgerEntryFormState,
+        (LedgerEntryFormState) -> Unit
+    ) -> Unit = { _, _ -> }
 ) {
     var state by remember(initial) { mutableStateOf(initial) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -163,6 +167,7 @@ private fun LedgerEntryEditorContent(
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            leadingContent(state) { state = it }
             ManualAmountCard(
                 state = state,
                 directions = flowDirections,
@@ -354,7 +359,8 @@ private fun ManualTransactionCard(
                 options = TransactionKind.entries,
                 itemLabel = TransactionKind::label,
                 onSelected = { onStateChange(state.copy(transactionKind = it)) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                testTag = "manual-entry-transaction-kind"
             )
         }
         Row(
@@ -380,7 +386,8 @@ private fun ManualTransactionCard(
                     )
                 },
                 onSelected = { onStateChange(state.copy(categoryId = it)) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                testTag = "manual-entry-category"
             )
             ManualValueField(
                 label = "交易时间",
@@ -410,7 +417,8 @@ private fun ManualAccountCard(
                 options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY),
                 itemLabel = { it.labelOrNone() },
                 onSelected = { onStateChange(state.copy(paymentSource = it)) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                testTag = "manual-entry-payment-source"
             )
             if (state.creatingFundingAccount) {
                 OutlinedTextField(
@@ -429,7 +437,8 @@ private fun ManualAccountCard(
                         fundingAccounts.firstOrNull { it.id == id }?.label ?: "未选择"
                     },
                     onSelected = { onStateChange(state.copy(fundingAccountId = it)) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    testTag = "manual-entry-funding-account"
                 )
             }
         }
@@ -501,7 +510,8 @@ private fun <T> ManualSelectionField(
     itemLabel: (T) -> String,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
-    leadingContent: (@Composable (T) -> Unit)? = null
+    leadingContent: (@Composable (T) -> Unit)? = null,
+    testTag: String? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = modifier) {
@@ -509,7 +519,9 @@ private fun <T> ManualSelectionField(
             label = label,
             value = itemLabel(selected),
             onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(testTag?.let { Modifier.testTag(it) } ?: Modifier),
             leadingContent = leadingContent?.let { content -> { content(selected) } }
         )
         DropdownMenu(
@@ -629,7 +641,7 @@ internal fun LedgerEntryForm(
     onDelete: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
-    LedgerEntryEditorContent(
+    SharedLedgerEntryForm(
         title = title,
         initial = initial,
         categories = categories,

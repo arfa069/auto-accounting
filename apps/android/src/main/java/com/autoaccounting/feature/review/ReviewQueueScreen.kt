@@ -13,28 +13,22 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import com.autoaccounting.ui.components.OutlinedButton
-import com.autoaccounting.ui.components.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -65,8 +59,13 @@ import com.autoaccounting.R
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.DefaultCategories
+import com.autoaccounting.data.local.FlowDirection
+import com.autoaccounting.data.local.FundingAccountEntity
+import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.LocalLedgerRepository
+import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.data.local.defaultFlowDirection
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.categorization.AiCategorizationClient
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
@@ -74,6 +73,8 @@ import com.autoaccounting.feature.categorization.AiCategorizationResult
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
+import com.autoaccounting.feature.ledger.LedgerEntryFormState
+import com.autoaccounting.feature.ledger.SharedLedgerEntryForm
 import com.autoaccounting.ui.visual.CategoryArtwork
 import com.autoaccounting.ui.components.HomeReturnButton
 import kotlin.math.abs
@@ -86,6 +87,7 @@ fun ReviewQueueScreen(
     ),
     targetLedgerName: String = "默认账本",
     categories: List<CategoryEntity> = emptyList(),
+    fundingAccounts: List<FundingAccountEntity> = emptyList(),
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
@@ -101,6 +103,7 @@ fun ReviewQueueScreen(
         onStateChange = { state = it },
         targetLedgerName = targetLedgerName,
         categories = categories,
+        fundingAccounts = fundingAccounts,
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
         accountSession = accountSession,
@@ -119,6 +122,7 @@ fun ReviewQueueScreen(
     onStateChange: (ReviewQueueState) -> Unit,
     targetLedgerName: String = "默认账本",
     categories: List<CategoryEntity> = emptyList(),
+    fundingAccounts: List<FundingAccountEntity> = emptyList(),
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
@@ -132,7 +136,6 @@ fun ReviewQueueScreen(
     var editingEntry by remember { mutableStateOf<ReviewQueueEntry?>(null) }
     var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
     var showIgnoredList by remember { mutableStateOf(false) }
-    var syncMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(openPendingEntryRequestId, openPendingEntryId, state.pendingEntries) {
@@ -145,11 +148,15 @@ fun ReviewQueueScreen(
         onStateChange(reduceReviewQueue(state, action))
     }
 
-    fun applyEdit(pending: PendingCategoryRuleSave) {
-        dispatch(pending.edit.toSaveAction(pending.entry.id))
-        syncMessage = pending.edit.category.trim()
+    fun confirmEdit(entry: ReviewQueueEntry, edit: PendingReviewEdit) {
+        val editedState = reduceReviewQueue(state, edit.toSaveAction(entry.id))
+        onStateChange(reduceReviewQueue(editedState, ReviewQueueAction.Confirm(entry.id)))
         pendingRuleSave = null
         editingEntry = null
+    }
+
+    fun applyEdit(pending: PendingCategoryRuleSave) {
+        confirmEdit(pending.entry, pending.edit)
     }
 
     val lastAction = state.lastAction
@@ -169,49 +176,36 @@ fun ReviewQueueScreen(
         )
     }
 
-    LaunchedEffect(syncMessage) {
-        val message = syncMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(
-            message = message,
-            duration = SnackbarDuration.Short
-        )
-        syncMessage = null
-    }
-
-    Scaffold(
-        modifier = modifier,
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        ReviewQueueContent(
-            state = state,
-            targetLedgerName = targetLedgerName,
-            onAction = ::dispatch,
-            onEdit = { editingEntry = it },
-            onShowIgnoredList = { showIgnoredList = true },
-            onOpenBillImport = onOpenBillImport,
-            onNavigateHome = onNavigateHome,
-            modifier = Modifier.padding(innerPadding)
-        )
-    }
-
-    editingEntry?.let { entry ->
-        ReviewEditDialog(
-            entry = entry,
+    val activeEdit = editingEntry
+    if (activeEdit == null) {
+        Scaffold(
+            modifier = modifier,
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding ->
+            ReviewQueueContent(
+                state = state,
+                targetLedgerName = targetLedgerName,
+                onAction = ::dispatch,
+                onEdit = { editingEntry = it },
+                onShowIgnoredList = { showIgnoredList = true },
+                onOpenBillImport = onOpenBillImport,
+                onNavigateHome = onNavigateHome,
+                modifier = Modifier.padding(innerPadding)
+            )
+        }
+    } else {
+        ReviewPendingEntryEditor(
+            entry = activeEdit,
             categories = categories,
-            onDismiss = { editingEntry = null },
-            onConfirm = {
-                dispatch(ReviewQueueAction.Confirm(entry.id))
-                editingEntry = null
-            },
-            onIgnore = {
-                dispatch(ReviewQueueAction.Ignore(entry.id))
-                editingEntry = null
-            },
+            fundingAccounts = fundingAccounts,
+            modifier = modifier,
+            snackbarHostState = snackbarHostState,
+            onExit = { editingEntry = null },
             onAiSuggest = { draft ->
                 val gateway = aiCategorizationGateway
-                    ?: return@ReviewEditDialog AiCategorizationResult(
+                    ?: return@ReviewPendingEntryEditor AiCategorizationResult(
                         skipReason = AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT
                     )
                 AiCategorizationClient(gateway).suggestCategory(
@@ -220,21 +214,11 @@ fun ReviewQueueScreen(
                     settings = aiSettings
                 )
             },
-            onSave = { title, amountText, timeText, transactionKind, category, fundingAccount, note ->
-                val edit = PendingReviewEdit(
-                    title = title,
-                    amountText = amountText,
-                    timeText = timeText,
-                    transactionKind = transactionKind,
-                    category = category,
-                    fundingAccount = fundingAccount,
-                    note = note
-                )
-                if (entry.hasCategoryCorrection(edit.category)) {
-                    pendingRuleSave = PendingCategoryRuleSave(entry, edit)
+            onConfirm = { edit ->
+                if (activeEdit.hasCategoryCorrection(edit.category)) {
+                    pendingRuleSave = PendingCategoryRuleSave(activeEdit, edit)
                 } else {
-                    dispatch(edit.toSaveAction(entry.id))
-                    editingEntry = null
+                    confirmEdit(activeEdit, edit)
                 }
             }
         )
@@ -596,7 +580,7 @@ private fun ReviewEntryRow(
                     ) {
                         CategoryArtwork(
                             categoryName = entry.category,
-                            transactionKind = entry.kindLabel.toCategoryTransactionKind(),
+                            transactionKind = entry.kindLabel.toTransactionKind(),
                             modifier = Modifier.size(44.dp)
                         )
                         Spacer(Modifier.width(10.dp))
@@ -725,7 +709,9 @@ private data class PendingReviewEdit(
     val amountText: String,
     val timeText: String,
     val transactionKind: String,
+    val categoryId: String?,
     val category: String,
+    val fundingAccountId: Long?,
     val fundingAccount: String,
     val note: String
 ) {
@@ -735,172 +721,162 @@ private data class PendingReviewEdit(
         amountText = amountText,
         timeText = timeText,
         transactionKind = transactionKind,
+        categoryId = categoryId,
         category = category,
+        fundingAccountId = fundingAccountId,
         fundingAccount = fundingAccount,
         note = note
     )
+
+    companion object {
+        fun from(
+            input: LedgerEntryInput,
+            categories: List<CategoryEntity>,
+            fundingAccounts: List<FundingAccountEntity>
+        ): PendingReviewEdit = PendingReviewEdit(
+            title = input.merchantTitle,
+            amountText = amountMinorToText(input.amountMinor),
+            timeText = formatReviewDateTime(
+                input.transactionTimeEpochMillis,
+                java.time.ZoneId.systemDefault()
+            ),
+            transactionKind = input.transactionKind.toReviewLabel(),
+            categoryId = input.categoryId,
+            category = input.categoryId.toReviewCategoryName(categories),
+            fundingAccountId = input.fundingAccountId,
+            fundingAccount = fundingAccounts
+                .firstOrNull { it.id == input.fundingAccountId }
+                ?.label
+                .orEmpty(),
+            note = input.note.orEmpty()
+        )
+    }
 }
 
 private fun ReviewQueueEntry.hasCategoryCorrection(category: String): Boolean {
     return category.trim().isNotBlank() && category.trim() != this.category
 }
 
-private fun String.toCategoryTransactionKind(): TransactionKind = when (trim()) {
-    "收入" -> TransactionKind.INCOME
-    "退款" -> TransactionKind.REFUND
-    else -> TransactionKind.EXPENSE
-}
-
-private fun reviewCategoryOptions(
-    categories: List<CategoryEntity>,
-    transactionKind: String
-): List<CategoryEntity> {
-    val kind = transactionKind.toCategoryTransactionKind()
-    val matchingCategories = categories.filter { category ->
-        category.kind == null || category.kind == kind
-    }
-    return (matchingCategories + CategoryEntity(
-        id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
-        name = "未分类",
-        kind = null,
-        sortOrder = Int.MAX_VALUE,
-        isSystem = true,
-        createdAtEpochMillis = 0
-    )).distinctBy { it.id }
-}
-
 private fun CategoryEntity.reviewDisplayName(): String =
     DefaultCategories.nameForId(id) ?: name
 
 @Composable
-private fun ReviewCategoryPicker(
-    category: String,
-    transactionKind: String,
+private fun ReviewPendingEntryEditor(
+    entry: ReviewQueueEntry,
     categories: List<CategoryEntity>,
-    onSelected: (String) -> Unit
+    fundingAccounts: List<FundingAccountEntity>,
+    modifier: Modifier,
+    snackbarHostState: SnackbarHostState,
+    onExit: () -> Unit,
+    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult,
+    onConfirm: (PendingReviewEdit) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val options = remember(categories, transactionKind) {
-        reviewCategoryOptions(categories, transactionKind)
+    val availableCategories = remember(categories) {
+        categories.ifEmpty { DefaultCategories.systemDefaults(0) }
     }
-
-    Box(modifier = Modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .testTag("edit-category")
-        ) {
-            CategoryArtwork(
-                categoryName = category,
-                transactionKind = transactionKind.toCategoryTransactionKind(),
-                modifier = Modifier.size(32.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "分类：${category.ifBlank { "未分类" }}",
-                modifier = Modifier.weight(1f)
-            )
-            Text("⌄", style = MaterialTheme.typography.titleMedium)
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 420.dp)
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CategoryArtwork(
-                                categoryId = option.id,
-                                categoryName = option.name,
-                                transactionKind = option.kind,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(option.reviewDisplayName())
-                        }
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelected(option.reviewDisplayName())
-                    }
+    val initial = remember(entry, availableCategories, fundingAccounts) {
+        entry.toLedgerEntryFormState(availableCategories, fundingAccounts)
+    }
+    Box(modifier = modifier.fillMaxSize()) {
+        SharedLedgerEntryForm(
+            title = "编辑待确认账目",
+            initial = initial,
+            categories = availableCategories,
+            fundingAccounts = fundingAccounts,
+            flowDirections = FlowDirection.entries,
+            allowCreateFundingAccount = false,
+            saveLabel = "确认入账",
+            onExit = onExit,
+            onSave = { input ->
+                onConfirm(PendingReviewEdit.from(input, availableCategories, fundingAccounts))
+            },
+            onDelete = null,
+            snackbarHostState = snackbarHostState,
+            leadingContent = { draft, onDraftChange ->
+                ReviewEditorTools(
+                    entry = entry,
+                    draft = draft,
+                    categories = availableCategories,
+                    fundingAccounts = fundingAccounts,
+                    onDraftChange = onDraftChange,
+                    onAiSuggest = onAiSuggest
                 )
             }
-        }
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 88.dp)
+        )
     }
 }
 
 @Composable
-private fun ReviewEditDialog(
+private fun ReviewEditorTools(
     entry: ReviewQueueEntry,
+    draft: LedgerEntryFormState,
     categories: List<CategoryEntity>,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-    onIgnore: () -> Unit,
-    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult,
-    onSave: (
-        title: String,
-        amountText: String,
-        timeText: String,
-        transactionKind: String,
-        category: String,
-        fundingAccount: String,
-        note: String
-    ) -> Unit
+    fundingAccounts: List<FundingAccountEntity>,
+    onDraftChange: (LedgerEntryFormState) -> Unit,
+    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult
 ) {
-    var title by remember(entry.id) { mutableStateOf(entry.title) }
-    var amountText by remember(entry.id) { mutableStateOf(amountMinorToText(entry.amountMinor)) }
-    var timeText by remember(entry.id) { mutableStateOf(entry.transactionTimeText) }
-    var transactionKind by remember(entry.id) { mutableStateOf(entry.kindLabel) }
-    var category by remember(entry.id) { mutableStateOf(entry.category) }
-    var fundingAccount by remember(entry.id) { mutableStateOf(entry.fundingAccountLabel) }
-    var note by remember(entry.id) { mutableStateOf(entry.note.orEmpty()) }
     var showEvidence by remember(entry.id) { mutableStateOf(false) }
-    var amountError by remember(entry.id) { mutableStateOf<String?>(null) }
     var aiMessage by remember(entry.id) { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("编辑待确认记录") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { showEvidence = !showEvidence }) {
                     Text(if (showEvidence) "收起证据" else "查看证据")
                 }
-                if (showEvidence) {
-                    EvidenceSection(entry)
-                }
                 OutlinedButton(
                     onClick = {
-                        val amountMinor = parseReviewAmountMinor(amountText)
-                        if (amountMinor == null) {
-                            amountError = "金额格式不正确"
-                            return@OutlinedButton
-                        }
+                        val input = runCatching { draft.toInput(System.currentTimeMillis()) }
+                            .getOrElse {
+                                aiMessage = it.message ?: "当前内容无法获取分类建议"
+                                return@OutlinedButton
+                            }
                         val result = onAiSuggest(
                             entry.copy(
-                                title = title,
-                                amountMinor = amountMinor,
-                                transactionTimeText = timeText,
-                                kindLabel = transactionKind,
-                                category = category,
-                                fundingAccountLabel = fundingAccount,
-                                note = note.ifBlank { null }
+                                title = input.merchantTitle,
+                                amountMinor = input.amountMinor,
+                                transactionTimeText = formatReviewDateTime(
+                                    input.transactionTimeEpochMillis,
+                                    java.time.ZoneId.systemDefault()
+                                ),
+                                kindLabel = input.transactionKind.toReviewLabel(),
+                                categoryId = input.categoryId,
+                                category = input.categoryId.toReviewCategoryName(categories),
+                                fundingAccountId = input.fundingAccountId,
+                                fundingAccountLabel = fundingAccounts
+                                    .firstOrNull { it.id == input.fundingAccountId }
+                                    ?.label
+                                    .orEmpty(),
+                                note = input.note
                             )
                         )
                         result.suggestion?.let { suggestion ->
-                            category = suggestion.category
-                            aiMessage = "AI 建议：${suggestion.category}"
+                            val categoryId = categories.firstOrNull {
+                                it.reviewDisplayName() == suggestion.category
+                            }?.id ?: DefaultCategories.idForName(
+                                suggestion.category,
+                                input.transactionKind
+                            )
+                            if (categoryId == null) {
+                                aiMessage = "AI 建议“${suggestion.category}”不在现有分类中"
+                            } else {
+                                onDraftChange(draft.copy(categoryId = categoryId))
+                                aiMessage = "AI 建议：${suggestion.category}"
+                            }
                         } ?: run {
                             aiMessage = when (result.skipReason) {
                                 AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT -> "登录后才能使用云端 AI 分类"
@@ -912,117 +888,64 @@ private fun ReviewEditDialog(
                 ) {
                     Text("AI 建议分类")
                 }
-                aiMessage?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall)
-                }
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("商户/标题") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-title")
-                )
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = {
-                        amountText = it
-                        amountError = null
-                    },
-                    label = { Text("金额") },
-                    singleLine = true,
-                    isError = amountError != null,
-                    supportingText = {
-                        amountError?.let {
-                            Text(it)
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-amount")
-                )
-                OutlinedTextField(
-                    value = timeText,
-                    onValueChange = { timeText = it },
-                    label = { Text("交易时间") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-time")
-                )
-                OutlinedTextField(
-                    value = transactionKind,
-                    onValueChange = { transactionKind = it },
-                    label = { Text("交易类型") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-kind")
-                )
-                ReviewCategoryPicker(
-                    category = category,
-                    transactionKind = transactionKind,
-                    categories = categories,
-                    onSelected = { category = it }
-                )
-                OutlinedTextField(
-                    value = fundingAccount,
-                    onValueChange = { fundingAccount = it },
-                    label = { Text("资金账户") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-funding-account")
-                )
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("备注") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit-note")
-                )
             }
-        },
-        confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onIgnore) {
-                        Text("忽略此条")
-                    }
-                    Button(onClick = onConfirm) {
-                        Text("确认入账")
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        if (parseReviewAmountMinor(amountText) == null) {
-                            amountError = "金额格式不正确"
-                            return@Button
-                        }
-                        onSave(
-                            title,
-                            amountText,
-                            timeText,
-                            transactionKind,
-                            category,
-                            fundingAccount,
-                            note
-                        )
-                    }
-                ) {
-                    Text("保存")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            aiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (showEvidence) EvidenceSection(entry)
         }
+    }
+}
+
+private fun ReviewQueueEntry.toLedgerEntryFormState(
+    categories: List<CategoryEntity>,
+    fundingAccounts: List<FundingAccountEntity>
+): LedgerEntryFormState {
+    val transactionKind = kindLabel.toTransactionKind()
+    val selectedCategoryId = categoryId
+        ?: categories.firstOrNull { it.reviewDisplayName() == category }?.id
+        ?: DefaultCategories.idForName(category, transactionKind)
+        ?: LocalLedgerRepository.DEFAULT_CATEGORY_ID
+    val selectedFundingAccountId = fundingAccountId
+        ?: fundingAccounts.firstOrNull { it.label == fundingAccountLabel }?.id
+    return LedgerEntryFormState(
+        flowDirection = transactionKind.defaultFlowDirection(),
+        transactionKind = transactionKind,
+        amountText = amountMinorToText(amountMinor),
+        transactionTimeEpochMillis = parseReviewDateTime(
+            transactionTimeText,
+            java.time.ZoneId.systemDefault()
+        ) ?: capturedAtEpochMillis,
+        merchantTitle = title,
+        categoryId = selectedCategoryId,
+        fundingAccountId = selectedFundingAccountId,
+        creatingFundingAccount = false,
+        newFundingAccountLabel = "",
+        note = note.orEmpty(),
+        paymentSource = sourceLabel.toReviewPaymentSource()
     )
+}
+
+private fun String?.toReviewCategoryName(categories: List<CategoryEntity>): String =
+    this?.let { id ->
+        DefaultCategories.nameForId(id)
+            ?: categories.firstOrNull { it.id == id }?.name
+    } ?: "未分类"
+
+private fun TransactionKind.toReviewLabel(): String = when (this) {
+    TransactionKind.EXPENSE -> "支出"
+    TransactionKind.INCOME -> "收入"
+    TransactionKind.REFUND -> "退款"
+    TransactionKind.TRANSFER -> "转账"
+    TransactionKind.RED_PACKET -> "红包"
+    TransactionKind.REPAYMENT -> "还款"
+    TransactionKind.INVESTMENT -> "理财"
+    TransactionKind.FEE -> "手续费"
+    TransactionKind.OTHER -> "其他"
+}
+
+private fun String.toReviewPaymentSource(): PaymentSource? = when (trim()) {
+    "微信" -> PaymentSource.WECHAT
+    "支付宝" -> PaymentSource.ALIPAY
+    else -> null
 }
 
 @Composable

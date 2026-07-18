@@ -88,6 +88,7 @@ class ReviewQueuePersistenceTest {
 
         assertEquals(listOf("pending-duplicate"), state.pendingEntries.map { it.id })
         val pending = state.pendingEntries.single()
+        assertEquals("food", pending.categoryId)
         assertEquals("餐饮", pending.category)
         assertEquals("支付宝", pending.sourceLabel)
         assertEquals("补录账单", pending.captureReasonLabel)
@@ -178,6 +179,48 @@ class ReviewQueuePersistenceTest {
         val restored = database.pendingEntryDao().getById("pending-lunch")
         assertEquals("pending-lunch", restored?.id)
         assertEquals(fundingAccount.id, restored?.fundingAccountId)
+    }
+
+    @Test
+    fun editedCategoryAndFundingAccountArePersistedBeforeConfirmation() = runBlocking {
+        repository.seedSystemCategories()
+        val originalAccount = repository.createFundingAccount("支付宝余额", PaymentSource.ALIPAY)
+        val selectedAccount = repository.createFundingAccount("支付宝银行卡", PaymentSource.ALIPAY)
+        repository.upsertPending(
+            samplePending(
+                suggestedCategoryId = "food",
+                fundingAccountId = originalAccount.id
+            )
+        )
+        val previous = persistence.observeState().first()
+        val edited = reduceReviewQueue(
+            previous,
+            ReviewQueueAction.SaveEdit(
+                entryId = "pending-lunch",
+                title = "工作餐",
+                amountText = "45.80",
+                timeText = formatReviewDateTime(NOW - 30_000, ZoneId.of("UTC")),
+                transactionKind = "支出",
+                categoryId = "shopping",
+                category = "购物",
+                fundingAccountId = selectedAccount.id,
+                fundingAccount = selectedAccount.label,
+                note = "客户会议"
+            )
+        )
+        val confirmed = reduceReviewQueue(
+            edited,
+            ReviewQueueAction.Confirm("pending-lunch")
+        )
+
+        persistence.persistTransition(previous, confirmed)
+
+        val ledgerEntry = database.ledgerEntryDao().listLedgerEntries().single()
+        assertEquals("工作餐", ledgerEntry.merchantTitle)
+        assertEquals(4_580L, ledgerEntry.amountMinor)
+        assertEquals("shopping", ledgerEntry.categoryId)
+        assertEquals(selectedAccount.id, ledgerEntry.fundingAccountId)
+        assertEquals("客户会议", ledgerEntry.note)
     }
 
     @Test
