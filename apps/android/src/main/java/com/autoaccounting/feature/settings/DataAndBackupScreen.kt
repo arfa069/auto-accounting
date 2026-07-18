@@ -43,7 +43,14 @@ import com.autoaccounting.feature.ledger.LedgerUiEntry
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private data class PendingRestore(
+    val backup: String,
+    val passphrase: String
+)
 
 @Composable
 fun DataAndBackupScreen(
@@ -59,27 +66,38 @@ fun DataAndBackupScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var passphrase by remember { mutableStateOf("") }
-    var pendingBackup by remember { mutableStateOf<String?>(null) }
+    var exportPassphrase by remember { mutableStateOf("") }
+    var selectedBackup by remember { mutableStateOf<String?>(null) }
+    var importPassphrase by remember { mutableStateOf("") }
+    var importPasswordError by remember { mutableStateOf<String?>(null) }
+    var pendingRestore by remember { mutableStateOf<PendingRestore?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showExportPasswordDialog by remember { mutableStateOf(false) }
     var isCsvExporting by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
+    var isReadingBackup by remember { mutableStateOf(false) }
+    var isValidatingBackup by remember { mutableStateOf(false) }
+    var isImportingBackup by remember { mutableStateOf(false) }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
+        isReadingBackup = true
         coroutineScope.launch {
-            runCatching {
-                val content = context.contentResolver.openInputStream(uri)?.use { input ->
-                    input.bufferedReader(Charsets.UTF_8).readText()
-                } ?: error("Failed to read backup file")
-                onValidateEncryptedBackup(content, passphrase)
-                content
-            }.onSuccess { pendingBackup = it }
-                .onFailure {
-                    snackbarHostState.showSnackbar("备份校验失败：密码错误或文件损坏")
+            val result = runCatching { readBackupFile(context, uri) }
+            isReadingBackup = false
+            result.onSuccess { content ->
+                if (isEncryptedLocalDataBackup(content)) {
+                    selectedBackup = content
+                    importPassphrase = ""
+                    importPasswordError = null
+                } else {
+                    snackbarHostState.showSnackbar("所选文件不是受支持的加密备份")
                 }
+            }.onFailure {
+                snackbarHostState.showSnackbar("备份文件读取失败")
+            }
         }
     }
 
@@ -96,14 +114,6 @@ fun DataAndBackupScreen(
             Text(
                 "CSV 仅导出当前账本「$currentLedgerName」，且是明文表格；" +
                     "加密备份包含全部账本及本机设置。"
-            )
-            OutlinedTextField(
-                value = passphrase,
-                onValueChange = { passphrase = it },
-                label = { Text("备份密码") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth().testTag("backup-passphrase")
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -137,41 +147,14 @@ fun DataAndBackupScreen(
                     enabled = !isCsvExporting
                 ) { Text("导出 CSV") }
                 OutlinedButton(
-                    onClick = {
-                        isExporting = true
-                        coroutineScope.launch {
-                            runCatching {
-                                val content = onExportEncryptedBackup(passphrase)
-                                val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
-                                val filename = "$timestamp-ac-backup.bak"
-                                val values = ContentValues().apply {
-                                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                                    put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-                                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                                }
-                                val uri = context.contentResolver.insert(
-                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                    values
-                                ) ?: error("Failed to create Downloads entry")
-                                context.contentResolver.openOutputStream(uri)?.use { output ->
-                                    output.write(content.toByteArray(Charsets.UTF_8))
-                                } ?: error("Failed to write backup file")
-                                filename
-                            }.onSuccess {
-                                snackbarHostState.showSnackbar("备份已保存到 Download/$it")
-                            }.onFailure {
-                                snackbarHostState.showSnackbar("加密备份失败")
-                            }
-                            isExporting = false
-                        }
-                    },
-                    enabled = passphrase.isNotBlank() && !isExporting
-                ) { Text("导出加密备份到文件") }
+                    onClick = { showExportPasswordDialog = true },
+                    enabled = !isExporting
+                ) { Text("导出加密备份") }
             }
             OutlinedButton(
                 onClick = { openDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
-                enabled = passphrase.isNotBlank()
-            ) { Text("从文件导入备份") }
+                enabled = !isReadingBackup && !isValidatingBackup && !isImportingBackup
+            ) { Text("导入加密备份") }
         }
         CardSection(title = "危险区", danger = true) {
             Text("删除本机数据不会注销云端账号，且无法撤销。")
@@ -181,23 +164,117 @@ fun DataAndBackupScreen(
         }
     }
 
-    pendingBackup?.let { backup ->
+    if (showExportPasswordDialog) {
+        BackupPasswordDialog(
+            title = "导出加密备份",
+            description = "请输入大于 8 位的备份密码。密码不会保存，丢失后无法恢复备份。",
+            passphrase = exportPassphrase,
+            onPassphraseChange = { exportPassphrase = it },
+            confirmLabel = "确认导出",
+            isBusy = isExporting,
+            minimumLength = MIN_BACKUP_PASSPHRASE_LENGTH,
+            onDismiss = {
+                if (!isExporting) {
+                    exportPassphrase = ""
+                    showExportPasswordDialog = false
+                }
+            },
+            onConfirm = {
+                isExporting = true
+                coroutineScope.launch {
+                    val result = runCatching {
+                        val content = onExportEncryptedBackup(exportPassphrase)
+                        val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
+                        val filename = "$timestamp-ac-backup.bak"
+                        writeDownloadFile(
+                            context = context,
+                            filename = filename,
+                            mimeType = "application/octet-stream",
+                            content = content
+                        )
+                        filename
+                    }
+                    isExporting = false
+                    exportPassphrase = ""
+                    showExportPasswordDialog = false
+                    result.onSuccess {
+                        snackbarHostState.showSnackbar("备份已保存到 Downloads/$it")
+                    }.onFailure {
+                        snackbarHostState.showSnackbar("加密备份失败")
+                    }
+                }
+            }
+        )
+    }
+
+    selectedBackup?.let { backup ->
+        BackupPasswordDialog(
+            title = "输入备份密码",
+            description = "该文件是加密备份。请输入密码，验证通过后才能恢复。",
+            passphrase = importPassphrase,
+            onPassphraseChange = {
+                importPassphrase = it
+                importPasswordError = null
+            },
+            confirmLabel = "确认",
+            isBusy = isValidatingBackup,
+            errorMessage = importPasswordError,
+            onDismiss = {
+                if (!isValidatingBackup) {
+                    selectedBackup = null
+                    importPassphrase = ""
+                    importPasswordError = null
+                }
+            },
+            onConfirm = {
+                isValidatingBackup = true
+                coroutineScope.launch {
+                    val result = runCatching { onValidateEncryptedBackup(backup, importPassphrase) }
+                    isValidatingBackup = false
+                    result.onSuccess {
+                        pendingRestore = PendingRestore(backup, importPassphrase)
+                        selectedBackup = null
+                        importPassphrase = ""
+                        importPasswordError = null
+                    }.onFailure {
+                        importPasswordError = "密码错误，或备份文件已损坏，请重试"
+                    }
+                }
+            }
+        )
+    }
+
+    pendingRestore?.let { restore ->
         AlertDialog(
-            onDismissRequest = { pendingBackup = null },
+            onDismissRequest = {
+                if (!isImportingBackup) pendingRestore = null
+            },
             title = { Text("确认恢复备份") },
             text = { Text("备份已通过校验。继续将替换本机现有数据，此操作无法撤销。") },
             confirmButton = {
                 Button(onClick = {
-                    pendingBackup = null
+                    isImportingBackup = true
                     coroutineScope.launch {
-                        runCatching { onImportEncryptedBackup(backup, passphrase) }
-                            .onSuccess { snackbarHostState.showSnackbar("备份已恢复成功") }
-                            .onFailure { snackbarHostState.showSnackbar("备份恢复失败，本机数据未更改") }
+                        val result = runCatching {
+                            onImportEncryptedBackup(restore.backup, restore.passphrase)
+                        }
+                        isImportingBackup = false
+                        pendingRestore = null
+                        result.onSuccess {
+                            snackbarHostState.showSnackbar("备份已恢复成功")
+                        }.onFailure {
+                            snackbarHostState.showSnackbar("备份恢复失败，本机数据未更改")
+                        }
                     }
-                }) { Text("确认替换并恢复") }
+                }, enabled = !isImportingBackup) {
+                    Text(if (isImportingBackup) "正在恢复" else "确认替换并恢复")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { pendingBackup = null }) { Text("取消") }
+                TextButton(
+                    onClick = { pendingRestore = null },
+                    enabled = !isImportingBackup
+                ) { Text("取消") }
             }
         )
     }
@@ -209,6 +286,87 @@ fun DataAndBackupScreen(
                 showDeleteDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun BackupPasswordDialog(
+    title: String,
+    description: String,
+    passphrase: String,
+    onPassphraseChange: (String) -> Unit,
+    confirmLabel: String,
+    isBusy: Boolean,
+    minimumLength: Int? = null,
+    errorMessage: String? = null,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val meetsMinimumLength = minimumLength == null || passphrase.length >= minimumLength
+    val canConfirm = passphrase.isNotBlank() && meetsMinimumLength && !isBusy
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(description)
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = onPassphraseChange,
+                    label = { Text("备份密码") },
+                    singleLine = true,
+                    enabled = !isBusy,
+                    isError = errorMessage != null,
+                    supportingText = when {
+                        errorMessage != null -> ({ Text(errorMessage) })
+                        minimumLength != null -> ({ Text("密码需大于 8 位") })
+                        else -> null
+                    },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().testTag("backup-password-dialog-input")
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = canConfirm) {
+                Text(if (isBusy) "请稍候" else confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isBusy) { Text("取消") }
+        }
+    )
+}
+
+private suspend fun readBackupFile(context: android.content.Context, uri: Uri): String =
+    withContext(Dispatchers.IO) {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            input.bufferedReader(Charsets.UTF_8).readText()
+        } ?: error("Failed to read backup file")
+    }
+
+private suspend fun writeDownloadFile(
+    context: android.content.Context,
+    filename: String,
+    mimeType: String,
+    content: String
+) = withContext(Dispatchers.IO) {
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    }
+    val uri = context.contentResolver.insert(
+        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+        values
+    ) ?: error("Failed to create Downloads entry")
+    try {
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            output.write(content.toByteArray(Charsets.UTF_8))
+        } ?: error("Failed to write export file")
+    } catch (error: Throwable) {
+        context.contentResolver.delete(uri, null, null)
+        throw error
     }
 }
 

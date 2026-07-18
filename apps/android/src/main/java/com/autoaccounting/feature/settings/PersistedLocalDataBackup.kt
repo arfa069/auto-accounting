@@ -191,7 +191,9 @@ internal fun encryptPersistedLocalData(
     snapshot: PersistedLocalDataSnapshot,
     passphrase: String
 ): String {
-    require(passphrase.isNotBlank()) { "Backup passphrase is required" }
+    require(isValidNewBackupPassphrase(passphrase)) {
+        "Backup passphrase must be longer than 8 characters"
+    }
     val plainText = snapshot.toBytes()
     val passphraseChars = passphrase.toCharArray()
     return try {
@@ -222,6 +224,16 @@ internal fun decryptPersistedLocalData(
         passphraseChars.fill('\u0000')
     }
 }
+
+internal fun isEncryptedLocalDataBackup(backupText: String): Boolean =
+    backupText.startsWith(BACKUP_PREFIX_V2) ||
+        backupText.startsWith(BACKUP_PREFIX_V3) ||
+        backupText.startsWith(BACKUP_PREFIX_V4)
+
+internal const val MIN_BACKUP_PASSPHRASE_LENGTH = 9
+
+internal fun isValidNewBackupPassphrase(passphrase: String): Boolean =
+    passphrase.isNotBlank() && passphrase.length >= MIN_BACKUP_PASSPHRASE_LENGTH
 
 private fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
     val output = ByteArrayOutputStream()

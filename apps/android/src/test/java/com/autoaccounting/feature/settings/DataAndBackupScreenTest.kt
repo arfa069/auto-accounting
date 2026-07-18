@@ -7,13 +7,19 @@ import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.core.app.ActivityOptionsCompat
 import java.io.ByteArrayInputStream
@@ -52,65 +58,124 @@ class DataAndBackupScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText("加密备份包含全部账本", substring = true)
             .assertIsDisplayed()
+        composeRule.onAllNodesWithTag("backup-password-dialog-input").assertCountEquals(0)
+        composeRule.onNodeWithText("导出加密备份").assertIsDisplayed()
+        composeRule.onNodeWithText("导入加密备份").assertIsDisplayed()
     }
 
     @Test
-    fun validBackupRequiresConfirmationBeforeRestore() {
-        var validated = false
-        var imported = false
-        setContentWithBackupFile("backup") {
+    fun exportPromptsForPasswordAndRequiresMoreThanEightCharacters() {
+        var exportedPassphrase: String? = null
+        composeRule.setContent {
+            DataAndBackupScreen(
+                ledgerEntries = emptyList(),
+                onExportEncryptedBackup = { passphrase ->
+                    exportedPassphrase = passphrase
+                    "backup"
+                },
+                onValidateEncryptedBackup = { _, _ -> },
+                onImportEncryptedBackup = { _, _ -> },
+                onDeleteLocalData = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithText("导出加密备份").performClick()
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("12345678")
+        composeRule.onNodeWithText("确认导出").assertIsNotEnabled()
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("9")
+        composeRule.onNodeWithText("确认导出").assertIsEnabled().performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { exportedPassphrase != null }
+        assertEquals("123456789", exportedPassphrase)
+    }
+
+    @Test
+    fun encryptedBackupPromptsForPasswordAndRequiresConfirmationBeforeRestore() {
+        val encryptedBackup = "AUTO_ACCOUNTING_BACKUP_V4:backup"
+        val validatedPassphrases = mutableListOf<String>()
+        var validatedBackup: String? = null
+        var importedPassphrase: String? = null
+        setContentWithBackupFile(encryptedBackup) {
             DataAndBackupScreen(
                 ledgerEntries = emptyList(),
                 onExportEncryptedBackup = { "backup" },
                 onValidateEncryptedBackup = { backup, passphrase ->
-                    assertEquals("backup", backup)
-                    assertEquals("secret", passphrase)
-                    validated = true
+                    validatedBackup = backup
+                    validatedPassphrases += passphrase
+                    if (passphrase != "correct-password") error("invalid")
                 },
-                onImportEncryptedBackup = { _, _ -> imported = true },
+                onImportEncryptedBackup = { _, passphrase -> importedPassphrase = passphrase },
                 onDeleteLocalData = {},
                 onBack = {}
             )
         }
 
-        composeRule.onNodeWithTag("backup-passphrase").performTextInput("secret")
-        composeRule.onNodeWithText("从文件导入备份").performClick()
-        composeRule.waitForIdle()
+        composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("backup-password-dialog-input")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("wrong-password")
+        composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("密码错误，或备份文件已损坏，请重试")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextClearance()
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("correct-password")
+        composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("确认替换并恢复")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
 
-        assertTrue(validated)
-        assertFalse(imported)
+        assertEquals(encryptedBackup, validatedBackup)
+        assertEquals(listOf("wrong-password", "correct-password"), validatedPassphrases)
+        assertEquals(null, importedPassphrase)
         composeRule.onNodeWithText("将替换本机现有数据", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("确认替换并恢复").performClick()
-        composeRule.waitForIdle()
-        assertTrue(imported)
+        composeRule.waitUntil(timeoutMillis = 5_000) { importedPassphrase != null }
+        assertEquals("correct-password", importedPassphrase)
     }
 
     @Test
-    fun failedValidationDoesNotOfferRestore() {
-        var imported = false
-        setContentWithBackupFile("broken") {
+    fun unencryptedFileDoesNotPromptForPassword() {
+        val snackbarHostState = SnackbarHostState()
+        var validated = false
+        setContentWithBackupFile("plain backup") {
             DataAndBackupScreen(
                 ledgerEntries = emptyList(),
                 onExportEncryptedBackup = { "backup" },
-                onValidateEncryptedBackup = { _, _ -> error("invalid") },
-                onImportEncryptedBackup = { _, _ -> imported = true },
+                onValidateEncryptedBackup = { _, _ -> validated = true },
+                onImportEncryptedBackup = { _, _ -> },
                 onDeleteLocalData = {},
-                onBack = {}
+                onBack = {},
+                snackbarHostState = snackbarHostState
             )
         }
 
-        composeRule.onNodeWithTag("backup-passphrase").performTextInput("secret")
-        composeRule.onNodeWithText("从文件导入备份").performClick()
-        composeRule.waitForIdle()
+        composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            snackbarHostState.currentSnackbarData != null
+        }
 
-        assertFalse(imported)
-        composeRule.onNodeWithText("确认替换并恢复").assertDoesNotExist()
+        assertFalse(validated)
+        assertEquals(
+            "所选文件不是受支持的加密备份",
+            snackbarHostState.currentSnackbarData?.visuals?.message
+        )
+        composeRule.onAllNodesWithTag("backup-password-dialog-input").assertCountEquals(0)
+        composeRule.onAllNodesWithText("确认替换并恢复").assertCountEquals(0)
     }
 
     @Test
     fun cancellingValidatedRestoreKeepsImportCallbackUntouched() {
         var imported = false
-        setContentWithBackupFile("backup") {
+        setContentWithBackupFile("AUTO_ACCOUNTING_BACKUP_V4:backup") {
             DataAndBackupScreen(
                 ledgerEntries = emptyList(),
                 onExportEncryptedBackup = { "backup" },
@@ -121,13 +186,23 @@ class DataAndBackupScreenTest {
             )
         }
 
-        composeRule.onNodeWithTag("backup-passphrase").performTextInput("secret")
-        composeRule.onNodeWithText("从文件导入备份").performClick()
-        composeRule.waitForIdle()
+        composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("backup-password-dialog-input")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("secret")
+        composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("确认替换并恢复")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
         composeRule.onNodeWithText("取消").performClick()
 
         assertFalse(imported)
-        composeRule.onNodeWithText("确认替换并恢复").assertDoesNotExist()
+        composeRule.onAllNodesWithText("确认替换并恢复").assertCountEquals(0)
     }
 
     @Test

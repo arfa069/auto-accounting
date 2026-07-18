@@ -129,6 +129,19 @@ class LocalDataBackupRepositoryTest {
     }
 
     @Test
+    fun exportRequiresPassphraseLongerThanEightCharacters() = runBlocking {
+        val failure = runCatching {
+            backupRepository.exportEncryptedBackup("12345678")
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(
+            "Backup passphrase must be longer than 8 characters",
+            failure?.message
+        )
+    }
+
+    @Test
     fun validationDoesNotReplaceCurrentSnapshot() = runBlocking {
         populateDatabase()
         val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
