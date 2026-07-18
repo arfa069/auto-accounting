@@ -17,21 +17,14 @@
 
 - `.\gradlew.bat :apps:android:testDebugUnitTest`：运行 Android JVM、Compose、Room 与 Robolectric 测试。
 - `.\gradlew.bat :services:backend:test`：运行后端单元测试及 Ktor 集成测试。
+- `.\gradlew.bat coverageReport`：运行三个模块的测试并生成各模块 JaCoCo HTML/XML 覆盖率报告。
 - `.\gradlew.bat :apps:android:assembleDebug`：构建调试版 APK。
 - `.\gradlew.bat :apps:android:assembleRelease`：构建 Release APK；只有本地 keystore 与三项签名凭据齐全时才会生成可分发的已签名产物。
 - `.\gradlew.bat :services:backend:run`：本地启动后端。
 - `.\gradlew.bat build`：编译并测试全部模块。
+- `.\gradlew.bat --stop`：停止 Gradle Daemon。
 
-先运行与改动最相关的最窄任务；跨模块或影响较大的改动在提交前再运行完整 `build`。
-
-## Android 真机测试（ADB）
-
-1. 运行 `adb devices -l` 确认目标真机状态为 `device`，记录序列号；连接多台设备时，以下所有命令都必须使用 `adb -s <serial> ...` 指定目标。
-2. 运行 `adb -s <serial> shell wm size` 记录设备逻辑分辨率，并用 `adb -s <serial> shell dumpsys package com.autoaccounting` 确认已安装版本、权限与包状态符合测试前提。
-3. 测试开始前运行 `adb -s <serial> logcat -c` 清空旧日志；需要由代理操作应用时，先用 `adb -s <serial> shell am force-stop com.autoaccounting` 重置进程，再用 `adb -s <serial> shell monkey -p com.autoaccounting -c android.intent.category.LAUNCHER 1` 启动应用。
-4. 按验收用例使用 `adb -s <serial> shell input tap <x> <y>`、`swipe`、`text` 和 `keyevent` 操作界面；普通页面的关键状态可运行 `adb -s <serial> shell uiautomator dump /sdcard/window.xml` 与 `adb -s <serial> shell screencap -p /sdcard/screen.png`，再将 XML 和截图拉取到版本库外的本机临时目录作为证据。
-5. 涉及权限、后台服务或通知捕获时，分别使用 `adb -s <serial> shell dumpsys accessibility`、`dumpsys package com.autoaccounting` 和相关系统服务的 `dumpsys` 输出核对真实状态；Xiaomi/MIUI 上验证无障碍服务时禁止使用 `uiautomator dump`，避免测试工具临时重建服务并制造错误状态，此时只使用普通截图和 `dumpsys`。复现后用 `adb -s <serial> logcat -d` 获取日志，并在展示或保存前过滤无关内容、脱敏敏感数据。
-6. 对照验收条件检查界面文本、页面跳转、持久化结果和关键日志，报告实际结果与证据；未经用户明确许可，不修改系统授权、不清除应用数据、不卸载应用，也不执行验收用例之外的真机操作。
+先运行与改动最相关的最窄任务；跨模块或影响较大的改动在提交前再运行完整 `build`。最终测试或构建完成后，运行 `.\gradlew.bat --stop` 释放 Gradle Daemon。
 
 ## 编码风格与命名
 
@@ -42,6 +35,29 @@
 
 测试框架为 JUnit 4。Android 测试可使用 Robolectric、Compose UI Test 与 Room Testing；后端测试使用 Ktor Test Host 和 H2。
 测试文件以 `*Test.kt` 结尾，并覆盖本次改动涉及的成功、失败、空值及持久化场景。数据库迁移改变 schema 时，必须同步提交更新后的 Room schema JSON。
+
+## Android 真机测试（ADB）
+
+### 测试规范
+
+对照验收条件检查界面文本、页面跳转、持久化结果和关键日志，报告实际结果与证据；未经用户明确许可，不修改系统授权、不清除应用数据、不卸载应用，也不执行验收用例之外的真机操作。
+
+### 准备测试：
+
+1. 运行 `adb devices -l` 确认目标真机状态为 `device`，记录序列号（连接多台设备时，以下所有命令都必须使用 `adb -s <serial> ...` 指定目标）；
+2. 运行 `adb -s <serial> shell wm size` 记录设备逻辑分辨率；
+3. 运行 `adb -s <serial> shell dumpsys package com.autoaccounting` 确认已安装版本、权限与包状态符合测试前提；
+
+### 测试开始前：
+
+4. 测试开始前，运行 `adb -s <serial> logcat -c` 清空旧日志和运行 `adb -s <serial> shell am force-stop com.autoaccounting` 重置进程；
+5. 运行 `adb -s <serial> shell monkey -p com.autoaccounting -c android.intent.category.LAUNCHER 1` 启动应用。
+
+### 测试过程（按验收用例）：
+
+6. 使用 `adb -s <serial> shell input tap <x> <y>`、`swipe`、`text` 和 `keyevent` 操作界面；
+7. 普通页面的关键状态可运行 `adb -s <serial> shell uiautomator dump /sdcard/window.xml` 与 `adb -s <serial> shell screencap -p /sdcard/screen.png`，再将 XML 和截图拉取到版本库外的本机临时目录作为证据。
+8. 涉及权限、后台服务或通知捕获时，分别使用 `adb -s <serial> shell dumpsys accessibility`、`dumpsys package com.autoaccounting` 和相关系统服务的 `dumpsys` 输出核对真实状态；Xiaomi/MIUI 上验证无障碍服务时禁止使用 `uiautomator dump`，避免测试工具临时重建服务并制造错误状态，此时只使用普通截图和 `dumpsys`。复现后用 `adb -s <serial> logcat -d` 获取日志，并在展示或保存前过滤无关内容、脱敏敏感数据。
 
 ## 提交与 Pull Request
 

@@ -21,3 +21,4 @@ captures/
 *.p12
 *.pem
 .codex/config.toml
+/.agents
