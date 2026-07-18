@@ -12,7 +12,7 @@ data class StoredUser(
 
 data class StoredSmsCode(
     val phone: String,
-    val code: String,
+    val codeHash: String,
     val expiresAtMillis: Long,
     val failedAttempts: Int = 0,
     val invalidated: Boolean = false,
@@ -21,7 +21,7 @@ data class StoredSmsCode(
 )
 
 data class StoredSession(
-    val token: String,
+    val tokenHash: String,
     val phone: String,
     val deviceId: String = "",
     val issuedAtMillis: Long
@@ -51,7 +51,8 @@ interface AccountStore {
     fun latestSmsIssueMillis(scopeType: String, scopeValue: String): Long?
 
     fun createSession(session: StoredSession)
-    fun findSession(token: String): StoredSession?
+    fun findSession(tokenHash: String): StoredSession?
+    fun deleteSession(tokenHash: String)
     fun deleteSessionsForPhone(phone: String)
 
     fun upsertRegisteredDevice(device: StoredRegisteredDevice)
@@ -120,10 +121,14 @@ class InMemoryAccountStore : AccountStore {
     }
 
     override fun createSession(session: StoredSession) {
-        sessions[session.token] = session
+        sessions[session.tokenHash] = session
     }
 
-    override fun findSession(token: String): StoredSession? = sessions[token]
+    override fun findSession(tokenHash: String): StoredSession? = sessions[tokenHash]
+
+    override fun deleteSession(tokenHash: String) {
+        sessions.remove(tokenHash)
+    }
 
     override fun deleteSessionsForPhone(phone: String) {
         sessions.values.removeAll { it.phone == phone }

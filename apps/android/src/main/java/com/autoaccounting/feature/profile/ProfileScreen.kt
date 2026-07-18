@@ -15,14 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.HomeReturnButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import com.autoaccounting.ui.components.OutlinedButton
 import androidx.compose.material3.Text
-import com.autoaccounting.ui.components.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,10 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.R
-import com.autoaccounting.feature.account.AccountDeletionUiAction
-import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountSession
-import com.autoaccounting.feature.account.reduceAccountDeletionState
 
 enum class ProfileDestination(
     val title: String,
@@ -87,111 +81,6 @@ fun ProfileOverviewScreen(
                     onClick = { onDestinationSelected(destination) }
                 )
             }
-    }
-}
-
-@Composable
-fun AccountManagementScreen(
-    session: AccountSession,
-    deletionState: AccountDeletionUiState,
-    onSignInOrRegister: () -> Unit,
-    onSignOut: () -> Unit,
-    onDeletionStateChange: (AccountDeletionUiState) -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Text("返回")
-        }
-        Text(
-            text = "账户管理",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        when (session) {
-            AccountSession.LocalMode -> {
-                Text("当前使用本地模式，账本仅保存在本机。")
-                Button(
-                    onClick = onSignInOrRegister,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("登录或注册")
-                }
-            }
-
-            is AccountSession.SignedIn -> {
-                Text("已登录：${session.phone.maskPhone()}")
-                OutlinedButton(
-                    onClick = onSignOut,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("退出登录")
-                }
-                AccountDeletionCard(
-                    state = deletionState,
-                    onStateChange = onDeletionStateChange
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccountDeletionCard(
-    state: AccountDeletionUiState,
-    onStateChange: (AccountDeletionUiState) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("账户注销", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                if (state.isPending) {
-                    "注销冷静期中，云端 AI 和设备配置写入已暂停。"
-                } else {
-                    "注销会删除云端账号、注册设备、云端配置和 AI 分类日志；本机账本需单独删除。"
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (state.isPending) {
-                OutlinedButton(
-                    onClick = {
-                        onStateChange(
-                            reduceAccountDeletionState(state, AccountDeletionUiAction.CancelDeletion)
-                        )
-                    }
-                ) {
-                    Text("取消注销")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        onStateChange(
-                            reduceAccountDeletionState(
-                                state,
-                                AccountDeletionUiAction.RequestDeletion(System.currentTimeMillis())
-                            )
-                        )
-                    }
-                ) {
-                    Text("申请注销账号")
-                }
-            }
-        }
     }
 }
 

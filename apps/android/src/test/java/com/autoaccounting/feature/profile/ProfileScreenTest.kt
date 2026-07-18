@@ -9,7 +9,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.autoaccounting.feature.account.AccountDeletionUiState
+import com.autoaccounting.feature.account.AccountManagementScreen
+import com.autoaccounting.feature.account.AccountRuntimeState
+import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.account.FakeAccountRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -63,9 +67,14 @@ class ProfileScreenTest {
         composeRule.setContent {
             AccountManagementScreen(
                 session = AccountSession.SignedIn(phone = "13800138000"),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
                 deletionState = AccountDeletionUiState(),
+                accountRepository = FakeAccountRepository(),
                 onSignInOrRegister = {},
-                onSignOut = { signedOut = true },
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = { signedOut = true },
                 onDeletionStateChange = {},
                 onBack = {}
             )
@@ -73,6 +82,7 @@ class ProfileScreenTest {
 
         composeRule.onNodeWithText("退出登录").performClick()
 
+        composeRule.waitUntil { signedOut }
         assertTrue(signedOut)
         composeRule.onNodeWithText("申请注销账号").assertIsDisplayed()
     }

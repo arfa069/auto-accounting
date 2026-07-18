@@ -2,6 +2,8 @@ package com.autoaccounting.backend.account
 
 import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.ai.AiCategorizationService
+import com.autoaccounting.backend.ai.InMemoryAiCategorizationLogStore
+import com.autoaccounting.backend.config.CloudConfigStore
 import com.autoaccounting.backend.config.CloudConfigService
 import com.autoaccounting.backend.config.InMemoryCloudConfigStore
 import com.autoaccounting.backend.config.StoredCloudConfig
@@ -28,6 +30,29 @@ class AccountServiceTest {
         assertEquals(
             AccountError.PHONE_ALREADY_REGISTERED,
             service.register("13800138000", "123456", "Aa123456!").error
+        )
+    }
+
+    @Test
+    fun serverRejectsMalformedPhoneCodePasswordAndDeviceId() {
+        val service = accountService()
+
+        assertEquals(
+            AccountError.INVALID_REQUEST,
+            service.issueSmsCode("123", "device-a", "127.0.0.1").error
+        )
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        assertEquals(
+            AccountError.INVALID_REQUEST,
+            service.register("13800138000", "12345", "Aa123456!").error
+        )
+        assertEquals(
+            AccountError.INVALID_REQUEST,
+            service.register("13800138000", "123456", "weak-password").error
+        )
+        assertEquals(
+            AccountError.LOGIN_FAILED,
+            service.login("13800138000", "Aa123456!", "invalid device").error
         )
     }
 
@@ -85,6 +110,16 @@ class AccountServiceTest {
     }
 
     @Test
+    fun verificationCodeHashUsesConstantTimeCompatibleComparison() {
+        val hasher = VerificationCodeHasher.forTests()
+        val hash = hasher.hash("13800138000", "123456")
+
+        assertTrue(hasher.matches("13800138000", "123456", hash))
+        assertTrue(!hasher.matches("13800138000", "654321", hash))
+        assertTrue(!hasher.matches("13800138000", "123456", "not-base64"))
+    }
+
+    @Test
     fun loginLocksAfterFiveConsecutivePasswordFailures() {
         val service = accountService()
         service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
@@ -137,26 +172,45 @@ class AccountServiceTest {
 
     @Test
     fun recoveryResetsPasswordAfterSmsVerification() {
-        val service = accountService()
+        var tokenIndex = 0
+        val service = accountService(tokenGenerator = { "token-${++tokenIndex}" })
         service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.register("13800138000", "123456", "Aa123456!")
+        val originalToken = (service.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
 
         service.advanceTimeBy(61_000)
         service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
         val recovered = service.recoverPassword("13800138000", "123456", "Bb123456!")
 
         assertTrue(recovered is AccountResult.Success)
+        assertEquals(AccountError.TOKEN_INVALID, service.verifyToken(originalToken).error)
         assertEquals(AccountError.LOGIN_FAILED, service.login("13800138000", "Aa123456!").error)
         assertTrue(service.login("13800138000", "Bb123456!") is AccountResult.Success)
+    }
+
+    @Test
+    fun signOutRevokesOnlyCurrentSession() {
+        var tokenIndex = 0
+        val service = accountService(tokenGenerator = { "token-${++tokenIndex}" })
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        val firstToken = (service.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
+        val secondToken = (service.login("13800138000", "Aa123456!", "device-b")
+            as AccountResult.Success<AccountToken>).value.token
+
+        assertEquals(AccountResult.Success(Unit), service.signOut(firstToken))
+        assertEquals(AccountError.TOKEN_INVALID, service.verifyToken(firstToken).error)
+        assertTrue(service.verifyToken(secondToken) is AccountResult.Success)
     }
 
     @Test
     fun accountDeletionHasCoolingOffCancelAndFinalDeleteStateMachine() {
         val service = accountService(startMillis = 0)
         service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.register("13800138000", "123456", "Aa123456!")
+        val token = (service.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
 
-        val requested = service.requestAccountDeletion("13800138000")
+        val requested = service.requestAccountDeletion(token)
 
         assertEquals(
             AccountDeletionStatus(
@@ -172,17 +226,18 @@ class AccountServiceTest {
             service.writeCloudConfiguration("13800138000").error
         )
 
-        assertTrue(service.cancelAccountDeletion("13800138000") is AccountResult.Success<*>)
+        assertTrue(service.cancelAccountDeletion(token) is AccountResult.Success<*>)
         assertEquals(AccountResult.Success(Unit), service.writeCloudConfiguration("13800138000"))
 
-        service.requestAccountDeletion("13800138000")
+        service.requestAccountDeletion(token)
         service.advanceTimeBy(604_799_999)
-        assertTrue(service.deleteDueAccounts().isEmpty())
+        assertTrue(service.accountsDueForDeletion().isEmpty())
 
         service.advanceTimeBy(1)
-        assertEquals(listOf("13800138000"), service.deleteDueAccounts())
-        assertTrue(service.deleteDueAccounts().isEmpty())
-        assertEquals(AccountError.PHONE_NOT_REGISTERED, service.requestAccountDeletion("13800138000").error)
+        assertEquals(listOf("13800138000"), service.accountsDueForDeletion())
+        assertTrue(service.finalizeAccountDeletion("13800138000"))
+        assertTrue(service.accountsDueForDeletion().isEmpty())
+        assertEquals(AccountError.TOKEN_INVALID, service.requestAccountDeletion(token).error)
     }
 
     @Test
@@ -194,7 +249,8 @@ class AccountServiceTest {
             accountService = accountService
         )
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        val token = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
         aiService.suggest(
             accountPhone = "13800138000",
             merchantTitle = "午餐",
@@ -216,7 +272,7 @@ class AccountServiceTest {
             )
         )
 
-        accountService.requestAccountDeletion("13800138000")
+        accountService.requestAccountDeletion(token)
         accountService.advanceTimeBy(604_800_000)
         val deletionJob = AccountDeletionJob(accountService, aiService, cloudConfigService)
         val deletedPhones = deletionJob.runDueDeletion()
@@ -228,17 +284,55 @@ class AccountServiceTest {
     }
 
     @Test
+    fun finalDeletionRetainsAccountWhenCleanupFailsAndSucceedsOnRetry() {
+        val accountService = accountService(startMillis = 0)
+        val aiStore = InMemoryAiCategorizationLogStore()
+        val aiService = AiCategorizationService(logStore = aiStore)
+        val configStore = FailingOnceCloudConfigStore()
+        val cloudConfigService = CloudConfigService(configStore, accountService)
+        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        val token = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
+        aiService.suggest(
+            accountPhone = "13800138000",
+            merchantTitle = "merchant",
+            sourceLabel = "source",
+            transactionKind = "expense",
+            amountMinor = 100,
+            categoryCandidates = emptyList(),
+            note = null,
+            rawEvidenceText = null,
+            enhancedContext = false
+        )
+        cloudConfigService.writeConfig(
+            StoredCloudConfig(phone = "13800138000", updatedAtMillis = 0)
+        )
+        accountService.requestAccountDeletion(token)
+        accountService.advanceTimeBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
+        val job = AccountDeletionJob(accountService, aiService, cloudConfigService)
+
+        assertTrue(job.runDueDeletion().isEmpty())
+        assertTrue(accountService.verifyToken(token) is AccountResult.Success)
+        assertTrue(aiStore.allLogs().isEmpty())
+
+        assertEquals(listOf("13800138000"), job.runDueDeletion())
+        assertEquals(AccountError.TOKEN_INVALID, accountService.verifyToken(token).error)
+        assertTrue(job.runDueDeletion().isEmpty())
+    }
+
+    @Test
     fun deviceWritesArePausedWhileAccountDeletionIsPending() {
         val service = accountService()
         service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.register("13800138000", "123456", "Aa123456!")
+        val token = (service.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
 
         // Verify initial device registered
         assertEquals(1, service.registeredDevices("13800138000").size)
         assertEquals("device-a", service.registeredDevices("13800138000").first().deviceId)
 
         // Request account deletion -> enters pending state
-        service.requestAccountDeletion("13800138000")
+        service.requestAccountDeletion(token)
 
         // Try to log in with new device during cooling-off -> should NOT write the new device
         service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
@@ -247,7 +341,7 @@ class AccountServiceTest {
         assertEquals("device-a", devicesDuringPending.first().deviceId)
 
         // Cancel deletion -> writes allowed again
-        service.cancelAccountDeletion("13800138000")
+        service.cancelAccountDeletion(token)
 
         // Log in again -> should write the new device
         service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
@@ -256,9 +350,30 @@ class AccountServiceTest {
         assertEquals(listOf("device-a", "device-b"), devicesAfterCancel.map { it.deviceId })
     }
 
-    private fun accountService(startMillis: Long? = null): AccountService = AccountService(
+    private fun accountService(
+        startMillis: Long? = null,
+        tokenGenerator: () -> String = { "token-1" }
+    ): AccountService = AccountService(
         smsCodeGenerator = { "123456" },
-        tokenGenerator = { "token-1" },
+        tokenGenerator = tokenGenerator,
+        verificationCodeHasher = VerificationCodeHasher.forTests(),
         clock = startMillis?.let { MutableClock(it) } ?: MutableClock()
     )
+
+    private class FailingOnceCloudConfigStore : CloudConfigStore {
+        private val delegate = InMemoryCloudConfigStore()
+        private var failNextDelete = true
+
+        override fun findConfig(phone: String): StoredCloudConfig? = delegate.findConfig(phone)
+
+        override fun upsertConfig(config: StoredCloudConfig) = delegate.upsertConfig(config)
+
+        override fun deleteConfig(phone: String) {
+            if (failNextDelete) {
+                failNextDelete = false
+                error("simulated cleanup failure")
+            }
+            delegate.deleteConfig(phone)
+        }
+    }
 }

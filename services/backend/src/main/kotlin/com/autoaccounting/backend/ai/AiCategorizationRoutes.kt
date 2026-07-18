@@ -5,7 +5,8 @@ import com.autoaccounting.api.ApiJsonContracts
 import com.autoaccounting.backend.account.AccountError
 import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
-import com.autoaccounting.backend.account.AccountToken
+import com.autoaccounting.backend.account.accountBearerToken
+import com.autoaccounting.backend.account.respondAccountFailure
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -16,32 +17,24 @@ import io.ktor.server.routing.post
 
 fun Route.aiCategorizationRoutes(
     aiCategorizationService: AiCategorizationService,
-    accountService: AccountService? = null
+    accountService: AccountService
 ) {
     post("/ai/categorize") {
         val parameters = call.receiveParameters()
-        val accountPhone = parameters["accountPhone"]?.takeIf { it.isNotBlank() }
-        val token = parameters["token"]?.takeIf { it.isNotBlank() }
-        val resolvedPhone = if (token != null) {
-            when (val verified = accountService?.verifyToken(token)) {
-                is AccountResult.Success -> verified.value.phone
-                else -> null
+        val account = when (val verified = accountService.verifyToken(call.accountBearerToken().orEmpty())) {
+            is AccountResult.Success -> verified.value
+            is AccountResult.Failure -> {
+                call.respondAccountFailure(verified.error)
+                return@post
             }
-        } else {
-            null
         }
-        val finalPhone = accountPhone ?: resolvedPhone
 
-        if (finalPhone != null && accountService?.canWriteCloudData(finalPhone) == false) {
-            call.respondText(
-                text = """{"ok":false,"error":"${AccountError.ACCOUNT_DELETION_PENDING.name}","message":"${AccountError.ACCOUNT_DELETION_PENDING.message}"}""",
-                contentType = ContentType.Application.Json,
-                status = HttpStatusCode.Conflict
-            )
+        if (!accountService.canWriteCloudData(account.phone)) {
+            call.respondAccountFailure(AccountError.ACCOUNT_DELETION_PENDING)
             return@post
         }
         val suggestion = aiCategorizationService.suggest(
-            accountPhone = finalPhone,
+            accountPhone = account.phone,
             merchantTitle = parameters["merchantTitle"].orEmpty(),
             sourceLabel = parameters["sourceLabel"].orEmpty(),
             transactionKind = parameters["transactionKind"].orEmpty(),

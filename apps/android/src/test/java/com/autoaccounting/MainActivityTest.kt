@@ -18,6 +18,7 @@ import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
+import com.autoaccounting.feature.account.FakeAccountRepository
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.ledger.LedgerTestTags
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
@@ -96,7 +97,10 @@ class MainActivityTest {
     fun firstSignInNavigatesToHome() {
         clearPersistedSession()
         composeRule.setContent {
-            AutoAccountingApp()
+            AutoAccountingApp(
+                accountRepositoryOverride = FakeAccountRepository(),
+                persistAccountSessionOverride = { true }
+            )
         }
 
         composeRule.onNodeWithText("登录").performClick()

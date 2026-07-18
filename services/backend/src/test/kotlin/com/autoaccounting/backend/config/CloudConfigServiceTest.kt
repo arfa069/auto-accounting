@@ -50,7 +50,7 @@ class CloudConfigServiceTest {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
         service.accountService.register("13800138000", "123456", "Aa123456!")
-        service.accountService.requestAccountDeletion("13800138000")
+        service.accountService.requestAccountDeletion("token-1")
 
         val result = service.configService.writeConfig(
             StoredCloudConfig(

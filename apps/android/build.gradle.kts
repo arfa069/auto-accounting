@@ -8,6 +8,22 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
+val localBuildProperties = Properties().apply {
+    val file = project.rootProject.file("local.properties")
+    if (file.exists()) load(FileInputStream(file))
+}
+val configuredBackendUrl = localBuildProperties.getProperty("AUTO_ACCOUNTING_BACKEND_URL")
+    ?: System.getenv("AUTO_ACCOUNTING_BACKEND_URL")
+val debugBackendUrl = configuredBackendUrl?.takeIf { it.isNotBlank() }
+    ?: "http://10.0.2.2:8080"
+val releaseBackendUrl = configuredBackendUrl
+    ?.trim()
+    ?.takeIf { it.startsWith("https://", ignoreCase = true) }
+    .orEmpty()
+
+fun String.asBuildConfigString(): String =
+    "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
     namespace = "com.autoaccounting"
     compileSdk = 36
@@ -26,16 +42,11 @@ android {
 
     signingConfigs {
         val keystoreFile = file("release.jks")
-        val properties = Properties()
-        val localProperties = project.rootProject.file("local.properties")
-        if (localProperties.exists()) {
-            properties.load(FileInputStream(localProperties))
-        }
-        val storePassword = properties.getProperty("RELEASE_STORE_PASSWORD")
+        val storePassword = localBuildProperties.getProperty("RELEASE_STORE_PASSWORD")
             ?: System.getenv("RELEASE_STORE_PASSWORD")
-        val keyAlias = properties.getProperty("RELEASE_KEY_ALIAS")
+        val keyAlias = localBuildProperties.getProperty("RELEASE_KEY_ALIAS")
             ?: System.getenv("RELEASE_KEY_ALIAS")
-        val keyPassword = properties.getProperty("RELEASE_KEY_PASSWORD")
+        val keyPassword = localBuildProperties.getProperty("RELEASE_KEY_PASSWORD")
             ?: System.getenv("RELEASE_KEY_PASSWORD")
         if (
             keystoreFile.exists() &&
@@ -56,9 +67,19 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            buildConfigField(
+                "String",
+                "AUTO_ACCOUNTING_BACKEND_URL",
+                debugBackendUrl.asBuildConfigString()
+            )
         }
         release {
             isMinifyEnabled = false
+            buildConfigField(
+                "String",
+                "AUTO_ACCOUNTING_BACKEND_URL",
+                releaseBackendUrl.asBuildConfigString()
+            )
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

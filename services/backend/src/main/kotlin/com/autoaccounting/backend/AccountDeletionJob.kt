@@ -7,14 +7,15 @@ import com.autoaccounting.backend.config.CloudConfigService
 class AccountDeletionJob(
     private val accountService: AccountService,
     private val aiCategorizationService: AiCategorizationService,
-    private val cloudConfigService: CloudConfigService? = null
+    private val cloudConfigService: CloudConfigService
 ) {
     fun runDueDeletion(): List<String> {
-        val deletedPhones = accountService.deleteDueAccounts()
-        deletedPhones.forEach { phone ->
-            aiCategorizationService.deleteLogsForAccount(phone)
-            cloudConfigService?.deleteConfig(phone)
+        return accountService.accountsDueForDeletion().mapNotNull { phone ->
+            runCatching {
+                aiCategorizationService.deleteLogsForAccount(phone)
+                cloudConfigService.deleteConfig(phone)
+                phone.takeIf { accountService.finalizeAccountDeletion(phone) }
+            }.getOrNull()
         }
-        return deletedPhones
     }
 }

@@ -2,6 +2,8 @@ package com.autoaccounting.backend.account
 
 import java.sql.DriverManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,6 +16,20 @@ class AccountPersistenceTest {
         }
 
         assertTrue(error.message.orEmpty().contains("AUTO_ACCOUNTING_DATABASE_URL"))
+    }
+
+    @Test
+    fun environmentBootstrapRequiresStrongAuthPepper() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            AccountService.fromEnvironment(
+                mapOf(
+                    "AUTO_ACCOUNTING_DATABASE_URL" to h2DatabaseUrl(),
+                    "AUTO_ACCOUNTING_AUTH_PEPPER" to "too-short"
+                )
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("AUTO_ACCOUNTING_AUTH_PEPPER"))
     }
 
     @Test
@@ -108,6 +124,97 @@ class AccountPersistenceTest {
         }
     }
 
+    @Test
+    fun migrationVersion4ClearsLegacyCredentialsAndRenamesSensitiveColumns() {
+        val databaseUrl = h2DatabaseUrl()
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at_millis BIGINT NOT NULL)"
+                )
+                statement.execute("INSERT INTO schema_migrations VALUES (1, 0)")
+                statement.execute(
+                    """
+                    CREATE TABLE account_sms_codes (
+                        phone VARCHAR(32) PRIMARY KEY,
+                        code VARCHAR(16) NOT NULL,
+                        expires_at_millis BIGINT NOT NULL,
+                        failed_attempts INTEGER NOT NULL,
+                        invalidated BOOLEAN NOT NULL,
+                        device_id TEXT NOT NULL,
+                        ip_address TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    "CREATE TABLE account_sessions (token TEXT PRIMARY KEY, phone VARCHAR(32) NOT NULL, device_id TEXT NOT NULL, issued_at_millis BIGINT NOT NULL)"
+                )
+                statement.execute(
+                    "INSERT INTO account_sms_codes VALUES ('13800138000', '123456', 1000, 0, FALSE, 'device-a', '127.0.0.1')"
+                )
+                statement.execute(
+                    "INSERT INTO account_sessions VALUES ('raw-token', '13800138000', 'device-a', 0)"
+                )
+            }
+        }
+
+        JdbcAccountStore(databaseUrl)
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT COUNT(*) FROM account_sms_codes").use { result ->
+                    result.next()
+                    assertEquals(0, result.getInt(1))
+                }
+                statement.executeQuery("SELECT COUNT(*) FROM account_sessions").use { result ->
+                    result.next()
+                    assertEquals(0, result.getInt(1))
+                }
+            }
+            val columns = connection.metaData.getColumns(null, null, null, null).use { result ->
+                buildSet {
+                    while (result.next()) {
+                        val table = result.getString("TABLE_NAME").lowercase()
+                        if (table == "account_sms_codes" || table == "account_sessions") {
+                            add(table to result.getString("COLUMN_NAME").lowercase())
+                        }
+                    }
+                }
+            }
+            assertTrue("account_sms_codes" to "code_hash" in columns)
+            assertTrue("account_sessions" to "token_hash" in columns)
+            assertFalse("account_sms_codes" to "code" in columns)
+            assertFalse("account_sessions" to "token" in columns)
+        }
+    }
+
+    @Test
+    fun newVerificationCodesAndSessionsPersistOnlyHashes() {
+        val databaseUrl = h2DatabaseUrl()
+        val service = accountService(databaseUrl, MutableClock(0))
+        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT code_hash FROM account_sms_codes").use { result ->
+                    result.next()
+                    assertNotEquals("123456", result.getString(1))
+                }
+            }
+        }
+
+        service.register("13800138000", "123456", "Aa123456!")
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT token_hash FROM account_sessions").use { result ->
+                    result.next()
+                    assertNotEquals("token-1", result.getString(1))
+                }
+            }
+        }
+    }
+
     private fun accountService(
         databaseUrl: String,
         clock: MutableClock,
@@ -117,6 +224,7 @@ class AccountPersistenceTest {
             store = JdbcAccountStore(databaseUrl),
             smsCodeGenerator = { "123456" },
             tokenGenerator = tokenGenerator,
+            verificationCodeHasher = VerificationCodeHasher.forTests(),
             clock = clock
         )
     }

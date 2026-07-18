@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.account.AccountDeletionUiState
+import com.autoaccounting.feature.account.AccountRuntimeState
+import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.compliance.AUTO_ACCOUNTING_COMPLIANCE
 import com.autoaccounting.feature.compliance.PermissionExplanationId
@@ -44,6 +46,7 @@ fun CategorizationRulesScreen(
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
+    accountRuntimeState: AccountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
     onBack: (() -> Unit)? = null
 ) {
     var rules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
@@ -55,6 +58,7 @@ fun CategorizationRulesScreen(
         onAiSettingsChange = onAiSettingsChange,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
+        accountRuntimeState = accountRuntimeState,
         onBack = onBack
     )
 }
@@ -68,6 +72,7 @@ fun CategorizationRulesScreen(
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
+    accountRuntimeState: AccountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
     onBack: (() -> Unit)? = null
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
@@ -95,7 +100,8 @@ fun CategorizationRulesScreen(
         when (accountSession) {
             is AccountSession.SignedIn -> AiConsentItem(
                 settings = currentAiSettings,
-                cloudWritesPaused = accountDeletionState.isPending,
+                cloudWritesPaused = accountDeletionState.isPending ||
+                    !accountRuntimeState.cloudWritesAllowed,
                 onSettingsChange = ::updateAiSettings
             )
             else -> Text("智能分类登录后可用；本地分类规则不受影响。")

@@ -5,8 +5,10 @@ import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.JdbcAccountStore
 import com.autoaccounting.backend.account.MutableClock
 import com.autoaccounting.backend.ai.JdbcAiCategorizationLogStore
+import io.ktor.client.request.header
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.server.testing.testApplication
@@ -36,23 +38,21 @@ class ApplicationEnvironmentIntegrationTest {
             val writeConfigResponse = client.submitForm(
                 url = "/account/cloud-config/write",
                 formParameters = Parameters.build {
-                    append("token", "token-1")
                     append("aiConsentGranted", "true")
                     append("enhancedContextGranted", "true")
                     append("featureFlags", ApiJsonContracts.encodeFeatureFlags(mapOf("beta" to true)))
                 }
-            )
+            ) { header(HttpHeaders.Authorization, "Bearer token-1") }
 
             val aiResponse = client.submitForm(
                 url = "/ai/categorize",
                 formParameters = Parameters.build {
-                    append("token", "token-1")
                     append("merchantTitle", "午餐")
                     append("sourceLabel", "微信")
                     append("transactionKind", "支出")
                     append("amountMinor", "3590")
                 }
-            )
+            ) { header(HttpHeaders.Authorization, "Bearer token-1") }
 
             assertEquals(HttpStatusCode.OK, writeConfigResponse.status)
             assertEquals(HttpStatusCode.OK, aiResponse.status)
@@ -70,10 +70,8 @@ class ApplicationEnvironmentIntegrationTest {
 
             val readConfigResponse = client.submitForm(
                 url = "/account/cloud-config/read",
-                formParameters = Parameters.build {
-                    append("token", "token-1")
-                }
-            )
+                formParameters = Parameters.Empty
+            ) { header(HttpHeaders.Authorization, "Bearer token-1") }
 
             assertEquals(HttpStatusCode.OK, readConfigResponse.status)
             val configContract = ApiJsonContracts.parseCloudConfigResponse(readConfigResponse.bodyAsText())
@@ -90,6 +88,7 @@ class ApplicationEnvironmentIntegrationTest {
             store = JdbcAccountStore(databaseUrl),
             smsCodeGenerator = { "123456" },
             tokenGenerator = { "token-1" },
+            verificationCodeHasher = com.autoaccounting.backend.account.VerificationCodeHasher.forTests(),
             clock = clock
         )
     }

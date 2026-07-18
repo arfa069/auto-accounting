@@ -142,7 +142,7 @@ Enhanced context may include more complete title, note, source detail, or nearby
 ## 7. Backend Services
 
 Ktor services:
-- Auth service: phone/password login, registration, token refresh.
+- Auth service: phone/password login, registration, password recovery, Session verification, and current-Session logout. Refresh tokens and fixed token expiry are not part of this version.
 - SMS verification service: issue, verify, expire, and rate-limit codes.
 - Device service: registered devices and device state.
 - Cloud configuration service: consent, feature flags, AI settings, deletion-pending state.
@@ -151,15 +151,14 @@ Ktor services:
 - Compliance service: serve privacy policy, collection list, third-party list, permission explanations.
 
 PostgreSQL tables:
-- `users`
-- `password_credentials`
-- `sms_verification_codes`
+- `account_users`
+- `account_password_credentials`
+- `account_sms_codes`
+- `account_sms_issues`
+- `account_sessions`
 - `registered_devices`
-- `cloud_configurations`
+- `cloud_config`
 - `ai_categorization_logs`
-- `account_deletion_requests`
-- `audit_events`
-- `compliance_documents`
 
 ## 8. Account And Security
 
@@ -167,6 +166,14 @@ Password policy:
 - 8-32 characters.
 - Must include uppercase letters, lowercase letters, numbers, and symbols.
 - Store passwords with a modern password hash.
+
+Session and transport boundary:
+- Android receives the backend URL at build time. Debug defaults to `http://10.0.2.2:8080` and is the only build that permits cleartext traffic; Release uses only an explicitly configured HTTPS URL and otherwise keeps account networking unavailable.
+- Android network calls use `HttpURLConnection` on the IO dispatcher with 10-second connect and 15-second read timeouts. Registration, login, SMS, logout, and deletion actions are not retried automatically.
+- Protected routes resolve identity only from `Authorization: Bearer`; client-submitted phone numbers or form tokens never select the protected account.
+- SMS codes are stored as HMAC-SHA-256 values keyed by `AUTO_ACCOUNTING_AUTH_PEPPER`; random Session tokens are stored only as SHA-256 hashes. Password and verification comparisons use constant-time byte comparison.
+- Android encrypts phone and token together with Android Keystore AES-GCM in dedicated preferences. They are excluded from Room, ledger backup, diagnostics, logs, and rendered UI. A random persisted installation UUID replaces hardware identifiers.
+- Startup restores encrypted credentials before verifying them in the background. Network/configuration failures retain an offline-unverified Session and local ledger access; only an explicit invalid Session clears ciphertext and returns to persistent local mode.
 
 Login failure:
 - After 5 consecutive password failures, temporarily lock login and suggest SMS recovery.
@@ -181,7 +188,7 @@ SMS limits:
 Account deletion:
 - 7-day cooling-off period.
 - During cooling-off: login allowed, cancel allowed, cloud AI and device config writes paused.
-- At execution: delete account, devices, cloud config, AI logs.
+- At execution: idempotently delete AI logs and cloud config first; only after both succeed delete the account, devices, and Sessions. A cleanup failure retains the pending account for a later retry.
 - Deleting all local ledger books remains a separate protected local-data action.
 
 ## 9. Permission Architecture
@@ -241,3 +248,4 @@ Manual beta checks:
 - Diagnostic opt-in, masking lifecycle, encrypted export/decryption, clear semantics, and payment-scope rejection.
 - Backup export/import.
 - Account deletion cooling-off and cancel flow.
+- Session persistence failure, offline restart, explicit invalid Session, current-Session logout failure, Bearer anti-impersonation, and hashed credential migration.

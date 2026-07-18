@@ -1,6 +1,11 @@
 package com.autoaccounting.backend.account
 
+import com.autoaccounting.api.AccountApiJsonContracts
+import com.autoaccounting.api.AccountDeletionStatusContract
+import com.autoaccounting.api.AccountErrorResponseContract
+import com.autoaccounting.api.AccountSessionResponseContract
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
@@ -12,115 +17,160 @@ import io.ktor.server.routing.post
 fun Route.accountRoutes(accountService: AccountService) {
     post("/account/sms") {
         val parameters = call.receiveParameters()
-        val result = accountService.issueSmsCode(
-            phone = parameters["phone"].orEmpty(),
-            deviceId = parameters["deviceId"].orEmpty(),
-            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
+        call.respondAccountResult(
+            accountService.issueSmsCode(
+                phone = parameters["phone"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/register") {
         val parameters = call.receiveParameters()
-        val result = accountService.register(
-            phone = parameters["phone"].orEmpty(),
-            code = parameters["code"].orEmpty(),
-            password = parameters["password"].orEmpty(),
-            deviceId = parameters["deviceId"].orEmpty(),
-            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
+        call.respondAccountResult(
+            accountService.register(
+                phone = parameters["phone"].orEmpty(),
+                code = parameters["code"].orEmpty(),
+                password = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/login") {
         val parameters = call.receiveParameters()
-        val result = accountService.login(
-            phone = parameters["phone"].orEmpty(),
-            password = parameters["password"].orEmpty(),
-            deviceId = parameters["deviceId"].orEmpty(),
-            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
+        call.respondAccountResult(
+            accountService.login(
+                phone = parameters["phone"].orEmpty(),
+                password = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/recover") {
         val parameters = call.receiveParameters()
-        val result = accountService.recoverPassword(
-            phone = parameters["phone"].orEmpty(),
-            code = parameters["code"].orEmpty(),
-            newPassword = parameters["password"].orEmpty(),
-            deviceId = parameters["deviceId"].orEmpty(),
-            ipAddress = parameters["ipAddress"] ?: call.request.local.remoteHost
+        call.respondAccountResult(
+            accountService.recoverPassword(
+                phone = parameters["phone"].orEmpty(),
+                code = parameters["code"].orEmpty(),
+                newPassword = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/token/verify") {
-        val parameters = call.receiveParameters()
-        val result = accountService.verifyToken(
-            token = parameters["token"].orEmpty()
+        call.respondAccountResult(
+            accountService.verifyToken(call.accountBearerToken().orEmpty()),
+            includeToken = false
         )
-        call.respondAccountResult(result)
+    }
+
+    post("/account/logout") {
+        call.respondAccountResult(accountService.signOut(call.accountBearerToken().orEmpty()))
     }
 
     post("/account/delete/request") {
-        val parameters = call.receiveParameters()
-        val result = accountService.requestAccountDeletion(
-            phone = parameters["phone"].orEmpty()
+        call.respondAccountResult(
+            accountService.requestAccountDeletion(call.accountBearerToken().orEmpty())
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/delete/cancel") {
-        val parameters = call.receiveParameters()
-        val result = accountService.cancelAccountDeletion(
-            phone = parameters["phone"].orEmpty()
+        call.respondAccountResult(
+            accountService.cancelAccountDeletion(call.accountBearerToken().orEmpty())
         )
-        call.respondAccountResult(result)
     }
 
     post("/account/delete/status") {
-        val parameters = call.receiveParameters()
-        val result = accountService.getAccountDeletionStatus(
-            phone = parameters["phone"].orEmpty()
-        )
-        call.respondAccountResult(result)
+        when (val result = accountService.getAccountDeletionStatus(call.accountBearerToken().orEmpty())) {
+            is AccountResult.Success -> call.respondJson(
+                AccountApiJsonContracts.encodeDeletionStatusResponse(
+                    result.value?.toContract() ?: AccountDeletionStatusContract()
+                ),
+                HttpStatusCode.OK
+            )
+            is AccountResult.Failure -> call.respondAccountFailure(result.error)
+        }
     }
 }
 
-private suspend fun ApplicationCall.respondAccountResult(result: AccountResult<*>) {
+internal fun ApplicationCall.accountBearerToken(): String? {
+    val header = request.headers[HttpHeaders.Authorization] ?: return null
+    val prefix = "Bearer "
+    if (!header.startsWith(prefix, ignoreCase = true)) return null
+    return header.substring(prefix.length).trim().takeIf(String::isNotBlank)
+}
+
+internal suspend fun ApplicationCall.respondAccountFailure(error: AccountError) {
+    respondJson(
+        AccountApiJsonContracts.encodeErrorResponse(
+            AccountErrorResponseContract(error = error.name, message = error.message)
+        ),
+        error.statusCode()
+    )
+}
+
+private suspend fun ApplicationCall.respondAccountResult(
+    result: AccountResult<*>,
+    includeToken: Boolean = true
+) {
     when (result) {
         is AccountResult.Success<*> -> {
-            val value = result.value
-            respondText(
-                text = when (value) {
-                    is AccountToken -> """{"ok":true,"phone":"${value.phone}","token":"${value.token}"}"""
-                    is AccountDeletionStatus -> """{"ok":true,"phone":"${value.phone}","requestedAtMillis":${value.requestedAtMillis},"finalDeletionAtMillis":${value.finalDeletionAtMillis}}"""
-                    else -> """{"ok":true}"""
-                },
-                contentType = ContentType.Application.Json,
-                status = HttpStatusCode.OK
-            )
+            val body = when (val value = result.value) {
+                is AccountToken -> AccountApiJsonContracts.encodeSessionResponse(
+                    value.toContract(includeToken)
+                )
+                is AccountDeletionStatus -> AccountApiJsonContracts.encodeDeletionStatusResponse(value.toContract())
+                else -> AccountApiJsonContracts.encodeSuccessResponse()
+            }
+            respondJson(body, HttpStatusCode.OK)
         }
-        is AccountResult.Failure -> respondText(
-            text = """{"ok":false,"error":"${result.error.name}","message":"${result.error.message}"}""",
-            contentType = ContentType.Application.Json,
-            status = result.error.statusCode()
-        )
+        is AccountResult.Failure -> respondAccountFailure(result.error)
     }
+}
+
+private suspend fun ApplicationCall.respondJson(body: String, status: HttpStatusCode) {
+    respondText(
+        text = body,
+        contentType = ContentType.Application.Json,
+        status = status
+    )
+}
+
+private fun AccountToken.toContract(includeToken: Boolean): AccountSessionResponseContract {
+    return AccountSessionResponseContract(
+        phone = phone,
+        token = token.takeIf { includeToken },
+        deletionStatus = deletionStatus?.toContract() ?: AccountDeletionStatusContract()
+    )
+}
+
+private fun AccountDeletionStatus.toContract(): AccountDeletionStatusContract {
+    return AccountDeletionStatusContract(
+        pending = true,
+        requestedAtMillis = requestedAtMillis,
+        finalDeletionAtMillis = finalDeletionAtMillis
+    )
 }
 
 private fun AccountError.statusCode(): HttpStatusCode = when (this) {
-    AccountError.TOKEN_INVALID -> HttpStatusCode.Unauthorized
+    AccountError.TOKEN_INVALID,
     AccountError.LOGIN_FAILED -> HttpStatusCode.Unauthorized
-    AccountError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
+    AccountError.ACCOUNT_LOCKED,
     AccountError.SMS_TOO_FREQUENT -> HttpStatusCode.TooManyRequests
     AccountError.SMS_PROVIDER_UNCONFIGURED,
     AccountError.SMS_SEND_FAILED -> HttpStatusCode.ServiceUnavailable
     AccountError.PHONE_ALREADY_REGISTERED -> HttpStatusCode.Conflict
     AccountError.PHONE_NOT_REGISTERED -> HttpStatusCode.NotFound
-    AccountError.ACCOUNT_DELETION_PENDING -> HttpStatusCode.Conflict
+    AccountError.ACCOUNT_DELETION_PENDING,
     AccountError.ACCOUNT_DELETION_NOT_PENDING -> HttpStatusCode.Conflict
+    AccountError.INVALID_REQUEST,
     AccountError.VERIFICATION_CODE_WRONG,
     AccountError.VERIFICATION_CODE_EXPIRED -> HttpStatusCode.BadRequest
 }

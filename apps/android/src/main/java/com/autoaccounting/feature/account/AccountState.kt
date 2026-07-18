@@ -16,6 +16,44 @@ sealed interface AccountSession {
     ) : AccountSession
 }
 
+enum class AccountRuntimeStatus {
+    LocalMode,
+    Validating,
+    Verified,
+    OfflineUnverified,
+    DeletionCoolingOff
+}
+
+data class AccountRuntimeState(
+    val status: AccountRuntimeStatus = AccountRuntimeStatus.LocalMode
+) {
+    val cloudWritesAllowed: Boolean
+        get() = status == AccountRuntimeStatus.Verified
+
+    val accountOperationsAllowed: Boolean
+        get() = status == AccountRuntimeStatus.Verified ||
+            status == AccountRuntimeStatus.DeletionCoolingOff
+}
+
+sealed interface AccountSessionVerificationDecision {
+    data class Verified(val credentials: AccountCredentials) : AccountSessionVerificationDecision
+    data object KeepOfflineSession : AccountSessionVerificationDecision
+    data object ClearInvalidSession : AccountSessionVerificationDecision
+}
+
+fun resolveAccountSessionVerification(
+    result: AccountRepositoryResult<AccountCredentials>
+): AccountSessionVerificationDecision = when (result) {
+    is AccountRepositoryResult.Success ->
+        AccountSessionVerificationDecision.Verified(result.value)
+    is AccountRepositoryResult.Failure ->
+        if (result.kind == AccountFailureKind.InvalidSession) {
+            AccountSessionVerificationDecision.ClearInvalidSession
+        } else {
+            AccountSessionVerificationDecision.KeepOfflineSession
+        }
+}
+
 data class AccountUiState(
     val flow: AccountFlow = AccountFlow.Landing,
     val phone: String = "",
@@ -29,6 +67,7 @@ data class AccountUiState(
     val passwordError: String? = null,
     val confirmPasswordError: String? = null,
     val smsCountdownSeconds: Int = 0,
+    val operationInProgress: Boolean = false,
     val session: AccountSession? = null
 ) {
     val hasNoFieldErrors: Boolean
@@ -102,7 +141,7 @@ fun reduceAccountState(
         if (phoneError != null) {
             state.copy(phoneError = phoneError)
         } else {
-            state.clearErrors().copy(smsCountdownSeconds = 60)
+            state.clearErrors()
         }
     }
     AccountAction.TickSmsCountdown -> state.copy(

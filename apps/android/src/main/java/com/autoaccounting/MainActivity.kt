@@ -41,10 +41,21 @@ import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
+import com.autoaccounting.feature.account.AccountCredentials
+import com.autoaccounting.feature.account.AccountManagementScreen
+import com.autoaccounting.feature.account.AccountRepository
+import com.autoaccounting.feature.account.AccountRepositoryResult
+import com.autoaccounting.feature.account.AccountRuntimeState
+import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountScreen
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.account.AccountSessionRestoreResult
+import com.autoaccounting.feature.account.AccountSessionVerificationDecision
+import com.autoaccounting.feature.account.HttpAccountRepository
+import com.autoaccounting.feature.account.InstallationIdStore
 import com.autoaccounting.feature.account.LocalModeSessionStore
-import com.autoaccounting.feature.account.signOutToLocalMode
+import com.autoaccounting.feature.account.SecureAccountSessionStore
+import com.autoaccounting.feature.account.resolveAccountSessionVerification
 import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.billsync.ManualBillImportHost
@@ -83,7 +94,6 @@ import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
 import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.launchSettingsIntent
-import com.autoaccounting.feature.profile.AccountManagementScreen
 import com.autoaccounting.feature.profile.ProfileDestination
 import com.autoaccounting.feature.profile.ProfileOverviewScreen
 import com.autoaccounting.feature.review.ReviewQueuePersistence
@@ -278,7 +288,9 @@ fun AutoAccountingApp(
     onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
     permissionStateLoaded: Boolean = false,
     reviewNavigationRequest: Long = 0,
-    pendingEntryNavigationId: String? = null
+    pendingEntryNavigationId: String? = null,
+    accountRepositoryOverride: AccountRepository? = null,
+    persistAccountSessionOverride: ((AccountCredentials) -> Boolean)? = null
 ) {
     val context = LocalContext.current
     val database = remember {
@@ -295,6 +307,22 @@ fun AutoAccountingApp(
     }
     val localModeSessionStore = remember(context.applicationContext) {
         LocalModeSessionStore(context.applicationContext)
+    }
+    val secureAccountSessionStore = remember(context.applicationContext) {
+        SecureAccountSessionStore(context.applicationContext)
+    }
+    val installationIdStore = remember(context.applicationContext) {
+        InstallationIdStore(context.applicationContext)
+    }
+    val productionAccountRepository = remember(installationIdStore) {
+        HttpAccountRepository(
+            backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
+            installationId = installationIdStore::getOrCreate
+        )
+    }
+    val accountRepository = accountRepositoryOverride ?: productionAccountRepository
+    val initialAccountRestore = remember(secureAccountSessionStore) {
+        secureAccountSessionStore.restore()
     }
     val diagnosticLogs = remember(context.applicationContext) {
         DiagnosticLogs.get(context.applicationContext)
@@ -323,10 +351,40 @@ fun AutoAccountingApp(
     var manualEntryOpen by remember { mutableStateOf(false) }
     var manualBillImportRequestId by remember { mutableLongStateOf(0L) }
     var profileDestination by remember { mutableStateOf<ProfileDestination?>(null) }
-    var accountSession by remember(localModeSessionStore) {
-        mutableStateOf(localModeSessionStore.restoreSession())
+    var accountSession by remember(initialAccountRestore, localModeSessionStore) {
+        mutableStateOf(
+            when (initialAccountRestore) {
+                is AccountSessionRestoreResult.Restored -> AccountSession.SignedIn(
+                    phone = initialAccountRestore.credentials.phone,
+                    token = initialAccountRestore.credentials.token
+                )
+                AccountSessionRestoreResult.Corrupted -> {
+                    localModeSessionStore.confirmLocalMode()
+                    AccountSession.LocalMode
+                }
+                AccountSessionRestoreResult.Empty -> localModeSessionStore.restoreSession()
+            }
+        )
     }
-    var accountDeletionState by remember { mutableStateOf(AccountDeletionUiState()) }
+    var accountDeletionState by remember(initialAccountRestore) {
+        mutableStateOf(
+            (initialAccountRestore as? AccountSessionRestoreResult.Restored)
+                ?.credentials
+                ?.deletionState
+                ?: AccountDeletionUiState()
+        )
+    }
+    var accountRuntimeState by remember(initialAccountRestore) {
+        mutableStateOf(
+            AccountRuntimeState(
+                status = if (initialAccountRestore is AccountSessionRestoreResult.Restored) {
+                    AccountRuntimeStatus.Validating
+                } else {
+                    AccountRuntimeStatus.LocalMode
+                }
+            )
+        )
+    }
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
@@ -363,6 +421,50 @@ fun AutoAccountingApp(
         billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted,
         billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected
     )
+
+    fun moveAccountToLocalMode() {
+        secureAccountSessionStore.clear()
+        localModeSessionStore.confirmLocalMode()
+        accountSession = AccountSession.LocalMode
+        accountDeletionState = AccountDeletionUiState()
+        accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+    }
+
+    fun applyVerifiedCredentials(credentials: AccountCredentials) {
+        accountSession = AccountSession.SignedIn(credentials.phone, credentials.token)
+        accountDeletionState = credentials.deletionState
+        accountRuntimeState = AccountRuntimeState(
+            if (credentials.deletionState.isPending) {
+                AccountRuntimeStatus.DeletionCoolingOff
+            } else {
+                AccountRuntimeStatus.Verified
+            }
+        )
+    }
+
+    LaunchedEffect(accountSession, accountRuntimeState.status) {
+        val signedIn = accountSession as? AccountSession.SignedIn
+        if (signedIn == null || accountRuntimeState.status != AccountRuntimeStatus.Validating) {
+            return@LaunchedEffect
+        }
+        when (
+            val decision = resolveAccountSessionVerification(
+                accountRepository.verifySession(
+                    AccountCredentials(phone = signedIn.phone, token = signedIn.token)
+                )
+            )
+        ) {
+            is AccountSessionVerificationDecision.Verified -> applyVerifiedCredentials(
+                decision.credentials
+            )
+            AccountSessionVerificationDecision.ClearInvalidSession -> {
+                moveAccountToLocalMode()
+                snackbarHostState.showSnackbar("登录状态已失效，已切换到本地模式")
+            }
+            AccountSessionVerificationDecision.KeepOfflineSession ->
+                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.OfflineUnverified)
+        }
+    }
 
     LaunchedEffect(reviewNavigationRequest) {
         if (reviewNavigationRequest > 0) {
@@ -563,9 +665,17 @@ fun AutoAccountingApp(
             if (activeAccountSession == null) {
                 AppWallpaper(R.drawable.aa_bg_account) {
                     AccountScreen(
+                        accountRepository = accountRepository,
+                        persistSession = { credentials ->
+                            val saved = persistAccountSessionOverride?.invoke(credentials)
+                                ?: secureAccountSessionStore.save(credentials)
+                            if (saved) applyVerifiedCredentials(credentials)
+                            saved
+                        },
                         onSessionChange = { session ->
                             if (session == AccountSession.LocalMode) {
                                 localModeSessionStore.confirmLocalMode()
+                                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
                             }
                             accountSession = session
                             selectedTab = if (reviewNavigationRequest > 0) AppTab.Review else null
@@ -671,7 +781,10 @@ fun AutoAccountingApp(
                                             persistCategorizationRules(categorizationRules.upsert(rule))
                                         },
                                         accountSession = accountSession,
-                                        aiSettings = if (accountDeletionState.cloudWritesAllowed) {
+                                        aiSettings = if (
+                                            accountRuntimeState.cloudWritesAllowed &&
+                                            accountDeletionState.cloudWritesAllowed
+                                        ) {
                                             aiSettings
                                         } else {
                                             AiCategorizationSettings()
@@ -802,16 +915,37 @@ fun AutoAccountingApp(
 
                                         ProfileDestination.AccountManagement -> AccountManagementScreen(
                                             session = activeAccountSession,
+                                            runtimeState = accountRuntimeState,
                                             deletionState = accountDeletionState,
+                                            accountRepository = accountRepository,
                                             onSignInOrRegister = {
                                                 profileDestination = null
                                                 accountSession = null
+                                                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
                                             },
-                                            onSignOut = {
-                                                accountSession = signOutToLocalMode(localModeSessionStore)
+                                            onSessionVerified = ::applyVerifiedCredentials,
+                                            onInvalidSession = {
+                                                moveAccountToLocalMode()
                                                 profileDestination = null
                                             },
-                                            onDeletionStateChange = { accountDeletionState = it },
+                                            clearPersistedSession = secureAccountSessionStore::clear,
+                                            onSignedOut = {
+                                                localModeSessionStore.confirmLocalMode()
+                                                accountSession = AccountSession.LocalMode
+                                                accountDeletionState = AccountDeletionUiState()
+                                                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+                                                profileDestination = null
+                                            },
+                                            onDeletionStateChange = { deletionState ->
+                                                accountDeletionState = deletionState
+                                                accountRuntimeState = AccountRuntimeState(
+                                                    if (deletionState.isPending) {
+                                                        AccountRuntimeStatus.DeletionCoolingOff
+                                                    } else {
+                                                        AccountRuntimeStatus.Verified
+                                                    }
+                                                )
+                                            },
                                             onBack = { profileDestination = null },
                                             modifier = Modifier.padding(innerPadding)
                                         )
@@ -842,6 +976,7 @@ fun AutoAccountingApp(
                                             onAiSettingsChange = ::persistAiSettings,
                                             accountSession = activeAccountSession,
                                             accountDeletionState = accountDeletionState,
+                                            accountRuntimeState = accountRuntimeState,
                                             onBack = { profileDestination = null },
                                             modifier = Modifier.padding(innerPadding)
                                         )

@@ -207,7 +207,8 @@ AI:
 Account model:
 - Full account system is included in the first version.
 - Users can skip login and use local mode.
-- Cloud-linked capabilities require login.
+- Cloud-linked capabilities require a backend-verified Session; a restored but offline-unverified Session keeps local bookkeeping available and pauses cloud writes and account deletion.
+- Android uses a random persisted installation UUID and does not read hardware identifiers.
 
 Login method:
 - Phone number + password.
@@ -227,13 +228,16 @@ Login failure:
 Account recovery:
 - Entry: bottom of password input page.
 - Flow: phone confirmation -> SMS verification code -> set new password.
+- Successful recovery revokes older Sessions before issuing the new Session.
 
 Deletion:
-- Signing out removes only the current device's login session. It does not remove local ledger books, encrypted backups, or the cloud account.
+- Signing out must first revoke the current backend Session. Only after success may Android clear its encrypted Session and enter persistent local mode; network failure keeps the user signed in for retry.
+- Signing out does not remove local ledger books, encrypted backups, or the cloud account.
 - Account deletion removes cloud account, registered devices, cloud configuration, and AI categorization logs.
 - Local ledger deletion is separate.
 - Account deletion uses a 7-day cooling-off period.
 - During cooling-off, users can log in and cancel deletion, but cloud AI and device configuration writes are paused.
+- Deletion status and deadline come only from the backend. The request requires a second confirmation that names the cloud deletion scope, seven-day cooling-off period, and unchanged local ledger.
 - Local data deletion is a separate settings action with backup reminder and typed confirmation phrase "删除本机数据".
 
 ### 5.7 SMS Verification
@@ -324,7 +328,7 @@ Profile overview:
 - Each entry opens a full in-app secondary page with a title and back action. Bottom navigation remains available; switching tabs does not preserve this secondary-page stack.
 
 Profile entries:
-- Account Management: local-mode sign-in/register entry; or, when signed in, masked account state, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
+- Account Management: local-mode sign-in/register entry; or, when signed in, masked phone number, validating/verified/offline/deletion-pending connection state, server deletion deadline, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
 - Automatic Bookkeeping: state, permissions, and continuous-monitoring health as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
 - Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.

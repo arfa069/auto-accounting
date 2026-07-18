@@ -1,14 +1,18 @@
 package com.autoaccounting.backend.account
 
 import java.security.SecureRandom
+import java.security.MessageDigest
 import java.time.Clock
 import java.util.Base64
+import javax.crypto.Mac
 import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.PBEKeySpec
 
 enum class AccountError(
     val message: String
 ) {
+    INVALID_REQUEST("请求信息不完整或格式不正确"),
     PHONE_ALREADY_REGISTERED("该手机号已注册，请直接登录"),
     PHONE_NOT_REGISTERED("该手机号尚未注册，请先创建账号"),
     VERIFICATION_CODE_WRONG("验证码不正确，请重新输入"),
@@ -33,7 +37,8 @@ val AccountResult<*>.error: AccountError?
 
 data class AccountToken(
     val phone: String,
-    val token: String
+    val token: String,
+    val deletionStatus: AccountDeletionStatus? = null
 )
 
 data class AccountDeletionStatus(
@@ -47,6 +52,7 @@ class AccountService(
     private val smsProvider: SmsProvider = NoopSmsProvider,
     private val smsCodeGenerator: () -> String = { "%06d".format(SecureRandom().nextInt(1_000_000)) },
     private val tokenGenerator: () -> String = { secureToken() },
+    private val verificationCodeHasher: VerificationCodeHasher = VerificationCodeHasher.random(),
     private val clock: MutableClock = MutableClock()
 ) {
     fun issueSmsCode(
@@ -54,6 +60,9 @@ class AccountService(
         deviceId: String,
         ipAddress: String
     ): AccountResult<Unit> {
+        if (!isValidPhone(phone) || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
         val now = clock.millis()
         if (isSmsRateLimited(phone, deviceId, ipAddress, now)) {
             return AccountResult.Failure(AccountError.SMS_TOO_FREQUENT)
@@ -68,7 +77,7 @@ class AccountService(
         store.upsertSmsCode(
             StoredSmsCode(
                 phone = phone,
-                code = code,
+                codeHash = verificationCodeHasher.hash(phone, code),
                 expiresAtMillis = now + SMS_CODE_TTL_MILLIS,
                 deviceId = deviceId,
                 ipAddress = ipAddress
@@ -87,6 +96,14 @@ class AccountService(
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
+        if (
+            !isValidPhone(phone) ||
+            !isValidVerificationCode(code) ||
+            !isValidPassword(password) ||
+            !isValidDeviceId(deviceId)
+        ) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
         if (store.findUser(phone) != null) {
             return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
         }
@@ -119,6 +136,9 @@ class AccountService(
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
+        if (!isValidPhone(phone) || password.isBlank() || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.LOGIN_FAILED)
+        }
         val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
         val now = clock.millis()
         if (user.lockedUntilMillis > now) {
@@ -157,7 +177,16 @@ class AccountService(
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
+        if (
+            !isValidPhone(phone) ||
+            !isValidVerificationCode(code) ||
+            !isValidPassword(newPassword) ||
+            !isValidDeviceId(deviceId)
+        ) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val user = store.findUser(phone)
+            ?: return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
         val smsCode = when (val verification = verifySmsCode(phone, code)) {
             is AccountResult.Failure -> return verification
             is AccountResult.Success -> verification.value
@@ -173,38 +202,67 @@ class AccountService(
             )
         )
         store.deleteSmsCode(phone)
+        store.deleteSessionsForPhone(phone)
         val now = clock.millis()
         registerDeviceFromSms(phone, smsCode, deviceId, ipAddress, now)
         return issueSession(phone, deviceId.ifBlank { smsCode.deviceId }, now)
     }
 
     fun verifyToken(token: String): AccountResult<AccountToken> {
-        val session = store.findSession(token) ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        if (token.isBlank()) return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val session = store.findSession(hashToken(token))
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val user = store.findUser(session.phone) ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        return AccountResult.Success(AccountToken(phone = user.phone, token = token))
+        return AccountResult.Success(
+            AccountToken(
+                phone = user.phone,
+                token = token,
+                deletionStatus = user.deletionRequestedAtMillis?.let { requestedAt ->
+                    user.deletionStatus(requestedAt)
+                }
+            )
+        )
+    }
+
+    fun signOut(token: String): AccountResult<Unit> {
+        val verified = verifyToken(token)
+        if (verified is AccountResult.Failure) return verified
+        store.deleteSession(hashToken(token))
+        return AccountResult.Success(Unit)
     }
 
     fun registeredDevices(phone: String): List<StoredRegisteredDevice> {
         return store.registeredDevices(phone)
     }
 
-    fun requestAccountDeletion(phone: String): AccountResult<AccountDeletionStatus> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
+    fun requestAccountDeletion(token: String): AccountResult<AccountDeletionStatus> {
+        val verified = verifiedAccount(token)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val user = store.findUser(verified.phone)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val requestedAt = user.deletionRequestedAtMillis ?: clock.millis()
         val updated = user.copy(deletionRequestedAtMillis = requestedAt)
         store.updateUser(updated)
         return AccountResult.Success(updated.deletionStatus(requestedAt))
     }
 
-    fun getAccountDeletionStatus(phone: String): AccountResult<AccountDeletionStatus> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
-        val requestedAt = user.deletionRequestedAtMillis
-            ?: return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
-        return AccountResult.Success(user.deletionStatus(requestedAt))
+    fun getAccountDeletionStatus(token: String): AccountResult<AccountDeletionStatus?> {
+        val verified = verifiedAccount(token)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val user = store.findUser(verified.phone)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        return AccountResult.Success(
+            user.deletionRequestedAtMillis?.let { requestedAt ->
+                user.deletionStatus(requestedAt)
+            }
+        )
     }
 
-    fun cancelAccountDeletion(phone: String): AccountResult<Unit> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
+    fun cancelAccountDeletion(token: String): AccountResult<Unit> {
+        val verified = verifiedAccount(token)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val user = store.findUser(verified.phone)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         if (user.deletionRequestedAtMillis == null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
         }
@@ -225,19 +283,22 @@ class AccountService(
         return user.deletionRequestedAtMillis == null
     }
 
-    fun deleteDueAccounts(): List<String> {
+    fun accountsDueForDeletion(): List<String> {
         val now = clock.millis()
-        val duePhones = store.usersPendingDeletion()
+        return store.usersPendingDeletion()
             .filter { user ->
                 val requestedAt = user.deletionRequestedAtMillis
                 requestedAt != null && now >= requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS
             }
             .map { it.phone }
-        duePhones.forEach { phone ->
-            store.deleteSessionsForPhone(phone)
-            store.deleteUser(phone)
-        }
-        return duePhones
+    }
+
+    fun finalizeAccountDeletion(phone: String): Boolean {
+        val user = store.findUser(phone) ?: return false
+        val requestedAt = user.deletionRequestedAtMillis ?: return false
+        if (clock.millis() < requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS) return false
+        store.deleteUser(phone)
+        return true
     }
 
     fun advanceTimeBy(millis: Long) {
@@ -257,7 +318,7 @@ class AccountService(
             store.updateSmsCode(record.copy(invalidated = true))
             return AccountResult.Failure(AccountError.VERIFICATION_CODE_EXPIRED)
         }
-        if (record.code != code) {
+        if (!verificationCodeHasher.matches(phone, code, record.codeHash)) {
             val failedAttempts = record.failedAttempts + 1
             store.updateSmsCode(
                 record.copy(
@@ -341,13 +402,27 @@ class AccountService(
         val token = tokenGenerator()
         store.createSession(
             StoredSession(
-                token = token,
+                tokenHash = hashToken(token),
                 phone = phone,
                 deviceId = deviceId,
                 issuedAtMillis = now
             )
         )
-        return AccountResult.Success(AccountToken(phone = phone, token = token))
+        val user = store.findUser(phone)
+        val deletionStatus = user
+            ?.deletionRequestedAtMillis
+            ?.let { requestedAt -> user.deletionStatus(requestedAt) }
+        return AccountResult.Success(
+            AccountToken(
+                phone = phone,
+                token = token,
+                deletionStatus = deletionStatus
+            )
+        )
+    }
+
+    private fun verifiedAccount(token: String): AccountToken? {
+        return (verifyToken(token) as? AccountResult.Success)?.value
     }
 
     private fun StoredUser.deletionStatus(requestedAtMillis: Long): AccountDeletionStatus {
@@ -378,13 +453,18 @@ class AccountService(
         fun fromEnvironment(env: Map<String, String> = System.getenv()): AccountService {
             val jdbcConfig = JdbcAccountStore.configFromEnvironment(env)
                 ?: error("AUTO_ACCOUNTING_DATABASE_URL is required for backend account persistence.")
+            val authPepper = env["AUTO_ACCOUNTING_AUTH_PEPPER"].orEmpty()
+            require(authPepper.length >= 32) {
+                "AUTO_ACCOUNTING_AUTH_PEPPER must contain at least 32 characters."
+            }
             return AccountService(
                 store = JdbcAccountStore(
                     jdbcUrl = jdbcConfig.jdbcUrl,
                     username = jdbcConfig.username,
                     password = jdbcConfig.password
                 ),
-                smsProvider = WebhookSmsProvider.fromEnvironment(env)
+                smsProvider = WebhookSmsProvider.fromEnvironment(env),
+                verificationCodeHasher = VerificationCodeHasher.fromSecret(authPepper)
             )
         }
     }
@@ -395,7 +475,10 @@ private data class PasswordHash(
     val hash: String
 ) {
     fun matches(password: String): Boolean {
-        return hash == hashPassword(password, salt)
+        return MessageDigest.isEqual(
+            Base64.getDecoder().decode(hash),
+            Base64.getDecoder().decode(hashPassword(password, salt))
+        )
     }
 
     companion object {
@@ -442,4 +525,65 @@ private fun secureToken(): String {
     val bytes = ByteArray(32)
     SecureRandom().nextBytes(bytes)
     return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+}
+
+private fun hashToken(token: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(token.toByteArray(Charsets.UTF_8))
+    return Base64.getEncoder().encodeToString(digest)
+}
+
+private fun isValidPhone(phone: String): Boolean = Regex("^\\d{11}$").matches(phone)
+
+private fun isValidVerificationCode(code: String): Boolean = Regex("^\\d{6}$").matches(code)
+
+private fun isValidPassword(password: String): Boolean {
+    return password.length in 8..32 &&
+        password.any(Char::isUpperCase) &&
+        password.any(Char::isLowerCase) &&
+        password.any(Char::isDigit) &&
+        password.any { !it.isLetterOrDigit() }
+}
+
+private fun isValidDeviceId(deviceId: String): Boolean {
+    return deviceId.length <= 128 && deviceId.none(Char::isWhitespace)
+}
+
+class VerificationCodeHasher private constructor(
+    secret: ByteArray
+) {
+    private val secretBytes = secret.copyOf()
+
+    fun hash(phone: String, code: String): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secretBytes, "HmacSHA256"))
+        return Base64.getEncoder().encodeToString(
+            mac.doFinal("$phone:$code".toByteArray(Charsets.UTF_8))
+        )
+    }
+
+    fun matches(phone: String, code: String, expectedHash: String): Boolean {
+        return runCatching {
+            MessageDigest.isEqual(
+                Base64.getDecoder().decode(expectedHash),
+                Base64.getDecoder().decode(hash(phone, code))
+            )
+        }.getOrDefault(false)
+    }
+
+    companion object {
+        internal fun fromSecret(secret: String): VerificationCodeHasher {
+            return VerificationCodeHasher(secret.toByteArray(Charsets.UTF_8))
+        }
+
+        fun random(): VerificationCodeHasher {
+            return VerificationCodeHasher(
+                ByteArray(32).also(SecureRandom()::nextBytes)
+            )
+        }
+
+        fun forTests(
+            secret: String = "account-test-verification-secret-32"
+        ): VerificationCodeHasher = fromSecret(secret)
+    }
 }

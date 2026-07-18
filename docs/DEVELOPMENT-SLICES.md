@@ -93,7 +93,7 @@ Verification:
 ## Slice 5: Account UI And Local Mode
 
 Outcome:
-- Users can enter local mode or complete account flows against a mock backend.
+- Users can enter local mode or complete real registration, login, recovery, restart verification, logout, and account-deletion flows against the configured backend.
 
 Includes:
 - Login/register first screen.
@@ -104,9 +104,11 @@ Includes:
 - Forgot password flow.
 - Form error copy.
 - SMS countdown UI.
+- Build-time backend URL and Debug-only cleartext boundary.
+- Keystore-encrypted Session persistence with offline-unverified and invalid-Session recovery states.
 
 Verification:
-- UI tests for field errors, agreement blocking, local mode entry, countdown.
+- UI and repository tests for field errors, agreement blocking, local mode entry, success-only countdown, stable network/business errors, persistence failure revocation, restart recovery, and local-ledger isolation.
 
 ## Slice 6: Backend Account And SMS
 
@@ -120,6 +122,7 @@ Includes:
 - Rate-limit logic.
 - Login lockout.
 - Token handling.
+- Bearer-only protected identity, current-Session logout, HMAC verification codes, hashed Session storage, and legacy temporary-credential invalidation.
 
 Verification:
 - Backend unit/integration tests for SMS limits and login lockout.
@@ -220,9 +223,10 @@ Includes:
 - Cancel deletion.
 - Pause cloud AI/config writes.
 - Final deletion job.
+- Server-owned pending status/deadline and cleanup-before-account deletion retry semantics.
 
 Verification:
-- Backend state machine tests.
+- Backend state machine, cleanup failure retention/retry, route anti-impersonation, and Android confirmation/exit-failure tests.
 - App UI tests for pending state and cancel flow.
 
 ## Slice 13: Compliance Materials

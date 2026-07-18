@@ -7,10 +7,10 @@ import org.junit.Test
 
 class AccountDeletionStateTest {
     @Test
-    fun requestDeletionStartsSevenDayCoolingOffAndPausesCloudWrites() {
-        val state = reduceAccountDeletionState(
-            AccountDeletionUiState(),
-            AccountDeletionUiAction.RequestDeletion(nowEpochMillis = 1_000)
+    fun serverPendingStatePausesCloudWritesAndKeepsServerDeadline() {
+        val state = AccountDeletionUiState(
+            requestedAtEpochMillis = 1_000,
+            finalDeletionAtEpochMillis = 604_801_000
         )
 
         assertTrue(state.isPending)
@@ -20,13 +20,8 @@ class AccountDeletionStateTest {
     }
 
     @Test
-    fun cancelDeletionRestoresCloudWrites() {
-        val pending = AccountDeletionUiState(
-            requestedAtEpochMillis = 1_000,
-            finalDeletionAtEpochMillis = 604_801_000
-        )
-
-        val state = reduceAccountDeletionState(pending, AccountDeletionUiAction.CancelDeletion)
+    fun serverNonPendingStateAllowsCloudWrites() {
+        val state = AccountDeletionUiState()
 
         assertFalse(state.isPending)
         assertTrue(state.cloudWritesAllowed)

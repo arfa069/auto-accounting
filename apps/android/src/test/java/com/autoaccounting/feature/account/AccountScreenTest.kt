@@ -26,7 +26,10 @@ class AccountScreenTest {
     fun agreementBlocksLocalModeEntryUntilChecked() {
         var session: AccountSession? = null
         composeRule.setContent {
-            AccountScreen(onSessionChange = { session = it })
+            AccountScreen(
+                accountRepository = FakeAccountRepository(),
+                onSessionChange = { session = it }
+            )
         }
 
         composeRule.onNodeWithText("继续使用本地模式").performClick()
@@ -43,7 +46,7 @@ class AccountScreenTest {
     @Test
     fun registrationShowsErrorsAndSmsCountdown() {
         composeRule.setContent {
-            AccountScreen()
+            AccountScreen(accountRepository = FakeAccountRepository())
         }
 
         composeRule.onNodeWithText("创建账号").performClick()
@@ -61,10 +64,13 @@ class AccountScreenTest {
     }
 
     @Test
-    fun forgotPasswordFlowCanResetAgainstMockBackend() {
+    fun forgotPasswordFlowCanResetAgainstInjectedFakeRepository() {
         var session: AccountSession? = null
         composeRule.setContent {
-            AccountScreen(onSessionChange = { session = it })
+            AccountScreen(
+                accountRepository = FakeAccountRepository(),
+                onSessionChange = { session = it }
+            )
         }
 
         composeRule.onNodeWithText("登录").performClick()
@@ -83,12 +89,53 @@ class AccountScreenTest {
     @Test
     fun complianceMaterialsAreReachableBeforeLogin() {
         composeRule.setContent {
-            AccountScreen()
+            AccountScreen(accountRepository = FakeAccountRepository())
         }
 
         composeRule.onNodeWithText("隐私与合规材料").performScrollTo().performClick()
 
         composeRule.onNodeWithText("隐私政策").assertIsDisplayed()
         composeRule.onNodeWithText("个人信息收集清单").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun sessionPersistenceFailureRevokesServerSessionAndDoesNotSignIn() {
+        val repository = TestAccountRepository()
+        var session: AccountSession? = null
+        composeRule.setContent {
+            AccountScreen(
+                accountRepository = repository,
+                persistSession = { false },
+                onSessionChange = { session = it }
+            )
+        }
+
+        composeRule.onNodeWithText("登录").performClick()
+        composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+        composeRule.onNodeWithTag("account-password").performTextInput("Aa123456!")
+        composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.onNodeWithText("登录").performScrollTo().performClick()
+
+        composeRule.waitUntil { repository.signOutCalls == 1 }
+        composeRule.onNodeWithText("无法安全保存登录状态", substring = true).assertIsDisplayed()
+        assert(session == null)
+    }
+
+    @Test
+    fun failedSmsRequestDoesNotStartCountdown() {
+        val repository = TestAccountRepository().apply {
+            smsResult = AccountRepositoryResult.Failure(
+                kind = AccountFailureKind.Network,
+                message = "网络连接失败，请检查网络后重试"
+            )
+        }
+        composeRule.setContent { AccountScreen(accountRepository = repository) }
+
+        composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+        composeRule.onNodeWithText("获取验证码").performClick()
+
+        composeRule.onNodeWithText("网络连接失败", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("60 秒后重试").assertCountEquals(0)
     }
 }

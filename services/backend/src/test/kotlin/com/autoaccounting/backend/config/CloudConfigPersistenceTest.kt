@@ -1,8 +1,12 @@
 package com.autoaccounting.backend.config
 
+import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.account.AccountService
+import com.autoaccounting.backend.account.AccountResult
+import com.autoaccounting.backend.account.AccountToken
 import com.autoaccounting.backend.account.JdbcAccountStore
 import com.autoaccounting.backend.account.MutableClock
+import com.autoaccounting.backend.ai.AiCategorizationService
 import java.sql.DriverManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -74,7 +78,8 @@ class CloudConfigPersistenceTest {
         val clock = MutableClock(0)
         val accountService = accountService(databaseUrl, clock)
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        val token = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value.token
 
         val configStore = JdbcCloudConfigStore(databaseUrl)
         configStore.upsertConfig(
@@ -87,10 +92,15 @@ class CloudConfigPersistenceTest {
             )
         )
 
-        accountService.requestAccountDeletion("13800138000")
+        accountService.requestAccountDeletion(token)
         clock.advanceBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
-        assertEquals(listOf("13800138000"), accountService.deleteDueAccounts())
-        assertTrue(accountService.deleteDueAccounts().isEmpty())
+        val deletionJob = AccountDeletionJob(
+            accountService = accountService,
+            aiCategorizationService = AiCategorizationService(),
+            cloudConfigService = CloudConfigService(configStore, accountService)
+        )
+        assertEquals(listOf("13800138000"), deletionJob.runDueDeletion())
+        assertTrue(deletionJob.runDueDeletion().isEmpty())
 
         assertEquals(null, configStore.findConfig("13800138000"))
     }
@@ -100,6 +110,7 @@ class CloudConfigPersistenceTest {
             store = JdbcAccountStore(databaseUrl),
             smsCodeGenerator = { "123456" },
             tokenGenerator = { "token-1" },
+            verificationCodeHasher = com.autoaccounting.backend.account.VerificationCodeHasher.forTests(),
             clock = clock
         )
     }

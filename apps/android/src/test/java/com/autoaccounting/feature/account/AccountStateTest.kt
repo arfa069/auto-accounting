@@ -61,17 +61,52 @@ class AccountStateTest {
     }
 
     @Test
-    fun smsRequestStartsCountdownAndTickDecrementsIt() {
+    fun smsRequestOnlyValidatesBeforeRepositorySucceeds() {
         val requested = reduceAccountState(
             AccountUiState(phone = "13800138000"),
             AccountAction.RequestSmsCode
         )
 
-        assertEquals(60, requested.smsCountdownSeconds)
+        assertEquals(0, requested.smsCountdownSeconds)
         assertNull(requested.phoneError)
 
         val ticked = reduceAccountState(requested, AccountAction.TickSmsCountdown)
 
-        assertEquals(59, ticked.smsCountdownSeconds)
+        assertEquals(0, ticked.smsCountdownSeconds)
+    }
+
+    @Test
+    fun onlyVerifiedRuntimeAllowsCloudWrites() {
+        assertTrue(
+            AccountRuntimeState(AccountRuntimeStatus.Verified).cloudWritesAllowed
+        )
+        assertTrue(
+            !AccountRuntimeState(AccountRuntimeStatus.Validating).cloudWritesAllowed
+        )
+        assertTrue(
+            !AccountRuntimeState(AccountRuntimeStatus.OfflineUnverified).cloudWritesAllowed
+        )
+        assertTrue(
+            !AccountRuntimeState(AccountRuntimeStatus.DeletionCoolingOff).cloudWritesAllowed
+        )
+    }
+
+    @Test
+    fun networkFailureKeepsOfflineSessionButInvalidSessionClearsIt() {
+        val networkDecision = resolveAccountSessionVerification(
+            AccountRepositoryResult.Failure(
+                AccountFailureKind.Network,
+                "offline"
+            )
+        )
+        val invalidDecision = resolveAccountSessionVerification(
+            AccountRepositoryResult.Failure(
+                AccountFailureKind.InvalidSession,
+                "expired"
+            )
+        )
+
+        assertEquals(AccountSessionVerificationDecision.KeepOfflineSession, networkDecision)
+        assertEquals(AccountSessionVerificationDecision.ClearInvalidSession, invalidDecision)
     }
 }

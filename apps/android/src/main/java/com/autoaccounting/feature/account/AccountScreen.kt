@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,33 +44,49 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.compliance.ComplianceMaterialsScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun AccountScreen(
     modifier: Modifier = Modifier,
     initialState: AccountUiState = AccountUiState(),
-    accountRepository: AccountRepository = FakeAccountRepository(),
+    accountRepository: AccountRepository,
+    persistSession: (AccountCredentials) -> Boolean = { true },
     onSessionChange: (AccountSession) -> Unit = {}
 ) {
     var state by remember { mutableStateOf(initialState) }
     var showComplianceMaterials by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     fun dispatch(action: AccountAction) {
-        val nextState = when (action) {
-            AccountAction.RequestSmsCode -> reduceAccountState(state, action)
-                .submitSmsCodeRequestIfValid(accountRepository)
-            AccountAction.SubmitLogin -> reduceAccountState(state, action)
-                .submitLoginIfValid(accountRepository)
-            AccountAction.SubmitRegister -> reduceAccountState(state, action)
-                .submitRegisterIfValid(accountRepository)
-            AccountAction.SubmitRecovery -> reduceAccountState(state, action)
-                .submitRecoveryIfValid(accountRepository)
-            else -> reduceAccountState(state, action)
+        val validated = reduceAccountState(state, action)
+        val isNetworkAction = action == AccountAction.RequestSmsCode ||
+            action == AccountAction.SubmitLogin ||
+            action == AccountAction.SubmitRegister ||
+            action == AccountAction.SubmitRecovery
+        if (!isNetworkAction) {
+            state = validated
+            validated.session?.let(onSessionChange)
+            return
         }
-        state = nextState
-        nextState.session?.let(onSessionChange)
+        if (state.operationInProgress || !validated.isReadyFor(action)) {
+            state = validated
+            return
+        }
+
+        state = validated.copy(operationInProgress = true)
+        coroutineScope.launch {
+            val completed = when (action) {
+                AccountAction.RequestSmsCode -> validated.submitSmsCodeRequest(accountRepository)
+                AccountAction.SubmitLogin -> validated.submitLogin(accountRepository, persistSession)
+                AccountAction.SubmitRegister -> validated.submitRegister(accountRepository, persistSession)
+                AccountAction.SubmitRecovery -> validated.submitRecovery(accountRepository, persistSession)
+            }.copy(operationInProgress = false)
+            state = completed
+            completed.session?.let(onSessionChange)
+        }
     }
 
     LaunchedEffect(state.flow) {
@@ -157,12 +174,19 @@ private sealed interface AccountPage {
     data object Compliance : AccountPage
 }
 
-private fun AccountUiState.submitSmsCodeRequestIfValid(
+private fun AccountUiState.isReadyFor(action: AccountAction): Boolean = when (action) {
+    AccountAction.RequestSmsCode -> phoneError == null
+    AccountAction.SubmitLogin -> phoneError == null && errorMessage == null
+    AccountAction.SubmitRegister,
+    AccountAction.SubmitRecovery -> hasNoFieldErrors && errorMessage == null
+    else -> true
+}
+
+private suspend fun AccountUiState.submitSmsCodeRequest(
     accountRepository: AccountRepository
 ): AccountUiState {
-    if (phoneError != null) return this
     return when (val result = accountRepository.requestSmsCode(phone)) {
-        is AccountRepositoryResult.Success -> this
+        is AccountRepositoryResult.Success -> copy(smsCountdownSeconds = 60)
         is AccountRepositoryResult.Failure -> copy(
             smsCountdownSeconds = 0,
             errorMessage = result.message
@@ -170,49 +194,58 @@ private fun AccountUiState.submitSmsCodeRequestIfValid(
     }
 }
 
-private fun AccountUiState.submitLoginIfValid(
-    accountRepository: AccountRepository
+private suspend fun AccountUiState.submitLogin(
+    accountRepository: AccountRepository,
+    persistSession: (AccountCredentials) -> Boolean
 ): AccountUiState {
-    if (phoneError != null || errorMessage != null) return this
-    return when (val result = accountRepository.login(phone, password)) {
-        is AccountRepositoryResult.Success -> copy(
-            session = AccountSession.SignedIn(
-                phone = result.value.phone,
-                token = result.value.token
-            )
-        )
-        is AccountRepositoryResult.Failure -> copy(errorMessage = result.message)
-    }
+    return completeAuthentication(
+        result = accountRepository.login(phone, password),
+        accountRepository = accountRepository,
+        persistSession = persistSession
+    )
 }
 
-private fun AccountUiState.submitRegisterIfValid(
-    accountRepository: AccountRepository
+private suspend fun AccountUiState.submitRegister(
+    accountRepository: AccountRepository,
+    persistSession: (AccountCredentials) -> Boolean
 ): AccountUiState {
-    if (!hasNoFieldErrors || errorMessage != null) return this
-    return when (val result = accountRepository.register(phone, verificationCode, password)) {
-        is AccountRepositoryResult.Success -> copy(
-            session = AccountSession.SignedIn(
-                phone = result.value.phone,
-                token = result.value.token
-            )
-        )
-        is AccountRepositoryResult.Failure -> copy(errorMessage = result.message)
-    }
+    return completeAuthentication(
+        result = accountRepository.register(phone, verificationCode, password),
+        accountRepository = accountRepository,
+        persistSession = persistSession
+    )
 }
 
-private fun AccountUiState.submitRecoveryIfValid(
-    accountRepository: AccountRepository
+private suspend fun AccountUiState.submitRecovery(
+    accountRepository: AccountRepository,
+    persistSession: (AccountCredentials) -> Boolean
 ): AccountUiState {
-    if (!hasNoFieldErrors || errorMessage != null) return this
-    return when (val result = accountRepository.recoverPassword(phone, verificationCode, password)) {
-        is AccountRepositoryResult.Success -> copy(
+    return completeAuthentication(
+        result = accountRepository.recoverPassword(phone, verificationCode, password),
+        accountRepository = accountRepository,
+        persistSession = persistSession
+    )
+}
+
+private suspend fun AccountUiState.completeAuthentication(
+    result: AccountRepositoryResult<AccountCredentials>,
+    accountRepository: AccountRepository,
+    persistSession: (AccountCredentials) -> Boolean
+): AccountUiState = when (result) {
+    is AccountRepositoryResult.Success -> {
+        if (persistSession(result.value)) {
+            copy(
             session = AccountSession.SignedIn(
                 phone = result.value.phone,
                 token = result.value.token
             )
-        )
-        is AccountRepositoryResult.Failure -> copy(errorMessage = result.message)
+            )
+        } else {
+            accountRepository.signOut(result.value.token)
+            copy(errorMessage = "无法安全保存登录状态，已尝试撤销新会话，请重试")
+        }
     }
+    is AccountRepositoryResult.Failure -> copy(errorMessage = result.message)
 }
 
 @Composable
@@ -246,7 +279,7 @@ private fun LandingContent(
             onClick = { onAction(AccountAction.ShowLogin) },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("登录")
+            Text(if (state.operationInProgress) "登录中…" else "登录")
         }
         OutlinedButton(
             onClick = { onAction(AccountAction.ShowRegister) },
@@ -288,6 +321,7 @@ private fun LoginContent(
         )
         Button(
             onClick = { onAction(AccountAction.SubmitLogin) },
+            enabled = !state.operationInProgress,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("登录")
@@ -316,9 +350,10 @@ private fun RegisterContent(
         )
         Button(
             onClick = { onAction(AccountAction.SubmitRegister) },
+            enabled = !state.operationInProgress,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("完成注册")
+            Text(if (state.operationInProgress) "注册中…" else "完成注册")
         }
     }
 }
@@ -334,9 +369,10 @@ private fun RecoveryContent(
         PasswordPairFields(state, onAction)
         Button(
             onClick = { onAction(AccountAction.SubmitRecovery) },
+            enabled = !state.operationInProgress,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("重置密码")
+            Text(if (state.operationInProgress) "提交中…" else "重置密码")
         }
     }
 }
@@ -368,7 +404,7 @@ private fun ValueCard() {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("本地账本优先", fontWeight = FontWeight.SemiBold)
-            Text("不登录也能记账；登录后可使用云端配置、设备管理和后续同步能力。")
+            Text("不登录也能记账；登录后可管理账号与注销状态，本机账本始终保留在本机。")
         }
     }
 }
@@ -428,11 +464,13 @@ private fun SmsCodeRow(
         )
         OutlinedButton(
             onClick = { onAction(AccountAction.RequestSmsCode) },
-            enabled = state.smsCountdownSeconds == 0,
+            enabled = state.smsCountdownSeconds == 0 && !state.operationInProgress,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                if (state.smsCountdownSeconds > 0) {
+                if (state.operationInProgress) {
+                    "处理中…"
+                } else if (state.smsCountdownSeconds > 0) {
                     "${state.smsCountdownSeconds} 秒后重试"
                 } else {
                     "获取验证码"

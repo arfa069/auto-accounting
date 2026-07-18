@@ -40,6 +40,7 @@ Suggested rows:
 - Phone number: account registration, login, recovery, deletion verification; required for account mode, not required for local mode.
 - Password hash: password login; required for account mode.
 - Device information: registered-device security, fraud prevention, SMS rate limits, configuration; required for account mode and SMS risk control.
+- Android uses a random app-installation UUID for this purpose and does not read a hardware identifier.
 - Notification content from WeChat/Alipay payment notifications: create pending entries; required only after notification permission is enabled.
 - Payment-result and payment-record page content from WeChat/Alipay: automatic capture after explicit opt-in, or user-started history backfill.
 - Automatic accessibility observations: create pending entries after payment completion; optional and user-controlled. Accessibility nodes are preferred; blank WeChat payment-result surfaces may use transient on-device screenshot OCR on Android 11 or later.
@@ -153,6 +154,12 @@ Account deletion:
 - During cooling-off, user may log in and cancel deletion.
 - During cooling-off, cloud AI and device configuration writes are paused.
 - After cooling-off, delete cloud account, registered devices, cloud configuration, and AI categorization logs.
+- AI logs and cloud configuration are cleaned first; if either cleanup fails, retain the pending account and retry later instead of partially deleting account identity.
+
+Account credentials and Session handling:
+- Android encrypts the phone number and bearer token with Android Keystore AES-GCM and keeps them outside ledger backup, diagnostics, logs, and screenshots.
+- The backend stores verification codes only as server-secret HMAC values and Session tokens only as SHA-256 hashes. Security migration invalidates legacy temporary credentials rather than keeping plaintext compatibility.
+- SMS IP rate limits use the server-observed remote address; client-submitted IP values are ignored.
 
 Local data deletion:
 - Separate settings entry.

@@ -148,12 +148,12 @@ class JdbcAccountStore(
             val updated = connection.prepareStatement(
                 """
                 UPDATE account_sms_codes
-                SET code = ?, expires_at_millis = ?, failed_attempts = ?,
+                SET code_hash = ?, expires_at_millis = ?, failed_attempts = ?,
                     invalidated = ?, device_id = ?, ip_address = ?
                 WHERE phone = ?
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, record.code)
+                statement.setString(1, record.codeHash)
                 statement.setLong(2, record.expiresAtMillis)
                 statement.setInt(3, record.failedAttempts)
                 statement.setBoolean(4, record.invalidated)
@@ -166,13 +166,13 @@ class JdbcAccountStore(
                 connection.prepareStatement(
                     """
                     INSERT INTO account_sms_codes (
-                        phone, code, expires_at_millis, failed_attempts,
+                        phone, code_hash, expires_at_millis, failed_attempts,
                         invalidated, device_id, ip_address
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """.trimIndent()
                 ).use { statement ->
                     statement.setString(1, record.phone)
-                    statement.setString(2, record.code)
+                    statement.setString(2, record.codeHash)
                     statement.setLong(3, record.expiresAtMillis)
                     statement.setInt(4, record.failedAttempts)
                     statement.setBoolean(5, record.invalidated)
@@ -187,7 +187,7 @@ class JdbcAccountStore(
     override fun findSmsCode(phone: String): StoredSmsCode? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT phone, code, expires_at_millis, failed_attempts,
+                SELECT phone, code_hash, expires_at_millis, failed_attempts,
                    invalidated, device_id, ip_address
             FROM account_sms_codes
             WHERE phone = ?
@@ -198,7 +198,7 @@ class JdbcAccountStore(
                 if (rs.next()) {
                     StoredSmsCode(
                         phone = rs.getString("phone"),
-                        code = rs.getString("code"),
+                        codeHash = rs.getString("code_hash"),
                         expiresAtMillis = rs.getLong("expires_at_millis"),
                         failedAttempts = rs.getInt("failed_attempts"),
                         invalidated = rs.getBoolean("invalidated"),
@@ -284,11 +284,11 @@ class JdbcAccountStore(
         connection().use { connection ->
             connection.prepareStatement(
                 """
-                INSERT INTO account_sessions (token, phone, device_id, issued_at_millis)
+                INSERT INTO account_sessions (token_hash, phone, device_id, issued_at_millis)
                 VALUES (?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, session.token)
+                statement.setString(1, session.tokenHash)
                 statement.setString(2, session.phone)
                 statement.setString(3, session.deviceId)
                 statement.setLong(4, session.issuedAtMillis)
@@ -297,19 +297,19 @@ class JdbcAccountStore(
         }
     }
 
-    override fun findSession(token: String): StoredSession? = connection().use { connection ->
+    override fun findSession(tokenHash: String): StoredSession? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT token, phone, device_id, issued_at_millis
+            SELECT token_hash, phone, device_id, issued_at_millis
             FROM account_sessions
-            WHERE token = ?
+            WHERE token_hash = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, token)
+            statement.setString(1, tokenHash)
             statement.executeQuery().use { rs ->
                 if (rs.next()) {
                     StoredSession(
-                        token = rs.getString("token"),
+                        tokenHash = rs.getString("token_hash"),
                         phone = rs.getString("phone"),
                         deviceId = rs.getString("device_id").orEmpty(),
                         issuedAtMillis = rs.getLong("issued_at_millis")
@@ -317,6 +317,15 @@ class JdbcAccountStore(
                 } else {
                     null
                 }
+            }
+        }
+    }
+
+    override fun deleteSession(tokenHash: String) {
+        connection().use { connection ->
+            connection.prepareStatement("DELETE FROM account_sessions WHERE token_hash = ?").use { statement ->
+                statement.setString(1, tokenHash)
+                statement.executeUpdate()
             }
         }
     }
@@ -476,6 +485,16 @@ private val accountMigrations = listOf(
                 PRIMARY KEY (phone, device_id)
             )
             """.trimIndent()
+        )
+    ),
+    Migration(
+        version = 4,
+        statements = listOf(
+            "DELETE FROM account_sms_codes",
+            "DELETE FROM account_sessions",
+            "ALTER TABLE account_sms_codes RENAME COLUMN code TO code_hash",
+            "ALTER TABLE account_sms_codes ALTER COLUMN code_hash TYPE TEXT",
+            "ALTER TABLE account_sessions RENAME COLUMN token TO token_hash"
         )
     )
 )

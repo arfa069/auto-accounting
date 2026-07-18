@@ -28,14 +28,14 @@
 ## 验收标准
 
 - [x] “我的”总览显示账号状态卡和五项固定顺序入口，顶层不出现开关、系统权限按钮或备份密码输入。
-- [ ] 本地模式与已登录状态均可从状态卡进入账户管理，且显示与各自状态一致的操作。
-- [ ] 退出登录后本机账本仍存在，重新启动应用后保持本地模式；账号注销与本机数据删除仍为不同操作。
-- [ ] 从任一二级页返回只回到“我的”总览；切换底部栏目后不保留该二级页栈。
+- [x] 本地模式与已登录状态均可从状态卡进入账户管理，且显示与各自状态一致的操作。
+- [x] 退出登录后本机账本仍存在，重新启动应用后保持本地模式；账号注销与本机数据删除仍为不同操作。
+- [x] 从任一二级页返回只回到“我的”总览；切换底部栏目后不保留该二级页栈。
 
 ## 验收测试
 
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.profile.ProfileScreenTest"`
-- [ ] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.account.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.account.*"`
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `./gradlew.bat --no-daemon :apps:android:assembleDebug`
 
@@ -56,6 +56,7 @@
 - `2026-07-12`：新增 `ProfileScreenTest`，覆盖账号状态卡、五项总览入口和已登录账户管理中的退出登录/账号注销边界；专项测试、Android 全量单测与 Debug APK 构建均通过。手工设备验证尚未执行。
 - `2026-07-12`：审查修复后新增 `MainActivityTest`，覆盖 Android 系统返回键从账户管理回到“我的”总览，以及未迁移入口仍可访问既有设置；`LocalModeSessionStoreTest` 覆盖退出登录后重建恢复本地模式。最终 Android 全量单测与 Debug APK 构建通过。
 - `2026-07-13`：在 Xiaomi `24117RK2CC`（Android 16，`192.168.1.6:40793`）的已签名 Release 包上完成非破坏性检查：总览显示“账户管理、自动记账、分类规则、数据与备份、合规与隐私”五项入口，未显示开发者工具或备份密码输入；本地模式的账户管理页显示登录和注册入口。未提供受控测试账号，故未执行已登录状态、退出登录或账号注销流程。
+- `2026-07-18`：账户管理实现迁入 `feature/account` 并接入真实 Repository；自动化覆盖安全 Session 持久化、离线/401 分流、退出失败保留 Session、注销二次确认和账号操作前后本机账本不变。真实测试账号与短信 Provider 验证仍待执行。
 
 ## 依赖
 
