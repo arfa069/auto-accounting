@@ -2,6 +2,8 @@
 
 > 历史状态（2026-07-15）：本文记录视觉系统落地前的需求盘点与审核门槛，不再代表当前实现状态。基础导航、分类、“我的”入口、控件和页面壁纸已在代码中落地；当前资源以 `apps/android/src/main/res/`、`AppVisuals.kt`、`AppControls.kt` 与 `AutoAccountingTheme.kt` 为准。未进入当前 checkout 的后续评审方案不计入已交付素材。
 
+当前主页导航的验收稿为 [`06-navigation-and-new-button.png`](./06-navigation-and-new-button.png)：四个真实目的项使用 52 dp 图像和 15 sp 标签，描边沿用导航面颜色；中央紫色新增按钮是操作而非第五个目的项。运行时实现仍以 `AppBottomNavigationBar.kt` 和 Android 资源为准。
+
 ## 盘点依据
 
 - 产品与视觉规范：`docs/PRD.md`、`docs/UI-DESIGN.md`。

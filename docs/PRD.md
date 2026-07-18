@@ -325,10 +325,11 @@ Profile top:
 Profile overview:
 - Shows only a one-line status summary and navigation affordance for each entry. It contains no switches, system-permission buttons, backup passphrase inputs, or other detailed controls.
 - Lists entries in this order: Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, Compliance and Privacy.
-- Each entry opens a full in-app secondary page with a title and back action. Bottom navigation remains available; switching tabs does not preserve this secondary-page stack.
+- Each entry opens a full in-app secondary page with a title and back action. Destination and secondary pages hide bottom navigation; back from a Profile secondary page returns to the Profile overview, and back from the Profile overview returns Home.
 
 Profile entries:
 - Account Management: local-mode sign-in/register entry; or, when signed in, masked phone number, validating/verified/offline/deletion-pending connection state, server deletion deadline, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
+- Account flow back hierarchy: Recovery returns to Login; Login, Registration, Local Mode Explanation, and Compliance Materials return to the account landing page; an account landing page opened from Account Management returns to Account Management. System back and visible back actions must be equivalent.
 - Automatic Bookkeeping: state, permissions, and continuous-monitoring health as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
 - Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.

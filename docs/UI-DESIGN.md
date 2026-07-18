@@ -226,12 +226,13 @@ Overview entries, in order:
 4. Data and Backup.
 5. Compliance and Privacy.
 
-Each overview row contains one status summary and a navigation affordance only. It never contains switches, permission buttons, or backup-password fields. Selecting a row opens a full secondary page with a title and back action; bottom navigation remains visible, and switching tabs resets the secondary-page stack.
+Each overview row contains one status summary and a navigation affordance only. It never contains switches, permission buttons, or backup-password fields. Selecting a row opens a full secondary page with a title and back action. Destination and secondary pages hide bottom navigation; back from a Profile secondary page returns to the Profile overview, and back from the Profile overview returns Home.
 
 Account Management:
 - In local mode, explain the state and offer sign-in or registration.
 - When signed in, show masked account state, a normal sign-out action, and a visually separated account-deletion danger area.
 - Sign-out keeps all local ledger books, while account deletion follows its separate cooling-off flow.
+- Visible and system back actions follow the same hierarchy: Recovery returns to Login; Login, Registration, Local Mode Explanation, and Compliance Materials return to the account landing page; an account landing page opened from Account Management returns to Account Management.
 
 Automatic Bookkeeping:
 - Order sections as state, then required permissions and background-reliability guidance.
