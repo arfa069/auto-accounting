@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.first
 
 data class PaymentNotificationProcessResult(
     val state: ReviewQueueState,
-    val notification: BookkeepingResultNotification
+    val notification: BookkeepingResultNotification?
 )
 
 class PaymentNotificationCaptureProcessor(
@@ -90,7 +90,7 @@ class PaymentNotificationCaptureProcessor(
             )
             return@serialize PaymentNotificationProcessResult(
                 state = previousState,
-                notification = BookkeepingResultNotification.DuplicateMerged(categorizedEntry.id)
+                notification = null
             )
         }
         val candidateAfterLedgerCheck = if (
@@ -142,7 +142,7 @@ class PaymentNotificationCaptureProcessor(
         reviewQueuePersistence.persistTransition(previousState, nextState)
 
         val notification = if (dedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
-            BookkeepingResultNotification.DuplicateMerged(entryToPersist.id)
+            null
         } else {
             BookkeepingResultNotification.PendingCreated(
                 key = entryToPersist.id,

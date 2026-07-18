@@ -24,7 +24,7 @@ class ComplianceMaterialsTest {
             copies.getValue(PermissionExplanationId.NotificationListening).purpose
         )
         assertEquals(
-            "用于通知待确认、分类建议、重复合并或识别失败结果。",
+            "用于通知自动记账成功或失败结果。",
             copies.getValue(PermissionExplanationId.ResultNotifications).purpose
         )
         val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)

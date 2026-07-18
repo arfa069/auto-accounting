@@ -21,7 +21,7 @@ class BookkeepingResultNotifierTest {
     }
 
     @Test
-    fun billSyncResultMapsCreatedMergedAndFailedOutcomes() {
+    fun billSyncResultOnlyMapsSuccessAndFailureOutcomes() {
         val created = result(
             createdEntries = listOf(ReviewQueueEntry(id = "pending-1", category = "交通"))
         ).toBookkeepingResultNotification("支付宝")
@@ -32,8 +32,21 @@ class BookkeepingResultNotifierTest {
             .toBookkeepingResultNotification("支付宝")
 
         assertTrue(created is BookkeepingResultNotification.PendingCreated)
-        assertTrue(merged is BookkeepingResultNotification.DuplicateMerged)
+        assertEquals(null, merged)
         assertTrue(failed is BookkeepingResultNotification.RecognitionFailed)
+    }
+
+    @Test
+    fun resultNotificationTitlesOnlyDescribeSuccessOrFailure() {
+        val success = BookkeepingResultNotification.PendingCreated(
+            key = "pending-1",
+            count = 1
+        ).content()
+        val failure = BookkeepingResultNotification.RecognitionFailed("failure-alipay").content()
+
+        assertEquals("自动记账成功", success.title)
+        assertEquals("自动记账失败", failure.title)
+        assertEquals("自动记账失败", failure.publicText)
     }
 
     private fun result(

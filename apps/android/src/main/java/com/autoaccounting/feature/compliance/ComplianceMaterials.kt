@@ -147,7 +147,7 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         PermissionExplanation(
             id = PermissionExplanationId.ResultNotifications,
             title = "记账结果通知",
-            purpose = "用于通知待确认、分类建议、重复合并或识别失败结果。",
+            purpose = "用于通知自动记账成功或失败结果。",
             boundary = "未授权不影响本地采集；锁屏默认隐藏金额、商户和交易对方。"
         ),
         PermissionExplanation(

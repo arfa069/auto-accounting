@@ -37,10 +37,6 @@ sealed interface BookkeepingResultNotification {
         val category: String? = null
     ) : BookkeepingResultNotification
 
-    data class DuplicateMerged(
-        override val key: String
-    ) : BookkeepingResultNotification
-
     data class RecognitionFailed(
         override val key: String
     ) : BookkeepingResultNotification
@@ -60,11 +56,6 @@ fun BillSyncResult.toBookkeepingResultNotification(
             category = singleEntry?.category?.takeIf { it.isNotBlank() }
         )
     }
-    if (mergedEntries.isNotEmpty() || duplicateSkippedCount > 0) {
-        return BookkeepingResultNotification.DuplicateMerged(
-            key = mergedEntries.singleOrNull()?.id ?: "duplicate-$sourceLabel"
-        )
-    }
     return null
 }
 
@@ -82,22 +73,16 @@ internal fun BookkeepingResultNotification.content(): BookkeepingNotificationCon
             else -> "识别到 1 笔账目，待确认"
         }
         BookkeepingNotificationContent(
-            title = "自动记账",
+            title = "自动记账成功",
             text = privateText,
             publicText = "识别到待确认账目"
         )
     }
 
-    is BookkeepingResultNotification.DuplicateMerged -> BookkeepingNotificationContent(
-        title = "自动记账",
-        text = "已合并重复账目，不会重复入账",
-        publicText = "已处理一笔账目"
-    )
-
     is BookkeepingResultNotification.RecognitionFailed -> BookkeepingNotificationContent(
-        title = "自动记账",
-        text = "支付信息不完整，未创建待确认记录",
-        publicText = "有一笔支付信息需要检查"
+        title = "自动记账失败",
+        text = "未能创建待确认记录",
+        publicText = "自动记账失败"
     )
 }
 
@@ -153,7 +138,7 @@ class BookkeepingResultNotifier(
                 "记账结果",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "显示自动识别后的待确认、去重或失败结果"
+                description = "显示自动记账成功或失败结果"
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
             }
         )
