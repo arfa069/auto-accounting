@@ -3,13 +3,18 @@ package com.autoaccounting.feature.diagnostics
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -88,6 +93,54 @@ class AndroidDiagnosticLogRepositoryTest {
 
         assertEquals(3, repository.events.value.size)
         assertEquals(1, repository.events.value.count { it.metadata.suppressedCount == 1 })
+    }
+
+    @Test
+    fun initialHistoryLoadDoesNotClearActiveCoalesceWindow() = runBlocking {
+        val executor = ThreadPoolExecutor(
+            1,
+            1,
+            0L,
+            TimeUnit.MILLISECONDS,
+            LinkedBlockingQueue()
+        )
+        val blockerStarted = CountDownLatch(1)
+        val releaseInitialLoad = CountDownLatch(1)
+        executor.execute {
+            blockerStarted.countDown()
+            releaseInitialLoad.await(5, TimeUnit.SECONDS)
+        }
+
+        executor.asCoroutineDispatcher().use { storageDispatcher ->
+            assertTrue(blockerStarted.await(5, TimeUnit.SECONDS))
+            var now = 1_000L
+            val repository = AndroidDiagnosticLogRepository(
+                context = context,
+                store = DiagnosticEncryptedStore(
+                    directory = Files.createTempDirectory("diagnostic-initial-load").toFile(),
+                    cipher = JvmDiagnosticEventCipher()
+                ),
+                isDebugBuild = true,
+                buildDefaultEnabled = true,
+                clock = { now },
+                storageDispatcher = storageDispatcher
+            )
+            withTimeout(5_000L) {
+                while (executor.queue.isEmpty()) yield()
+            }
+
+            repository.recordNow(event("repeat"))
+            releaseInitialLoad.countDown()
+            executor.submit {}.get(5, TimeUnit.SECONDS)
+            repository.recordNow(event("repeat"))
+
+            now += 5_001L
+            repository.recordNow(event("repeat"))
+            repository.refresh()
+
+            assertEquals(3, repository.events.value.size)
+            assertEquals(1, repository.events.value.count { it.metadata.suppressedCount == 1 })
+        }
     }
 
     @Test

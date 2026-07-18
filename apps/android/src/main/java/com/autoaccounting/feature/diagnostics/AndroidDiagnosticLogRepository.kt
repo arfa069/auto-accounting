@@ -49,7 +49,7 @@ class AndroidDiagnosticLogRepository internal constructor(
     override val stats: StateFlow<DiagnosticLogStats> = _stats.asStateFlow()
 
     init {
-        scope.launch { refresh() }
+        scope.launch { loadInitialState() }
     }
 
     override fun setEnabled(enabled: Boolean, userConfirmed: Boolean): Boolean {
@@ -109,6 +109,14 @@ class AndroidDiagnosticLogRepository internal constructor(
             mutex.withLock {
                 flushSuppressedLocked()
                 refreshLocked(limit)
+            }
+        }
+    }
+
+    private suspend fun loadInitialState() {
+        withContext(storageDispatcher) {
+            mutex.withLock {
+                refreshLocked(1_000)
             }
         }
     }
