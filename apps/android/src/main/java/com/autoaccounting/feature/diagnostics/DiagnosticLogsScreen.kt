@@ -48,7 +48,11 @@ import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.TextButton
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun DiagnosticLogsScreen(
@@ -56,7 +60,8 @@ fun DiagnosticLogsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     repositoryOverride: DiagnosticLogRepository? = null,
-    applySecureWindowFlag: Boolean = true
+    applySecureWindowFlag: Boolean = true,
+    exportWriterOverride: ((String) -> String)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -76,6 +81,12 @@ fun DiagnosticLogsScreen(
     var levelFilter by remember { mutableStateOf<DiagnosticLevel?>(null) }
     var componentFilter by remember { mutableStateOf<DiagnosticComponent?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isExporting by remember { mutableStateOf(false) }
+    var exportJob by remember { mutableStateOf<Job?>(null) }
+    var exportResult by remember { mutableStateOf<DiagnosticExportResult?>(null) }
+    val exportWriter = remember(context, exportWriterOverride) {
+        exportWriterOverride ?: { encrypted: String -> writeDiagnosticExport(context, encrypted) }
+    }
 
     LaunchedEffect(Unit) { repository.refresh() }
     DisposableEffect(lifecycleOwner) {
@@ -238,21 +249,72 @@ fun DiagnosticLogsScreen(
     }
     if (showExportDialog) {
         DiagnosticExportDialog(
-            onDismiss = { showExportDialog = false },
+            exporting = isExporting,
+            onDismiss = {
+                val wasExporting = isExporting
+                exportJob?.cancel()
+                exportJob = null
+                isExporting = false
+                showExportDialog = false
+                if (wasExporting) {
+                    exportResult = DiagnosticExportResult(
+                        title = "导出已取消",
+                        message = "未创建诊断日志导出文件。"
+                    )
+                }
+            },
             onExport = { passphrase ->
-                scope.launch {
-                    statusMessage = runCatching {
-                        val encrypted = repository.exportEncrypted(passphrase)
-                        val displayName = writeDiagnosticExport(context, encrypted)
-                        "已导出 $displayName 到 Downloads；删除本机数据不会删除该文件，请自行保管或删除。"
-                    }.getOrElse { "导出失败，请确认口令和本机存储状态。" }
-                    passphrase.fill('\u0000')
-                    showExportDialog = false
+                if (!isExporting) {
+                    isExporting = true
+                    exportJob = scope.launch {
+                        try {
+                            val encrypted = repository.exportEncrypted(passphrase)
+                            val displayName = withContext(Dispatchers.IO) {
+                                exportWriter(encrypted)
+                            }
+                            val message = "已导出 $displayName 到 Downloads；删除本机数据不会删除该文件，请自行保管或删除。"
+                            statusMessage = message
+                            exportResult = DiagnosticExportResult(
+                                title = "导出完成",
+                                message = message
+                            )
+                            showExportDialog = false
+                        } catch (_: CancellationException) {
+                            // The dismiss action owns the visible cancellation result.
+                        } catch (_: Throwable) {
+                            val message = "导出失败，请确认本机存储状态后重试。"
+                            statusMessage = message
+                            exportResult = DiagnosticExportResult(
+                                title = "导出失败",
+                                message = message
+                            )
+                            showExportDialog = false
+                        } finally {
+                            passphrase.fill('\u0000')
+                            isExporting = false
+                            exportJob = null
+                        }
+                    }
                 }
             }
         )
     }
+    exportResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { exportResult = null },
+            title = { Text(result.title) },
+            text = { Text(result.message, modifier = Modifier.testTag("diagnostic-export-result-message")) },
+            confirmButton = {
+                Button(onClick = { exportResult = null }) { Text("确定") }
+            }
+        )
+    }
 }
+
+private data class DiagnosticExportResult(
+    val title: String,
+    val message: String
+)
 
 @Composable
 private fun DiagnosticEventCard(event: DiagnosticEvent, showSensitive: Boolean) {
@@ -290,6 +352,7 @@ private fun DiagnosticEventCard(event: DiagnosticEvent, showSensitive: Boolean) 
 
 @Composable
 private fun DiagnosticExportDialog(
+    exporting: Boolean,
     onDismiss: () -> Unit,
     onExport: (CharArray) -> Unit
 ) {
@@ -306,22 +369,36 @@ private fun DiagnosticExportDialog(
                     value = passphrase,
                     onValueChange = { passphrase = it },
                     label = { Text("导出口令") },
+                    enabled = !exporting,
                     visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.testTag("diagnostic-export-passphrase")
                 )
                 OutlinedTextField(
                     value = confirmation,
                     onValueChange = { confirmation = it },
                     label = { Text("再次输入口令") },
+                    enabled = !exporting,
                     visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.testTag("diagnostic-export-confirmation")
                 )
+                if (exporting) Text("正在读取并加密日志，请稍候。")
             }
         },
         confirmButton = {
-            Button(enabled = valid, onClick = { onExport(passphrase.toCharArray()) }) { Text("导出") }
+            Button(
+                enabled = valid && !exporting,
+                onClick = { onExport(passphrase.toCharArray()) },
+                modifier = Modifier.testTag("diagnostic-export-confirm")
+            ) { Text(if (exporting) "正在导出…" else "导出") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("diagnostic-export-cancel")
+            ) { Text(if (exporting) "取消导出" else "取消") }
+        }
     )
 }
 

@@ -8,6 +8,7 @@ import java.io.File
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class AndroidDiagnosticLogRepository internal constructor(
     context: Context,
@@ -28,7 +30,9 @@ class AndroidDiagnosticLogRepository internal constructor(
     ),
     private val isDebugBuild: Boolean = BuildConfig.DEBUG,
     private val buildDefaultEnabled: Boolean = isDebugBuild,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val exportDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : DiagnosticLogRepository {
     private val appContext = context.applicationContext
     private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -101,23 +105,27 @@ class AndroidDiagnosticLogRepository internal constructor(
     }
 
     override suspend fun refresh(limit: Int) {
-        mutex.withLock {
-            flushSuppressedLocked()
-            refreshLocked(limit)
+        withContext(storageDispatcher) {
+            mutex.withLock {
+                flushSuppressedLocked()
+                refreshLocked(limit)
+            }
         }
     }
 
     override suspend fun clear(keepEnabledPreference: Boolean) {
         clearGeneration.incrementAndGet()
-        mutex.withLock {
-            coalesced.values.forEach { it.flushJob?.cancel() }
-            coalesced.clear()
-            store.clear()
-            _events.value = emptyList()
-            _stats.value = DiagnosticLogStats()
-            if (!keepEnabledPreference) {
-                preferences.edit().remove(KEY_ENABLED).apply()
-                _enabled.value = buildDefaultEnabled
+        withContext(storageDispatcher) {
+            mutex.withLock {
+                coalesced.values.forEach { it.flushJob?.cancel() }
+                coalesced.clear()
+                store.clear()
+                _events.value = emptyList()
+                _stats.value = DiagnosticLogStats()
+                if (!keepEnabledPreference) {
+                    preferences.edit().remove(KEY_ENABLED).apply()
+                    _enabled.value = buildDefaultEnabled
+                }
             }
         }
     }
@@ -126,14 +134,16 @@ class AndroidDiagnosticLogRepository internal constructor(
         require(passphrase.size >= MIN_EXPORT_PASSPHRASE_LENGTH) {
             "Diagnostic export passphrase must contain at least 8 characters"
         }
-        return mutex.withLock {
-            flushSuppressedLocked()
-            val jsonLines = store.readAll().joinToString(separator = "\n", postfix = "\n") {
-                DiagnosticEventCodec.encode(it)
+        return withContext(exportDispatcher) {
+            mutex.withLock {
+                flushSuppressedLocked()
+                val jsonLines = store.readAll().joinToString(separator = "\n", postfix = "\n") {
+                    DiagnosticEventCodec.encode(it)
+                }
+                DIAGNOSTICS_EXPORT_PREFIX + Base64.getEncoder().encodeToString(
+                    PassphraseAesGcm.encrypt(jsonLines.toByteArray(Charsets.UTF_8), passphrase)
+                )
             }
-            DIAGNOSTICS_EXPORT_PREFIX + Base64.getEncoder().encodeToString(
-                PassphraseAesGcm.encrypt(jsonLines.toByteArray(Charsets.UTF_8), passphrase)
-            )
         }
     }
 
@@ -170,9 +180,18 @@ class AndroidDiagnosticLogRepository internal constructor(
     }
 
     private fun appendLocked(event: DiagnosticEvent) {
-        store.append(event)
+        val rotated = store.append(event)
         logMetadata(event.metadata)
-        refreshLocked(1_000)
+        if (rotated) {
+            refreshLocked(1_000)
+            return
+        }
+        _events.value = (listOf(event) + _events.value).take(1_000)
+        _stats.value = DiagnosticLogStats(
+            eventCount = _stats.value.eventCount + 1,
+            encryptedBytes = store.encryptedBytes(),
+            segmentCount = store.segmentCount()
+        )
     }
 
     private fun refreshLocked(limit: Int) {

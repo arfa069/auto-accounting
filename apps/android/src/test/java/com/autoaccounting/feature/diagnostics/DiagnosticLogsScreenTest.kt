@@ -2,12 +2,15 @@ package com.autoaccounting.feature.diagnostics
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -103,6 +106,58 @@ class DiagnosticLogsScreenTest {
         composeRule.onNodeWithText("敏感内容：••••••").assertIsDisplayed()
     }
 
+    @Test
+    fun exportShowsProgressAndCanBeCancelled() {
+        val repository = FakeDiagnosticRepository(initialEnabled = true).apply {
+            blockExport = true
+        }
+        composeRule.setContent {
+            DiagnosticLogsScreen(
+                isDebugBuild = true,
+                onBack = {},
+                repositoryOverride = repository,
+                applySecureWindowFlag = false
+            )
+        }
+
+        startExport(repository)
+
+        composeRule.onNodeWithTag("diagnostic-export-confirm").assertIsNotEnabled()
+        composeRule.onNodeWithText("正在导出…").assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostic-export-cancel").performClick()
+        composeRule.onNodeWithText("导出已取消").assertIsDisplayed()
+    }
+
+    @Test
+    fun completedExportShowsFileNameInVisibleDialog() {
+        val repository = FakeDiagnosticRepository(initialEnabled = true)
+        composeRule.setContent {
+            DiagnosticLogsScreen(
+                isDebugBuild = true,
+                onBack = {},
+                repositoryOverride = repository,
+                applySecureWindowFlag = false,
+                exportWriterOverride = { "test-diagnostics.aadiag" }
+            )
+        }
+
+        startExport(repository)
+
+        composeRule.onNodeWithText("导出完成").assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostic-export-result-message")
+            .assertIsDisplayed()
+    }
+
+    private fun startExport(repository: FakeDiagnosticRepository) {
+        val eventList = composeRule.onNodeWithTag("diagnostic-event-list")
+        eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
+        composeRule.onNodeWithText("加密导出").performClick()
+        composeRule.onNodeWithTag("diagnostic-export-passphrase").performTextInput("12345678")
+        composeRule.onNodeWithTag("diagnostic-export-confirmation").performTextInput("12345678")
+        composeRule.onNodeWithTag("diagnostic-export-confirm").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) { repository.exportCallCount == 1 }
+    }
+
     private companion object {
         const val ACTIONS_ITEM_INDEX = 4
         const val EVENT_ITEM_INDEX = 8
@@ -132,6 +187,10 @@ private class FakeDiagnosticRepository(initialEnabled: Boolean) : DiagnosticLogR
     )
     private val mutableStats = MutableStateFlow(DiagnosticLogStats(eventCount = 1))
     var lastUserConfirmed = false
+    @Volatile
+    var blockExport = false
+    @Volatile
+    var exportCallCount = 0
 
     override val enabled: StateFlow<Boolean> = mutableEnabled
     override val events: StateFlow<List<DiagnosticEvent>> = mutableEvents
@@ -150,5 +209,9 @@ private class FakeDiagnosticRepository(initialEnabled: Boolean) : DiagnosticLogR
         mutableStats.value = DiagnosticLogStats()
     }
 
-    override suspend fun exportEncrypted(passphrase: CharArray): String = "encrypted"
+    override suspend fun exportEncrypted(passphrase: CharArray): String {
+        exportCallCount += 1
+        if (blockExport) awaitCancellation()
+        return "encrypted"
+    }
 }

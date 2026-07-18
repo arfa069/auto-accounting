@@ -3,7 +3,13 @@ package com.autoaccounting.feature.diagnostics
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -84,6 +90,63 @@ class AndroidDiagnosticLogRepositoryTest {
         assertEquals(1, repository.events.value.count { it.metadata.suppressedCount == 1 })
     }
 
+    @Test
+    fun appendingDoesNotDecryptAllHistoricalEvents() = runBlocking {
+        val cipher = CountingDiagnosticEventCipher()
+        val store = DiagnosticEncryptedStore(
+            directory = Files.createTempDirectory("diagnostic-incremental-append").toFile(),
+            cipher = cipher
+        )
+        store.append(event("existing"))
+        val repository = AndroidDiagnosticLogRepository(
+            context = context,
+            store = store,
+            isDebugBuild = true,
+            buildDefaultEnabled = true,
+            clock = { 1_000L }
+        )
+        withTimeout(5_000L) {
+            repository.stats.first { it.eventCount == 1 }
+        }
+        cipher.decryptCalls.set(0)
+
+        repository.recordNow(event("new"))
+
+        assertEquals(0, cipher.decryptCalls.get())
+        assertEquals(2, repository.stats.value.eventCount)
+    }
+
+    @Test
+    fun refreshDecryptsOnStorageDispatcherInsteadOfCallerThread() = runBlocking {
+        val cipher = CountingDiagnosticEventCipher()
+        val store = DiagnosticEncryptedStore(
+            directory = Files.createTempDirectory("diagnostic-refresh-dispatcher").toFile(),
+            cipher = cipher
+        )
+        store.append(event("existing"))
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "diagnostic-storage-test")
+        }.asCoroutineDispatcher().use { storageDispatcher ->
+            val repository = AndroidDiagnosticLogRepository(
+                context = context,
+                store = store,
+                isDebugBuild = true,
+                buildDefaultEnabled = true,
+                clock = { 1_000L },
+                storageDispatcher = storageDispatcher
+            )
+            withTimeout(5_000L) {
+                repository.stats.first { it.eventCount == 1 }
+            }
+            cipher.decryptThreadNames.clear()
+
+            repository.refresh()
+
+            assertEquals(1, cipher.decryptThreadNames.size)
+            assertTrue(cipher.decryptThreadNames.single().startsWith("diagnostic-storage-test"))
+        }
+    }
+
     private fun repository(
         isDebugBuild: Boolean,
         clock: () -> Long = { 1_000L }
@@ -113,4 +176,20 @@ class AndroidDiagnosticLogRepositoryTest {
             mapOf(DiagnosticSensitiveField.PageText to "payment page")
         )
     )
+}
+
+private class CountingDiagnosticEventCipher : DiagnosticEventCipher {
+    private val delegate = JvmDiagnosticEventCipher()
+    val decryptCalls = AtomicInteger(0)
+    val decryptThreadNames = CopyOnWriteArrayList<String>()
+
+    override fun encrypt(plainText: ByteArray): ByteArray = delegate.encrypt(plainText)
+
+    override fun decrypt(payload: ByteArray): ByteArray {
+        decryptCalls.incrementAndGet()
+        decryptThreadNames += Thread.currentThread().name
+        return delegate.decrypt(payload)
+    }
+
+    override fun deleteKey() = delegate.deleteKey()
 }

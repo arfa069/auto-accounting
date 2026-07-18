@@ -114,7 +114,7 @@ internal class DiagnosticEncryptedStore(
         directory.mkdirs()
     }
 
-    fun append(event: DiagnosticEvent) {
+    fun append(event: DiagnosticEvent): Boolean {
         directory.mkdirs()
         val plainText = DiagnosticEventCodec.encode(event).toByteArray(Charsets.UTF_8)
         val encodedLine = LINE_PREFIX + Base64.getEncoder().encodeToString(cipher.encrypt(plainText)) + "\n"
@@ -124,7 +124,7 @@ internal class DiagnosticEncryptedStore(
             segment = nextSegment()
         }
         segment.appendBytes(bytes)
-        rotateIfNeeded()
+        return rotateIfNeeded()
     }
 
     fun readAll(): List<DiagnosticEvent> = segments().flatMap { segment ->
@@ -162,14 +162,21 @@ internal class DiagnosticEncryptedStore(
         }
     }
 
-    private fun rotateIfNeeded() {
+    private fun rotateIfNeeded(): Boolean {
         val current = segments().toMutableList()
         var total = current.sumOf(File::length)
+        var rotated = false
         while (total > maxTotalBytes && current.size > 1) {
             val oldest = current.removeAt(0)
             val size = oldest.length()
-            if (oldest.delete()) total -= size else break
+            if (oldest.delete()) {
+                total -= size
+                rotated = true
+            } else {
+                break
+            }
         }
+        return rotated
     }
 
     private companion object {
