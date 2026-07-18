@@ -9,13 +9,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
+import com.autoaccounting.data.local.CaptureReason
+import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
+import com.autoaccounting.data.local.PaymentSource
+import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.autoaccounting.feature.account.FakeAccountRepository
@@ -226,6 +232,93 @@ class MainActivityTest {
         }
 
         composeRule.onNodeWithText("待确认").assertIsDisplayed()
+    }
+
+    @Test
+    fun editedReviewMerchantAndCategoryReachLedger() {
+        val repository = LocalLedgerRepository(AutoAccountingDatabaseProvider.get(context))
+        val now = System.currentTimeMillis()
+        runBlocking {
+            repository.clearLocalData()
+            val defaultLedger = repository.ensureDefaultLedgerBook()
+            repository.seedSystemCategories()
+            repository.createManualEntry(
+                defaultLedger.id,
+                LedgerEntryInput(
+                    flowDirection = FlowDirection.OUTFLOW,
+                    transactionKind = TransactionKind.EXPENSE,
+                    amountMinor = 3_590,
+                    transactionTimeEpochMillis = now,
+                    merchantTitle = "原始商户",
+                    categoryId = "food",
+                    fundingAccountId = null,
+                    newFundingAccountLabel = null,
+                    note = null,
+                    paymentSource = PaymentSource.ALIPAY
+                )
+            )
+            repository.upsertPending(
+                PendingEntryEntity(
+                    id = "pending-edited-review",
+                    source = PaymentSource.ALIPAY,
+                    captureReason = CaptureReason.BILL_SYNC,
+                    confidence = ConfidenceState.DUPLICATE_SUSPECT,
+                    transactionKind = TransactionKind.EXPENSE,
+                    amountMinor = 3_590,
+                    currency = "CNY",
+                    merchantTitle = "原始商户",
+                    transactionTimeEpochMillis = now,
+                    capturedAtEpochMillis = now,
+                    suggestedCategoryId = "food",
+                    fundingAccountId = null,
+                    fundingAccountLabel = null,
+                    note = null,
+                    evidenceSummary = null,
+                    parsedFieldsText = null
+                )
+            )
+        }
+
+        try {
+            composeRule.setContent { AutoAccountingApp() }
+            composeRule.onNodeWithTag("app-tab-Review").performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("review-queue-list")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
+            composeRule.onNodeWithTag("detail-pending-edited-review").performClick()
+            composeRule.onNodeWithTag("manual-entry-merchant").performTextClearance()
+            composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("修改后商户")
+            composeRule.onNodeWithTag("manual-entry-category").performScrollTo().performClick()
+            composeRule.onNodeWithText("购物").performClick()
+            composeRule.onNodeWithText("确认入账").performClick()
+            composeRule.onNodeWithText("这次不保存").performClick()
+
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                runBlocking {
+                    repository.listLedgerEntries().any {
+                        it.originPendingEntryId == "pending-edited-review"
+                    }
+                }
+            }
+            val ledgerEntry = runBlocking {
+                repository.listLedgerEntries().single {
+                    it.originPendingEntryId == "pending-edited-review"
+                }
+            }
+            assertEquals("修改后商户", ledgerEntry.merchantTitle)
+            assertEquals("shopping", ledgerEntry.categoryId)
+
+            composeRule.onNodeWithTag("return-home").performClick()
+            composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+            composeRule.onNodeWithTag(LedgerTestTags.ENTRY_LIST).performScrollToIndex(1)
+            composeRule.onNodeWithText("修改后商户").assertIsDisplayed()
+            composeRule.onNodeWithText("购物 · 支付宝", substring = true).assertIsDisplayed()
+        } finally {
+            runBlocking { repository.clearLocalData() }
+        }
     }
 
     @Test
