@@ -1,5 +1,6 @@
 package com.autoaccounting.feature.ledger
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -27,6 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.ui.components.EmptyStatePanel
 import com.autoaccounting.ui.components.HomeReturnButton
+import com.autoaccounting.ui.components.SlidePageTransition
+import com.autoaccounting.ui.components.TextButton
 import com.autoaccounting.ui.visual.CategoryArtwork
 import kotlin.math.min
 
@@ -66,9 +73,42 @@ fun ReportsScreen(
     modifier: Modifier = Modifier
 ) {
     val anchorMonthKey = latestCashFlowMonthKey(entries)
+    var showFullCategoryRanking by remember { mutableStateOf(false) }
 
+    BackHandler(enabled = showFullCategoryRanking) {
+        showFullCategoryRanking = false
+    }
+
+    SlidePageTransition(
+        targetState = showFullCategoryRanking,
+        modifier = modifier.fillMaxSize()
+    ) { showFullRanking ->
+        if (showFullRanking) {
+            FullCategoryRankingScreen(
+                totals = anchorMonthKey?.let { categoryExpenseTotals(entries, it) }.orEmpty(),
+                listState = categoryRankingListState,
+                onBack = { showFullCategoryRanking = false }
+            )
+        } else {
+            ReportsOverviewScreen(
+                entries = entries,
+                anchorMonthKey = anchorMonthKey,
+                onShowFullCategoryRanking = { showFullCategoryRanking = true },
+                onNavigateHome = onNavigateHome
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReportsOverviewScreen(
+    entries: List<LedgerUiEntry>,
+    anchorMonthKey: String?,
+    onShowFullCategoryRanking: () -> Unit,
+    onNavigateHome: () -> Unit
+) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -98,9 +138,9 @@ fun ReportsScreen(
             slices = categorySlices,
             modifier = Modifier.testTag(ReportTestTags.CATEGORY_CHART)
         )
-        CategoryRanking(
+        CategoryRankingPreview(
             totals = categoryTotals,
-            listState = categoryRankingListState,
+            onShowMore = onShowFullCategoryRanking,
             modifier = Modifier.weight(1f)
         )
         CashFlowPanel(
@@ -286,16 +326,73 @@ private fun CategoryLegendRow(
 }
 
 @Composable
-private fun CategoryRanking(
+private fun CategoryRankingPreview(
     totals: List<CategoryTotal>,
-    listState: LazyListState,
+    onShowMore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("分类排行", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "分类排行",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            TextButton(
+                onClick = onShowMore,
+                modifier = Modifier.testTag(ReportTestTags.SHOW_ALL_CATEGORIES)
+            ) {
+                Text("更多")
+            }
+        }
+        if (totals.isEmpty()) {
+            Text("本月暂无支出分类", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            totals.take(3).forEach { total ->
+                CategoryRankingRow(total)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullCategoryRankingScreen(
+    totals: List<CategoryTotal>,
+    listState: LazyListState,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "分类排行",
+                modifier = Modifier.testTag(ReportTestTags.FULL_CATEGORY_RANKING_TITLE),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.testTag(ReportTestTags.BACK_TO_REPORTS)
+            ) {
+                Text("返回")
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -310,30 +407,37 @@ private fun CategoryRanking(
                 }
             } else {
                 items(totals, key = { it.category }) { total ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            CategoryArtwork(
-                                categoryName = total.category,
-                                transactionKind = TransactionKind.EXPENSE,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clearAndSetSemantics {}
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("${total.category} ${formatMoney(total.amountMinor)}")
-                        }
-                    }
+                    CategoryRankingRow(total)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CategoryRankingRow(
+    total: CategoryTotal
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            CategoryArtwork(
+                categoryName = total.category,
+                transactionKind = TransactionKind.EXPENSE,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clearAndSetSemantics {}
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("${total.category} ${formatMoney(total.amountMinor)}")
         }
     }
 }
@@ -471,4 +575,7 @@ internal object ReportTestTags {
     const val CATEGORY_CHART = "report-category-chart"
     const val CATEGORY_RANKING_LIST = "report-category-ranking-list"
     const val CASH_FLOW = "report-cash-flow"
+    const val SHOW_ALL_CATEGORIES = "report-show-all-categories"
+    const val BACK_TO_REPORTS = "report-back-to-overview"
+    const val FULL_CATEGORY_RANKING_TITLE = "report-full-category-ranking-title"
 }

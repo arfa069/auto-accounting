@@ -8,6 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -18,13 +20,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "w411dp-h891dp")
+@Config(sdk = [35], qualifiers = "w384dp-h853dp-450dpi")
 class ReportsScreenLayoutTest {
     @get:Rule
     val composeRule = createComposeRule()
 
     @Test
-    fun onlyCategoryRankingScrollsAndRestoresItsPosition() {
+    fun fullCategoryRankingScrollsAndRestoresItsPosition() {
         val entries = List(16) { index ->
             LedgerUiEntry(
                 id = "category-$index",
@@ -58,6 +60,20 @@ class ReportsScreenLayoutTest {
             .assertIsDisplayed()
             .fetchSemanticsNode()
             .boundsInRoot
+        val thirdPlaceBounds = composeRule.onNodeWithText("分类 2 ¥19.98")
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertTrue(
+            "thirdPlace=$thirdPlaceBounds chart=$chartBounds cashFlow=$cashFlowBounds",
+            thirdPlaceBounds.height > 0f && thirdPlaceBounds.bottom <= cashFlowBounds.top
+        )
+        composeRule.onNodeWithText("分类 3 ¥19.97").assertDoesNotExist()
+
+        composeRule.onNodeWithTag(ReportTestTags.SHOW_ALL_CATEGORIES)
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithTag(ReportTestTags.FULL_CATEGORY_RANKING_TITLE)
+            .assertIsDisplayed()
 
         val rankingBounds = composeRule.onNodeWithTag(ReportTestTags.CATEGORY_RANKING_LIST)
             .fetchSemanticsNode()
@@ -69,27 +85,32 @@ class ReportsScreenLayoutTest {
         composeRule.onNodeWithTag(ReportTestTags.CATEGORY_RANKING_LIST)
             .performScrollToIndex(15)
 
+        var retainedFirstVisibleIndex = 0
         composeRule.runOnIdle {
-            assertEquals(15, rankingListState.firstVisibleItemIndex)
+            retainedFirstVisibleIndex = rankingListState.firstVisibleItemIndex
+            assertTrue(retainedFirstVisibleIndex > 0)
         }
-        assertEquals(
-            chartBounds,
-            composeRule.onNodeWithTag(ReportTestTags.CATEGORY_CHART)
-                .fetchSemanticsNode()
-                .boundsInRoot
-        )
+        composeRule.onNodeWithText("分类 15 ¥19.85").assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTestTags.BACK_TO_REPORTS).performClick()
         assertEquals(
             cashFlowBounds,
             composeRule.onNodeWithTag(ReportTestTags.CASH_FLOW)
                 .fetchSemanticsNode()
                 .boundsInRoot
         )
+        assertEquals(
+            chartBounds,
+            composeRule.onNodeWithTag(ReportTestTags.CATEGORY_CHART)
+                .fetchSemanticsNode()
+                .boundsInRoot
+        )
 
         composeRule.runOnIdle { showReports = false }
         composeRule.runOnIdle { showReports = true }
+        composeRule.onNodeWithTag(ReportTestTags.SHOW_ALL_CATEGORIES).performClick()
 
         composeRule.runOnIdle {
-            assertEquals(15, rankingListState.firstVisibleItemIndex)
+            assertEquals(retainedFirstVisibleIndex, rankingListState.firstVisibleItemIndex)
         }
     }
 }
