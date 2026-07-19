@@ -6,6 +6,7 @@ import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("org.jetbrains.kotlin.kapt")
@@ -106,6 +107,26 @@ android {
     }
 }
 
+androidComponents {
+    finalizeDsl { extension ->
+        listOf("benchmarkRelease", "nonMinifiedRelease").forEach { buildTypeName ->
+            extension.buildTypes.named(buildTypeName).configure {
+                applicationIdSuffix = ".benchmark"
+                versionNameSuffix = "-benchmark"
+                signingConfig = extension.signingConfigs.getByName("debug")
+            }
+            extension.sourceSets.named(buildTypeName).configure {
+                manifest.srcFile("src/benchmark/AndroidManifest.xml")
+                java.srcDir("src/benchmark/java")
+            }
+        }
+    }
+}
+
+baselineProfile {
+    automaticGenerationDuringBuild = false
+}
+
 kotlin {
     jvmToolchain(17)
 }
@@ -171,6 +192,8 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
 }
 
 dependencies {
+    baselineProfile(project(":benchmarks:macrobenchmark"))
+
     implementation(project(":shared:api"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)

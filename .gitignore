@@ -13,6 +13,7 @@ local.properties
 captures/
 *.apk
 *.aab
+/trace_processor
 
 # Secrets
 .env

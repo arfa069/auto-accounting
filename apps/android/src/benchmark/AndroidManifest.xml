@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.autoaccounting.benchmark.permission.BENCHMARK_DATA"
+        android:protectionLevel="signature" />
+
+    <application>
+        <profileable android:shell="true" />
+
+        <provider
+            android:name=".benchmark.BenchmarkDataProvider"
+            android:authorities="com.autoaccounting.benchmark.benchmark-data"
+            android:exported="true"
+            android:permission="com.autoaccounting.benchmark.permission.BENCHMARK_DATA" />
+    </application>
+</manifest>

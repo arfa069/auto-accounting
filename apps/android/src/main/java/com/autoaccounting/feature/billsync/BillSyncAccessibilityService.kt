@@ -10,6 +10,7 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import androidx.annotation.RequiresApi
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
@@ -796,7 +797,15 @@ class BillSyncAccessibilityService : AccessibilityService() {
         return processed
     }
 
-    private suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
+    private suspend fun captureScreenBitmap(windowId: Int): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+        return captureScreenBitmapApi30(windowId)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun captureScreenBitmapApi30(windowId: Int): Bitmap? =
         suspendCoroutine { continuation ->
             val callback = object : TakeScreenshotCallback {
                 override fun onSuccess(screenshot: ScreenshotResult) {

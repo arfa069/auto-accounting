@@ -20,6 +20,7 @@ import com.autoaccounting.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import com.autoaccounting.ui.components.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -46,11 +47,17 @@ fun AutomaticBookkeepingScreen(
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val status = summarizeAutomaticBookkeeping(
-        state = continuousMonitoringState,
-        notificationListenerAccessGranted = notificationListenerAccessGranted,
-        permissionHealth = continuousMonitoringPermissionHealth
-    )
+    val status = remember(
+        continuousMonitoringState,
+        notificationListenerAccessGranted,
+        continuousMonitoringPermissionHealth
+    ) {
+        summarizeAutomaticBookkeeping(
+            state = continuousMonitoringState,
+            notificationListenerAccessGranted = notificationListenerAccessGranted,
+            permissionHealth = continuousMonitoringPermissionHealth
+        )
+    }
 
     Column(
         modifier = modifier

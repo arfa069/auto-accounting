@@ -336,18 +336,15 @@ fun AutoAccountingApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val ledgerEntryListState = rememberLazyListState()
     val reportCategoryRankingListState = rememberLazyListState()
-    val tabs = listOf(
-        AppTab.Review,
-        AppTab.Ledger,
-        AppTab.Reports,
-        AppTab.Profile
-    )
-    val bottomNavigationItems = tabs.map { tab ->
-        AppBottomNavigationItem(
-            key = tab.name,
-            label = tab.label,
-            iconRes = tab.iconRes
-        )
+    val tabs = remember { AppTab.entries.toList() }
+    val bottomNavigationItems = remember(tabs) {
+        tabs.map { tab ->
+            AppBottomNavigationItem(
+                key = tab.name,
+                label = tab.label,
+                iconRes = tab.iconRes
+            )
+        }
     }
     var selectedTab by remember { mutableStateOf<AppTab?>(null) }
     var manualEntryOpen by remember { mutableStateOf(false) }
@@ -400,30 +397,41 @@ fun AutoAccountingApp(
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
     val activeLedgerId = activeLedgerBook?.id
     val activeLedgerName = activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
-    val ledgerEntries = allLedgerEntryEntities
-        .asSequence()
-        .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis == null }
-        .map { it.toLedgerUiEntry() }
-        .toList()
-    val deletedLedgerEntries = allLedgerEntryEntities
-        .asSequence()
-        .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis != null }
-        .map { it.toLedgerUiEntry() }
-        .toList()
-    val ledgerBookUiModels = ledgerBooks.map { ledgerBook ->
-        val entries = allLedgerEntryEntities.filter { it.ledgerBookId == ledgerBook.id }
-        LedgerBookUiModel(
-            id = ledgerBook.id,
-            name = ledgerBook.name,
-            activeEntryCount = entries.count { it.deletedAtEpochMillis == null },
-            deletedEntryCount = entries.count { it.deletedAtEpochMillis != null },
-            isActive = ledgerBook.id == activeLedgerId
+    val ledgerEntries = remember(allLedgerEntryEntities, activeLedgerId) {
+        allLedgerEntryEntities
+            .asSequence()
+            .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis == null }
+            .map { it.toLedgerUiEntry() }
+            .toList()
+    }
+    val deletedLedgerEntries = remember(allLedgerEntryEntities, activeLedgerId) {
+        allLedgerEntryEntities
+            .asSequence()
+            .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis != null }
+            .map { it.toLedgerUiEntry() }
+            .toList()
+    }
+    val ledgerBookUiModels = remember(ledgerBooks, allLedgerEntryEntities, activeLedgerId) {
+        ledgerBooks.map { ledgerBook ->
+            val entries = allLedgerEntryEntities.filter { it.ledgerBookId == ledgerBook.id }
+            LedgerBookUiModel(
+                id = ledgerBook.id,
+                name = ledgerBook.name,
+                activeEntryCount = entries.count { it.deletedAtEpochMillis == null },
+                deletedEntryCount = entries.count { it.deletedAtEpochMillis != null },
+                isActive = ledgerBook.id == activeLedgerId
+            )
+        }
+    }
+    val continuousMonitoringPermissionHealth = remember(
+        billSyncAccessibilityAccessGranted,
+        billSyncAccessibilityServiceConnected
+    ) {
+        ContinuousMonitoringPermissionHealth(
+            billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted,
+            billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected
         )
     }
-    val continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-        billSyncAccessibilityGranted = billSyncAccessibilityAccessGranted,
-        billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected
-    )
 
     fun moveAccountToLocalMode() {
         secureAccountSessionStore.clear()
@@ -738,13 +746,15 @@ fun AutoAccountingApp(
                             }
                         }
                     ) { innerPadding ->
-                        val route = AppRoute(
-                            tab = selectedTab,
-                            profileDestination = profileDestination.takeIf {
-                                selectedTab == AppTab.Profile
-                            },
-                            manualEntryOpen = manualEntryOpen
-                        )
+                        val route = remember(selectedTab, profileDestination, manualEntryOpen) {
+                            AppRoute(
+                                tab = selectedTab,
+                                profileDestination = profileDestination.takeIf {
+                                    selectedTab == AppTab.Profile
+                                },
+                                manualEntryOpen = manualEntryOpen
+                            )
+                        }
                         SlidePageTransition(
                             targetState = route,
                             modifier = Modifier.fillMaxSize()

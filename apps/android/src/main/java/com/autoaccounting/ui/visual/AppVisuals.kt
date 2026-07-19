@@ -1,17 +1,78 @@
 package com.autoaccounting.ui.visual
 
+import android.content.res.Resources
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.autoaccounting.R
 import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.TransactionKind
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+private const val WALLPAPER_CACHE_MAX_BYTES = 21 * 1024 * 1024
+private const val DECORATIVE_IMAGE_CACHE_MAX_BYTES = 2 * 1024 * 1024
+private val WallpaperPlaceholder = Color(0xFFFEF8ED)
+
+private object WallpaperImageCache {
+    private val decodeMutex = Mutex()
+    private val images = object : LruCache<Int, ImageBitmap>(WALLPAPER_CACHE_MAX_BYTES) {
+        override fun sizeOf(key: Int, value: ImageBitmap): Int =
+            (value.width.toLong() * value.height * 4L)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+    }
+
+    fun get(@DrawableRes backgroundRes: Int): ImageBitmap? = images.get(backgroundRes)
+
+    suspend fun load(resources: Resources, @DrawableRes backgroundRes: Int): ImageBitmap? =
+        withContext(Dispatchers.IO) {
+            decodeMutex.withLock {
+                images.get(backgroundRes) ?: BitmapFactory
+                    .decodeResource(resources, backgroundRes)
+                    ?.asImageBitmap()
+                    ?.also { images.put(backgroundRes, it) }
+            }
+        }
+}
+
+private object DecorativeImageCache {
+    private val decodeMutex = Mutex()
+    private val images = object : LruCache<Int, ImageBitmap>(DECORATIVE_IMAGE_CACHE_MAX_BYTES) {
+        override fun sizeOf(key: Int, value: ImageBitmap): Int =
+            (value.width.toLong() * value.height * 4L)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+    }
+
+    fun get(@DrawableRes imageRes: Int): ImageBitmap? = images.get(imageRes)
+
+    suspend fun load(resources: Resources, @DrawableRes imageRes: Int): ImageBitmap? =
+        withContext(Dispatchers.IO) {
+            decodeMutex.withLock {
+                images.get(imageRes) ?: BitmapFactory
+                    .decodeResource(resources, imageRes)
+                    ?.asImageBitmap()
+                    ?.also { images.put(imageRes, it) }
+            }
+        }
+}
 
 @Composable
 fun AppWallpaper(
@@ -19,14 +80,59 @@ fun AppWallpaper(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val resources = LocalContext.current.applicationContext.resources
+    val wallpaper = produceState(
+        initialValue = WallpaperImageCache.get(backgroundRes),
+        key1 = backgroundRes,
+        key2 = resources
+    ) {
+        value = WallpaperImageCache.load(resources, backgroundRes)
+    }.value
+
     Box(modifier = modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(backgroundRes),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        if (wallpaper == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(WallpaperPlaceholder)
+            )
+        } else {
+            Image(
+                bitmap = wallpaper,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         content()
+    }
+}
+
+@Composable
+fun CachedResourceImage(
+    @DrawableRes imageRes: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Fit
+) {
+    val resources = LocalContext.current.applicationContext.resources
+    val image = produceState(
+        initialValue = DecorativeImageCache.get(imageRes),
+        key1 = imageRes,
+        key2 = resources
+    ) {
+        value = DecorativeImageCache.load(resources, imageRes)
+    }.value
+
+    Box(modifier = modifier) {
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = contentDescription,
+                contentScale = contentScale,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 

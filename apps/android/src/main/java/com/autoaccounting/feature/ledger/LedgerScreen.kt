@@ -104,8 +104,10 @@ fun LedgerScreen(
     var selectedEntryId by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val selectedEntry = entries.firstOrNull { it.id == selectedEntryId }
-    val page = LedgerPage(view, selectedEntryId)
+    val selectedEntry = remember(entries, selectedEntryId) {
+        entries.firstOrNull { it.id == selectedEntryId }
+    }
+    val page = remember(view, selectedEntryId) { LedgerPage(view, selectedEntryId) }
 
     BackHandler(
         enabled = view == LedgerView.DELETED ||
@@ -138,7 +140,9 @@ fun LedgerScreen(
             targetState = page,
             modifier = Modifier.fillMaxSize()
         ) { targetPage ->
-            val targetEntry = entries.firstOrNull { it.id == targetPage.selectedEntryId }
+            val targetEntry = remember(entries, targetPage.selectedEntryId) {
+                entries.firstOrNull { it.id == targetPage.selectedEntryId }
+            }
             when (targetPage.view) {
                 LedgerView.LIST -> LedgerList(
                     entries = entries,
@@ -155,9 +159,10 @@ fun LedgerScreen(
                 )
 
                 LedgerView.EDIT -> targetEntry?.let { entry ->
+                    val initialFormState = remember(entry) { LedgerEntryFormState.from(entry) }
                     LedgerEntryForm(
                         title = "编辑账目",
-                        initial = LedgerEntryFormState.from(entry),
+                        initial = initialFormState,
                         categories = categories,
                         fundingAccounts = fundingAccounts,
                         onExit = {
@@ -252,7 +257,9 @@ private fun LedgerList(
     var categoryFilter by remember { mutableStateOf("") }
     var kindFilter by remember { mutableStateOf("") }
 
-    val availableMonthKeys = entries.map { it.monthKey }.distinct().sorted()
+    val availableMonthKeys = remember(entries) {
+        entries.map { it.monthKey }.distinct().sorted()
+    }
     var monthKey by remember { mutableStateOf(latestMonthKey(entries)) }
     LaunchedEffect(availableMonthKeys) {
         if (monthKey !in availableMonthKeys) {
@@ -260,22 +267,39 @@ private fun LedgerList(
         }
     }
     val monthIndex = availableMonthKeys.indexOf(monthKey)
-    val summary = monthlySummary(entries, monthKey)
-    val hasCurrentMonthEntries = entries.any { it.monthKey == monthKey }
+    val summary = remember(entries, monthKey) { monthlySummary(entries, monthKey) }
+    val hasCurrentMonthEntries = remember(entries, monthKey) {
+        entries.any { it.monthKey == monthKey }
+    }
     val hasActiveFilters = searchText.isNotBlank() ||
         sourceFilter.isNotBlank() ||
         categoryFilter.isNotBlank() ||
         kindFilter.isNotBlank()
-    val filteredEntries = entries
-        .filter { it.monthKey == monthKey }
-        .filter {
-            val searchableText = "${it.title} ${it.note.orEmpty()} ${it.category}"
-            searchText.isBlank() || searchableText.contains(searchText.trim(), ignoreCase = true)
-        }
-        .filter { sourceFilter.isBlank() || it.sourceLabel.contains(sourceFilter.trim()) }
-        .filter { categoryFilter.isBlank() || it.category.contains(categoryFilter.trim()) }
-        .filter { kindFilter.isBlank() || it.kindLabel.contains(kindFilter.trim()) }
-        .sortedByDescending { it.transactionTimeEpochMillis }
+    val filteredEntries = remember(
+        entries,
+        monthKey,
+        searchText,
+        sourceFilter,
+        categoryFilter,
+        kindFilter
+    ) {
+        val searchQuery = searchText.trim()
+        val sourceQuery = sourceFilter.trim()
+        val categoryQuery = categoryFilter.trim()
+        val kindQuery = kindFilter.trim()
+        entries
+            .asSequence()
+            .filter { it.monthKey == monthKey }
+            .filter {
+                val searchableText = "${it.title} ${it.note.orEmpty()} ${it.category}"
+                searchQuery.isBlank() || searchableText.contains(searchQuery, ignoreCase = true)
+            }
+            .filter { sourceQuery.isBlank() || it.sourceLabel.contains(sourceQuery) }
+            .filter { categoryQuery.isBlank() || it.category.contains(categoryQuery) }
+            .filter { kindQuery.isBlank() || it.kindLabel.contains(kindQuery) }
+            .sortedByDescending { it.transactionTimeEpochMillis }
+            .toList()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(

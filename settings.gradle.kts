@@ -17,5 +17,6 @@ dependencyResolutionManagement {
 rootProject.name = "auto-accounting"
 
 include(":apps:android")
+include(":benchmarks:macrobenchmark")
 include(":services:backend")
 include(":shared:api")
