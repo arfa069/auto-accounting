@@ -10,7 +10,7 @@ import java.util.regex.Pattern
 import kotlin.math.abs
 
 internal const val TARGET_PACKAGE = "com.autoaccounting.benchmark"
-internal const val ITERATIONS = 5
+internal const val ITERATIONS = 10
 
 internal class BenchmarkApp(private val device: UiDevice) {
     fun lockNaturalOrientation() {

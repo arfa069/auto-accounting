@@ -1,5 +1,6 @@
 package com.autoaccounting.macrobenchmark
 
+import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.StartupMode
@@ -36,10 +37,19 @@ class CriticalUserJourneysBenchmark {
     }
 
     @Test
-    fun coldStartup() = benchmarkRule.measureRepeated(
+    fun coldStartup() = measureColdStartup(CompilationMode.None())
+
+    @Test
+    fun coldStartupBaselineProfile() = measureColdStartup(
+        CompilationMode.Partial(BaselineProfileMode.Require)
+    )
+
+    private fun measureColdStartup(
+        compilationMode: CompilationMode
+    ) = benchmarkRule.measureRepeated(
         packageName = TARGET_PACKAGE,
         metrics = listOf(StartupTimingMetric()),
-        compilationMode = CompilationMode.None(),
+        compilationMode = compilationMode,
         startupMode = StartupMode.COLD,
         iterations = ITERATIONS,
         setupBlock = { pressHome() }
@@ -49,10 +59,19 @@ class CriticalUserJourneysBenchmark {
     }
 
     @Test
-    fun ledgerScrollAndDetail() = benchmarkRule.measureRepeated(
+    fun ledgerScrollAndDetail() = measureLedgerScrollAndDetail(CompilationMode.None())
+
+    @Test
+    fun ledgerScrollAndDetailBaselineProfile() = measureLedgerScrollAndDetail(
+        CompilationMode.Partial(BaselineProfileMode.Require)
+    )
+
+    private fun measureLedgerScrollAndDetail(
+        compilationMode: CompilationMode
+    ) = benchmarkRule.measureRepeated(
         packageName = TARGET_PACKAGE,
         metrics = listOf(FrameTimingMetric()),
-        compilationMode = CompilationMode.None(),
+        compilationMode = compilationMode,
         startupMode = StartupMode.WARM,
         iterations = ITERATIONS,
         setupBlock = {
@@ -67,10 +86,21 @@ class CriticalUserJourneysBenchmark {
     }
 
     @Test
-    fun automaticBookkeepingSettings() = benchmarkRule.measureRepeated(
+    fun automaticBookkeepingSettings() = measureAutomaticBookkeepingSettings(
+        CompilationMode.None()
+    )
+
+    @Test
+    fun automaticBookkeepingSettingsBaselineProfile() = measureAutomaticBookkeepingSettings(
+        CompilationMode.Partial(BaselineProfileMode.Require)
+    )
+
+    private fun measureAutomaticBookkeepingSettings(
+        compilationMode: CompilationMode
+    ) = benchmarkRule.measureRepeated(
         packageName = TARGET_PACKAGE,
         metrics = listOf(FrameTimingMetric()),
-        compilationMode = CompilationMode.None(),
+        compilationMode = compilationMode,
         startupMode = StartupMode.WARM,
         iterations = ITERATIONS,
         setupBlock = {

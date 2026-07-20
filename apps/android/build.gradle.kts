@@ -125,6 +125,9 @@ androidComponents {
 
 baselineProfile {
     automaticGenerationDuringBuild = false
+    filter {
+        exclude("com.autoaccounting.benchmark.**")
+    }
 }
 
 kotlin {
