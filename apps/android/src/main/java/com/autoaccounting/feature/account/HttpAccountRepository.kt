@@ -6,9 +6,13 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal data class AccountHttpResponse(
     val statusCode: Int,
@@ -23,8 +27,21 @@ internal interface AccountHttpTransport {
     ): AccountHttpResponse
 }
 
+internal enum class AccountHttpStage {
+    RequestStarted,
+    RequestBodyWritten,
+    ResponseHeadersReceived,
+    ResponseBodyRead,
+    Cancelled
+}
+
+internal fun interface AccountHttpObserver {
+    fun onStage(stage: AccountHttpStage)
+}
+
 internal class HttpUrlConnectionAccountTransport(
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val observer: AccountHttpObserver = AccountHttpObserver { }
 ) : AccountHttpTransport {
     override suspend fun post(
         url: String,
@@ -32,30 +49,48 @@ internal class HttpUrlConnectionAccountTransport(
         bearerToken: String?
     ): AccountHttpResponse = withContext(ioDispatcher) {
         val connection = URL(url).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
-            connection.readTimeout = READ_TIMEOUT_MILLIS
-            connection.doOutput = true
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/x-www-form-urlencoded; charset=UTF-8"
-            )
-            bearerToken?.let { token ->
-                connection.setRequestProperty("Authorization", "Bearer $token")
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation {
+                try {
+                    observer.onStage(AccountHttpStage.Cancelled)
+                } finally {
+                    connection.disconnect()
+                }
             }
-            val requestBody = form.entries.joinToString("&") { (name, value) ->
-                "${name.formEncode()}=${value.formEncode()}"
-            }.toByteArray(Charsets.UTF_8)
-            connection.outputStream.use { output -> output.write(requestBody) }
-            val status = connection.responseCode
-            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                ?.bufferedReader(Charsets.UTF_8)
-                ?.use { it.readText() }
-                .orEmpty()
-            AccountHttpResponse(statusCode = status, body = body)
-        } finally {
-            connection.disconnect()
+            try {
+                observer.onStage(AccountHttpStage.RequestStarted)
+                connection.requestMethod = "POST"
+                connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
+                connection.readTimeout = READ_TIMEOUT_MILLIS
+                connection.doOutput = true
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/x-www-form-urlencoded; charset=UTF-8"
+                )
+                bearerToken?.let { token ->
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                }
+                val requestBody = form.entries.joinToString("&") { (name, value) ->
+                    "${name.formEncode()}=${value.formEncode()}"
+                }.toByteArray(Charsets.UTF_8)
+                connection.outputStream.use { output -> output.write(requestBody) }
+                observer.onStage(AccountHttpStage.RequestBodyWritten)
+                val status = connection.responseCode
+                observer.onStage(AccountHttpStage.ResponseHeadersReceived)
+                val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                    .orEmpty()
+                observer.onStage(AccountHttpStage.ResponseBodyRead)
+                val response = AccountHttpResponse(statusCode = status, body = body)
+                continuation.resume(response)
+            } catch (cause: Exception) {
+                if (continuation.isActive) {
+                    continuation.resumeWithException(cause)
+                }
+            } finally {
+                connection.disconnect()
+            }
         }
     }
 
@@ -198,6 +233,8 @@ internal class HttpAccountRepository(
         if (baseUrl.isBlank()) return configurationMissing()
         val response = try {
             transport.post("$baseUrl$path", form, bearerToken)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (_: IOException) {
             return AccountRepositoryResult.Failure(
                 kind = AccountFailureKind.Network,

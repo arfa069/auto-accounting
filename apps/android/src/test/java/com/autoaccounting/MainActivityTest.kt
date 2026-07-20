@@ -327,7 +327,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-account-status-card").performClick()
 
         composeRule.runOnIdle {
@@ -343,7 +343,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-account-status-card").performClick()
         composeRule.onNodeWithText("登录或注册").performClick()
         composeRule.onNodeWithText("登录").performClick()
@@ -366,7 +366,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
 
         composeRule.onNodeWithText("自动记账状态")
@@ -391,7 +391,7 @@ class MainActivityTest {
         composeRule.onNodeWithText("取消").performClick()
 
         composeRule.onNodeWithTag("return-home").performClick()
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
 
         composeRule.onNodeWithTag("manual-bill-import").assertDoesNotExist()
@@ -419,7 +419,7 @@ class MainActivityTest {
                 )
             }
 
-            composeRule.onNodeWithTag("app-tab-Profile").performClick()
+            openProfileTab()
             composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
 
             composeRule.onNodeWithText("状态：需要处理").assertIsDisplayed()
@@ -445,7 +445,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
 
         composeRule.runOnIdle {
@@ -461,7 +461,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-CategorizationRules")
             .performScrollTo()
             .performClick()
@@ -475,7 +475,7 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-CategorizationRules")
             .performScrollTo()
             .performClick()
@@ -493,7 +493,7 @@ class MainActivityTest {
     fun dataAndBackupEntryOpensDedicatedPage() {
         composeRule.setContent { AutoAccountingApp() }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-DataAndBackup")
             .performScrollTo()
             .performClick()
@@ -506,7 +506,7 @@ class MainActivityTest {
     fun systemBackFromDataAndBackupReturnsToProfileOverview() {
         composeRule.setContent { AutoAccountingApp() }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-DataAndBackup")
             .performScrollTo()
             .performClick()
@@ -524,7 +524,7 @@ class MainActivityTest {
     fun complianceAndPrivacyEntryOpensDedicatedPageWithDebugTools() {
         composeRule.setContent { AutoAccountingApp() }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
             .performScrollTo()
             .performClick()
@@ -538,7 +538,7 @@ class MainActivityTest {
     fun systemBackFromComplianceAndPrivacyReturnsToProfileOverview() {
         composeRule.setContent { AutoAccountingApp() }
 
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        openProfileTab()
         composeRule.onNodeWithTag("profile-entry-ComplianceAndPrivacy")
             .performScrollTo()
             .performClick()
@@ -573,4 +573,13 @@ class MainActivityTest {
         note = null,
         paymentSource = null
     )
+
+    private fun openProfileTab() {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("app-tab-Profile")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+    }
 }

@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <permission
         android:name="com.autoaccounting.benchmark.permission.BENCHMARK_DATA"
         android:protectionLevel="signature" />
 
-    <application>
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic">
         <profileable android:shell="true" />
 
         <provider

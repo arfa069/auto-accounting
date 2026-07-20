@@ -12,7 +12,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -26,8 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
@@ -106,7 +110,9 @@ import com.autoaccounting.ui.requestHighRefreshRate
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val notificationListenerAccessGranted = mutableStateOf(false)
@@ -321,9 +327,6 @@ fun AutoAccountingApp(
         )
     }
     val accountRepository = accountRepositoryOverride ?: productionAccountRepository
-    val initialAccountRestore = remember(secureAccountSessionStore) {
-        secureAccountSessionStore.restore()
-    }
     val diagnosticLogs = remember(context.applicationContext) {
         DiagnosticLogs.get(context.applicationContext)
     }
@@ -348,41 +351,11 @@ fun AutoAccountingApp(
     var manualEntryOpen by remember { mutableStateOf(false) }
     var manualBillImportRequestId by remember { mutableLongStateOf(0L) }
     var profileDestination by remember { mutableStateOf<ProfileDestination?>(null) }
-    var accountSession by remember(initialAccountRestore, localModeSessionStore) {
-        mutableStateOf(
-            when (initialAccountRestore) {
-                is AccountSessionRestoreResult.Restored -> AccountSession.SignedIn(
-                    phone = initialAccountRestore.credentials.phone,
-                    token = initialAccountRestore.credentials.token
-                )
-                AccountSessionRestoreResult.Corrupted -> {
-                    localModeSessionStore.confirmLocalMode()
-                    AccountSession.LocalMode
-                }
-                AccountSessionRestoreResult.Empty -> localModeSessionStore.restoreSession()
-            }
-        )
-    }
+    var accountSession by remember { mutableStateOf<AccountSession?>(null) }
+    var isRestoringAccountSession by remember { mutableStateOf(true) }
     var accountEntryReturnSession by remember { mutableStateOf<AccountSession?>(null) }
-    var accountDeletionState by remember(initialAccountRestore) {
-        mutableStateOf(
-            (initialAccountRestore as? AccountSessionRestoreResult.Restored)
-                ?.credentials
-                ?.deletionState
-                ?: AccountDeletionUiState()
-        )
-    }
-    var accountRuntimeState by remember(initialAccountRestore) {
-        mutableStateOf(
-            AccountRuntimeState(
-                status = if (initialAccountRestore is AccountSessionRestoreResult.Restored) {
-                    AccountRuntimeStatus.Validating
-                } else {
-                    AccountRuntimeStatus.LocalMode
-                }
-            )
-        )
-    }
+    var accountDeletionState by remember { mutableStateOf(AccountDeletionUiState()) }
+    var accountRuntimeState by remember { mutableStateOf(AccountRuntimeState(AccountRuntimeStatus.LocalMode)) }
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
@@ -436,6 +409,27 @@ fun AutoAccountingApp(
                 AccountRuntimeStatus.Verified
             }
         )
+    }
+
+    LaunchedEffect(secureAccountSessionStore, localModeSessionStore) {
+        when (val restored = withContext(Dispatchers.IO) { secureAccountSessionStore.restore() }) {
+            is AccountSessionRestoreResult.Restored -> {
+                accountSession = AccountSession.SignedIn(
+                    phone = restored.credentials.phone,
+                    token = restored.credentials.token
+                )
+                accountDeletionState = restored.credentials.deletionState
+                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Validating)
+            }
+            AccountSessionRestoreResult.Corrupted -> {
+                withContext(Dispatchers.IO) { localModeSessionStore.confirmLocalMode() }
+                accountSession = AccountSession.LocalMode
+            }
+            AccountSessionRestoreResult.Empty -> {
+                accountSession = withContext(Dispatchers.IO) { localModeSessionStore.restoreSession() }
+            }
+        }
+        isRestoringAccountSession = false
     }
 
     LaunchedEffect(accountSession, accountRuntimeState.status) {
@@ -630,7 +624,16 @@ fun AutoAccountingApp(
     }
 
     AutoAccountingTheme {
-        SlidePageTransition(
+        if (isRestoringAccountSession) {
+            AppWallpaper(R.drawable.aa_bg_account) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.testTag("account-session-restoring"))
+                }
+            }
+        } else SlidePageTransition(
             targetState = accountSession,
             modifier = Modifier.fillMaxSize()
         ) { activeAccountSession ->

@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.account
 
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -87,6 +88,29 @@ class HttpAccountRepositoryTest {
 
         assertEquals(AccountFailureKind.InvalidResponse, result.kind)
         assertEquals(1, transport.callCount)
+    }
+
+    @Test
+    fun cancellationPropagatesInsteadOfBecomingNetworkFailure() {
+        var cancellationPropagated = false
+
+        try {
+            runBlocking {
+                repository(
+                    object : AccountHttpTransport {
+                        override suspend fun post(
+                            url: String,
+                            form: Map<String, String>,
+                            bearerToken: String?
+                        ): AccountHttpResponse = throw CancellationException("cancelled")
+                    }
+                ).requestSmsCode("13800138000")
+            }
+        } catch (_: CancellationException) {
+            cancellationPropagated = true
+        }
+
+        assertTrue(cancellationPropagated)
     }
 
     private fun repository(transport: AccountHttpTransport): HttpAccountRepository =

@@ -123,18 +123,15 @@ fun DataAndBackupScreen(
                             runCatching {
                                 val timestamp = SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
                                 val filename = ledgerCsvFilename(currentLedgerName, timestamp)
-                                val values = ContentValues().apply {
-                                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                                    put(MediaStore.Downloads.MIME_TYPE, "text/csv")
-                                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                                val content = withContext(Dispatchers.Default) {
+                                    exportLedgerCsv(ledgerEntries)
                                 }
-                                val uri = context.contentResolver.insert(
-                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                    values
-                                ) ?: error("Failed to create Downloads entry")
-                                context.contentResolver.openOutputStream(uri)?.use { output ->
-                                    output.write(exportLedgerCsv(ledgerEntries).toByteArray(Charsets.UTF_8))
-                                } ?: error("Failed to write CSV file")
+                                writeDownloadFile(
+                                    context = context,
+                                    filename = filename,
+                                    mimeType = "text/csv",
+                                    content = content
+                                )
                                 filename
                             }.onSuccess {
                                 snackbarHostState.showSnackbar("CSV 已保存到 Download/$it")

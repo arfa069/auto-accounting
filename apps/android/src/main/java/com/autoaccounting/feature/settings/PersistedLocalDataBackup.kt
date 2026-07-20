@@ -46,7 +46,7 @@ data class PersistedLocalDataSnapshot(
 class LocalDataBackupRepository(
     private val database: AutoAccountingDatabase
 ) {
-    suspend fun exportEncryptedBackup(passphrase: String): String {
+    suspend fun exportEncryptedBackup(passphrase: String): String = withContext(Dispatchers.Default) {
         val snapshot = database.withTransaction {
             val ledgerBooks = database.ledgerBookDao().getAll()
                 .ifEmpty { listOf(defaultBackupLedgerBook()) }
@@ -62,7 +62,7 @@ class LocalDataBackupRepository(
                 ledgerBooks = ledgerBooks
             )
         }
-        return encryptPersistedLocalData(snapshot, passphrase)
+        encryptPersistedLocalData(snapshot, passphrase)
     }
 
     suspend fun importEncryptedBackup(
@@ -70,24 +70,26 @@ class LocalDataBackupRepository(
         passphrase: String
     ) {
         val snapshot = decodeAndValidate(backupText, passphrase)
-        database.withTransaction {
-            database.ledgerEntryDao().deleteAll()
-            database.pendingEntryDao().deleteAll()
-            database.ignoredEntryDao().deleteAll()
-            database.fundingAccountDao().deleteAll()
-            database.categoryDao().deleteAll()
-            database.ledgerBookDao().deleteAll()
-            database.categorizationRuleDao().deleteAll()
-            database.localSettingsDao().deleteAll()
+        withContext(Dispatchers.IO) {
+            database.withTransaction {
+                database.ledgerEntryDao().deleteAll()
+                database.pendingEntryDao().deleteAll()
+                database.ignoredEntryDao().deleteAll()
+                database.fundingAccountDao().deleteAll()
+                database.categoryDao().deleteAll()
+                database.ledgerBookDao().deleteAll()
+                database.categorizationRuleDao().deleteAll()
+                database.localSettingsDao().deleteAll()
 
-            database.categoryDao().upsertAll(snapshot.categories)
-            database.fundingAccountDao().upsertAll(snapshot.fundingAccounts)
-            database.ledgerBookDao().insertAll(snapshot.ledgerBooks)
-            database.pendingEntryDao().upsertAll(snapshot.pendingEntries)
-            database.ledgerEntryDao().upsertAll(snapshot.ledgerEntries)
-            database.ignoredEntryDao().upsertAll(snapshot.ignoredEntries)
-            database.categorizationRuleDao().upsertAll(snapshot.categorizationRules)
-            database.localSettingsDao().upsert(requireNotNull(snapshot.settings))
+                database.categoryDao().upsertAll(snapshot.categories)
+                database.fundingAccountDao().upsertAll(snapshot.fundingAccounts)
+                database.ledgerBookDao().insertAll(snapshot.ledgerBooks)
+                database.pendingEntryDao().upsertAll(snapshot.pendingEntries)
+                database.ledgerEntryDao().upsertAll(snapshot.ledgerEntries)
+                database.ignoredEntryDao().upsertAll(snapshot.ignoredEntries)
+                database.categorizationRuleDao().upsertAll(snapshot.categorizationRules)
+                database.localSettingsDao().upsert(requireNotNull(snapshot.settings))
+            }
         }
     }
 
