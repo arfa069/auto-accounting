@@ -48,10 +48,6 @@ class AndroidDiagnosticLogRepository internal constructor(
     override val events: StateFlow<List<DiagnosticEvent>> = _events.asStateFlow()
     override val stats: StateFlow<DiagnosticLogStats> = _stats.asStateFlow()
 
-    init {
-        scope.launch { loadInitialState() }
-    }
-
     override fun setEnabled(enabled: Boolean, userConfirmed: Boolean): Boolean {
         if (enabled && !isDebugBuild && !userConfirmed) return false
         preferences.edit().putBoolean(KEY_ENABLED, enabled).apply()
@@ -109,14 +105,6 @@ class AndroidDiagnosticLogRepository internal constructor(
             mutex.withLock {
                 flushSuppressedLocked()
                 refreshLocked(limit)
-            }
-        }
-    }
-
-    private suspend fun loadInitialState() {
-        withContext(storageDispatcher) {
-            mutex.withLock {
-                refreshLocked(1_000)
             }
         }
     }
@@ -203,10 +191,10 @@ class AndroidDiagnosticLogRepository internal constructor(
     }
 
     private fun refreshLocked(limit: Int) {
-        val all = store.readAll()
-        _events.value = all.takeLast(limit).asReversed()
+        val latest = store.readLatest(limit)
+        _events.value = latest.asReversed()
         _stats.value = DiagnosticLogStats(
-            eventCount = all.size,
+            eventCount = store.eventCount(),
             encryptedBytes = store.encryptedBytes(),
             segmentCount = store.segmentCount()
         )

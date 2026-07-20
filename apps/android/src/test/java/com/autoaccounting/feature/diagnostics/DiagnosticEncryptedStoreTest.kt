@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.diagnostics
 
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +34,21 @@ class DiagnosticEncryptedStoreTest {
 
         assertEquals(1, restored.size)
         assertEquals("first valid event", restored.single().sensitivePayload.fields[DiagnosticSensitiveField.OcrText])
+    }
+
+    @Test
+    fun readLatestOnlyDecryptsRequestedEvents() {
+        val directory = Files.createTempDirectory("diagnostic-latest").toFile()
+        val cipher = StoreCountingDiagnosticEventCipher()
+        val store = DiagnosticEncryptedStore(directory, cipher)
+        repeat(3) { store.append(event("event-$it")) }
+        cipher.decryptCalls.set(0)
+
+        val latest = store.readLatest(1)
+
+        assertEquals(1, latest.size)
+        assertEquals("event-2", latest.single().sensitivePayload.fields[DiagnosticSensitiveField.OcrText])
+        assertEquals(1, cipher.decryptCalls.get())
     }
 
     @Test
@@ -87,4 +103,18 @@ class DiagnosticEncryptedStoreTest {
             mapOf(DiagnosticSensitiveField.OcrText to text)
         )
     )
+}
+
+private class StoreCountingDiagnosticEventCipher : DiagnosticEventCipher {
+    private val delegate = JvmDiagnosticEventCipher()
+    val decryptCalls = AtomicInteger(0)
+
+    override fun encrypt(plainText: ByteArray): ByteArray = delegate.encrypt(plainText)
+
+    override fun decrypt(payload: ByteArray): ByteArray {
+        decryptCalls.incrementAndGet()
+        return delegate.decrypt(payload)
+    }
+
+    override fun deleteKey() = delegate.deleteKey()
 }

@@ -21,6 +21,9 @@ internal interface DiagnosticEventCipher {
 internal class AndroidKeystoreDiagnosticCipher(
     private val alias: String = KEY_ALIAS
 ) : DiagnosticEventCipher {
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     override fun encrypt(plainText: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
@@ -39,27 +42,32 @@ internal class AndroidKeystoreDiagnosticCipher(
     }
 
     override fun deleteKey() {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+        synchronized(this) {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+            cachedKey = null
+        }
     }
 
-    private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).run {
-            init(
-                KeyGenParameterSpec.Builder(
-                    alias,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setKeySize(256)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setRandomizedEncryptionRequired(true)
-                    .build()
-            )
-            generateKey()
-        }
+    private fun getOrCreateKey(): SecretKey = cachedKey ?: synchronized(this) {
+        cachedKey ?: run {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            (keyStore.getKey(alias, null) as? SecretKey)
+                ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).run {
+                    init(
+                        KeyGenParameterSpec.Builder(
+                            alias,
+                            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                        )
+                            .setKeySize(256)
+                            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                            .setRandomizedEncryptionRequired(true)
+                            .build()
+                    )
+                    generateKey()
+                }
+        }.also { cachedKey = it }
     }
 
     private companion object {
@@ -127,15 +135,26 @@ internal class DiagnosticEncryptedStore(
         return rotateIfNeeded()
     }
 
-    fun readAll(): List<DiagnosticEvent> = segments().flatMap { segment ->
-        runCatching { segment.readLines(Charsets.US_ASCII) }.getOrDefault(emptyList()).mapNotNull { line ->
-            runCatching {
-                require(line.startsWith(LINE_PREFIX))
-                val encrypted = Base64.getDecoder().decode(line.removePrefix(LINE_PREFIX))
-                val json = cipher.decrypt(encrypted).toString(Charsets.UTF_8)
-                DiagnosticEventCodec.decode(json)
-            }.getOrNull()
+    fun readAll(): List<DiagnosticEvent> = readLatest(Int.MAX_VALUE)
+
+    fun readLatest(limit: Int): List<DiagnosticEvent> {
+        if (limit <= 0) return emptyList()
+        val newestFirst = mutableListOf<DiagnosticEvent>()
+        for (segment in segments().asReversed()) {
+            val lines = runCatching { segment.readLines(Charsets.US_ASCII) }
+                .getOrDefault(emptyList())
+            for (line in lines.asReversed()) {
+                decodeLine(line)?.let(newestFirst::add)
+                if (newestFirst.size == limit) return newestFirst.asReversed()
+            }
         }
+        return newestFirst.asReversed()
+    }
+
+    fun eventCount(): Int = segments().sumOf { segment ->
+        runCatching {
+            segment.readLines(Charsets.US_ASCII).count { it.startsWith(LINE_PREFIX) }
+        }.getOrDefault(0)
     }
 
     fun encryptedBytes(): Long = segments().sumOf(File::length)
@@ -151,6 +170,13 @@ internal class DiagnosticEncryptedStore(
     private fun segments(): List<File> = directory.listFiles { file ->
         file.isFile && file.extension == SEGMENT_EXTENSION
     }?.sortedBy(File::getName).orEmpty()
+
+    private fun decodeLine(line: String): DiagnosticEvent? = runCatching {
+        require(line.startsWith(LINE_PREFIX))
+        val encrypted = Base64.getDecoder().decode(line.removePrefix(LINE_PREFIX))
+        val json = cipher.decrypt(encrypted).toString(Charsets.UTF_8)
+        DiagnosticEventCodec.decode(json)
+    }.getOrNull()
 
     private fun nextSegment(): File {
         val base = clock()

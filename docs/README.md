@@ -13,6 +13,7 @@ Start here:
 - [Phase 2 Issue Files](./issues/phase-2/)
 - [Internal Beta Release And QA](./INTERNAL-BETA-RELEASE.md)
 - [Diagnostic Logs Operations](./DIAGNOSTIC-LOGS.md)
+- [Android Performance Audit](./performance-audit/)
 - [Domain Glossary](../CONTEXT.md)
 - [Auto Bookkeeping Flow Research](./research/auto-bookkeeping-flow.md)
 - [Architecture Decision Records](./adr/)
