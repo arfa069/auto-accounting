@@ -4,7 +4,11 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +54,11 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -458,10 +467,19 @@ private fun FilterPanel(
 
 @Composable
 private fun LedgerEntryRow(entry: LedgerUiEntry, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressedOverlayColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val pressIndication = remember(pressedOverlayColor) {
+        LedgerEntryPressIndication(pressedOverlayColor)
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = pressIndication,
+                onClick = onClick
+            ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
@@ -491,6 +509,43 @@ private fun LedgerEntryRow(entry: LedgerUiEntry, onClick: () -> Unit) {
             }
             Text(signedAmount, fontWeight = FontWeight.Bold)
         }
+    }
+}
+
+private data class LedgerEntryPressIndication(
+    private val color: Color
+) : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        LedgerEntryPressIndicationNode(interactionSource, color)
+}
+
+private class LedgerEntryPressIndicationNode(
+    private val interactionSource: InteractionSource,
+    private val color: Color
+) : Modifier.Node(), DrawModifierNode {
+    private val activePresses = mutableSetOf<PressInteraction.Press>()
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            interactionSource.interactions.collect { interaction ->
+                val wasPressed = activePresses.isNotEmpty()
+                when (interaction) {
+                    is PressInteraction.Press -> activePresses += interaction
+                    is PressInteraction.Release -> activePresses -= interaction.press
+                    is PressInteraction.Cancel -> activePresses -= interaction.press
+                }
+                if (wasPressed != activePresses.isNotEmpty()) invalidateDraw()
+            }
+        }
+    }
+
+    override fun onDetach() {
+        activePresses.clear()
+    }
+
+    override fun ContentDrawScope.draw() {
+        drawContent()
+        if (activePresses.isNotEmpty()) drawRect(color)
     }
 }
 

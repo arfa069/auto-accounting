@@ -4,11 +4,11 @@
 
 - [完整审计报告](./performance-audit.md)
 - [测试源码与配置索引](./TEST-SOURCES.md)
-- [`evidence/`](./evidence/)：91 份 Perfetto SQL/Trace 分析 scratchpad、7 份 Macrobenchmark JSON 和 1 份 Perfetto 配置，共 99 个脱敏证据文件。
+- [`evidence/`](./evidence/)：109 份 Markdown（Perfetto SQL/Trace 分析 scratchpad 与证据说明）、10 份 Macrobenchmark JSON 和 1 份 Perfetto 配置，共 120 个脱敏证据文件。
 
 ## 原始二进制证据
 
-原始目录共有 293 个文件、1,674,201,501 bytes。其中 160 个 Perfetto Trace、APK 和截图共 1,669,079,360 bytes，未复制进仓库，原因如下：
+截至 2026-07-20 批次 5 收口时，原始目录共有 381 个文件、1,943,688,309 bytes。其中 201 个 Perfetto Trace、APK 和截图共 1,938,240,211 bytes，未复制进仓库，原因如下：
 
 - Perfetto Trace 和截图可能包含真实设备、通知或用户界面数据，不符合 `docs/AGENTS.md` 的脱敏要求；
 - APK、Trace 和截图体积过大，不适合作为普通 Git 文档提交；
