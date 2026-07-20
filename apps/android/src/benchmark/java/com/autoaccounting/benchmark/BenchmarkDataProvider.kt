@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.os.Trace
+import android.view.accessibility.AccessibilityEvent
 import androidx.room.withTransaction
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.EntryOrigin
@@ -21,7 +22,10 @@ import com.autoaccounting.feature.account.AccountHttpStage
 import com.autoaccounting.feature.account.HttpUrlConnectionAccountTransport
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.SecureAccountSessionStore
+import com.autoaccounting.feature.billsync.AccessibilityEventAdmissionGate
+import com.autoaccounting.feature.billsync.isContinuousMonitoringEventRelevant
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import com.autoaccounting.feature.settings.exportLedgerCsv
 import java.util.Locale
@@ -44,6 +48,7 @@ class BenchmarkDataProvider : ContentProvider() {
             METHOD_SEED_SIGNED_IN_SESSION -> seedSignedInSession()
             METHOD_EXPORT -> exportData(extras)
             METHOD_NETWORK -> validateNetwork(requireNotNull(extras?.getString(ARG_ENDPOINT)))
+            METHOD_MONITORING -> validateMonitoring()
             else -> error("Unsupported benchmark method: $method")
         }
     }
@@ -220,6 +225,68 @@ class BenchmarkDataProvider : ContentProvider() {
         }
     }
 
+    private fun validateMonitoring(): Bundle {
+        var elapsedMillis = 0L
+        var acceptedEventCount = 0
+        Trace.beginSection("Batch10.monitoring.eventAdmission")
+        try {
+            var now = 0L
+            val gate = AccessibilityEventAdmissionGate(clock = { now })
+            val start = SystemClock.elapsedRealtime()
+            repeat(MONITORING_EVENT_STORM_COUNT) {
+                if (
+                    isContinuousMonitoringEventRelevant(MONITORING_EVENT_TYPE) &&
+                    gate.shouldInspect(
+                        packageName = "com.tencent.mm",
+                        eventType = MONITORING_EVENT_TYPE,
+                        windowId = MONITORING_WINDOW_ID
+                    )
+                ) {
+                    acceptedEventCount += 1
+                }
+                now += 1L
+            }
+            elapsedMillis = SystemClock.elapsedRealtime() - start
+        } finally {
+            Trace.endSection()
+        }
+
+        val appContext = requireNotNull(context).applicationContext
+        var persistedHeartbeatCount = 0
+        Trace.beginSection("Batch10.monitoring.heartbeatPersistence")
+        try {
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = appContext,
+                connected = false,
+                nowEpochMillis = 0L
+            )
+            HEARTBEAT_TIMESTAMPS.forEach { timestamp ->
+                if (
+                    ContinuousMonitoringServiceHealth.markServiceConnected(
+                        context = appContext,
+                        connected = true,
+                        nowEpochMillis = timestamp
+                    )
+                ) {
+                    persistedHeartbeatCount += 1
+                }
+            }
+        } finally {
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = appContext,
+                connected = false,
+                nowEpochMillis = HEARTBEAT_TIMESTAMPS.last() + 1L
+            )
+            Trace.endSection()
+        }
+
+        return Bundle().apply {
+            putInt(RESULT_MONITORING_ACCEPTED_EVENT_COUNT, acceptedEventCount)
+            putInt(RESULT_MONITORING_PERSISTED_HEARTBEAT_COUNT, persistedHeartbeatCount)
+            putLong(RESULT_MONITORING_EVENT_STORM_MILLIS, elapsedMillis)
+        }
+    }
+
     override fun query(
         uri: Uri,
         projection: Array<out String>?,
@@ -246,6 +313,7 @@ class BenchmarkDataProvider : ContentProvider() {
         const val METHOD_SEED_SIGNED_IN_SESSION = "seed_signed_in_session"
         const val METHOD_EXPORT = "export"
         const val METHOD_NETWORK = "network"
+        const val METHOD_MONITORING = "monitoring"
         const val RESULT_SEEDED = "seeded"
         const val RESULT_ENTRY_COUNT = "entry_count"
         const val RESULT_SESSION_SAVED = "session_saved"
@@ -258,16 +326,24 @@ class BenchmarkDataProvider : ContentProvider() {
         const val RESULT_COMPLETE_MILLIS = "complete_millis"
         const val RESULT_CANCELLATION_MILLIS = "cancellation_millis"
         const val RESULT_CANCELLED = "cancelled"
+        const val RESULT_MONITORING_ACCEPTED_EVENT_COUNT = "monitoring_accepted_event_count"
+        const val RESULT_MONITORING_PERSISTED_HEARTBEAT_COUNT =
+            "monitoring_persisted_heartbeat_count"
+        const val RESULT_MONITORING_EVENT_STORM_MILLIS = "monitoring_event_storm_millis"
         const val ARG_ENTRY_COUNT = "entry_count"
         const val ARG_ENDPOINT = "endpoint"
         private const val ENTRY_PREFIX = "基准账目"
         private const val DEFAULT_ENTRY_COUNT = 40
         private const val TEST_PHONE = "13800138000"
         private const val CANCELLATION_DELAY_MILLIS = 200L
+        private const val MONITORING_EVENT_STORM_COUNT = 1_000
+        private const val MONITORING_EVENT_TYPE = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        private const val MONITORING_WINDOW_ID = 42
         private const val NANOS_PER_MILLISECOND = 1_000_000L
         private const val TRACE_COOKIE_MULTIPLIER = 10
         private const val TRACE_COOKIE_CSV = 1
         private const val TRACE_COOKIE_BACKUP = 2
+        private val HEARTBEAT_TIMESTAMPS = listOf(0L, 30_000L, 60_000L, 90_000L, 120_000L)
         private val SUPPORTED_ENTRY_COUNTS = setOf(DEFAULT_ENTRY_COUNT, 1_000, 10_000)
         private val EXPENSE_CATEGORY_IDS = listOf(
             "food",

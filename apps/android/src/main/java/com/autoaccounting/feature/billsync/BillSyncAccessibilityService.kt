@@ -81,11 +81,14 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     @Volatile
     private var continuousMonitoringState = ContinuousMonitoringState()
+    @Volatile
+    private var continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth()
     private var automaticCaptureJob: Job? = null
     private var healthHeartbeatJob: Job? = null
     private var wechatOcrCaptureJob: Job? = null
     private var wechatOcrGuardResetJob: Job? = null
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
+    private val continuousMonitoringEventGate = AccessibilityEventAdmissionGate()
     private val ocrSessionGuard = PaymentScreenOcrSessionGuard()
     private var lastWechatOcrAttemptAtElapsedMillis = 0L
     private var lastManualWechatOcrAttemptAtElapsedMillis = 0L
@@ -95,12 +98,19 @@ class BillSyncAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         recordMetadata("service_connected", "connected", "service_connected")
+        continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
+            billSyncAccessibilityGranted = true,
+            billSyncAccessibilityServiceConnected = true
+        )
         ContinuousMonitoringServiceHealth.markServiceConnected(this, true)
         healthHeartbeatJob?.cancel()
         healthHeartbeatJob = serviceScope.launch {
             while (isActive) {
-                ContinuousMonitoringServiceHealth.markServiceConnected(this@BillSyncAccessibilityService, true)
                 delay(SERVICE_HEARTBEAT_INTERVAL_MILLIS)
+                ContinuousMonitoringServiceHealth.markServiceConnected(
+                    this@BillSyncAccessibilityService,
+                    true
+                )
             }
         }
         serviceScope.launch {
@@ -112,6 +122,26 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
+        val manualBillSyncAcceptsPackage = BillSyncSessions.controller.acceptsPackage(packageName)
+        val shouldConsiderContinuousMonitoring = !manualBillSyncAcceptsPackage &&
+            continuousMonitoringState.enabled &&
+            isContinuousMonitoringPackageAllowed(packageName)
+        if (!manualBillSyncAcceptsPackage && !shouldConsiderContinuousMonitoring) return
+
+        if (shouldConsiderContinuousMonitoring) {
+            if (!isContinuousMonitoringEventRelevant(event.eventType)) return
+            if (automaticCaptureJob?.isActive == true) return
+            if (
+                !continuousMonitoringEventGate.shouldInspect(
+                    packageName = packageName,
+                    eventType = event.eventType,
+                    windowId = event.windowId
+                )
+            ) {
+                return
+            }
+        }
+
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val windowIdentity = event.className?.toString()
                 ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
@@ -123,25 +153,20 @@ class BillSyncAccessibilityService : AccessibilityService() {
             }
             activeWechatWindowIdentity = windowIdentity
         }
-        val manualBillSyncAcceptsPackage = BillSyncSessions.controller.acceptsPackage(packageName)
         val monitoringPermissionHealth = if (manualBillSyncAcceptsPackage) {
             null
         } else {
             currentContinuousMonitoringPermissionHealth()
         }
-        val shouldConsiderContinuousMonitoring = monitoringPermissionHealth != null &&
-            continuousMonitoringState.enabled &&
-            monitoringPermissionHealth.isHealthy &&
-            isContinuousMonitoringPackageAllowed(packageName)
-        if (!manualBillSyncAcceptsPackage && !shouldConsiderContinuousMonitoring) return
+        if (!manualBillSyncAcceptsPackage && !requireNotNull(monitoringPermissionHealth).isHealthy) return
 
         val activeRoot = rootInActiveWindow ?: event.source
         val pageText = activeRoot?.collectVisibleText().orEmpty()
         val windowIdentity = activeWechatWindowIdentity
             ?.takeIf { identity -> identity.windowId == activeRoot?.windowId }
-        val windowEvidence = activeRoot?.let { root ->
-            currentWechatWindowEvidence(root.windowId, windowIdentity)
-        }
+        val windowEvidence = activeRoot
+            ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
+            ?.let { root -> currentWechatWindowEvidence(root.windowId, windowIdentity) }
         val shouldEvaluateManualOcr = manualBillSyncAcceptsPackage &&
             BillSyncSessions.controller.acceptsManualOcr(packageName) &&
             windowEvidence != null &&
@@ -964,11 +989,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         )
 
     private fun currentContinuousMonitoringPermissionHealth(): ContinuousMonitoringPermissionHealth =
-        ContinuousMonitoringPermissionHealth(
-            billSyncAccessibilityGranted = BillSyncPermission.isGranted(this),
-            billSyncAccessibilityServiceConnected =
-                ContinuousMonitoringServiceHealth.isServiceConnected(this)
-        )
+        continuousMonitoringPermissionHealth
 
     override fun onInterrupt() {
         recordMetadata("service_interrupted", "failed", "accessibility_interrupted")
@@ -979,6 +1000,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
         recordMetadata("service_destroyed", "stopped", "service_destroyed")
         healthHeartbeatJob?.cancel()
         healthHeartbeatJob = null
+        continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth()
         ContinuousMonitoringServiceHealth.markServiceConnected(this, false)
         serviceScope.cancel()
         if (ocrRecognizerDelegate.isInitialized()) {
@@ -1174,18 +1196,47 @@ internal class PaymentScreenOcrSessionGuard {
 }
 
 private fun AccessibilityNodeInfo.collectVisibleText(): String {
-    val lines = mutableListOf<String>()
+    val lines = linkedSetOf<String>()
+    var visitedNodeCount = 0
+    var collectedCharacterCount = 0
 
-    fun collect(node: AccessibilityNodeInfo) {
-        node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(lines::add)
-        node.contentDescription?.toString()?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?.let(lines::add)
-        repeat(node.childCount) { index ->
-            node.getChild(index)?.let(::collect)
+    fun addLine(value: CharSequence?) {
+        val line = value?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: return
+        if (collectedCharacterCount + line.length > MAX_VISIBLE_TEXT_CHARACTERS) return
+        if (lines.add(line)) {
+            collectedCharacterCount += line.length
         }
     }
 
-    collect(this)
-    return lines.distinct().joinToString("\n")
+    fun collect(node: AccessibilityNodeInfo, depth: Int) {
+        if (
+            visitedNodeCount >= MAX_VISIBLE_TEXT_NODES ||
+            depth > MAX_VISIBLE_TEXT_DEPTH ||
+            collectedCharacterCount >= MAX_VISIBLE_TEXT_CHARACTERS
+        ) {
+            return
+        }
+        visitedNodeCount += 1
+        addLine(node.text)
+        addLine(node.contentDescription)
+        if (
+            depth == MAX_VISIBLE_TEXT_DEPTH ||
+            visitedNodeCount >= MAX_VISIBLE_TEXT_NODES ||
+            collectedCharacterCount >= MAX_VISIBLE_TEXT_CHARACTERS
+        ) {
+            return
+        }
+        repeat(node.childCount) { index ->
+            node.getChild(index)?.let { child ->
+                collect(child, depth + 1)
+            }
+        }
+    }
+
+    collect(this, depth = 0)
+    return lines.joinToString("\n")
 }
+
+private const val MAX_VISIBLE_TEXT_NODES = 512
+private const val MAX_VISIBLE_TEXT_DEPTH = 24
+private const val MAX_VISIBLE_TEXT_CHARACTERS = 16 * 1024

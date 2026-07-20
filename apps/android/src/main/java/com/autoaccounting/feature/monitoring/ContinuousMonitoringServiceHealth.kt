@@ -23,14 +23,26 @@ object ContinuousMonitoringServiceHealth {
         context: Context,
         connected: Boolean,
         nowEpochMillis: Long = System.currentTimeMillis()
-    ) {
-        preferences(context).edit()
+    ): Boolean {
+        val preferences = preferences(context)
+        val elapsedSincePreviousHeartbeatMillis = nowEpochMillis - preferences.getLong(
+            ACCESSIBILITY_SERVICE_HEARTBEAT_EPOCH_MILLIS_KEY,
+            0
+        )
+        val shouldPersist = !connected ||
+            !preferences.getBoolean(ACCESSIBILITY_SERVICE_CONNECTED_KEY, false) ||
+            elapsedSincePreviousHeartbeatMillis !in 0 until SERVICE_HEARTBEAT_INTERVAL_MILLIS
+        if (!shouldPersist) {
+            return false
+        }
+        preferences.edit()
             .putBoolean(ACCESSIBILITY_SERVICE_CONNECTED_KEY, connected)
             .putLong(
                 ACCESSIBILITY_SERVICE_HEARTBEAT_EPOCH_MILLIS_KEY,
                 nowEpochMillis.takeIf { connected } ?: 0
             )
             .apply()
+        return true
     }
 
     fun registerListener(
@@ -63,5 +75,5 @@ object ContinuousMonitoringServiceHealth {
         "accessibility_service_heartbeat_epoch_millis"
 }
 
-internal const val SERVICE_HEARTBEAT_INTERVAL_MILLIS = 30_000L
-internal const val SERVICE_CONNECTION_TIMEOUT_MILLIS = 90_000L
+internal const val SERVICE_HEARTBEAT_INTERVAL_MILLIS = 60_000L
+internal const val SERVICE_CONNECTION_TIMEOUT_MILLIS = 150_000L

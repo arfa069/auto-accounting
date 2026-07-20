@@ -48,4 +48,58 @@ class ContinuousMonitoringServiceHealthTest {
             )
         )
     }
+
+    @Test
+    fun connectedHeartbeatSkipsPersistenceUntilTheIntervalHasElapsed() {
+        val connectedAt = 1_000L
+        ContinuousMonitoringServiceHealth.markServiceConnected(
+            context = context,
+            connected = false,
+            nowEpochMillis = 0L
+        )
+
+        assertTrue(
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = context,
+                connected = true,
+                nowEpochMillis = connectedAt
+            )
+        )
+        assertFalse(
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = context,
+                connected = true,
+                nowEpochMillis = connectedAt + SERVICE_HEARTBEAT_INTERVAL_MILLIS - 1
+            )
+        )
+        assertTrue(
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = context,
+                connected = true,
+                nowEpochMillis = connectedAt + SERVICE_HEARTBEAT_INTERVAL_MILLIS
+            )
+        )
+    }
+
+    @Test
+    fun connectedHeartbeatPersistsWhenTheSystemClockMovesBackwards() {
+        ContinuousMonitoringServiceHealth.markServiceConnected(
+            context = context,
+            connected = false,
+            nowEpochMillis = 0L
+        )
+        ContinuousMonitoringServiceHealth.markServiceConnected(
+            context = context,
+            connected = true,
+            nowEpochMillis = 10_000L
+        )
+
+        assertTrue(
+            ContinuousMonitoringServiceHealth.markServiceConnected(
+                context = context,
+                connected = true,
+                nowEpochMillis = 9_000L
+            )
+        )
+    }
 }

@@ -3,7 +3,7 @@
 审计日期：2026-07-19 至 2026-07-20
 仓库：`C:\Users\Arfa\Documents\auto-accounting`
 Android 模块：`apps/android`
-审计阶段：基线调查、补测、报告及批次 1–9 的代码修复与隔离环境动态验证已完成。批次 1 修复 API 版本隔离；批次 2 新增独立 Macrobenchmark/Baseline Profile 模块；批次 3 将大图解码移出主线程并收敛 Compose 派生工作；批次 4 移除诊断历史启动读取和 Keystore Binder 风暴；批次 5 消除账本点击 ripple 的 shader 首用卡顿；批次 6 正确过滤、接入并实测 Baseline Profile；批次 7 以 scoped Room Flow、账本聚合查询、复合索引和稳定报表模型减少根级全库派生；批次 8 增加 1k/10k 合成账目、报表路径和 Profile 覆盖；批次 9 将导出/备份重活和账户会话恢复移出主线程，并为账号网络请求提供可取消执行与阶段观测点。批次 9 使用独立 `com.autoaccounting.benchmark` 包完成合成登录会话、受控回环 HTTP、1k/10k CSV 与加密备份各 3 次 Trace；未使用真实账号、真实后端、用户 Downloads 或生产数据。AnimatedContent 尺寸动画、圆角、账目行点击容器及自动记账 `LazyColumn` 的受控实验未证明收益或证实反优化后均已回退。生产包覆盖安装仅在此前明确授权后执行，未清除数据、卸载、修改权限或改变 CE/DE 数据 inode；批次 7–9 只安装独立 benchmark 包，没有覆盖生产包。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`；批次 9 尚未提交。未改写 Git 历史，未 push。
+审计阶段：基线调查、补测、报告及批次 1–10 的代码修复已完成；批次 10 的隔离动态验证已完成，真实支付无障碍事件与长时功耗仍未验证。批次 1 修复 API 版本隔离；批次 2 新增独立 Macrobenchmark/Baseline Profile 模块；批次 3 将大图解码移出主线程并收敛 Compose 派生工作；批次 4 移除诊断历史启动读取和 Keystore Binder 风暴；批次 5 消除账本点击 ripple 的 shader 首用卡顿；批次 6 正确过滤、接入并实测 Baseline Profile；批次 7 以 scoped Room Flow、账本聚合查询、复合索引和稳定报表模型减少根级全库派生；批次 8 增加 1k/10k 合成账目、报表路径和 Profile 覆盖；批次 9 将导出/备份重活和账户会话恢复移出主线程，并为账号网络请求提供可取消执行与阶段观测点；批次 10 为连续自动记账增加事件类型/包名/窗口 admission、服务生命周期健康缓存、节点/深度/字符预算，并将心跳写入降为最长每 60 秒一次。批次 9 使用独立 `com.autoaccounting.benchmark` 包完成合成登录会话、受控回环 HTTP、1k/10k CSV 与加密备份各 3 次 Trace；批次 10 用同一隔离包完成 3 条策略 Trace；均未使用真实账号、真实后端、用户 Downloads、生产数据或生产包。AnimatedContent 尺寸动画、圆角、账目行点击容器及自动记账 `LazyColumn` 的受控实验未证明收益或证实反优化后均已回退。生产包覆盖安装仅在此前明确授权后执行，未清除数据、卸载、修改权限或改变 CE/DE 数据 inode；批次 7–10 只安装独立 benchmark 包，没有覆盖生产包。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`；批次 10 尚未提交。未改写 Git 历史，未 push。
 
 ## 证据等级
 
@@ -20,8 +20,8 @@ Android 模块：`apps/android`
 - 设备：Xiaomi 24117RK2CC，Android API 36，逻辑分辨率 1080×2400，serial `2a9ea4bd`。
 - 初始 Git 状态：`master...origin/master`，无已有 diff；审计期间未覆盖用户工作。
 - 测试设施：原有 66 个本地测试文件、1 个 Room 真机测试、JUnit 4/Robolectric/Compose UI Test/Room Testing/JaCoCo；第二批新增独立 `benchmarks/macrobenchmark` 模块，覆盖冷启动、账本滚动→详情、我的→自动记账及 Baseline Profile 生成。
-- 第二批产物：三条路径各 5 次，共 15 个正式 Perfetto Trace；1 份 Macrobenchmark JSON；Baseline Profile Generator 成功输出 20,017 行 profile。第三、第四、第五批分别完成对应回归。批次 6 重新生成 20,143 行、2,149,642 bytes 的生产 source profile，并完成三条路径各 10 次 None/Profile 对照，共 60 个 Trace、60 份逐 Trace scratchpad 和 1 份 JSON。批次 7 完成同设备 7/7 instrumentation（Generator 加 6 个用例），另生成 60 个 Trace、1 份 JSON 和 6 份代表性 SQL scratchpad。批次 8 重新生成 20,000 行、2,143,362 bytes 的 source profile（1,798 条项目规则、0 条 benchmark-only 规则），完成 1k/10k 报表路径各 5 次、共 10 个 Trace、1 份 JSON 和 2 份代表性 SQL scratchpad。批次 9 新增 12 个隔离环境 Trace 与 12 份逐 Trace evidence scratchpad。项目仍没有截图测试或完整通用 E2E 套件。
-- 总体结论：第三批消除目标主线程 bitmap decode；第四批消除诊断历史启动读取和 Keystore Binder 风暴；第五批消除账本点击 `CircleOp → shader_compile`。批次 6 已使生产 Release 包含关键路径 Profile 规则。批次 7 消除根 UI 的全库账目订阅、把账本统计下推到 Room、以 v7 复合索引支持 scoped 查询，并让报表只消费预计算模型。批次 8 证实 1k/10k 报表进入的长尾均主要是主线程组合、布局和绘制，而非数据量线性放大。批次 9 证实会话恢复可在隔离登录态进入主页、受控请求可在约 206 ms 取消、1k/10k CSV 与加密备份重活位于后台线程；`PERF-A02` 仍未关闭。R8 未启用及 103.49 MB Release APK 仍是高优先级问题。
+- 第二批产物：三条路径各 5 次，共 15 个正式 Perfetto Trace；1 份 Macrobenchmark JSON；Baseline Profile Generator 成功输出 20,017 行 profile。第三、第四、第五批分别完成对应回归。批次 6 重新生成 20,143 行、2,149,642 bytes 的生产 source profile，并完成三条路径各 10 次 None/Profile 对照，共 60 个 Trace、60 份逐 Trace scratchpad 和 1 份 JSON。批次 7 完成同设备 7/7 instrumentation（Generator 加 6 个用例），另生成 60 个 Trace、1 份 JSON 和 6 份代表性 SQL scratchpad。批次 8 重新生成 20,000 行、2,143,362 bytes 的 source profile（1,798 条项目规则、0 条 benchmark-only 规则），完成 1k/10k 报表路径各 5 次、共 10 个 Trace、1 份 JSON 和 2 份代表性 SQL scratchpad。批次 9 新增 12 个隔离环境 Trace 与 12 份逐 Trace evidence scratchpad。批次 10 新增 3 条有效隔离策略 Trace 与 3 份逐 Trace evidence scratchpad，路径为 `%LOCALAPPDATA%\Temp\auto-accounting-perf-audit-20260719\device-results-20260720-batch10`。项目仍没有截图测试或完整通用 E2E 套件。
+- 总体结论：第三批消除目标主线程 bitmap decode；第四批消除诊断历史启动读取和 Keystore Binder 风暴；第五批消除账本点击 `CircleOp → shader_compile`。批次 6 已使生产 Release 包含关键路径 Profile 规则。批次 7 消除根 UI 的全库账目订阅、把账本统计下推到 Room、以 v7 复合索引支持 scoped 查询，并让报表只消费预计算模型。批次 8 证实 1k/10k 报表进入的长尾均主要是主线程组合、布局和绘制，而非数据量线性放大。批次 9 证实会话恢复可在隔离登录态进入主页、受控请求可在约 206 ms 取消、1k/10k CSV 与加密备份重活位于后台线程。批次 10 已使非手动、非支付相关事件在读取根节点前退出，并将连续自动记账相同窗口事件合并；隔离 1,000 事件 admission 的 trace section 为 0.336–0.406 ms，2 分钟受控心跳仅持久化 3 次。该结论不代表真实微信/支付宝节点树、遗漏率或功耗已验证。`PERF-A02` 仍未关闭；R8 未启用及 103.49 MB Release APK 仍是高优先级问题。
 
 ## 2. 启动性能结果
 
@@ -190,19 +190,19 @@ Android 模块：`apps/android`
 - 修复风险：低到中，当前实现保留 CSV/备份格式、Snackbar 回主线程和恢复原子性；大文件半成品清理仍应在动态验证中覆盖。
 - 验证方式：保留 1k/10k 合成数据 Trace 回归；单独验证真实 Downloads/MediaStore 写入失败、取消和半成品清理。
 
-### PERF-B02 — High — 无障碍事件回调同步遍历节点树并重复查询设置
+### PERF-B02 — High — 无障碍事件回调同步遍历节点树并重复查询设置（批次 10 已完成隔离策略验证）
 
-- 证据等级：B。
+- 证据等级：A（代码、JVM、隔离 instrumentation 与 Trace）；真实支付页面影响仍为 C。
 - 类别：Accessibility、Binder、主线程、耗电。
-- 文件与行号：`feature/billsync/BillSyncAccessibilityService.kt:112-193,946-962,1167-1181`；`feature/billsync/BillSyncPermission.kt:20-40`。
+- 文件与行号：`feature/billsync/AccessibilityEventAdmissionGate.kt:7-46`；`feature/billsync/BillSyncAccessibilityService.kt:83-175,989-1005,1198-1242`。
 - 用户流程：微信/支付宝支付结果页、连续自动记账。
-- 静态证据：每个候选事件在服务主线程读取 `rootInActiveWindow`、递归整树收集 text/contentDescription、`distinct/joinToString`；每次健康检查读取两项 `Settings.Secure` 并解析服务列表，还访问 `windows`。
-- Trace/SQL：普通应用内路径不能安全生成支付/无障碍事件；本轮未模拟支付、未改权限，因此没有对应时间窗。
-- 实际影响：复杂页面或事件风暴下产生主线程 Binder、分配和重复解析，可能拖慢目标应用交互并耗电。
-- 实测确认：未确认真实支付页面影响。
-- 修复建议：按 event type/package/window 做早期过滤和去重；缓存权限健康并由设置/生命周期事件刷新；节点遍历加入节点数/深度预算；重解析移到受控后台 pipeline，注意 AccessibilityNodeInfo 生命周期。
-- 修复风险：高，可能漏记账或改变现有防重语义。
-- 验证方式：在授权测试设备按真实微信/支付宝流程采集独立 Trace，记录事件率、节点数、服务主线程 Binder/Running 时间与遗漏率。
+- 静态证据：手动补录保持原事件路径；连续自动记账在读取 `rootInActiveWindow` 前先拒绝未启用、非微信/支付宝、非窗口状态/内容/变化事件、settle job 期间事件和 250 ms 内相同包/类型/窗口事件。服务连接时缓存健康状态，连接销毁时失效，不再在每个候选事件读取 `Settings.Secure`/SharedPreferences；`windows` 仅在微信 OCR 判定时访问。可见文本收集改为有序去重并限制 512 节点、24 层、16 KiB。
+- Trace/SQL：独立 benchmark 包以 1,000 个同窗口内容事件模拟 event storm，Batch10 admission 3 次为 0.389、0.406、0.336 ms；Macrobenchmark instrumentation 三次均断言仅放行 4 个检查点。三个 section 都在目标包 Binder provider 线程；admission 全程 Running 0.336–0.406 ms。真实支付节点树未生成，因此该 Trace 不测量 `rootInActiveWindow`、`windows` 或 OCR。
+- 实际影响：常见无关/重复事件不再触发设置读取、根节点 Binder 或整树遍历；同窗口 event storm 在 settle 前被合并。预算限制阻止异常节点树无限递归和持续分配。
+- 实测确认：已确认 admission、去重、服务健康缓存和预算代码路径；未确认真实微信/支付宝页面的事件率、节点数、遗漏率和端到端解析结果。
+- 修复建议：当前代码修复已完成；在专用设备补齐真实支付页面回归后，仅在发现遗漏时调整预算或 admission 窗口。
+- 修复风险：中，极端超过预算的页面可能遗漏深层文本；自动路径在 250 ms 内合并相同窗口事件。手动补录和不同 event type/window 均未合并。
+- 验证方式：保留隔离 1,000 event storm 回归；在授权测试设备按真实微信/支付宝流程采集独立 Trace，记录事件率、节点数、服务主线程 Binder/Running 时间与遗漏率。
 
 实测主线程/ANR结论：
 
@@ -229,19 +229,19 @@ Android 模块：`apps/android`
 - 决策风险：低。保留的风险是主 UI 进程无法取得真实 cold-start 基线、后台存在常驻内存；收益是保持通知重放和自动记账可靠性，不引入跨进程状态。
 - 后续验证：将强停重连 Trace 作为回归预算，并补 30 分钟稳态功耗；若 Binder、GC、RSS 或漏通知指标恶化，再重新评估进程隔离。
 
-### PERF-B06 — Low — 30 秒心跳持续唤醒并写 SharedPreferences
+### PERF-B06 — Low — 30 秒心跳持续唤醒并写 SharedPreferences（批次 10 已完成代码与隔离验证）
 
-- 证据等级：B。
+- 证据等级：A（代码、JVM、隔离 instrumentation 与 Trace）；长期功耗仍为 C。
 - 类别：后台、轮询、存储。
-- 文件与行号：`BillSyncAccessibilityService.kt:100-103`；`feature/monitoring/ContinuousMonitoringServiceHealth.kt:18-32,66-67`；`MainActivity.kt:129-137`。
+- 文件与行号：`BillSyncAccessibilityService.kt:98-116,1000-1005`；`feature/monitoring/ContinuousMonitoringServiceHealth.kt:22-47,78-79`；`MainActivity.kt:129-141`。
 - 用户流程：自动记账开启且无障碍服务长时间连接；Activity 前台。
-- 静态证据：服务每 30 秒 `markServiceConnected` 并 `apply()` 两个 preference；Activity 另有同周期 Handler 读取健康状态。
-- Trace/SQL：正式 Trace 只有约 15 秒，不能覆盖稳态 30 秒周期。
-- 实际影响：每小时约 120 次服务唤醒/异步写；单次轻，但全天累计且服务本已常驻。
-- 实测确认：未确认稳态耗电。
-- 修复建议：优先用连接/断开事件和单调时间内存状态；若需跨进程存活证明，降低写频率并仅在值变化时写。
-- 修复风险：中，心跳承担系统杀服务后的健康判断。
-- 验证方式：1–2 小时 Battery Historian/Perfetto 长 Trace，比较唤醒次数与服务健康误判。
+- 静态证据：服务连接时只立即写一次，循环先等待再写；间隔由 30 秒改为 60 秒。`markServiceConnected` 在已连接且上次写入未满 60 秒时不写；时钟回拨会写入新时间，销毁仍立即写断开。连接过期阈值相应由 90 秒调整为 150 秒，Activity 前台轮询随常量改为 60 秒。
+- Trace/SQL：独立 benchmark 包按 0、30、60、90、120 秒的受控时间线执行健康写入，三个 instrumentation 均断言只持久化 3 次。Batch10 heartbeat section 为 2.247、0.485、0.452 ms；其中 Running 为 0.392、0.316、0.289 ms，其余为 Sleeping/Runnable，不是 CPU 忙等。目标进程每条 Trace 有 2 个 GC 命名 slice，总计 0.008–0.011 ms；没有 Frame Timeline 样本，不能从此推断帧表现。
+- 实际影响：正常服务运行的周期性唤醒/写入由每小时约 120 次降为约 60 次，并消除连接时循环的重复写入；仍保留跨进程存活检测。
+- 实测确认：已确认写入选择逻辑、时钟回拨、隔离 2 分钟写入次数和短窗口线程状态；未确认 30 分钟以上的电量、唤醒锁、异常杀服务后的 UI 误判时长。
+- 修复建议：当前代码修复已完成；只有在可获得长期功耗数据时再调整 60 秒/150 秒预算。
+- 修复风险：中，异常终止但未回调 `onDestroy` 时，最坏健康过期窗口由 90 秒增至 150 秒；正常断开仍即时标记。
+- 验证方式：保留 2 分钟受控写入回归；1–2 小时 Battery Historian/Perfetto 长 Trace 比较唤醒次数、I/O 与服务健康误判。
 
 未发现明确异常：
 
@@ -354,13 +354,11 @@ Android 模块：`apps/android`
 
 ## 9. 当前待修复项
 
-当前总有 5 个待修复项：
+当前总有 3 个待修复项：
 
 1. [High][PERF-A02] 启动根布局仍组合过重；账本相关 Flow 已合并且 scoped，但跨页面状态和转场仍使首帧主线程持续工作。
-2. [High][PERF-B02] 无障碍事件回调同步遍历节点树并重复查询设置，事件风暴时可能拖慢自动记账和耗电。
-3. [High][PERF-B07] Release 未启用 R8 shrinking/optimization/obfuscation 和资源压缩，APK 约 103.49 MB。
-4. [Low][PERF-B06] 30 秒健康心跳持续唤醒并写 SharedPreferences，长期耗电影响未量化。
-5. [Low][BUILD-C02] Baseline Profile 插件对 AGP 9.0.1 发出兼容性上限警告，需要后续升级验证。
+2. [High][PERF-B07] Release 未启用 R8 shrinking/optimization/obfuscation 和资源压缩，APK 约 103.49 MB。
+3. [Low][BUILD-C02] Baseline Profile 插件对 AGP 9.0.1 发出兼容性上限警告，需要后续升级验证。
 
 ## 10. 建议修复批次
 
@@ -373,7 +371,7 @@ Android 模块：`apps/android`
 - 批次 7 [PERF-A02][PERF-B03][PERF-B04]：已完成 scoped state、稳定报表模型和 Room v7 复合索引；`PERF-A02` 的根布局长尾仍待后续批次处理。
 - 批次 8 [PERF-B03][PERF-B04][PERF-C02]：已完成。新增 1k/10k 非用户合成账目与报表路径、重新生成 Profile；数据规模验证未显示报表帧长尾线性恶化。
 - 批次 9 [PERF-B01][PERF-B05][PERF-C01]：已完成。代码、JVM、构建及隔离真机验证均通过；合成登录会话、受控回环网络、1k/10k CSV 与加密备份各完成 3 次 Trace。真实生产账号、公网 DNS/TLS 和用户 Downloads 写入不属于本批次已验证边界。
-- 批次 10 [PERF-B02][PERF-B06]：无障碍事件早筛/去重/节点预算，并量化健康心跳的长期耗电。
+- 批次 10 [PERF-B02][PERF-B06]：已完成。自动路径增加 event type/package/window admission、250 ms 同窗口去重、settle job 早退、服务生命周期健康缓存与 512 节点/24 层/16 KiB 预算；心跳改为最长每 60 秒写一次、150 秒过期。JVM、隔离 instrumentation 与 3 条策略 Trace 通过。真实支付节点树、遗漏率和长期功耗仍属于第 11 节边界。
 - 批次 11 [PERF-B07][BUILD-C02]：启用 R8/资源压缩并做 Release 回归；随后隔离验证支持 AGP 9 的 Baseline Profile 插件版本。
 
 ## 11. 未验证部分与需要的帮助
@@ -389,7 +387,7 @@ Android 模块：`apps/android`
 3. Macrobenchmark 测试模块没有独立 Lint 报告。原因是 `com.android.test` 不提供 `:benchmarks:macrobenchmark:lintBenchmarkRelease` 任务；app benchmark source set 的 Lint 已通过。
    - 需要帮助：不需要新增代码；如必须有独立报告，需要接受该模块类型的任务限制或改用 CI 统一 Lint 入口。
 
-4. 功耗数值未验证。Trace 有 CPU frequency，但设备返回 `power_rail_empty_packet`，没有有效 power rail、battery current、WakeLock/battery_stats 样本。
+4. 功耗数值未验证。批次 10 三条策略 Trace 仍返回 `power_rail_empty_packet`，没有有效 power rail、battery current、WakeLock/battery_stats 样本；短 Trace 也不能替代长期耗电结论。
    - 需要帮助：提供支持功耗轨道采样的设备/固件，或允许使用 Battery Historian/长时功耗采集。
 
 5. 冷启动内核 I/O 的具体根因未验证。已确认 D-state、`io_wait=1` 和相关 kworker，但缺少符号化 caller、`blocked_function` 和 `waker_utid`。
@@ -398,13 +396,13 @@ Android 模块：`apps/android`
 6. 真实生产账号、线上 token 校验和真实后端启动时延未验证。批次 9 已完成加密合成会话的登录态启动，但没有使用用户账号、生产 token 或真实后端。
    - 需要帮助：如需线上口径，提供专用测试账号、隔离后端和允许采集脱敏账号阶段数据的环境。
 
-7. 真实微信/支付宝无障碍事件未验证。未模拟支付，也未改变无障碍权限，避免影响敏感主流程和用户状态。
-   - 需要帮助：提供专用测试账号/设备，并明确授权真实支付流程回归。
+7. 真实微信/支付宝无障碍事件未验证。当前设备 `accessibility_enabled=0`；批次 10 未改变无障碍权限、未模拟支付，仅验证隔离 event admission 和心跳策略。
+   - 需要帮助：提供专用测试账号/设备，并明确授权真实支付流程回归；采集事件率、节点数、遗漏率和服务主线程 Trace。
 
 8. 真实 Downloads/MediaStore 写入阶段未验证。批次 9 已完成 1k/10k 内存 CSV 和加密备份 Trace，但没有向用户 Downloads 写文件，也没有覆盖存储空间不足、取消和半成品清理。
    - 需要帮助：提供专用测试用户或明确授权写入测试目录，并允许测试失败、取消与清理路径。
 
-9. 长时内存泄漏和稳态耗电未验证。现有正式 Trace 约 15 秒，不能代表 30 分钟以上的稳态行为。
+9. 长时内存泄漏和稳态耗电未验证。现有正式 Trace 约 15–30 秒，批次 10 的受控时间线不等于真实 2 分钟等待，更不能代表 30 分钟以上的稳态行为。
    - 需要帮助：允许在专用设备上运行 30 分钟以上场景，并采集 heap dump/allocation profile。
 
 10. Compose stability/recomposition metrics 未验证。项目没有启用 Compose compiler stability/recomposition 报告。
@@ -419,15 +417,15 @@ Android 模块：`apps/android`
 13. 100k 数据和独立 Room 查询时长未验证。批次 8 已完成 1k/10k 报表路径；批次 9 已补 1k/10k 导出 RSS，但仍不能外推为 100k 数据容量证明。
     - 需要帮助：仅在产品需要 100k 级账本时，提供专用 benchmark 设备或授权补充进程内查询计时与 RSS 采样。
 
-当前已确认但尚未修复的性能问题只有第 9 节列出的 5 项：PERF-A02、PERF-B02、PERF-B07、PERF-B06、BUILD-C02。PERF-B01、PERF-B05、PERF-C01 已完成代码、回归和隔离环境动态验证，不再列为未完成项。
+当前已确认但尚未修复的性能问题只有第 9 节列出的 3 项：PERF-A02、PERF-B07、BUILD-C02。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-C01 已完成代码、回归和隔离环境动态验证，不再列为未完成项；真实支付事件与长期功耗仍按上文列为未验证边界。
 
 本轮已检查且未发现明确异常：生产 Lazy 列表均有稳定 key；生产网络 transport 在 `Dispatchers.IO`；未使用 `allowMainThreadQueries`、`runBlocking`、`Thread.sleep`、`GlobalScope`、WakeLock、AlarmManager 或 WorkManager 高频任务；生命周期解绑和 Service scope cancel 路径存在；日志无 ANR/FATAL/OOM，所有已执行交互样本均无 >700 ms frozen frame；项目 ProGuard 文件没有过宽、重复或无效自定义 keep 规则。
 
 ## Skill 适用性说明
 
-- `perfetto-trace-analysis`：适用；批次 6 的 60 个 Trace 均完成 metrics-first、多个瓶颈、线程状态和全局异常复核，并各自保留 evidence scratchpad。
-- `perfetto-sql`：适用；每个使用的表/视图先在 `perfetto-stdlib.md` 确认 schema，查询使用 upid/utid、GLOB、重叠时间窗和 `dur=-1` 处理。
+- `perfetto-trace-analysis`：适用；批次 6 的 60 个 Trace 及批次 10 的 3 条策略 Trace 均保留 evidence scratchpad；批次 10 先尝试 v2 高层 metrics，再以 section、线程状态、GC、Frame Timeline 和全局 D-state SQL 复核。设备 power rail 空包已明确记录为限制。
+- `perfetto-sql`：适用；每个使用的表/视图先在 `perfetto-stdlib.md` 确认 schema，查询使用 upid/utid、GLOB、重叠时间窗和 `dur=-1` 处理。批次 10 的 `android_frames` 为 0，未被误报为无卡顿。
 - `r8-analyzer`：适用，但只能走 R8 9.0.32 heuristic；因 minify 关闭不能做 mapping/usage 实证。
-- `testing-setup`：适用于盘点和第二批补测；在用户授权后复用官方 AndroidX Benchmark/UIAutomator 依赖新增独立测试模块，未改变生产运行时依赖。第三批未再新增测试框架或依赖，复用现有 412 项 JVM 测试和手动 instrumentation 后备路径完成回归；测试前锁定 natural orientation、结束后恢复自动旋转，消除了方向漂移干扰。
+- `testing-setup`：适用于盘点和第二批补测；在用户授权后复用官方 AndroidX Benchmark/UIAutomator 依赖新增独立测试模块，未改变生产运行时依赖。批次 10 沿用该模块新增隔离 environment validation 和 JVM 纯策略测试，未新增依赖或测试框架；第三批未再新增测试框架或依赖，复用现有 412 项 JVM 测试和手动 instrumentation 后备路径完成回归；测试前锁定 natural orientation、结束后恢复自动旋转，消除了方向漂移干扰。
 
 原最小测试补充方案已经落实：独立 Macrobenchmark/Baseline Profile 模块覆盖本报告三条关键路径，shader 与 Baseline Profile 批次均已完成。后续最小增量是继续用现有框架验证根布局、R8 和剩余业务风险；不需要引入新的测试框架。
