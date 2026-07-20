@@ -35,6 +35,8 @@ class BaselineProfileGenerator {
         app.openLedger()
         app.scrollLedgerAndOpenDetail()
         app.returnHomeFromLedgerDetail()
+        app.openReports()
+        app.returnHomeFromReports()
         app.openAutomaticBookkeeping()
     }
 }

@@ -1,6 +1,7 @@
 package com.autoaccounting.macrobenchmark
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
@@ -11,6 +12,7 @@ import kotlin.math.abs
 
 internal const val TARGET_PACKAGE = "com.autoaccounting.benchmark"
 internal const val ITERATIONS = 10
+internal const val SMALL_DATASET_ENTRY_COUNT = 40
 
 internal class BenchmarkApp(private val device: UiDevice) {
     fun lockNaturalOrientation() {
@@ -22,7 +24,7 @@ internal class BenchmarkApp(private val device: UiDevice) {
         device.unfreezeRotation()
     }
 
-    fun resetAndSeed() {
+    fun resetAndSeed(entryCount: Int = SMALL_DATASET_ENTRY_COUNT) {
         check(device.executeShellCommand("pm clear $TARGET_PACKAGE").contains("Success"))
         val launchResult = device.executeShellCommand(
             "am start -W -n $TARGET_PACKAGE/com.autoaccounting.MainActivity"
@@ -32,10 +34,10 @@ internal class BenchmarkApp(private val device: UiDevice) {
             Uri.parse("content://$TARGET_PACKAGE.benchmark-data"),
             "seed",
             null,
-            null
+            Bundle().apply { putInt("entry_count", entryCount) }
         )
         check(result?.getBoolean("seeded") == true)
-        check(result.getInt("entry_count") == 40)
+        check(result.getInt("entry_count") == entryCount)
         device.executeShellCommand("am force-stop $TARGET_PACKAGE")
     }
 
@@ -96,6 +98,20 @@ internal class BenchmarkApp(private val device: UiDevice) {
         waitForText("账户管理")
         clickText("自动记账")
         waitForText("权限与后台设置")
+    }
+
+    fun openReports() {
+        clickText("报表")
+        waitForText("分类排行")
+    }
+
+    fun returnHomeFromReports() {
+        val homeButton = checkNotNull(
+            device.wait(Until.findObject(By.desc("返回主页")), TIMEOUT_MILLIS)
+        )
+        homeButton.click()
+        device.waitForIdle()
+        waitForHome()
     }
 
     private fun clickText(text: String) {
