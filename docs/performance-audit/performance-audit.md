@@ -3,7 +3,7 @@
 审计日期：2026-07-19 至 2026-07-20
 仓库：`C:\Users\Arfa\Documents\auto-accounting`
 Android 模块：`apps/android`
-审计阶段：基线调查、补测、报告及批次 1–10 的代码修复已完成；批次 10 的隔离动态验证已完成，真实支付无障碍事件与长时功耗仍未验证。批次 1 修复 API 版本隔离；批次 2 新增独立 Macrobenchmark/Baseline Profile 模块；批次 3 将大图解码移出主线程并收敛 Compose 派生工作；批次 4 移除诊断历史启动读取和 Keystore Binder 风暴；批次 5 消除账本点击 ripple 的 shader 首用卡顿；批次 6 正确过滤、接入并实测 Baseline Profile；批次 7 以 scoped Room Flow、账本聚合查询、复合索引和稳定报表模型减少根级全库派生；批次 8 增加 1k/10k 合成账目、报表路径和 Profile 覆盖；批次 9 将导出/备份重活和账户会话恢复移出主线程，并为账号网络请求提供可取消执行与阶段观测点；批次 10 为连续自动记账增加事件类型/包名/窗口 admission、服务生命周期健康缓存、节点/深度/字符预算，并将心跳写入降为最长每 60 秒一次。批次 9 使用独立 `com.autoaccounting.benchmark` 包完成合成登录会话、受控回环 HTTP、1k/10k CSV 与加密备份各 3 次 Trace；批次 10 用同一隔离包完成 3 条策略 Trace；均未使用真实账号、真实后端、用户 Downloads、生产数据或生产包。AnimatedContent 尺寸动画、圆角、账目行点击容器及自动记账 `LazyColumn` 的受控实验未证明收益或证实反优化后均已回退。生产包覆盖安装仅在此前明确授权后执行，未清除数据、卸载、修改权限或改变 CE/DE 数据 inode；批次 7–10 只安装独立 benchmark 包，没有覆盖生产包。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`；批次 10 尚未提交。未改写 Git 历史，未 push。
+审计阶段：基线调查、补测、报告及批次 1–11 的代码修复与隔离验证已完成；真实支付无障碍事件与长时功耗仍未验证。批次 11 启用 Release R8/资源压缩，将 AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`，并完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 的最小迁移。批次 11 在独立 `com.autoaccounting.benchmark` 包执行 6 个 Macrobenchmark 用例、60 条 Trace；未覆盖、清除或修改生产 `com.autoaccounting` 数据与权限。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`，批次 10 为 `663ab7e`；批次 11 尚未提交。未改写 Git 历史，未 push。
 
 ## 证据等级
 
@@ -287,9 +287,9 @@ Android 模块：`apps/android`
 
 ## 8. R8 和包体优化结果
 
-### PERF-B07 — High — Release 完全未启用 R8/资源压缩，通用 APK 体积 103.49 MB
+### PERF-B07 — High — Release R8/资源压缩已启用并完成隔离回归（批次 11 已完成）
 
-- 证据等级：B（构建配置与 APK 产物已确认）。
+- 证据等级：A（Release 构建、mapping/usage、签名、隔离 R8 Macrobenchmark）。
 - 类别：R8、包体、安装/更新、冷加载。
 - 文件与行号：`apps/android/build.gradle.kts:71-96`；`apps/android/proguard-rules.pro:1`。
 - 用户流程：下载安装、更新、首次/冷启动。
@@ -302,11 +302,12 @@ Android 模块：`apps/android`
   - `xiaolai_regular.ttf` 源文件 21.19 MiB，APK 压缩后 14.04 MiB。
   - DEX method references：classes.dex 65,217、classes2.dex 64,504、classes3.dex 2,861；Compose package约 5.44 MiB DEX。
 - Trace/SQL：未将包体直接映射为启动耗时；生产 warm startup metric 中 dex open 3.404 ms，隔离 cold 为 11.282 ms，当前首帧主因仍是 UI。
-- 实际影响：下载/安装更新成本高，未移除未用资源与代码，失去 R8 优化；通用 APK 含四 ABI。
-- 实测确认：配置和现有 APK 确认；开启 R8 后的可节省比例未知。
-- 修复建议：先在干净 CI 中确认 Release 可重复构建，再在独立小批次启用 `minify` 与资源 shrink，保留 optimized defaults；用 AAB/ABI split 交付；评估离线 OCR需求后再决定 bundled/unbundled ML Kit；对字体做合法子集化。
-- 修复风险：中到高，反射/序列化/Room/ML Kit 与离线 OCR需要完整回归。
-- 验证方式：生成 mapping/usage/seeds；运行 Release smoke、账号、Room、通知、无障碍/OCR；比较 APK/AAB download size 与启动 Trace。
+- Trace/命令证据：Release R8 前后 APK 为 103,493,619 / 80,529,815 bytes，减少 22,963,804 bytes（21.90 MiB，22.19%）；`mapping.txt`、`usage.txt` 已生成，未生成 `missing_rules.txt`，Release、R8 benchmark 与 Macrobenchmark APK 均通过 v2 签名。隔离 R8 benchmark 的 6 个 Macrobenchmark 用例全部通过，共 60 条 Trace。
+- 实际影响：下载、安装与更新载荷降低约 22.2%，并启用代码缩减、优化和混淆。
+- 实测确认：已确认。未将包体缩减直接归因于首帧改善；隔离 benchmark 冷启动 None/Profile TtID 中位数为 250.225/237.486 ms。
+- 修复建议：当前修复完成；后续只在 CI 增加 Release 产物大小预算、mapping 保存和 R8 smoke。
+- 修复风险：中。真实生产账号、通知、无障碍/OCR、Room 历史数据尚未用 R8 生产包端到端覆盖。
+- 验证方式：保留 6 用例 × 10 次隔离 Macrobenchmark；发布前在专用生产数据副本补真实流程 smoke。
 
 ### PERF-C02 — Medium — Baseline Profile 正确进入生产 Release（批次 6 已完成）
 
@@ -338,27 +339,25 @@ Android 模块：`apps/android`
 
 批次 9 最终代码生成的 Release APK 为 103,493,619 bytes，`apksigner verify --verbose` 显示 v2 签名有效、1 个 signer，本批次未覆盖安装生产包。此前 2026-07-20 经用户授权安装的同签名 Release 在安装前后保持相同数据 inode，通知权限和 NotificationListener 授权保持，未清除用户数据。
 
-### BUILD-C02 — Low — Baseline Profile Gradle Plugin 对 AGP 9.0.1 发出兼容性上限警告
+### BUILD-C02 — Low — Baseline Profile Gradle Plugin 与 AGP 9.0.1 兼容性已验证（批次 11 已完成）
 
 - 证据等级：A（构建命令确认）。
 - 类别：构建、Benchmark/Baseline Profile 兼容性。
 - 文件与行号：`gradle/libs.versions.toml:13,27`；`apps/android/build.gradle.kts:126-128,195`；`benchmarks/macrobenchmark/build.gradle.kts:24-26`。
 - 用户流程：开发/CI 构建 benchmark 变体、生成与接入 Baseline Profile。
-- 静态证据：第二批使用 AndroidX Benchmark/Baseline Profile `1.4.1` 与 AGP `9.0.1`。插件在每次配置时明确提示其测试上限低于 `9.0.0-alpha01`，当前组合“may not work as intended”。
-- Trace/命令证据：不适用 Trace；`assembleBenchmarkRelease`、三项 Macrobenchmark、Baseline Profile Generator、`lintBenchmarkRelease` 和 Release 构建均已成功，因此当前不是构建失败。
-- 实际影响：已覆盖路径正常，但插件未声明验证当前 AGP 组合；未来接入 profile、升级 AGP 或 CI 环境时可能出现任务/产物差异。
-- 实测确认：兼容性警告已确认；尚未观察到功能失败。
+- 静态证据：AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`；移除 `android.builtInKotlin=false` 与 `android.newDsl=false`，Android 模块改用 AGP built-in Kotlin、`com.android.legacy-kapt`，benchmark Kotlin 源目录迁至 `AndroidSourceSet.kotlin`。
+- Trace/命令证据：`help`、全项目 `build --dry-run`、`kaptGenerateStubsBenchmarkReleaseKotlin`、Debug/Release 构建、Release Lint、422 项 JVM 测试、R8 benchmark/Macrobenchmark 构建均通过；原兼容性上限警告不再出现。真机 6/6 Macrobenchmark 通过。
+- 实际影响：Baseline Profile 构建链可在 AGP 9 默认 DSL 下稳定配置、编译、签名并执行隔离真机用例。
+- 实测确认：已确认；因 `1.5.0-alpha07` 为预发布构建工具，仍需 CI 持续监测。
 - 修复建议：不要 suppress；跟踪支持 AGP 9 的稳定插件版本，在独立依赖升级批次验证后升级。升级前保留当前真机生成、APK `.dm`/profile 内容和启动对照作为验收。
 - 修复风险：低（保持现状）；升级风险中，可能改变生成任务和变体命名。
 - 验证方式：执行 benchmark assemble、三项 device benchmark、profile generation、app Debug/Release 和 benchmark variant Lint；比较生成 profile 行数/有效性与启动前后数据。
 
 ## 9. 当前待修复项
 
-当前总有 3 个待修复项：
+当前总有 1 个待修复项：
 
 1. [High][PERF-A02] 启动根布局仍组合过重；账本相关 Flow 已合并且 scoped，但跨页面状态和转场仍使首帧主线程持续工作。
-2. [High][PERF-B07] Release 未启用 R8 shrinking/optimization/obfuscation 和资源压缩，APK 约 103.49 MB。
-3. [Low][BUILD-C02] Baseline Profile 插件对 AGP 9.0.1 发出兼容性上限警告，需要后续升级验证。
 
 ## 10. 建议修复批次
 
@@ -372,7 +371,7 @@ Android 模块：`apps/android`
 - 批次 8 [PERF-B03][PERF-B04][PERF-C02]：已完成。新增 1k/10k 非用户合成账目与报表路径、重新生成 Profile；数据规模验证未显示报表帧长尾线性恶化。
 - 批次 9 [PERF-B01][PERF-B05][PERF-C01]：已完成。代码、JVM、构建及隔离真机验证均通过；合成登录会话、受控回环网络、1k/10k CSV 与加密备份各完成 3 次 Trace。真实生产账号、公网 DNS/TLS 和用户 Downloads 写入不属于本批次已验证边界。
 - 批次 10 [PERF-B02][PERF-B06]：已完成。自动路径增加 event type/package/window admission、250 ms 同窗口去重、settle job 早退、服务生命周期健康缓存与 512 节点/24 层/16 KiB 预算；心跳改为最长每 60 秒写一次、150 秒过期。JVM、隔离 instrumentation 与 3 条策略 Trace 通过。真实支付节点树、遗漏率和长期功耗仍属于第 11 节边界。
-- 批次 11 [PERF-B07][BUILD-C02]：启用 R8/资源压缩并做 Release 回归；随后隔离验证支持 AGP 9 的 Baseline Profile 插件版本。
+- 批次 11 [PERF-B07][BUILD-C02]：已完成。启用 R8/资源压缩，Release APK 减少 22.19%；完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 迁移，升级 Baseline Profile 插件并通过 6/6 隔离 R8 Macrobenchmark。
 
 ## 11. 未验证部分与需要的帮助
 
@@ -417,7 +416,7 @@ Android 模块：`apps/android`
 13. 100k 数据和独立 Room 查询时长未验证。批次 8 已完成 1k/10k 报表路径；批次 9 已补 1k/10k 导出 RSS，但仍不能外推为 100k 数据容量证明。
     - 需要帮助：仅在产品需要 100k 级账本时，提供专用 benchmark 设备或授权补充进程内查询计时与 RSS 采样。
 
-当前已确认但尚未修复的性能问题只有第 9 节列出的 3 项：PERF-A02、PERF-B07、BUILD-C02。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-C01 已完成代码、回归和隔离环境动态验证，不再列为未完成项；真实支付事件与长期功耗仍按上文列为未验证边界。
+当前已确认但尚未修复的性能问题只有第 9 节列出的 1 项：PERF-A02。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-B07、PERF-C01、BUILD-C02 已完成代码、回归和隔离环境动态验证，不再列为未完成项；真实支付事件与长期功耗仍按上文列为未验证边界。
 
 本轮已检查且未发现明确异常：生产 Lazy 列表均有稳定 key；生产网络 transport 在 `Dispatchers.IO`；未使用 `allowMainThreadQueries`、`runBlocking`、`Thread.sleep`、`GlobalScope`、WakeLock、AlarmManager 或 WorkManager 高频任务；生命周期解绑和 Service scope cancel 路径存在；日志无 ANR/FATAL/OOM，所有已执行交互样本均无 >700 ms frozen frame；项目 ProGuard 文件没有过宽、重复或无效自定义 keep 规则。
 

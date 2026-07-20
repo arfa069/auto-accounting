@@ -7,9 +7,8 @@ import org.gradle.testing.jacoco.tasks.JacocoReport
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.androidx.baselineprofile)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("org.jetbrains.kotlin.kapt")
+    alias(libs.plugins.legacy.kapt)
     jacoco
 }
 
@@ -80,7 +79,8 @@ android {
             )
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             buildConfigField(
                 "String",
                 "AUTO_ACCOUNTING_BACKEND_URL",
@@ -117,7 +117,7 @@ androidComponents {
             }
             extension.sourceSets.named(buildTypeName).configure {
                 manifest.srcFile("src/benchmark/AndroidManifest.xml")
-                java.srcDir("src/benchmark/java")
+                kotlin.directories.add("src/benchmark/java")
             }
         }
     }
@@ -128,10 +128,6 @@ baselineProfile {
     filter {
         exclude("com.autoaccounting.benchmark.**")
     }
-}
-
-kotlin {
-    jvmToolchain(17)
 }
 
 kapt {

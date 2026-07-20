@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.test)
     alias(libs.plugins.androidx.baselineprofile)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -15,10 +14,11 @@ android {
     }
 
     targetProjectPath = ":apps:android"
-}
 
-kotlin {
-    jvmToolchain(17)
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 }
 
 baselineProfile {
