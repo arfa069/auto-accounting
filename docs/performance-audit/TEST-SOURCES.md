@@ -18,6 +18,7 @@
 
 ## 证据入口
 
+- 批次 7 账本数据流与报表派生回归：[`evidence/device-results-20260720-batch7/README.md`](./evidence/device-results-20260720-batch7/README.md)，含 7/7 instrumentation、60 个 Trace 的聚合 JSON 和代表性 SQL scratchpad。
 - 批次 6 Baseline Profile 对照：[`evidence/device-results-20260720-batch6/README.md`](./evidence/device-results-20260720-batch6/README.md)，含 6 组 × 10 次结果、60 份逐 Trace scratchpad 和聚合 JSON。
 - 最终 benchmark JSON：[`evidence/device-results-20260719-batch4-final-ok-2333/com.autoaccounting.macrobenchmark/com.autoaccounting.macrobenchmark-benchmarkData.json`](./evidence/device-results-20260719-batch4-final-ok-2333/com.autoaccounting.macrobenchmark/com.autoaccounting.macrobenchmark-benchmarkData.json)
 - 修复后生产 Trace 分析：[`aa-batch4-production-patched-20260720-01.perfetto-trace_analysis.md`](./evidence/device-results-20260720-production-validated/aa-batch4-production-patched-20260720-01.perfetto-trace_analysis.md)

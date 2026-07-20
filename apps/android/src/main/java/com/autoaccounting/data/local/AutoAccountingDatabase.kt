@@ -32,7 +32,7 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun localSettingsDao(): LocalSettingsDao
 
     companion object {
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -262,6 +262,18 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_funding_account_id ON ledger_entries(funding_account_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_origin_pending_entry_id ON ledger_entries(origin_pending_entry_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_ledger_entries_deleted_at_epoch_millis ON ledger_entries(deleted_at_epoch_millis)")
+            }
+        }
+
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_ledger_entries_ledger_book_id")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "index_ledger_entries_book_deleted_transaction_time " +
+                        "ON ledger_entries(" +
+                        "ledger_book_id, deleted_at_epoch_millis, transaction_time_epoch_millis)"
+                )
             }
         }
     }

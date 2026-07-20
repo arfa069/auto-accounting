@@ -68,11 +68,12 @@ private val ReportIncomeAccent = Color(0xFF087F70)
 @Composable
 fun ReportsScreen(
     entries: List<LedgerUiEntry>,
+    reportUiModel: LedgerReportUiModel? = null,
     categoryRankingListState: LazyListState = rememberLazyListState(),
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val anchorMonthKey = latestCashFlowMonthKey(entries)
+    val report = reportUiModel ?: remember(entries) { buildLedgerReportUiModel(entries) }
     var showFullCategoryRanking by remember { mutableStateOf(false) }
 
     BackHandler(enabled = showFullCategoryRanking) {
@@ -85,14 +86,13 @@ fun ReportsScreen(
     ) { showFullRanking ->
         if (showFullRanking) {
             FullCategoryRankingScreen(
-                totals = anchorMonthKey?.let { categoryExpenseTotals(entries, it) }.orEmpty(),
+                totals = report.categoryTotals,
                 listState = categoryRankingListState,
                 onBack = { showFullCategoryRanking = false }
             )
         } else {
             ReportsOverviewScreen(
-                entries = entries,
-                anchorMonthKey = anchorMonthKey,
+                report = report,
                 onShowFullCategoryRanking = { showFullCategoryRanking = true },
                 onNavigateHome = onNavigateHome
             )
@@ -102,8 +102,7 @@ fun ReportsScreen(
 
 @Composable
 private fun ReportsOverviewScreen(
-    entries: List<LedgerUiEntry>,
-    anchorMonthKey: String?,
+    report: LedgerReportUiModel,
     onShowFullCategoryRanking: () -> Unit,
     onNavigateHome: () -> Unit
 ) {
@@ -122,30 +121,27 @@ private fun ReportsOverviewScreen(
             HomeReturnButton(onClick = onNavigateHome)
         }
 
-        if (anchorMonthKey == null) {
+        val anchorMonthKey = report.anchorMonthKey
+        val summary = report.summary
+        if (anchorMonthKey == null || summary == null) {
             ReportEmptyState()
             return@Column
         }
 
-        val summary = monthlySummary(entries, anchorMonthKey)
-        val categoryTotals = categoryExpenseTotals(entries, anchorMonthKey)
-        val categorySlices = categoryShareSlices(categoryTotals)
-        val cashFlowTotals = monthlyCashFlowRange(entries, anchorMonthKey)
-
         ReportOverview(summary)
         CategoryShareDonut(
             expenseMinor = summary.expenseMinor,
-            slices = categorySlices,
+            slices = report.categorySlices,
             modifier = Modifier.testTag(ReportTestTags.CATEGORY_CHART)
         )
         CategoryRankingPreview(
-            totals = categoryTotals,
+            totals = report.categoryTotals,
             onShowMore = onShowFullCategoryRanking,
             modifier = Modifier.weight(1f)
         )
         CashFlowPanel(
             anchorMonthKey = anchorMonthKey,
-            totals = cashFlowTotals,
+            totals = report.cashFlowTotals,
             modifier = Modifier.testTag(ReportTestTags.CASH_FLOW)
         )
     }

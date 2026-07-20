@@ -68,6 +68,27 @@ data class CategoryShareSlice(
     val percentageTenths: Int
 )
 
+data class LedgerReportUiModel(
+    val anchorMonthKey: String? = null,
+    val summary: MonthlySummary? = null,
+    val categoryTotals: List<CategoryTotal> = emptyList(),
+    val categorySlices: List<CategoryShareSlice> = emptyList(),
+    val cashFlowTotals: List<MonthlyCashFlowTotal> = emptyList()
+)
+
+fun buildLedgerReportUiModel(entries: List<LedgerUiEntry>): LedgerReportUiModel {
+    val anchorMonthKey = latestCashFlowMonthKey(entries) ?: return LedgerReportUiModel()
+    val summary = monthlySummary(entries, anchorMonthKey)
+    val categoryTotals = categoryExpenseTotals(entries, anchorMonthKey)
+    return LedgerReportUiModel(
+        anchorMonthKey = anchorMonthKey,
+        summary = summary,
+        categoryTotals = categoryTotals,
+        categorySlices = categoryShareSlices(categoryTotals),
+        cashFlowTotals = monthlyCashFlowRange(entries, anchorMonthKey)
+    )
+}
+
 fun LedgerEntryEntity.toLedgerUiEntry(
     zoneId: ZoneId = ZoneId.systemDefault()
 ): LedgerUiEntry {

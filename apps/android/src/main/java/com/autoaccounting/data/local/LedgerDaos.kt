@@ -6,6 +6,13 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+data class LedgerBookEntryCounts(
+    val id: String,
+    val name: String,
+    val activeEntryCount: Int,
+    val deletedEntryCount: Int
+)
+
 @Dao
 interface CategoryDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -63,6 +70,33 @@ interface LedgerBookDao {
 
     @Query("SELECT * FROM ledger_books ORDER BY created_at_epoch_millis ASC, id ASC")
     fun observeAll(): Flow<List<LedgerBookEntity>>
+
+    @Query(
+        """
+        SELECT
+            ledger_books.id AS id,
+            ledger_books.name AS name,
+            SUM(
+                CASE
+                    WHEN ledger_entries.id IS NOT NULL
+                        AND ledger_entries.deleted_at_epoch_millis IS NULL THEN 1
+                    ELSE 0
+                END
+            ) AS activeEntryCount,
+            SUM(
+                CASE
+                    WHEN ledger_entries.deleted_at_epoch_millis IS NOT NULL THEN 1
+                    ELSE 0
+                END
+            ) AS deletedEntryCount
+        FROM ledger_books
+        LEFT JOIN ledger_entries
+            ON ledger_entries.ledger_book_id = ledger_books.id
+        GROUP BY ledger_books.id, ledger_books.name, ledger_books.created_at_epoch_millis
+        ORDER BY ledger_books.created_at_epoch_millis ASC, ledger_books.id ASC
+        """
+    )
+    fun observeEntryCounts(): Flow<List<LedgerBookEntryCounts>>
 
     @Query(
         """

@@ -60,6 +60,7 @@ class LedgerModelsTest {
         val summary = monthlySummary(entries, "2026-07")
         val categoryTotals = categoryExpenseTotals(entries, "2026-07")
         val cashFlow = monthlyCashFlowRange(entries, "2026-07")
+        val report = buildLedgerReportUiModel(entries)
 
         assertEquals(4190, summary.expenseMinor)
         assertEquals(10_000, summary.incomeMinor)
@@ -70,6 +71,10 @@ class LedgerModelsTest {
         assertEquals(4200, cashFlow.first { it.monthKey == "2026-06" }.expenseMinor)
         assertEquals(4190, cashFlow.first { it.monthKey == "2026-07" }.expenseMinor)
         assertEquals(10_000, cashFlow.first { it.monthKey == "2026-07" }.incomeMinor)
+        assertEquals("2026-07", report.anchorMonthKey)
+        assertEquals(summary, report.summary)
+        assertEquals(categoryTotals, report.categoryTotals)
+        assertEquals(cashFlow, report.cashFlowTotals)
     }
 
     private fun ledgerEntry(

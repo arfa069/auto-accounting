@@ -157,6 +157,36 @@ class LocalLedgerRepositoryTest {
     }
 
     @Test
+    fun stateUsesActiveLedgerEntriesAndDatabaseBookCounts() = runBlocking {
+        repository.seedSystemCategories()
+        repository.ensureDefaultLedgerBook()
+        val travelLedger = repository.createLedgerBook("旅行")
+        val familyLedger = repository.createLedgerBook("家庭")
+        val travelEntry = repository.createManualEntry(
+            ledgerBookId = travelLedger.id,
+            input = sampleLedgerInput()
+        )
+        repository.moveLedgerEntryToDeleted(travelEntry.id)
+        val familyEntry = repository.createManualEntry(
+            ledgerBookId = familyLedger.id,
+            input = sampleLedgerInput()
+        )
+
+        val state = repository.state.first { it.activeLedgerBook?.id == familyLedger.id }
+
+        assertEquals(listOf(familyEntry.id), state.ledgerEntries.map { it.id })
+        assertTrue(state.deletedLedgerEntries.isEmpty())
+        assertEquals(
+            1,
+            state.ledgerBooks.single { it.id == familyLedger.id }.activeEntryCount
+        )
+        assertEquals(
+            1,
+            state.ledgerBooks.single { it.id == travelLedger.id }.deletedEntryCount
+        )
+    }
+
+    @Test
     fun compatibilityApisFollowCurrentLedgerAfterDefaultLedgerIsDeleted() = runBlocking {
         repository.seedSystemCategories()
         repository.ensureDefaultLedgerBook()
@@ -846,11 +876,11 @@ class LocalLedgerRepositoryTest {
 
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(6, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(7, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
-    fun migrationFromFiveToSixAssignsAllEntriesToDefaultLedgerAndAddsConstraints() {
+    fun migrationFromFiveToCurrentAssignsEntriesAndAddsScopedIndex() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "migration-5-6-${System.nanoTime()}.db"
         context.deleteDatabase(databaseName)
@@ -883,6 +913,7 @@ class LocalLedgerRepositoryTest {
             databaseName
         )
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -897,10 +928,25 @@ class LocalLedgerRepositoryTest {
         }
         val writableDatabase = migrated.openHelper.writableDatabase
         val ledgerEntryIndexes = mutableSetOf<String>()
+        val activeLedgerQueryPlan = mutableListOf<String>()
         writableDatabase.query("PRAGMA index_list(`ledger_entries`)").use { cursor ->
             val nameColumn = cursor.getColumnIndexOrThrow("name")
             while (cursor.moveToNext()) {
                 ledgerEntryIndexes += cursor.getString(nameColumn)
+            }
+        }
+        writableDatabase.query(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT * FROM ledger_entries
+            WHERE ledger_book_id = '$DEFAULT_LEDGER_BOOK_ID'
+                AND deleted_at_epoch_millis IS NULL
+            ORDER BY transaction_time_epoch_millis DESC
+            """.trimIndent()
+        ).use { cursor ->
+            val detailColumn = cursor.getColumnIndexOrThrow("detail")
+            while (cursor.moveToNext()) {
+                activeLedgerQueryPlan += cursor.getString(detailColumn)
             }
         }
         var hasRestrictLedgerBookForeignKey = false
@@ -967,7 +1013,13 @@ class LocalLedgerRepositoryTest {
         assertEquals(DEFAULT_LEDGER_BOOK_ID, settings?.activeLedgerId)
         assertEquals(true, settings?.aiConsentGranted)
         assertEquals(true, settings?.continuousBillSyncCompleted)
-        assertTrue("index_ledger_entries_ledger_book_id" in ledgerEntryIndexes)
+        assertTrue("index_ledger_entries_book_deleted_transaction_time" in ledgerEntryIndexes)
+        assertTrue("index_ledger_entries_ledger_book_id" !in ledgerEntryIndexes)
+        assertTrue(
+            activeLedgerQueryPlan.any {
+                it.contains("index_ledger_entries_book_deleted_transaction_time")
+            }
+        )
         assertTrue(hasRestrictLedgerBookForeignKey)
         assertTrue(hasUniqueLedgerBookNameIndex)
         assertTrue(deleteFailure != null)
@@ -1044,6 +1096,7 @@ class LocalLedgerRepositoryTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_3_4)
             .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -1157,6 +1210,7 @@ class LocalLedgerRepositoryTest {
         val migrated = Room.databaseBuilder(context, AutoAccountingDatabase::class.java, databaseName)
             .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 

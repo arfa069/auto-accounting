@@ -114,7 +114,14 @@ data class PendingEntryEntity(
         )
     ],
     indices = [
-        Index(value = ["ledger_book_id"]),
+        Index(
+            value = [
+                "ledger_book_id",
+                "deleted_at_epoch_millis",
+                "transaction_time_epoch_millis"
+            ],
+            name = "index_ledger_entries_book_deleted_transaction_time"
+        ),
         Index(value = ["payment_source"]),
         Index(value = ["original_capture_source"]),
         Index(value = ["entry_origin"]),

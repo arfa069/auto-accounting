@@ -30,14 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
-import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
-import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.FundingAccountDeleteResult as DataFundingAccountDeleteResult
 import com.autoaccounting.data.local.LedgerBookDeleteResult as DataLedgerBookDeleteResult
-import com.autoaccounting.data.local.LedgerBookEntity
-import com.autoaccounting.data.local.LedgerEntryEntity
+import com.autoaccounting.data.local.LedgerRepositoryState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.account.AccountDeletionUiState
@@ -83,6 +80,7 @@ import com.autoaccounting.feature.ledger.LedgerBookDeleteResult as UiLedgerBookD
 import com.autoaccounting.feature.ledger.FundingAccountDeleteResult as UiFundingAccountDeleteResult
 import com.autoaccounting.feature.ledger.ManualLedgerEntryScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
+import com.autoaccounting.feature.ledger.buildLedgerReportUiModel
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.AutomaticBookkeepingScreen
@@ -389,40 +387,27 @@ fun AutoAccountingApp(
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var reviewTransitionInFlight by remember { mutableStateOf(false) }
-    var ledgerBooks by remember { mutableStateOf(emptyList<LedgerBookEntity>()) }
-    var activeLedgerBook by remember { mutableStateOf<LedgerBookEntity?>(null) }
-    var allLedgerEntryEntities by remember { mutableStateOf(emptyList<LedgerEntryEntity>()) }
-    var ledgerCategories by remember { mutableStateOf(emptyList<CategoryEntity>()) }
-    var fundingAccounts by remember { mutableStateOf(emptyList<FundingAccountEntity>()) }
+    var ledgerState by remember { mutableStateOf(LedgerRepositoryState()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
-    val activeLedgerId = activeLedgerBook?.id
-    val activeLedgerName = activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
-    val ledgerEntries = remember(allLedgerEntryEntities, activeLedgerId) {
-        allLedgerEntryEntities
-            .asSequence()
-            .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis == null }
-            .map { it.toLedgerUiEntry() }
-            .toList()
+    val activeLedgerName = ledgerState.activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
+    val ledgerEntries = remember(ledgerState.ledgerEntries) {
+        ledgerState.ledgerEntries.map { it.toLedgerUiEntry() }
     }
-    val deletedLedgerEntries = remember(allLedgerEntryEntities, activeLedgerId) {
-        allLedgerEntryEntities
-            .asSequence()
-            .filter { it.ledgerBookId == activeLedgerId && it.deletedAtEpochMillis != null }
-            .map { it.toLedgerUiEntry() }
-            .toList()
+    val deletedLedgerEntries = remember(ledgerState.deletedLedgerEntries) {
+        ledgerState.deletedLedgerEntries.map { it.toLedgerUiEntry() }
     }
-    val ledgerBookUiModels = remember(ledgerBooks, allLedgerEntryEntities, activeLedgerId) {
-        ledgerBooks.map { ledgerBook ->
-            val entries = allLedgerEntryEntities.filter { it.ledgerBookId == ledgerBook.id }
+    val ledgerBookUiModels = remember(ledgerState.ledgerBooks, ledgerState.activeLedgerBook) {
+        ledgerState.ledgerBooks.map { ledgerBook ->
             LedgerBookUiModel(
                 id = ledgerBook.id,
                 name = ledgerBook.name,
-                activeEntryCount = entries.count { it.deletedAtEpochMillis == null },
-                deletedEntryCount = entries.count { it.deletedAtEpochMillis != null },
-                isActive = ledgerBook.id == activeLedgerId
+                activeEntryCount = ledgerBook.activeEntryCount,
+                deletedEntryCount = ledgerBook.deletedEntryCount,
+                isActive = ledgerBook.id == ledgerState.activeLedgerBook?.id
             )
         }
     }
+    val reportUiModel = remember(ledgerEntries) { buildLedgerReportUiModel(ledgerEntries) }
     val continuousMonitoringPermissionHealth = remember(
         billSyncAccessibilityAccessGranted,
         billSyncAccessibilityServiceConnected
@@ -495,7 +480,7 @@ fun AutoAccountingApp(
         val addsConfirmation = nextState.confirmedEntries.any {
             it.originPendingId !in previousConfirmedIds
         }
-        val targetLedgerBookId = activeLedgerBook?.id
+        val targetLedgerBookId = ledgerState.activeLedgerBook?.id
         if (addsConfirmation && targetLedgerBookId == null) {
             coroutineScope.launch {
                 snackbarHostState.showSnackbar("当前账本尚未加载，请稍后重试")
@@ -628,31 +613,7 @@ fun AutoAccountingApp(
     }
 
     LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.ledgerBooks.collect { books -> ledgerBooks = books }
-    }
-
-    LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.activeLedgerBook.collect { ledgerBook ->
-            activeLedgerBook = ledgerBook
-        }
-    }
-
-    LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.allLedgerEntries.collect { entries ->
-            allLedgerEntryEntities = entries
-        }
-    }
-
-    LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.categories.collect { categories ->
-            ledgerCategories = categories
-        }
-    }
-
-    LaunchedEffect(localLedgerRepository) {
-        localLedgerRepository.fundingAccounts.collect { accounts ->
-            fundingAccounts = accounts
-        }
+        localLedgerRepository.state.collect { state -> ledgerState = state }
     }
 
     LaunchedEffect(localPreferencesRepository) {
@@ -768,11 +729,11 @@ fun AutoAccountingApp(
                             AppWallpaper(wallpaperRes) {
                                 if (targetRoute.manualEntryOpen) {
                                     ManualLedgerEntryScreen(
-                                        categories = ledgerCategories,
-                                        fundingAccounts = fundingAccounts,
+                                        categories = ledgerState.categories,
+                                        fundingAccounts = ledgerState.fundingAccounts,
                                         onExit = { manualEntryOpen = false },
                                         onCreateEntry = { input ->
-                                            val targetLedgerBookId = activeLedgerBook?.id
+                                            val targetLedgerBookId = ledgerState.activeLedgerBook?.id
                                                 ?: error("当前账本尚未加载")
                                             localLedgerRepository.createManualEntry(
                                                 ledgerBookId = targetLedgerBookId,
@@ -795,8 +756,8 @@ fun AutoAccountingApp(
                                     AppTab.Review -> ReviewQueueScreen(
                                         state = reviewState,
                                         targetLedgerName = activeLedgerName,
-                                        categories = ledgerCategories,
-                                        fundingAccounts = fundingAccounts,
+                                        categories = ledgerState.categories,
+                                        fundingAccounts = ledgerState.fundingAccounts,
                                         onStateChange = ::persistReviewState,
                                         modifier = Modifier.padding(innerPadding),
                                         onCategorizationRuleRequested = { rule ->
@@ -825,8 +786,8 @@ fun AutoAccountingApp(
                                         entries = ledgerEntries,
                                         entryListState = ledgerEntryListState,
                                         deletedEntries = deletedLedgerEntries,
-                                        categories = ledgerCategories,
-                                        fundingAccounts = fundingAccounts,
+                                        categories = ledgerState.categories,
+                                        fundingAccounts = ledgerState.fundingAccounts,
                                         ledgerBooks = ledgerBookUiModels,
                                         activeLedgerName = activeLedgerName,
                                         onUpdateEntry = { id, input ->
@@ -845,12 +806,10 @@ fun AutoAccountingApp(
                                             localLedgerRepository.purgeExpiredDeletedLedgerEntries()
                                         },
                                         onCreateLedger = { name ->
-                                            activeLedgerBook =
-                                                localLedgerRepository.createLedgerBook(name)
+                                            localLedgerRepository.createLedgerBook(name)
                                         },
                                         onSelectLedger = { id ->
-                                            activeLedgerBook =
-                                                localLedgerRepository.selectLedgerBook(id)
+                                            localLedgerRepository.selectLedgerBook(id)
                                         },
                                         onDeleteLedger = { id ->
                                             when (val result = localLedgerRepository.deleteLedgerBook(id)) {
@@ -916,6 +875,7 @@ fun AutoAccountingApp(
 
                                     AppTab.Reports -> ReportsScreen(
                                         entries = ledgerEntries,
+                                        reportUiModel = reportUiModel,
                                         categoryRankingListState = reportCategoryRankingListState,
                                         onNavigateHome = {
                                             selectedTab = null
@@ -1022,11 +982,7 @@ fun AutoAccountingApp(
                                                 categorizationRules = emptyList()
                                                 aiSettings = AiCategorizationSettings()
                                                 continuousMonitoringState = ContinuousMonitoringState()
-                                                allLedgerEntryEntities = emptyList()
-                                                ledgerBooks = emptyList()
-                                                activeLedgerBook = null
-                                                ledgerCategories = emptyList()
-                                                fundingAccounts = emptyList()
+                                                ledgerState = LedgerRepositoryState()
                                                 coroutineScope.launch {
                                                     try {
                                                         localLedgerRepository.clearLocalData()

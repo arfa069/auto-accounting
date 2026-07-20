@@ -2,7 +2,9 @@ package com.autoaccounting.data.local
 
 import androidx.room.withTransaction
 import java.util.UUID
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 
@@ -27,15 +29,25 @@ sealed interface FundingAccountDeleteResult {
     ) : FundingAccountDeleteResult
 }
 
+data class LedgerRepositoryState(
+    val ledgerBooks: List<LedgerBookEntryCounts> = emptyList(),
+    val activeLedgerBook: LedgerBookEntity? = null,
+    val ledgerEntries: List<LedgerEntryEntity> = emptyList(),
+    val deletedLedgerEntries: List<LedgerEntryEntity> = emptyList(),
+    val categories: List<CategoryEntity> = emptyList(),
+    val fundingAccounts: List<FundingAccountEntity> = emptyList()
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class LocalLedgerRepository(
     private val database: AutoAccountingDatabase,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val idGenerator: () -> String = { UUID.randomUUID().toString() }
 ) {
     val pendingEntries = database.pendingEntryDao().observePendingEntries()
+    // Compatibility API for backup/tests; the main UI consumes state below instead.
     val ledgerBooks = database.ledgerBookDao().observeAll()
     val activeLedgerBook = database.ledgerBookDao().observeActive()
-    val allLedgerEntries = database.ledgerEntryDao().observeAllLedgerEntries()
     val ledgerEntries = activeLedgerBook.flatMapLatest { ledgerBook ->
         ledgerBook?.let { ledgerEntries(it.id) } ?: flowOf(emptyList())
     }
@@ -44,6 +56,24 @@ class LocalLedgerRepository(
     }
     val fundingAccounts = database.fundingAccountDao().observeFundingAccounts()
     val categories = database.categoryDao().observeCategories()
+    val state = activeLedgerBook.flatMapLatest { activeLedgerBook ->
+        combine(
+            database.ledgerBookDao().observeEntryCounts(),
+            activeLedgerBook?.let { ledgerEntries(it.id) } ?: flowOf(emptyList()),
+            activeLedgerBook?.let { deletedLedgerEntries(it.id) } ?: flowOf(emptyList()),
+            categories,
+            fundingAccounts
+        ) { ledgerBooks, ledgerEntries, deletedLedgerEntries, categories, fundingAccounts ->
+            LedgerRepositoryState(
+                ledgerBooks = ledgerBooks,
+                activeLedgerBook = activeLedgerBook,
+                ledgerEntries = ledgerEntries,
+                deletedLedgerEntries = deletedLedgerEntries,
+                categories = categories,
+                fundingAccounts = fundingAccounts
+            )
+        }
+    }
 
     fun ledgerEntries(ledgerBookId: String): Flow<List<LedgerEntryEntity>> =
         database.ledgerEntryDao().observeLedgerEntriesForBook(ledgerBookId)
