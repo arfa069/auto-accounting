@@ -1,17 +1,16 @@
 # Android 性能审计归档
 
-本目录保存 2026-07-19 至 2026-07-20 Android 系统性能审计的可版本化材料。
+本目录保存 2026-07-19 至 2026-07-21 Android 系统性能审计的可版本化材料。
 
 - [完整审计报告](./performance-audit.md)
 - [测试源码与配置索引](./TEST-SOURCES.md)
-- [`evidence/`](./evidence/)：180 份 Markdown（Perfetto SQL/Trace 分析 scratchpad 与证据说明）、13 份 Macrobenchmark JSON 和 1 份 Perfetto 配置，共 194 个脱敏证据文件。
 
-## 原始二进制证据
+## 本机证据目录
 
-截至 2026-07-20 批次 8 验证时，原始目录共有 608 个文件、2,899,150,538 bytes。其中 332 个 Perfetto Trace、APK 和截图共 2,888,768,600 bytes，未复制进仓库，原因如下：
+`evidence/` 保留在开发机的同一路径，但自 2026-07-21 起由 Git 忽略，不再随提交或克隆传递。目录包含 Perfetto Trace、Macrobenchmark JSON、SQL/Trace scratchpad、截图和每批次的原始结果说明。
 
 - Perfetto Trace 和截图可能包含真实设备、通知或用户界面数据，不符合 `docs/AGENTS.md` 的脱敏要求；
-- APK、Trace 和截图体积过大，不适合作为普通 Git 文档提交；
-- 报告中的结论均有对应的脱敏 scratchpad 或 Benchmark JSON，可在需要时从本机原始目录重新核验。
+- 该目录当前约 1.09 GiB，纳入 Git 会显著增加仓库和克隆体积；
+- 报告保留可复现命令、Trace 名称、SQL 结论和汇总数值；需要复核原始证据时，应向执行该批次的开发机索取副本。
 
 本目录不会复制生产凭据、签名材料、完整交易样本或未脱敏日志。测试源码继续保留在所属 Android/Benchmark 模块，避免文档副本与可执行源码产生漂移。

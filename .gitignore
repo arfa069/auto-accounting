@@ -15,6 +15,9 @@ captures/
 *.aab
 /trace_processor
 
+# Local performance-audit evidence (traces, benchmark artifacts, screenshots)
+/docs/performance-audit/evidence/
+
 # Secrets
 .env
 *.keystore
