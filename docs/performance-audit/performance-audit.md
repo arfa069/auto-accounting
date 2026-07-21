@@ -3,11 +3,11 @@
 审计日期：2026-07-19 至 2026-07-21
 仓库：`C:\Users\Arfa\Documents\auto-accounting`
 Android 模块：`apps/android`
-审计阶段：基线调查、补测、报告及批次 1–12 的代码修复与隔离验证已完成；真实支付无障碍事件与长时功耗仍未验证。批次 11 启用 Release R8/资源压缩，将 AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`，并完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 的最小迁移。批次 11 在独立 `com.autoaccounting.benchmark` 包执行 6 个 Macrobenchmark 用例、60 条 Trace；未覆盖、清除或修改生产 `com.autoaccounting` 数据与权限。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`，批次 10 为 `663ab7e`，批次 11 为 `37f40ba`。未改写 Git 历史，未 push。
+审计阶段：基线调查、补测、报告及批次 1–12 的代码修复与隔离验证已完成；批次 13 已完成冷启动、主页路由和 RenderThread 长尾补测。真实支付无障碍事件与长时功耗仍未验证。批次 11 启用 Release R8/资源压缩，将 AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`，并完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 的最小迁移。批次 11 在独立 `com.autoaccounting.benchmark` 包执行 6 个 Macrobenchmark 用例、60 条 Trace；批次 13 追加 4 个用例、40 条 Trace。未覆盖、清除或修改生产 `com.autoaccounting` 数据与权限。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`，批次 10 为 `663ab7e`，批次 11 为 `37f40ba`，批次 12 为 `4ade499`。未改写 Git 历史，未 push。
 
 ## 证据等级
 
-- 当前批次状态：批次 11 已提交为 `37f40ba`；批次 12 已完成代码与隔离验证，尚未提交。批次 12 仅验证账本内部转场，`PERF-A02` 的冷启动与其他路由仍待补测。
+- 当前批次状态：批次 12 已提交为 `4ade499`；批次 13 的隔离真机补测已完成、报告与证据待提交。`PERF-A02` 已补齐冷启动与主页路由样本；另确认独立的首用 GPU shader cache miss，登记为 `PERF-A08`。
 
 - A：已通过真机、Perfetto、ADB 或本轮构建命令确认。
 - B：静态代码中高度可信的风险；当前样本未覆盖触发条件或数据规模。
@@ -18,29 +18,30 @@ Android 模块：`apps/android`
 - Application ID：Release `com.autoaccounting`，Debug `com.autoaccounting.debug`，独立性能目标包 `com.autoaccounting.benchmark`；Macrobenchmark 测试包 `com.autoaccounting.macrobenchmark`。
 - SDK：minSdk 29，targetSdk/compileSdk 36。
 - 工具链：AGP 9.0.1、Kotlin 2.3.20、Java 17、Compose BOM 2024.12.01、Room 2.8.4。
-- R8：9.0.32；因 Release `isMinifyEnabled = false`，本项目未实际执行 R8 shrinking/optimization/obfuscation。
+- R8：9.0.32；批次 11 已启用 Release shrinking/optimization/obfuscation 与资源压缩，生成 `mapping.txt`、`usage.txt`，Release APK 从 103,493,619 降至 80,529,815 bytes（-22.19%）。
 - 设备：Xiaomi 24117RK2CC，Android API 36，逻辑分辨率 1080×2400，serial `2a9ea4bd`。
 - 初始 Git 状态：`master...origin/master`，无已有 diff；审计期间未覆盖用户工作。
 - 测试设施：原有 66 个本地测试文件、1 个 Room 真机测试、JUnit 4/Robolectric/Compose UI Test/Room Testing/JaCoCo；第二批新增独立 `benchmarks/macrobenchmark` 模块，覆盖冷启动、账本滚动→详情、我的→自动记账及 Baseline Profile 生成。
-- 第二批产物：三条路径各 5 次，共 15 个正式 Perfetto Trace；1 份 Macrobenchmark JSON；Baseline Profile Generator 成功输出 20,017 行 profile。第三、第四、第五批分别完成对应回归。批次 6 重新生成 20,143 行、2,149,642 bytes 的生产 source profile，并完成三条路径各 10 次 None/Profile 对照，共 60 个 Trace、60 份逐 Trace scratchpad 和 1 份 JSON。批次 7 完成同设备 7/7 instrumentation（Generator 加 6 个用例），另生成 60 个 Trace、1 份 JSON 和 6 份代表性 SQL scratchpad。批次 8 重新生成 20,000 行、2,143,362 bytes 的 source profile（1,798 条项目规则、0 条 benchmark-only 规则），完成 1k/10k 报表路径各 5 次、共 10 个 Trace、1 份 JSON 和 2 份代表性 SQL scratchpad。批次 9 新增 12 个隔离环境 Trace 与 12 份逐 Trace evidence scratchpad。批次 10 新增 3 条有效隔离策略 Trace 与 3 份逐 Trace evidence scratchpad，路径为 `%LOCALAPPDATA%\Temp\auto-accounting-perf-audit-20260719\device-results-20260720-batch10`。项目仍没有截图测试或完整通用 E2E 套件。
-- 总体结论：第三批消除目标主线程 bitmap decode；第四批消除诊断历史启动读取和 Keystore Binder 风暴；第五批消除账本点击 `CircleOp → shader_compile`。批次 6 已使生产 Release 包含关键路径 Profile 规则。批次 7 消除根 UI 的全库账目订阅、把账本统计下推到 Room、以 v7 复合索引支持 scoped 查询，并让报表只消费预计算模型。批次 8 证实 1k/10k 报表进入的长尾均主要是主线程组合、布局和绘制，而非数据量线性放大。批次 9 证实会话恢复可在隔离登录态进入主页、受控请求可在约 206 ms 取消、1k/10k CSV 与加密备份重活位于后台线程。批次 10 已使非手动、非支付相关事件在读取根节点前退出，并将连续自动记账相同窗口事件合并；隔离 1,000 事件 admission 的 trace section 为 0.336–0.406 ms，2 分钟受控心跳仅持久化 3 次。该结论不代表真实微信/支付宝节点树、遗漏率或功耗已验证。`PERF-A02` 仍未关闭；R8 未启用及 103.49 MB Release APK 仍是高优先级问题。
-- 批次 12 补充结论：账本内部转场取消旧页离场动画后，None/Profile frame CPU P99 为 32.40/25.27 ms，overrun P99 为 24.57/14.11 ms；代表 Trace 的 `Recomposer:recompose` 从 47.023 ms 降至 9.514 ms。RenderThread 全屏绘制仍有 27.606 ms 长尾，冷启动和其他路由尚未验证，因此 `PERF-A02` 保持待修复。
+- 第二批产物：三条路径各 5 次，共 15 个正式 Perfetto Trace；1 份 Macrobenchmark JSON；Baseline Profile Generator 成功输出 20,017 行 profile。第三、第四、第五批分别完成对应回归。批次 6 重新生成 20,143 行、2,149,642 bytes 的生产 source profile，并完成三条路径各 10 次 None/Profile 对照，共 60 个 Trace、60 份逐 Trace scratchpad 和 1 份 JSON。批次 7 完成同设备 7/7 instrumentation（Generator 加 6 个用例），另生成 60 个 Trace、1 份 JSON 和 6 份代表性 SQL scratchpad。批次 8 重新生成 20,000 行、2,143,362 bytes 的 source profile（1,798 条项目规则、0 条 benchmark-only 规则），完成 1k/10k 报表路径各 5 次、共 10 个 Trace、1 份 JSON 和 2 份代表性 SQL scratchpad。批次 9 新增 12 个隔离环境 Trace 与 12 份逐 Trace evidence scratchpad。批次 10 新增 3 条有效隔离策略 Trace 与 3 份逐 Trace evidence scratchpad，路径为 `%LOCALAPPDATA%\Temp\auto-accounting-perf-audit-20260719\device-results-20260720-batch10`。批次 13 新增 40 条隔离 R8 Trace、1 份聚合 JSON、4 份新 scratchpad，并为批次 12 账本 Trace 追加 1 份 RenderThread SQL scratchpad。项目仍没有截图测试或完整通用 E2E 套件。
+- 总体结论：第三批消除目标主线程 bitmap decode；第四批消除诊断历史启动读取和 Keystore Binder 风暴；第五批消除账本点击的 Material ripple 特定 shader 首用；批次 6 已使生产 Release 包含关键路径 Profile 规则；批次 7 消除根 UI 的全库账目订阅、把账本统计下推到 Room、以 v7 复合索引支持 scoped 查询，并让报表只消费预计算模型。批次 8 证实 1k/10k 报表进入的长尾均主要是主线程组合、布局和绘制，而非数据量线性放大。批次 9 证实会话恢复可在隔离登录态进入主页、受控请求可在约 206 ms 取消、1k/10k CSV 与加密备份重活位于后台线程。批次 10 已使非手动、非支付相关事件在读取根节点前退出，并将连续自动记账相同窗口事件合并；隔离 1,000 事件 admission 的 trace section 为 0.336–0.406 ms，2 分钟受控心跳仅持久化 3 次。批次 11 已启用 R8/资源压缩。批次 13 进一步确认冷启动仍有主线程 I/O 与生命周期长尾，关键路由还存在独立的 GPU shader cache miss。该结论不代表真实微信/支付宝节点树、遗漏率或功耗已验证。
+- 批次 12 补充结论：账本内部转场取消旧页离场动画后，None/Profile frame CPU P99 为 32.40/25.27 ms，overrun P99 为 24.57/14.11 ms；代表 Trace 的 `Recomposer:recompose` 从 47.023 ms 降至 9.514 ms。当时 RenderThread 全屏绘制仍有 27.606 ms 长尾，冷启动和其他路由尚未验证，因此没有关闭 `PERF-A02`；这些缺口已由批次 13 补齐。
+- 批次 13 补充结论：冷启动 None/Profile 的 `StartupTimingMetric` 中位数为 260.308/244.419 ms；主页→自动记账 frame CPU P99 为 48.124/41.302 ms，overrun P99 为 52.228/37.947 ms。三条代表 Trace 的 RenderThread 全屏 `Drawing` 均由 `shader_compile → ShaderCache::cache_miss → driver_compile_shader/driver_link_program` 主导，单段约 23.8–30.7 ms；该 GPU 长尾独立登记为 `PERF-A08`。
 
 ## 2. 启动性能结果
 
-### PERF-A02 — High — 启动首帧根布局与组合过重
+### PERF-A02 — High — 启动首帧与关键路由 UI 组合/测量长尾
 
 - 证据等级：A。
-- 类别：启动、Compose、主线程。
+- 类别：启动、Compose、主线程、Frame Timeline。
 - 文件与行号：`apps/android/src/main/java/com/autoaccounting/MainActivity.kt:390-410,616,878`；`data/local/LocalLedgerRepository.kt:32-74`；`feature/ledger/LedgerScreen.kt:104-164,257-309`。
-- 用户流程：应用启动到主页稳定。
+- 用户流程：应用启动到主页稳定；主页 → 我的 → 自动记账。
 - 静态证据：第三批已用 `remember` 缓存 tab/底部导航、当前账本列表、删除列表、账本统计、权限健康状态和根路由；账本页也缓存选中项、页面状态、编辑初始值、月份、汇总及筛选结果。批次 7 将账本、当前账本 active/deleted entries、分类和资金账户的五个根级 collector 合并为 `LocalLedgerRepository.state`，其账目只查询当前账本；账本统计改为 Room 聚合。根页面仍承担跨页面状态和转场组合，因此这不是完整根布局拆分。
-- Trace/SQL：生产包后台服务重启样本 `startup-force-stop-bg-restarted-01.perfetto-trace` 为 warm 324.684 ms。第三批最终五次 `android_startup` TTID 为 516.516、524.360、571.608、558.376、567.506 ms；intent→first-frame 为 443.864、425.877、497.068、466.157、478.806 ms。首帧前主线程 Running 236.197–250.085 ms、Runnable 4.038–6.572 ms、I/O D-state 34.308–113.333 ms；最长单段 I/O D-state 16.541 ms，Trace 缺少 `blocked_function` 和 `waker_utid`，无法继续归因具体内核函数/文件。代表首帧仍有约 146.590 ms `measure` 和 36.457 ms `Compose:recompose`；5 次均无 GC。
-- 实际影响：首屏延迟主要消耗在应用主线程自身工作，而不是等 CPU；批次 8 的 1k/10k 报表路径未观察到数据量线性放大，但跨页面状态和转场仍会造成可见长帧。
-- 实测确认：部分修复已确认；最终 Trace 仍确认首帧根布局/组合过重。现有 Trace 不能把各个 `remember` 的单独收益从样本波动中剥离，根派生计算对 `measure/recompose` 的精确占比仍需 Compose compiler metrics 或自定义 trace section。
-- 修复建议：批次 7 已完成 scoped Flow、稳定报表模型和 Room 聚合/索引的低风险部分；批次 8 已排除 1k/10k 报表派生为当前主因。后续仅在基准确认仍有收益时再拆 Route 级状态订阅或引入 ViewModel。
+- Trace/SQL：生产包后台服务重启样本 `startup-force-stop-bg-restarted-01.perfetto-trace` 为 warm 324.684 ms。第三批最终五次 `android_startup` TTID 为 516.516、524.360、571.608、558.376、567.506 ms；intent→first-frame 为 443.864、425.877、497.068、466.157、478.806 ms。首帧前主线程 Running 236.197–250.085 ms、Runnable 4.038–6.572 ms、I/O D-state 34.308–113.333 ms；最长单段 I/O D-state 16.541 ms，Trace 缺少 `blocked_function` 和 `waker_utid`，无法继续归因具体内核函数/文件。代表首帧仍有约 146.590 ms `measure` 和 36.457 ms `Compose:recompose`；5 次均无 GC。批次 13 的隔离 R8 冷启动 None/Profile 各 10 次中位数为 260.308/244.419 ms；最慢代表 Trace intent→first-frame 为 338.444/314.718 ms。None 样本主线程 uninterruptible I/O sleep 为 100.048 ms，最长 D-state 39.840 ms，仍无 `blocked_function`/`waker_utid`；Profile 样本为 26.762 ms I/O sleep，但 `installd` 正在运行且 `activityResume` 为 104.997 ms，不能把该单样本当作纯应用回归。主页→自动记账的最差 None/Profile 帧分别为 UI `Recomposer:recompose 17.613/5.338 ms`、`AndroidOwner:measureAndLayout 20.113/12.785 ms`，UI 线程在对应窗口均主要为 Running。
+- 实际影响：首屏与首次关键路由仍主要消耗在应用主线程 UI 工作和启动 I/O，而不是调度饥饿；批次 8 的 1k/10k 报表路径未观察到数据量线性放大。Baseline Profile 在本轮冷启动中位数降低 6.10%，并降低主页路由的组合/测量长尾，但没有使该问题归零。
+- 实测确认：部分修复已确认；冷启动、主页路由和账本路径都已补测。现有 Trace 不能把各个 `remember`、单个 composable 或根派生计算的收益精确拆分；GPU shader 长尾已从本项分离到 `PERF-A08`。
+- 修复建议：批次 7 已完成 scoped Flow、稳定报表模型和 Room 聚合/索引的低风险部分；批次 8 已排除 1k/10k 报表派生为当前主因。下一批先用同进程第二次导航基准区分首次 UI 建树与持久组合成本；只有仍有稳定收益时才拆 Route 级状态订阅或引入 ViewModel。
 - 修复风险：中到高，涉及状态刷新、导航返回和列表滚动语义。
-- 验证方式：使用现有 `coldStartup` Macrobenchmark 各跑至少 10 次；输出 Compose stability/recomposition metrics；修复前后比较 TTID、首帧 `measure`、`Compose:recompose`，并补 `reportFullyDrawn()` 后再比较 TTFD。
+- 验证方式：已完成现有 `coldStartup` 与 `automaticBookkeepingSettings` 各 10 次 None/Profile Macrobenchmark；后续输出 Compose stability/recomposition metrics，比较同进程首/次次导航的 `measure`、`Compose:recompose`，并在产品允许时补 `reportFullyDrawn()` 后比较 TTFD。
 
 ### PERF-B05 — Medium — 组合阶段同步读取 SharedPreferences/Keystore（批次 9 已完成）
 
@@ -88,7 +89,7 @@ Android 模块：`apps/android`
 - 实测确认：已确认；自动记账 5/5 无主线程 bitmap decode，账本 5/5 无全屏 decode，截图确认主页、我的、自动记账背景资源与裁剪正常。冷启动仍可见 4 个小图 `ImageDecoder_nDecodeBitmap` slice、合计约 12.793 ms，未证明属于本轮已迁移的装饰图，因此不把它误报为已消失。
 - 修复建议：第三批安全候选已完成。若后续要求进一步降低转场 Bitmap 峰值，需要改变转场期间双页同时展示、图片像素格式或资源尺寸，均会影响视觉/转场，应作为独立视觉性能批次。
 - 修复风险：当前实现风险低中；主要风险是低端设备短暂占位和进程级缓存驻留，已用 21 MiB 上限、应用 Resources 和不主动回收正在绘制的 Bitmap 控制。
-- 验证方式：本轮已完成三条路径各 5 次、SQL 主线程/后台线程归因、RSS/GC 查询及截图。主线程目标图片解码验收通过；“全部 >50 ms 帧归零”和“RSS 峰值下降”不是本项完成条件。`PERF-A05` 已在第五批独立完成，当前剩余长帧继续归入 `PERF-A02`。
+- 验证方式：本轮已完成三条路径各 5 次、SQL 主线程/后台线程归因、RSS/GC 查询及截图。主线程目标图片解码验收通过；“全部 >50 ms 帧归零”和“RSS 峰值下降”不是本项完成条件。`PERF-A05` 已在第五批独立完成，当前剩余 UI 长帧归入 `PERF-A02`，GPU shader cache miss 归入 `PERF-A08`。
 
 ### PERF-A05 — High — 账本点击 ripple 离场触发 RenderThread CircleOp shader 首用（已完成）
 
@@ -97,12 +98,26 @@ Android 模块：`apps/android`
 - 文件与行号：`feature/ledger/LedgerScreen.kt:469-549`；`ui/components/PageTransitions.kt:14-34`。shader 编译为运行时 RenderThread 证据，无直接 Kotlin 源码行。
 - 用户流程：账本 → 滚动固定 40 条账目 → 打开详情。
 - 静态证据：修复前账目行使用 Material 圆形 ripple；修复后改为 `IndicationNodeFactory` + `DrawModifierNode`，节点直接收集 Press/Release，仅在按压状态边界调用 `invalidateDraw()` 并绘制 8% `onSurface` 覆盖层，detach 时清空未完成按压。按压状态不进入 Compose State，不触发按压重组或测量；`Modifier.clickable` 的语义、点击回调和详情导航保持不变。
-- Trace/SQL：修复前第三批最终账本 5/5 出现 33.767–56.824 ms 的 `CircleOp → shader_compile`。修复后两组正常态 120 Hz 样本和一组系统 60 Hz 限制压力样本共 15/15 次 `CircleOp → shader_compile = 0`，GC 15/15 为 0。剩余 shader 最大约 12–25 ms，父节点为 `AAStrokeRect`、`CircularRRectOp` 或 `FillRectOp`；最差 Trace 的主线程 `Recomposer:recompose` 为 99.482 ms、全程 Running，其中 `AndroidOwner:measureAndLayout` 为 66.655 ms，应用 D-state 合计仅 0.310 ms，已排除 ripple shader、I/O 和锁等待为该剩余长尾的根因。
-- 实际影响：已消除首次点击账目离场时 33.767–56.824 ms 的圆形 ripple shader 编译停顿。仍可见的导航长尾属于既有根级重组和测量问题，继续归入 `PERF-A02`，不再归因于本项。
-- 实测确认：已确认完成。最终节点方案 15/15 Trace 未复现 `CircleOp`；解锁前后均完成受控视觉与交互回归，按压时整张卡片出现轻微灰色反馈且被圆角正确裁剪，释放后进入对应“编辑账目”页。生产包 `ceDataInode=1648470`、`deDataInode=1833109` 保持不变，未清数据或卸载。
+- Trace/SQL：修复前第三批最终账本 5/5 出现 33.767–56.824 ms 的 `CircleOp → shader_compile`。修复后两组正常态 120 Hz 样本和一组系统 60 Hz 限制压力样本共 15/15 次未复现该按压 ripple 路径，GC 15/15 为 0。批次 13 的新账本 Trace 仍有 `CircleOp` 与 `shader_compile`，但父链为全屏 `DrawFrames → flush commands`，且 Perfetto 无法映射到单一 Kotlin composable；当前 `LedgerEntryRow` 仍使用自定义矩形按压 indication，因此该新证据不能证明 Material ripple 回归，另以 `PERF-A08` 跟踪。
+- 实际影响：已消除首次点击账目离场时原有 33.767–56.824 ms 的圆形 ripple shader 编译停顿。当前仍可见不同 GPU shader cache miss 和 UI 长尾，分别归入 `PERF-A08` 与 `PERF-A02`，不再把“所有 CircleOp 为零”作为本项完成条件。
+- 实测确认：已确认原始 ripple 修复完成。解锁前后均完成受控视觉与交互回归，按压时整张卡片出现轻微灰色反馈且被圆角正确裁剪，释放后进入对应“编辑账目”页。生产包 `ceDataInode=1648470`、`deDataInode=1833109` 保持不变，未清数据或卸载。
 - 修复建议：批次 5 已完成，保留节点式 indication。不要改回依赖 `collectIsPressedAsState()` 的卡片颜色或 `graphicsLayer` 方案；前者在被拒绝实验中造成 66.070–100.254 ms 重组和 41.429–63.476 ms 测量。
 - 修复风险：中。自定义 indication 改变了 Material 默认 ripple 的视觉形式，但保留 clickable 语义和导航行为；后续主题、圆角或卡片容器变化时需要复查覆盖层颜色与裁剪。
-- 验证方式：已完成账本定向测试、整个 ledger 测试包、Android 全量单元测试、Benchmark/Release 构建、Release Lint、APK v2 签名验证、15 次 Trace SQL 和解锁后视觉/导航回归。后续回归继续检查 `CircleOp` 计数、按压反馈、详情打开、返回和列表状态保持。
+- 验证方式：已完成账本定向测试、整个 ledger 测试包、Android 全量单元测试、Benchmark/Release 构建、Release Lint、APK v2 签名验证、15 次 Trace SQL 和解锁后视觉/导航回归。后续回归检查自定义按压覆盖层、详情打开、返回和列表状态保持，不以全局 `CircleOp` 计数作为 ripple 回归判据。
+
+### PERF-A08 — High — 关键路由首次全屏绘制触发 GPU shader cache miss
+
+- 证据等级：A（隔离 R8 Macrobenchmark、Frame Timeline、RenderThread thread-state 和 SQL）。
+- 类别：RenderThread、GPU、关键路由、帧卡顿。
+- 文件与行号：`ui/components/PageTransitions.kt:15-39`；`feature/ledger/LedgerScreen.kt:147-169,469-514`；`feature/monitoring/AutomaticBookkeepingScreen.kt:31-172`。这些文件证实了路径和全屏 Compose 路由；Perfetto 的 Skia `CircleOp`/`CircularRRectOp` 不能精确映射到其中某一行，当前没有已证实的单一 Kotlin 根因。
+- 用户流程：账本滚动 → 详情；主页 → 我的 → 自动记账。
+- 静态证据：两条路径都在 `MainActivity` View 树内完成全屏 Compose 组合与路由切换；账本项使用 Category artwork、Card 和圆角/边框，自动记账页使用 Card、按钮、文本与全屏滚动布局。上述静态证据只能证明绘制输入存在，不能单独归因某个形状或组件。
+- Trace/SQL：账本代表 Trace `703094593899927..703094621506125 ns` 中 RenderThread `utid=5328` 的 `DrawFrames 159843497` 为 27.606 ms，`Drawing 1080×2400` 为 27.161 ms，包含 14.933 + 8.133 ms 的 `shader_compile`、14.686 + 7.999 ms `ShaderCache::cache_miss`。自动记账 None `706504620737741..706504653744616 ns` 中 RenderThread `utid=6174` 的 33.007 ms 绘制包含 29.530 ms `shader_compile`、28.646 ms cache miss；Profile `706453121691250..706453154295521 ns` 中 RenderThread `utid=1399` 的 32.604 ms 绘制包含 29.257/28.581 ms。三段长尾主要为 Running；没有 Binder、锁、磁盘 I/O 或 GPU completion wait 解释该持续时间。
+- 实际影响：在首次路由帧中，RenderThread 单独占用约 25–33 ms，超过 60 Hz 的 16.67 ms 预算；自动记账 10 次聚合中 None/Profile 的 frame CPU P99 为 48.124/41.302 ms，overrun P99 为 52.228/37.947 ms。Baseline Profile 降低 UI 线程工作，但不预热 GPU shader cache。
+- 实测确认：已确认隔离 benchmark 冷进程/首次路由条件下的 RenderThread 长尾；尚未确认真实生产包、同进程第二次导航或长期用户会话中出现频率。
+- 修复建议：先新增不改生产行为的同进程“首次导航 vs 第二次导航”基准，确认 shader cache 是否只在首次使用发生；若仍是可见高频问题，再以单个受控视觉批次减少新路由首帧的独特 Skia primitive/阴影组合。不要通过启动时预组合整个页面、强制 `graphicsLayer` 或任意延迟导航来掩盖问题，它们会转移成本并增加内存/视觉风险。
+- 修复风险：中到高。视觉 primitive、Card 阴影、按压效果或路由预热可能改变主题、一致性、内存和首屏时序。
+- 验证方式：每个候选均保留 10 次 None/Profile 对照，并追加同进程二次导航；比较 shader cache miss、`DrawFrames`、frame CPU/overrun P99、UI recompose/measure、RSS/GPU memory 与视觉截图。
 
 帧汇总：
 
@@ -116,6 +131,7 @@ Android 模块：`apps/android`
 - 批次 7 同设备各 10 次 None/Profile 对照：账本 frame CPU P99 146.987→46.362 ms，自动记账 117.752→37.241 ms。账本 None 最差 Trace 出现 329.926 ms 帧，`measureAndLayout` 188.987 ms、`Recomposer:recompose` 82.786 ms、JIT 140 次/179.975 ms、GC 5 次/476.436 ms；Profile 代表为 7 次/17.458 ms JIT 且无 >10 ms 主线程 slice。自动记账 None 最差 110.958 ms 帧全程 Running，含 50.745 ms recompose、49.861 ms measure、86 次/113.959 ms JIT；Profile 代表为 3 次/3.449 ms JIT、0 GC。长尾仍存在于 None 对照，不能作为批次 7 完全解决根布局问题的证据。
 - 批次 8 报表进入（生成后的 Profile、各 5 次）：1k frame CPU P50/P90/P95/P99 为 3.761/14.297/20.173/56.011 ms、overrun 为 -4.439/4.404/12.457/43.722 ms；10k 为 8.589/13.097/17.039/55.663 ms、overrun 为 3.731/5.005/15.065/44.744 ms。最差 1k/10k Trace 主线程帧分别为 62.306/65.503 ms，均几乎全程 Running，主要嵌套 `Recomposer:recompose`、`AndroidOwner:measureAndLayout` 和 `Record View#draw()`；未记录目标进程 JIT/GC slice。10k 最差帧在 CPU 5 的 1,190,400 kHz 上运行，Runnable 仅 0.070 ms，不能归因为调度饥饿。`android_jank` metric 在当前 trace_processor 不可用，故高层卡顿口径使用 FrameTimingMetric。
 - 自动记账最终五次 `measureAndLayout` 最大值为 47.808、27.689、27.963、26.801、50.832 ms；shader 首用在前两次为 29.812/27.057 ms，后三次约 0.945–3.160 ms。将权限项改为 `LazyColumn` 的实验 Trace 出现 66.986 ms `measureAndLayout` 且全程 Running；当前高屏一次可容纳全部项目，Lazy 子组合成本反而集中进入首帧，因此该实验与对应测试改动已完整回退。
+- 批次 13（R8、各 10 次）：冷启动 None/Profile `StartupTimingMetric` min/median/max 为 232.123/260.308/335.149 ms 与 229.246/244.419/311.236 ms。主页→自动记账 None/Profile 共 693/730 帧，frame CPU P50/P90/P95/P99 为 3.779/10.243/12.930/48.124 ms 与 2.939/7.606/11.971/41.302 ms，overrun 为 -4.787/3.907/17.587/52.228 ms 与 -4.874/-2.350/1.597/37.947 ms；正 overrun 帧为 141/51。代表长帧同时含 UI 组合/测量与 RenderThread shader cache miss，详见 `PERF-A02`/`PERF-A08`。
 - 账本强停后后台重启：306 帧，7 missed、3 app-missed、4 dropped；最大 101.379 ms。
 - 账本温：221 帧，4 missed、2 app-missed、1 dropped；最大 91.289 ms。
 - 账本热：201 帧，3 missed、3 app-missed、0 dropped；最大 38.404 ms。
@@ -296,8 +312,8 @@ Android 模块：`apps/android`
 - 类别：R8、包体、安装/更新、冷加载。
 - 文件与行号：`apps/android/build.gradle.kts:71-96`；`apps/android/proguard-rules.pro:1`。
 - 用户流程：下载安装、更新、首次/冷启动。
-- 静态与产物证据：`isMinifyEnabled = false`，未设置 `isShrinkResources = true`；项目 ProGuard 文件只有注释，无过宽、重复或无效自定义 keep 规则。没有 mapping/seeds/usage/configuration 输出。
-- R8 Skill 结论：R8 9.0.32 低于 9.3.7-dev，按 heuristic 路径分析；当前阻止 shrinking/optimization/obfuscation 的根因是 R8 完全未运行，而不是 keep 规则。
+- 静态与产物证据：批次 11 前的基线为 `isMinifyEnabled = false`、未设置资源压缩、无 mapping/seeds/usage/configuration 输出；当前 Release 已启用 minify 与资源压缩，生成 `mapping.txt`、`usage.txt`，且仍未发现过宽、重复或无效自定义 keep 规则。
+- R8 Skill 结论：R8 9.0.32 按 heuristic 路径分析；基线阶段阻止 shrinking/optimization/obfuscation 的根因是 R8 完全未运行，而不是 keep 规则。该根因已在批次 11 消除。
 - APK 证据：
   - 批次 9 最终 Release 103,493,619 bytes（约 98.70 MiB）；Debug 117,619,398 bytes（约 112.17 MiB）。
   - native libs 39.17 MiB、`res/` 33.52 MiB、DEX 23.23 MiB、assets 1.85 MiB。
@@ -358,9 +374,10 @@ Android 模块：`apps/android`
 
 ## 9. 当前待修复项
 
-当前总有 1 个待修复项：
+当前总有 2 个待修复项：
 
-1. [High][PERF-A02] 启动根布局仍组合过重；账本相关 Flow 已合并且 scoped，但跨页面状态和转场仍使首帧主线程持续工作。
+1. [High][PERF-A02] 启动首帧与主页→自动记账仍有可测的主线程组合、布局和生命周期长尾；R8/Baseline Profile 已改善但未消除。
+2. [High][PERF-A08] 账本详情与主页→自动记账的首次全屏路由帧会发生 GPU shader cache miss，RenderThread 单段绘制约 25–33 ms；尚未确认真实生产会话中的发生频率。
 
 ## 10. 建议修复批次
 
@@ -375,7 +392,9 @@ Android 模块：`apps/android`
 - 批次 9 [PERF-B01][PERF-B05][PERF-C01]：已完成。代码、JVM、构建及隔离真机验证均通过；合成登录会话、受控回环网络、1k/10k CSV 与加密备份各完成 3 次 Trace。真实生产账号、公网 DNS/TLS 和用户 Downloads 写入不属于本批次已验证边界。
 - 批次 10 [PERF-B02][PERF-B06]：已完成。自动路径增加 event type/package/window admission、250 ms 同窗口去重、settle job 早退、服务生命周期健康缓存与 512 节点/24 层/16 KiB 预算；心跳改为最长每 60 秒写一次、150 秒过期。JVM、隔离 instrumentation 与 3 条策略 Trace 通过。真实支付节点树、遗漏率和长期功耗仍属于第 11 节边界。
 - 批次 11 [PERF-B07][BUILD-C02]：已完成。启用 R8/资源压缩，Release APK 减少 22.19%；完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 迁移，升级 Baseline Profile 插件并通过 6/6 隔离 R8 Macrobenchmark。
-- 批次 12 [PERF-A02]：已完成账本内部转场实验与 2/2 真机隔离回归；frame CPU/overrun P99 明显下降，但冷启动、其他路由和 RenderThread 全屏绘制长尾仍待验证，`PERF-A02` 暂不关闭。
+- 批次 12 [PERF-A02]：已完成并提交为 `4ade499`。账本内部转场取消旧页离场动画，2/2 隔离真机回归通过；frame CPU/overrun P99 明显下降。
+- 批次 13 [PERF-A02][PERF-A08]：已完成验证，未改生产代码。4/4 R8 Macrobenchmark、40 条 Trace、冷启动/主页路由补测和账本 RenderThread 复核完成；确认 UI 长尾与独立 GPU shader cache miss。
+- 批次 14 [PERF-A02][PERF-A08]：待执行。先新增同进程首次/第二次导航对照，确认 GPU cache miss 的用户可见频率；只对稳定可复现的 UI/图形输入做最小视觉性能修复。
 
 ## 11. 未验证部分与需要的帮助
 
@@ -384,51 +403,45 @@ Android 模块：`apps/android`
 1. 生产包真实 cold startup 未验证。通知监听服务在强停后会立即重启生产进程，因此无法取得纯 cold 样本。
    - 需要帮助：提供专用测试设备，或明确授权临时关闭通知监听服务/使用独立测试权限后重新采集。
 
-2. Gradle UTP 入口未验证成功。设备测试入口因 Google Maven 的 `gradle-work-action-32.0.1.jar` 下载超时失败，但相同 Macrobenchmark 已通过手动 instrumentation 完成。
-   - 需要帮助：提供可稳定访问 Google Maven 的网络/缓存环境；否则继续使用已通过的手动 instrumentation 后备路径。
-
-3. Macrobenchmark 测试模块没有独立 Lint 报告。原因是 `com.android.test` 不提供 `:benchmarks:macrobenchmark:lintBenchmarkRelease` 任务；app benchmark source set 的 Lint 已通过。
+2. Macrobenchmark 测试模块没有独立 Lint 报告。原因是 `com.android.test` 不提供 `:benchmarks:macrobenchmark:lintBenchmarkRelease` 任务；app benchmark source set 的 Lint 已通过。
    - 需要帮助：不需要新增代码；如必须有独立报告，需要接受该模块类型的任务限制或改用 CI 统一 Lint 入口。
 
-4. 功耗数值未验证。批次 10 三条策略 Trace 仍返回 `power_rail_empty_packet`，没有有效 power rail、battery current、WakeLock/battery_stats 样本；短 Trace 也不能替代长期耗电结论。
+3. 功耗数值未验证。批次 10 和批次 13 Trace 均返回 `power_rail_empty_packet`，没有有效 power rail、battery current、WakeLock/battery_stats 样本；短 Trace 也不能替代长期耗电结论。
    - 需要帮助：提供支持功耗轨道采样的设备/固件，或允许使用 Battery Historian/长时功耗采集。
 
-5. 冷启动内核 I/O 的具体根因未验证。已确认 D-state、`io_wait=1` 和相关 kworker，但缺少符号化 caller、`blocked_function` 和 `waker_utid`。
+4. 冷启动内核 I/O 的具体根因未验证。批次 13 None 代表样本确认主线程 `100.048 ms` uninterruptible I/O sleep，最长单段 `39.840 ms`；仍缺少符号化 caller、`blocked_function` 和 `waker_utid`。
    - 需要帮助：提供带内核符号或更完整 ftrace 数据的采集环境。
 
-6. 真实生产账号、线上 token 校验和真实后端启动时延未验证。批次 9 已完成加密合成会话的登录态启动，但没有使用用户账号、生产 token 或真实后端。
+5. 真实生产账号、线上 token 校验和真实后端启动时延未验证。批次 9 已完成加密合成会话的登录态启动，但没有使用用户账号、生产 token 或真实后端。
    - 需要帮助：如需线上口径，提供专用测试账号、隔离后端和允许采集脱敏账号阶段数据的环境。
 
-7. 真实微信/支付宝无障碍事件未验证。当前设备 `accessibility_enabled=0`；批次 10 未改变无障碍权限、未模拟支付，仅验证隔离 event admission 和心跳策略。
+6. 真实微信/支付宝无障碍事件未验证。当前设备 `accessibility_enabled=0`；批次 10 未改变无障碍权限、未模拟支付，仅验证隔离 event admission 和心跳策略。
    - 需要帮助：提供专用测试账号/设备，并明确授权真实支付流程回归；采集事件率、节点数、遗漏率和服务主线程 Trace。
 
-8. 真实 Downloads/MediaStore 写入阶段未验证。批次 9 已完成 1k/10k 内存 CSV 和加密备份 Trace，但没有向用户 Downloads 写文件，也没有覆盖存储空间不足、取消和半成品清理。
+7. 真实 Downloads/MediaStore 写入阶段未验证。批次 9 已完成 1k/10k 内存 CSV 和加密备份 Trace，但没有向用户 Downloads 写文件，也没有覆盖存储空间不足、取消和半成品清理。
    - 需要帮助：提供专用测试用户或明确授权写入测试目录，并允许测试失败、取消与清理路径。
 
-9. 长时内存泄漏和稳态耗电未验证。现有正式 Trace 约 15–30 秒，批次 10 的受控时间线不等于真实 2 分钟等待，更不能代表 30 分钟以上的稳态行为。
+8. 长时内存泄漏和稳态耗电未验证。现有正式 Trace 约 15–30 秒，批次 10 的受控时间线不等于真实 2 分钟等待，更不能代表 30 分钟以上的稳态行为。
    - 需要帮助：允许在专用设备上运行 30 分钟以上场景，并采集 heap dump/allocation profile。
 
-10. Compose stability/recomposition metrics 未验证。项目没有启用 Compose compiler stability/recomposition 报告。
+9. Compose stability/recomposition metrics 未验证。项目没有启用 Compose compiler stability/recomposition 报告。
     - 需要帮助：授权单独的构建配置变更，或接受仅使用 Perfetto 的总量证据。
 
-11. 公网 DNS、连接、TLS、真实服务端等待和下载阶段未验证。批次 9 的回环 HTTP 已验证响应头、响应体和取消，但回环链路不经过 DNS/TLS，也不能表示真实服务端 TTFB。
+10. 公网 DNS、连接、TLS、真实服务端等待和下载阶段未验证。批次 9 的回环 HTTP 已验证响应头、响应体和取消，但回环链路不经过 DNS/TLS，也不能表示真实服务端 TTFB。
     - 需要帮助：提供可控代理、隔离 HTTPS 后端和服务端观测能力，补采 DNS、连接、TLS、TTFB 与下载阶段。
 
-12. R8 开启后的体积和运行时收益未验证。当前 Release `minify` 和资源 shrink 关闭，没有 mapping/seeds/usage 输出。
-    - 需要帮助：授权独立 Release 配置批次，并安排账号、Room、通知、无障碍/OCR 回归。
-
-13. 100k 数据和独立 Room 查询时长未验证。批次 8 已完成 1k/10k 报表路径；批次 9 已补 1k/10k 导出 RSS，但仍不能外推为 100k 数据容量证明。
+11. 100k 数据和独立 Room 查询时长未验证。批次 8 已完成 1k/10k 报表路径；批次 9 已补 1k/10k 导出 RSS，但仍不能外推为 100k 数据容量证明。
     - 需要帮助：仅在产品需要 100k 级账本时，提供专用 benchmark 设备或授权补充进程内查询计时与 RSS 采样。
 
-当前已确认但尚未修复的性能问题只有第 9 节列出的 1 项：PERF-A02。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-B07、PERF-C01、BUILD-C02 已完成代码、回归和隔离环境动态验证，不再列为未完成项；真实支付事件与长期功耗仍按上文列为未验证边界。
+当前已确认但尚未修复的性能问题为第 9 节列出的 2 项：PERF-A02、PERF-A08。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-B07、PERF-C01、BUILD-C02 已完成代码、回归和隔离环境动态验证，不再列为未完成项；真实支付事件与长期功耗仍按上文列为未验证边界。
 
 本轮已检查且未发现明确异常：生产 Lazy 列表均有稳定 key；生产网络 transport 在 `Dispatchers.IO`；未使用 `allowMainThreadQueries`、`runBlocking`、`Thread.sleep`、`GlobalScope`、WakeLock、AlarmManager 或 WorkManager 高频任务；生命周期解绑和 Service scope cancel 路径存在；日志无 ANR/FATAL/OOM，所有已执行交互样本均无 >700 ms frozen frame；项目 ProGuard 文件没有过宽、重复或无效自定义 keep 规则。
 
 ## Skill 适用性说明
 
-- `perfetto-trace-analysis`：适用；批次 6 的 60 个 Trace 及批次 10 的 3 条策略 Trace 均保留 evidence scratchpad；批次 10 先尝试 v2 高层 metrics，再以 section、线程状态、GC、Frame Timeline 和全局 D-state SQL 复核。设备 power rail 空包已明确记录为限制。
-- `perfetto-sql`：适用；每个使用的表/视图先在 `perfetto-stdlib.md` 确认 schema，查询使用 upid/utid、GLOB、重叠时间窗和 `dur=-1` 处理。批次 10 的 `android_frames` 为 0，未被误报为无卡顿。
-- `r8-analyzer`：适用，但只能走 R8 9.0.32 heuristic；因 minify 关闭不能做 mapping/usage 实证。
+- `perfetto-trace-analysis`：适用；批次 6 的 60 个 Trace、批次 10 的 3 条策略 Trace 和批次 13 的 40 条 Trace 均保留 evidence scratchpad。批次 13 先运行 `android_startup` 高层 metric，再以 section、线程状态、CPU frequency、Frame Timeline、memory/GC 和全局 D-state SQL 复核。设备 power rail 空包已明确记录为限制。
+- `perfetto-sql`：适用；每个使用的表/视图先在 `perfetto-stdlib.md` 确认 schema，查询使用 upid/utid、GLOB、重叠时间窗和 `dur=-1` 处理。批次 13 使用 `android_frames`、`android_cpu_time_per_frame`、`thread_state`、`cpu_frequency_counters`、`memory_rss_and_swap_per_process` 和 `android_gpu_memory_per_process` 确认 RenderThread 长尾。
+- `r8-analyzer`：适用；R8 9.0.32 仍按 heuristic 分析 keep 规则，批次 11 已启用 minify 并产生 mapping/usage 产物，已可做 Release 产物实证。
 - `testing-setup`：适用于盘点和第二批补测；在用户授权后复用官方 AndroidX Benchmark/UIAutomator 依赖新增独立测试模块，未改变生产运行时依赖。批次 10 沿用该模块新增隔离 environment validation 和 JVM 纯策略测试，未新增依赖或测试框架；第三批未再新增测试框架或依赖，复用现有 412 项 JVM 测试和手动 instrumentation 后备路径完成回归；测试前锁定 natural orientation、结束后恢复自动旋转，消除了方向漂移干扰。
 
 原最小测试补充方案已经落实：独立 Macrobenchmark/Baseline Profile 模块覆盖本报告三条关键路径，shader 与 Baseline Profile 批次均已完成。后续最小增量是继续用现有框架验证根布局、R8 和剩余业务风险；不需要引入新的测试框架。
