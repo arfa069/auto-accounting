@@ -24,6 +24,8 @@ val releaseBackendUrl = configuredBackendUrl
     ?.trim()
     ?.takeIf { it.startsWith("https://", ignoreCase = true) }
     .orEmpty()
+val composeCompilerReportsEnabled =
+    providers.gradleProperty("composeCompilerReports").orNull == "true"
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -127,6 +129,14 @@ baselineProfile {
     automaticGenerationDuringBuild = false
     filter {
         exclude("com.autoaccounting.benchmark.**")
+    }
+}
+
+composeCompiler {
+    if (composeCompilerReportsEnabled) {
+        val outputDirectory = layout.buildDirectory.dir("reports/compose-compiler")
+        reportsDestination.set(outputDirectory)
+        metricsDestination.set(outputDirectory)
     }
 }
 
