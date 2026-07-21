@@ -21,6 +21,14 @@ android {
     }
 }
 
+configurations.configureEach {
+    resolutionStrategy.force(
+        "androidx.tracing:tracing-perfetto:1.0.0",
+        "androidx.tracing:tracing-perfetto-binary:1.0.0",
+        "androidx.tracing:tracing-perfetto-handshake:1.0.0"
+    )
+}
+
 baselineProfile {
     useConnectedDevices = true
 }
@@ -30,4 +38,6 @@ dependencies {
     implementation(libs.androidx.test.ext.junit)
     implementation(libs.androidx.test.runner)
     implementation(libs.androidx.test.uiautomator)
+    implementation(libs.androidx.tracing.perfetto)
+    implementation(libs.androidx.tracing.perfetto.binary)
 }

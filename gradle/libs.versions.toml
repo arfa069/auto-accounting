@@ -20,6 +20,7 @@ postgres = "42.7.4"
 h2 = "2.2.224"
 kotlinxSerializationJson = "1.9.0"
 mlKitTextRecognitionChinese = "16.0.1"
+androidxTracingPerfetto = "1.0.0"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -41,6 +42,7 @@ androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-runtime-tracing = { module = "androidx.compose.runtime:runtime-tracing" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
@@ -51,6 +53,8 @@ androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "a
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "androidxTestUiautomator" }
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-tracing-perfetto = { module = "androidx.tracing:tracing-perfetto", version.ref = "androidxTracingPerfetto" }
+androidx-tracing-perfetto-binary = { module = "androidx.tracing:tracing-perfetto-binary", version.ref = "androidxTracingPerfetto" }
 junit = { module = "junit:junit", version.ref = "junit" }
 ktor-server-core = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }

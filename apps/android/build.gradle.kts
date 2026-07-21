@@ -125,6 +125,12 @@ androidComponents {
     }
 }
 
+configurations.configureEach {
+    if (name == "benchmarkReleaseImplementation") {
+        project.dependencies.add(name, libs.androidx.compose.runtime.tracing)
+    }
+}
+
 baselineProfile {
     automaticGenerationDuringBuild = false
     filter {
