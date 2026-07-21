@@ -1,11 +1,13 @@
 # Android 项目系统性能审计报告
 
-审计日期：2026-07-19 至 2026-07-20
+审计日期：2026-07-19 至 2026-07-21
 仓库：`C:\Users\Arfa\Documents\auto-accounting`
 Android 模块：`apps/android`
-审计阶段：基线调查、补测、报告及批次 1–11 的代码修复与隔离验证已完成；真实支付无障碍事件与长时功耗仍未验证。批次 11 启用 Release R8/资源压缩，将 AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`，并完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 的最小迁移。批次 11 在独立 `com.autoaccounting.benchmark` 包执行 6 个 Macrobenchmark 用例、60 条 Trace；未覆盖、清除或修改生产 `com.autoaccounting` 数据与权限。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`，批次 10 为 `663ab7e`；批次 11 尚未提交。未改写 Git 历史，未 push。
+审计阶段：基线调查、补测、报告及批次 1–12 的代码修复与隔离验证已完成；真实支付无障碍事件与长时功耗仍未验证。批次 11 启用 Release R8/资源压缩，将 AndroidX Benchmark/Baseline Profile 升至 `1.5.0-alpha07`，并完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 的最小迁移。批次 11 在独立 `com.autoaccounting.benchmark` 包执行 6 个 Macrobenchmark 用例、60 条 Trace；未覆盖、清除或修改生产 `com.autoaccounting` 数据与权限。批次 1–3 已提交为 `9f4e8b5`，批次 4 为 `8e497fb`，批次 5 为 `a526443`，批次 6 为 `ecda05d`，批次 7 为 `4ef5204`，批次 8 为 `7ce023c`，批次 9 为 `6ca00b2`，批次 10 为 `663ab7e`，批次 11 为 `37f40ba`。未改写 Git 历史，未 push。
 
 ## 证据等级
+
+- 当前批次状态：批次 11 已提交为 `37f40ba`；批次 12 已完成代码与隔离验证，尚未提交。批次 12 仅验证账本内部转场，`PERF-A02` 的冷启动与其他路由仍待补测。
 
 - A：已通过真机、Perfetto、ADB 或本轮构建命令确认。
 - B：静态代码中高度可信的风险；当前样本未覆盖触发条件或数据规模。
@@ -22,6 +24,7 @@ Android 模块：`apps/android`
 - 测试设施：原有 66 个本地测试文件、1 个 Room 真机测试、JUnit 4/Robolectric/Compose UI Test/Room Testing/JaCoCo；第二批新增独立 `benchmarks/macrobenchmark` 模块，覆盖冷启动、账本滚动→详情、我的→自动记账及 Baseline Profile 生成。
 - 第二批产物：三条路径各 5 次，共 15 个正式 Perfetto Trace；1 份 Macrobenchmark JSON；Baseline Profile Generator 成功输出 20,017 行 profile。第三、第四、第五批分别完成对应回归。批次 6 重新生成 20,143 行、2,149,642 bytes 的生产 source profile，并完成三条路径各 10 次 None/Profile 对照，共 60 个 Trace、60 份逐 Trace scratchpad 和 1 份 JSON。批次 7 完成同设备 7/7 instrumentation（Generator 加 6 个用例），另生成 60 个 Trace、1 份 JSON 和 6 份代表性 SQL scratchpad。批次 8 重新生成 20,000 行、2,143,362 bytes 的 source profile（1,798 条项目规则、0 条 benchmark-only 规则），完成 1k/10k 报表路径各 5 次、共 10 个 Trace、1 份 JSON 和 2 份代表性 SQL scratchpad。批次 9 新增 12 个隔离环境 Trace 与 12 份逐 Trace evidence scratchpad。批次 10 新增 3 条有效隔离策略 Trace 与 3 份逐 Trace evidence scratchpad，路径为 `%LOCALAPPDATA%\Temp\auto-accounting-perf-audit-20260719\device-results-20260720-batch10`。项目仍没有截图测试或完整通用 E2E 套件。
 - 总体结论：第三批消除目标主线程 bitmap decode；第四批消除诊断历史启动读取和 Keystore Binder 风暴；第五批消除账本点击 `CircleOp → shader_compile`。批次 6 已使生产 Release 包含关键路径 Profile 规则。批次 7 消除根 UI 的全库账目订阅、把账本统计下推到 Room、以 v7 复合索引支持 scoped 查询，并让报表只消费预计算模型。批次 8 证实 1k/10k 报表进入的长尾均主要是主线程组合、布局和绘制，而非数据量线性放大。批次 9 证实会话恢复可在隔离登录态进入主页、受控请求可在约 206 ms 取消、1k/10k CSV 与加密备份重活位于后台线程。批次 10 已使非手动、非支付相关事件在读取根节点前退出，并将连续自动记账相同窗口事件合并；隔离 1,000 事件 admission 的 trace section 为 0.336–0.406 ms，2 分钟受控心跳仅持久化 3 次。该结论不代表真实微信/支付宝节点树、遗漏率或功耗已验证。`PERF-A02` 仍未关闭；R8 未启用及 103.49 MB Release APK 仍是高优先级问题。
+- 批次 12 补充结论：账本内部转场取消旧页离场动画后，None/Profile frame CPU P99 为 32.40/25.27 ms，overrun P99 为 24.57/14.11 ms；代表 Trace 的 `Recomposer:recompose` 从 47.023 ms 降至 9.514 ms。RenderThread 全屏绘制仍有 27.606 ms 长尾，冷启动和其他路由尚未验证，因此 `PERF-A02` 保持待修复。
 
 ## 2. 启动性能结果
 
@@ -372,6 +375,7 @@ Android 模块：`apps/android`
 - 批次 9 [PERF-B01][PERF-B05][PERF-C01]：已完成。代码、JVM、构建及隔离真机验证均通过；合成登录会话、受控回环网络、1k/10k CSV 与加密备份各完成 3 次 Trace。真实生产账号、公网 DNS/TLS 和用户 Downloads 写入不属于本批次已验证边界。
 - 批次 10 [PERF-B02][PERF-B06]：已完成。自动路径增加 event type/package/window admission、250 ms 同窗口去重、settle job 早退、服务生命周期健康缓存与 512 节点/24 层/16 KiB 预算；心跳改为最长每 60 秒写一次、150 秒过期。JVM、隔离 instrumentation 与 3 条策略 Trace 通过。真实支付节点树、遗漏率和长期功耗仍属于第 11 节边界。
 - 批次 11 [PERF-B07][BUILD-C02]：已完成。启用 R8/资源压缩，Release APK 减少 22.19%；完成 AGP 9 built-in Kotlin、新 DSL 与 legacy KAPT 迁移，升级 Baseline Profile 插件并通过 6/6 隔离 R8 Macrobenchmark。
+- 批次 12 [PERF-A02]：已完成账本内部转场实验与 2/2 真机隔离回归；frame CPU/overrun P99 明显下降，但冷启动、其他路由和 RenderThread 全屏绘制长尾仍待验证，`PERF-A02` 暂不关闭。
 
 ## 11. 未验证部分与需要的帮助
 

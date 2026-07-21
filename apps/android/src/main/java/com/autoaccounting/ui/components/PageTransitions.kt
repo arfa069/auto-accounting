@@ -1,6 +1,7 @@
 package com.autoaccounting.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -14,6 +15,7 @@ private const val PAGE_TRANSITION_DURATION_MILLIS = 300
 fun <T> SlidePageTransition(
     targetState: T,
     modifier: Modifier = Modifier,
+    animateOutgoingContent: Boolean = true,
     content: @Composable (T) -> Unit
 ) {
     AnimatedContent(
@@ -22,10 +24,14 @@ fun <T> SlidePageTransition(
             slideInHorizontally(
                 animationSpec = tween(PAGE_TRANSITION_DURATION_MILLIS),
                 initialOffsetX = ::pageEnterOffsetX
-            ) togetherWith slideOutHorizontally(
-                animationSpec = tween(PAGE_TRANSITION_DURATION_MILLIS),
-                targetOffsetX = ::pageExitOffsetX
-            )
+            ) togetherWith if (animateOutgoingContent) {
+                slideOutHorizontally(
+                    animationSpec = tween(PAGE_TRANSITION_DURATION_MILLIS),
+                    targetOffsetX = ::pageExitOffsetX
+                )
+            } else {
+                ExitTransition.None
+            }
         },
         modifier = modifier,
         label = "page-slide-transition"

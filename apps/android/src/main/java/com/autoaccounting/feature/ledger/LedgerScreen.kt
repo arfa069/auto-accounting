@@ -147,7 +147,8 @@ fun LedgerScreen(
     Box(modifier = modifier.fillMaxSize()) {
         SlidePageTransition(
             targetState = page,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            animateOutgoingContent = false
         ) { targetPage ->
             val targetEntry = remember(entries, targetPage.selectedEntryId) {
                 entries.firstOrNull { it.id == targetPage.selectedEntryId }
