@@ -1,3 +1,3 @@
-# Observe WeChat and Alipay with notifications and accessibility
+# 微信与支付宝的通知监听及无障碍观察
 
-The Android app will support observing WeChat and Alipay through both payment notifications and accessibility-based bill-page reading. This accepts higher privacy, permission, and store-review risk in exchange for better coverage when notifications are incomplete, suppressed, or missing historical bill details.
+Android 应用将同时支持通过支付通知和基于无障碍服务的账单页读取来观察微信与支付宝的支付活动。在通知不完整、被系统拦截或缺失历史账单细节时，该决策愿意承担较高的隐私、权限及应用商店审核风险，以换取更好的捕获覆盖率。

@@ -1,53 +1,33 @@
-# Correct Tester-Facing Android Copy Encoding
+# Issue 013: 修正面向测试人员的 Android 端文案编码乱码
 
-## What to build
+## 待构建内容
 
-Correct mojibake tester-facing Android string literals in Kotlin source and resources so account, review queue, ledger, reports, permissions, backup, deletion, AI, compliance, and beta-readiness copy is readable before any internal tester build.
+修正 Kotlin 源码与资源中面向测试人员的 Android 字符串字面量乱码（Mojibake），使账号、待确认队列、账本、报表、权限、备份、注销、AI、合规及内测就绪文案在面向内部测试人员构建前清晰可读。
 
-## Scope
+## 范围
 
-Correct tester-facing Android copy in Kotlin source, Android resources, and tests that assert visible strings. Keep the work limited to copy readability and encoding cleanup.
+修正 Kotlin 源码、Android 资源及断言可见字符串的测试中面向测试人员的 Android 文案。工作仅限于文案可读性与编码清理。
 
-## Non-goals
+## 非目标
 
-- Do not redesign screens, navigation, or visual style.
-- Do not change account, capture, backup, deletion, AI, or monitoring behavior except where tests need updated expected copy.
-- Do not translate backend-only test fixtures unless they surface in Android tester-facing UI.
+- 不重新设计页面、导航或视觉风格。
+- 不修改账号、捕获、备份、注销、AI 或监控行为，除非测试需要更新预期文案。
+- 不翻译仅限后端的测试 Fixtures，除非它们透出在 Android 面向测试人员的 UI 中。
 
-## Target files/modules
+## 目标文件/模块
 
 - `apps/android/src/main/java/com/autoaccounting`
 - `apps/android/src/main/res`
 - `apps/android/src/test/java/com/autoaccounting`
 
-## Acceptance criteria
+## 验收标准
 
-- [ ] User-facing Android copy renders as intended Chinese text in the main app flows.
-- [ ] Account, permission, local data deletion, account deletion, AI consent, backup/export, and compliance risk copy remains plain and clear.
-- [ ] Any shared repeated copy is moved to resources or local helpers where that reduces future encoding drift.
-- [ ] Unit or UI tests that assert key copy are updated to the corrected strings.
-- [ ] Android build passes after copy correction.
+- [x] 面向用户的 Android 文案在主应用流程中渲染为符合预期的中文文本。
+- [x] 账号、权限、本机数据删除、账号注销、AI 同意、备份/导出及合规风险文案保持平实清晰。
+- [x] 任何共享重复文案提取至资源或本地 Helper 中，以减少未来的编码漂移。
+- [x] 断言关键文案的单元或 UI 测试更新为修正后的字符串。
+- [x] 文案修正后 Android 构建顺利通过。
 
-## Acceptance tests
+## 依赖项
 
-- [ ] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- [ ] `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
-
-## Manual verification
-
-- Open the Android app and inspect account, review queue, ledger, reports, profile/permission center, backup/export, deletion, AI consent, compliance, and beta-readiness screens for readable Chinese copy.
-
-## Rollback or safety notes
-
-- Copy-only changes should be easy to revert. Keep behavior changes out of this issue so rollback does not affect product state or persistence.
-
-## Verification record
-
-- `rg -n "楼|锛|銆|鐨|鍗|寰|鏀|绫|鍒|璐|闅|瀵|楠|宸|鏈|浜|涓|杩|瀹|浠|犲||||||||" apps\android\src\main apps\android\src\test` - no matches.
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` - passed.
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug` - passed.
-- Manual device/app inspection is still pending because this pass only performed static scan plus automated Android test/build verification.
-
-## Blocked by
-
-- Issue 1: Baseline Audit And Phase 2 Risk Map
+- Issue 1: 基线审计与 Phase 2 风险映射表

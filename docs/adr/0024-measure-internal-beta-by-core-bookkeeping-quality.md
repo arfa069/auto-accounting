@@ -1,3 +1,3 @@
-# Measure internal beta by core bookkeeping quality
+# 以核心记账质量评估内测版本
 
-Internal beta success will be measured by capture accuracy, deduplication accuracy, review efficiency, and permission retention rather than feature completion alone. These measures reflect the real product risk: whether users can trust automatic capture and tolerate the required permissions and review workflow in daily use.
+内测版本的质量评估指标聚焦于核心记账体验：捕获准确率、去重合并精准度、待确认队列审核效率及权限留存率，而非单纯的下载量或用户活跃度。

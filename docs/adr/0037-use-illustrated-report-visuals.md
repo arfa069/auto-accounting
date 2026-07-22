@@ -1,3 +1,3 @@
-# Use illustrated report visuals
+# 报表使用插画风手绘视觉呈现
 
-Reports will use a more illustrated and playful chart style instead of purely plain financial charts. This supports the chosen young visual direction, but chart labels, values, and comparisons must remain immediately readable so decoration does not obscure financial meaning.
+报表页面的环形图与图表采用 Compose `Canvas` 自定义绘制的手绘插图风格，配以清晰的数值标签与排行榜只读列表，兼顾美观与实用性。

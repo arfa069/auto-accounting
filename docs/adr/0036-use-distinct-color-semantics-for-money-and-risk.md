@@ -1,3 +1,3 @@
-# Use distinct color semantics for money and risk
+# 为资金与风险应用区分明显的色彩语义
 
-The visual system will use warm colors for expenses, green for income, red for risk or permission problems, and a separate lively blue or purple brand color for primary actions and identity. This lets the app feel colorful without letting brand color obscure money or risk semantics.
+界面色彩建立严格的语义规范：支出使用暖色（珊瑚红/橙），收入使用绿色，风险警告或权限缺失使用红色，品牌主色采用活泼的紫色/蓝色。

@@ -1,3 +1,3 @@
-# Deliver feature-complete internal beta first
+# 优先交付功能完备的内测版本
 
-The first delivery target will be a feature-complete internal beta rather than a smaller MVP or a public store release. This expands the first phase to include AI categorization, reports, encrypted backup, and advanced monitoring, accepting greater implementation and test scope before public distribution.
+在公开发布到应用商店前，优先交付功能闭环、覆盖全量 PRD 场景的内测版本（Internal Beta），通过受控的真机测试验证通知捕获准确率、无障碍兼容性、后台存活率及合规材料。

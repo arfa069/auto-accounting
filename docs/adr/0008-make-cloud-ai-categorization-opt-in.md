@@ -1,3 +1,3 @@
-# Make cloud AI categorization opt-in
+# 云端 AI 分类采取显式 Opt-in 授权机制
 
-The app will prioritize local categorization rules and keep cloud AI categorization disabled by default. Users may explicitly enable cloud AI later, which lets the product offer smarter category suggestions without making sensitive transaction data leave the device by default.
+云端 AI 分类功能默认处于关闭状态。用户必须在登录账号后，明确勾选同意 AI 分类隐私协议，方可开启该功能。未授权时应用完全依靠本地规则进行分类。

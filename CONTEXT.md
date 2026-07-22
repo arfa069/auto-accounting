@@ -1,259 +1,259 @@
-# Auto Accounting
+# 自动记账 (Auto Accounting)
 
-This context describes the user's personal finance records captured from mobile payment activity.
+本文档描述了从移动支付活动中捕获的用户个人财务记录的上下文与术语定义。
 
-## Language
+## 领域语言与术语规范
 
-**Transaction**:
-A money movement that should appear in the user's ledger, such as a payment, refund, transfer, or income.
-_Avoid_: Bill, message, notification
+**交易 (Transaction)**：
+应该出现在用户账本中的资金变动，例如支付、退款、转账或收入。
+_避免使用_：账单、消息、通知
 
-**Payment Source**:
-A user-visible external app or channel assigned to a transaction. It can be corrected after capture, and a manual entry may have no payment source.
-_Avoid_: Platform, provider
+**支付来源 (Payment Source)**：
+分配给某笔交易的用户可见的外部应用或渠道（如微信、支付宝）。捕获后可以修改，手动录入的条目可以没有支付来源。
+_避免使用_：平台、提供方
 
-**Original Capture Source**:
-The external app or channel recorded when an automatically captured transaction first entered the app, retained as immutable provenance even if its payment source is corrected.
-_Avoid_: Payment source, entry origin
+**原始捕获来源 (Original Capture Source)**：
+自动捕获的交易首次进入应用时记录的外部应用或渠道。作为不可变的溯源证据保留，即使其支付来源后续被修正。
+_避免使用_：支付来源、条目来源
 
-**Entry Origin**:
-The way a transaction entered the app, such as manual entry, notification capture, bill sync, or duplicate merge.
-_Avoid_: Payment source, funding account
+**条目来源 (Entry Origin)**：
+交易进入应用的方式，例如手动录入、通知捕获、账单同步或重复合并。
+_避免使用_：支付来源、资金账户
 
-**Ledger Entry**:
-A transaction after it has been accepted into one of the user's ledger books, either through manual entry or by confirming a pending entry.
-_Avoid_: Record, item
+**账本条目 (Ledger Entry)**：
+已被接收到用户某个账本中的交易，可以是通过手动录入，也可以是通过确认待确认条目。
+_避免使用_：记录、明细项
 
-**Manual Entry**:
-A user-authored transaction accepted directly as a ledger entry without passing through the review queue or requiring a payment source.
-_Avoid_: Manual pending entry, draft entry
+**手动录入条目 (Manual Entry)**：
+由用户直接撰写并直接作为账本条目接收的交易，无需经过待确认队列，也不强制要求支付来源。
+_避免使用_：手动待确认条目、草稿条目
 
-**Pending Entry**:
-A captured transaction candidate that still needs user confirmation, correction, or deduplication before becoming a ledger entry.
-_Avoid_: Draft, raw transaction
+**待确认条目 (Pending Entry)**：
+已捕获的交易候选对象，在成为账本条目之前仍需要用户进行确认、修正或去重。
+_避免使用_：草稿、原始交易
 
-**Review Queue**:
-The user's primary workflow for resolving pending entries into ledger entries or dismissing them.
-_Avoid_: Inbox, task list
+**待确认队列 (Review Queue)**：
+用户将待确认条目转化为账本条目或予以忽略/驳回的主要工作流界面。
+_避免使用_：收件箱、任务列表
 
-**Ignored Entry**:
-A pending entry dismissed from the review queue without becoming a ledger entry, recoverable for a limited time.
-_Avoid_: Deleted entry, archived transaction
+**已忽略条目 (Ignored Entry)**：
+从待确认队列中驳回/忽略且未成为账本条目的待确认条目，在限定时间内可恢复。
+_避免使用_：已删除条目、归档交易
 
-**Deleted Ledger Entry**:
-A former ledger entry removed from its ledger book's active list and reports, recoverable in that same ledger book for 30 days before permanent deletion.
-_Avoid_: Ignored entry, archived entry
+**已删除账本条目 (Deleted Ledger Entry)**：
+已从所属账本的活动列表和报表中移除的前账本条目，在永久删除前可在该账本内恢复（保留 30 天）。
+_避免使用_：已忽略条目、归档条目
 
-**Ledger**:
-The product area that displays and manages the current ledger book.
-_Avoid_: History, statement, all local data
+**账本 (Ledger)**：
+展示和管理当前账本的产品功能区域。
+_避免使用_：历史、账单明细、所有本地数据
 
-**Ledger Book**:
-A named local collection of ledger entries. Every ledger entry belongs to exactly one ledger book, while categories and funding accounts are shared across all ledger books.
-_Avoid_: Category, funding account, cloud ledger
+**账本簿 / 账本 (Ledger Book)**：
+账本条目的具名本地集合。每个账本条目精准属于一个账本，而分类和资金账户跨所有账本共享。
+_避免使用_：分类、资金账户、云端账本
 
-**Current Ledger Book**:
-The persisted ledger-book selection that receives manual entries and confirmed pending entries and scopes ledger lists, reports, CSV export, and recently deleted entries.
-_Avoid_: Default category, review queue, encrypted-backup scope
+**当前账本 (Current Ledger Book)**：
+持久化保存的用户当前选择的账本。用于接收手动录入和已确认的待确认条目，并限定账本列表、报表、CSV 导出和最近删除条目的作用域。
+_避免使用_：默认分类、待确认队列、加密备份作用域
 
-**Reports**:
-Summaries and visual analysis of confirmed entries in the current ledger book.
-_Avoid_: Dashboard, analytics
+**报表 (Reports)**：
+当前账本中已确认条目的汇总与可视化分析。
+_避免使用_：仪表盘、数据分析
 
-**Duplicate Candidate**:
-Two or more captured transaction candidates that may describe the same real-world transaction.
-_Avoid_: Conflict, repeated record
+**重复候选对象 (Duplicate Candidate)**：
+两个或多个可能描述现实世界中同一笔交易的已捕获交易候选。
+_避免使用_：冲突、重复记录
 
-**Merged Entry**:
-A pending entry or ledger entry formed by combining duplicate candidates that describe the same real-world transaction.
-_Avoid_: Deleted duplicate, overwritten record
+**合并条目 (Merged Entry)**：
+通过合并描述现实世界中同一笔交易的重复候选对象而形成的待确认条目或账本条目。
+_避免使用_：已删除重复项、覆盖记录
 
-**Transaction Kind**:
-The business nature of a transaction, such as purchase, refund, transfer, red packet, repayment, investment, fee, or another type exposed by a payment source. It does not determine whether money flows in or out.
-_Avoid_: Flow direction, category, tag
+**交易类型 (Transaction Kind)**：
+交易的业务性质，例如消费、退款、转账、红包、还款、投资、手续费或支付来源透出的其他类型。它不决定资金是流入还是流出。
+_避免使用_：流向、分类、标签
 
-**Flow Direction**:
-The effect of a transaction on income and expense totals: inflow, outflow, or neutral. Amounts remain positive, and neutral entries do not affect income, expense, or net totals.
-_Avoid_: Transaction kind, signed amount
+**资金流向 (Flow Direction)**：
+交易对收入和支出总额的影响：流入、流出或中性。金额保持为正数，中性条目不影响收入、支出或净额总计。
+_避免使用_：交易类型、带符号金额
 
-**Category**:
-The user's purpose-based label for a ledger entry, such as food, transport, shopping, housing, healthcare, or travel.
-_Avoid_: Transaction kind, source type
+**分类 (Category)**：
+用户为账本条目设立的基于用途的标签，例如餐饮、交通、购物、居住、医疗或旅行。
+_避免使用_：交易类型、来源类型
 
-**Funding Account**:
-A reusable payment method or money account used by a transaction, such as cash, Alipay balance, WeChat balance, a bank card, or Huabei. It may be reported by a payment source or created by the user, is shared across ledger books, and can be deleted only when no active/deleted ledger entry, pending entry, or ignored entry references it.
-_Avoid_: Balance account, asset account
+**资金账户 (Funding Account)**：
+交易使用的可复用支付方式或资金账户，例如现金、支付宝余额、微信零钱、银行卡或花呗。它可以由支付来源透出或由用户创建，在所有账本间共享；只有当没有活动/已删除的账本条目、待确认条目或已忽略条目引用它时，才允许被删除。
+_避免使用_：余额账户、资产账户
 
-**Encrypted Backup**:
-A portable app data backup that is encrypted before it leaves the app sandbox and can later restore all ledger books, their entries, shared local data, settings, and the current ledger-book selection.
-_Avoid_: Export, archive
+**加密备份 (Encrypted Backup)**：
+在离开应用沙盒前进行加密的可移植应用数据备份文件，后续可恢复所有账本、账本条目、共享本地数据、设置及当前账本选择。
+_避免使用_：导出、归档文件
 
-**Data and Backup**:
-A profile-area entry for current-ledger CSV export and all-ledger encrypted-backup export or import. Local Data Deletion is a separately protected, destructive action at the bottom of this entry.
-_Avoid_: Account management, cloud sync
+**数据与备份 (Data and Backup)**：
+个人中心区域的入口，用于当前账本 CSV 导出以及所有账本加密备份的导出或导入。“本机数据删除”是该入口底部单独受保护的破坏性操作。
+_避免使用_：账号管理、云端同步
 
-**User Account**:
-The user's app identity used for authentication and future cloud-linked product capabilities.
-_Avoid_: Device ID, profile
+**用户账号 (User Account)**：
+用于身份验证及未来云端联动产品能力的用户应用身份。
+_避免使用_：设备 ID、个人资料
 
-**Account Management**:
-The first profile-area entry for viewing the current account state, signing in or registering from local mode, and managing account deletion after sign-in.
-_Avoid_: Profile, local-data settings
-
-**Local Mode**:
-An app state where the user can keep local ledger books without signing in, while cloud-linked capabilities remain unavailable.
-_Avoid_: Guest account, anonymous account
-
-**Registered Device**:
-A user's Android device known to the backend for account security, configuration, and future sync readiness.
-_Avoid_: Client, install
-
-**Cloud Configuration**:
-Non-ledger account settings stored by the backend, such as consent state, feature flags, and future sync readiness.
-_Avoid_: Cloud ledger, remote backup
-
-**Account Deletion**:
-The user-requested removal of cloud account identity, registered devices, cloud configuration, and AI categorization logs.
-_Avoid_: Logout, uninstall
-
-**Deletion Pending**:
-The account state during the cooling-off period after a user requests account deletion and before cloud data is removed.
-_Avoid_: Disabled account, logout
-
-**Account Recovery**:
-The user flow for regaining account access by verifying the phone number and setting a new password.
-_Avoid_: SMS login, customer support reset
-
-**Local Data Deletion**:
-The separate user-confirmed removal of all ledger books and app data stored on the Android device, including diagnostic segments, their Keystore key, and the Release diagnostic preference, followed by recreation of one empty default ledger book. Diagnostic exports already written to Downloads remain outside this operation.
-_Avoid_: Account deletion, logout
-
-**Internal Beta**:
-A feature-complete test release for controlled users before public store submission.
-_Avoid_: MVP, prototype, store release
-
-**Developer Tools**:
-Debug-build-only tools for internal-beta readiness, device matrices, permission retention, and quality metrics. They are not available in release builds or the normal user-facing profile area, and they are distinct from the user-controlled Diagnostic Logs entry.
-_Avoid_: User settings, hidden release entry
-
-**Diagnostic Logs**:
-A user-controlled Compliance and Privacy entry for encrypted, on-device troubleshooting events. It is available in Debug and Release, defaults on only in Debug, never uploads logs, never stores screenshots, and always redacts authentication secrets before writing or exporting sensitive transaction context.
-_Avoid_: Developer Tools, Logcat, crash reporting, ledger evidence
-
-**Ledger Entry Debug Metadata**:
-Persisted lifecycle and capture-provenance fields such as entry origin, creation or first-confirmation time, last-modified time, original capture source, original pending-entry ID, and capture evidence. The current ledger UI does not compose these fields; editing user-visible transaction fields must preserve them.
-_Avoid_: Normal transaction details, centralized transaction log
+**账号管理 (Account Management)**：
+个人中心区域的第一个入口，用于查看当前账号状态、从本地模式登录或注册，以及登录后管理账号注销。
+_避免使用_：个人资料、本地数据设置
+
+**本地模式 (Local Mode)**：
+一种应用状态，用户可以在无需登录的情况下使用本地账本，此时云端联动功能不可用。
+_避免使用_：游客账号、匿名账号
+
+**已注册设备 (Registered Device)**：
+后端已知晓的用户 Android 设备，用于账号安全、配置及未来的同步准备。
+_避免使用_：客户端、安装实例
+
+**云端配置 (Cloud Configuration)**：
+由后端存储的非账本账号设置，例如同意状态、功能开关及未来的同步准备状态。
+_避免使用_：云端账本、远程备份
+
+**账号注销 (Account Deletion)**：
+用户申请删除云端账号身份、已注册设备、云端配置及 AI 分类日志的操作。
+_避免使用_：退出登录、卸载
+
+**注销冷静期 (Deletion Pending)**：
+用户申请账号注销后、云端数据被正式清理前冷静期内的账号状态。
+_避免使用_：已禁用账号、退出登录
+
+**账号找回 (Account Recovery)**：
+用户通过验证手机号并设置新密码来重新获取账号访问权的工作流。
+_避免使用_：短信验证码登录、客服重置
+
+**本机数据删除 (Local Data Deletion)**：
+经用户单独二次确认的操作，用于清除 Android 设备上存储的所有账本和应用数据（包括诊断分段、其 Keystore 密钥及 Release 诊断偏好设置），随后重新创建一个空的默认账本。已导出到 Downloads 目录的诊断日志不受此操作影响。
+_避免使用_：账号注销、退出登录
+
+**内测发布 (Internal Beta)**：
+面向受控测试用户的全功能测试版本，在公开发布到应用商店之前进行。
+_避免使用_：MVP、原型、商店发布版
+
+**开发者工具 (Developer Tools)**：
+仅在 Debug 构建中提供的工具，用于内测就绪检查、设备矩阵、权限留存及质量指标。在 Release 构建或普通面向用户的个人中心中不可用，且与用户可控的“诊断日志”入口相互独立。
+_避免使用_：用户设置、隐藏发布入口
+
+**诊断日志 (Diagnostic Logs)**：
+面向合规与隐私的用户可控入口，用于加密的本机故障排查事件。在 Debug 和 Release 中均可用，仅在 Debug 下默认开启；绝不上传日志、绝不存储截图，并在写入或导出敏感交易上下文前始终脱敏身份凭证与密钥。
+_避免使用_：开发者工具、Logcat、崩溃报告、账本证据
+
+**账本条目调试元数据 (Ledger Entry Debug Metadata)**：
+持久化保存的生命周期与捕获溯源字段，例如条目来源、创建或首次确认时间、最后修改时间、原始捕获来源、原始待确认条目 ID 及捕获证据。当前账本 UI 不组装这些字段；编辑用户可见交易字段时必须予以保留。
+_避免使用_：普通交易详情、集中式交易日志
 
-**Store Compliance Package**:
-The permission explanations, privacy policy, review materials, screenshots, videos, and declarations needed for public app-store submission.
-_Avoid_: Legal copy, app description
+**商店合规包 (Store Compliance Package)**：
+公开提交到应用商店所需的权限说明、隐私政策、审核材料、截图、视频及声明。
+_避免使用_：法律文书、应用描述
 
-**Privacy Policy**:
-The complete user-facing document that explains personal information processing, rights, retention, sharing, and contact channels.
-_Avoid_: Permission copy, compliance checklist
+**隐私政策 (Privacy Policy)**：
+面向用户的完整文档，详细说明个人信息处理、用户权利、存储期限、共享及联系渠道。
+_避免使用_：权限文书、合规清单
 
-**Personal Information Collection List**:
-A structured user-facing list of personal information categories collected, processing purpose, processing method, and whether each item is required.
-_Avoid_: Privacy policy, data map
+**个人信息收集清单 (Personal Information Collection List)**：
+面向用户的结构化清单，列出收集的个人信息类别、处理目的、处理方式以及各项是否为必需。
+_避免使用_：隐私政策、数据映射表
 
-**Sensitive Transaction Information**:
-Transaction, bill, merchant, amount, category, and funding-account information that is treated as sensitive personal information because it can reveal financial status, habits, and movement patterns.
-_Avoid_: Ordinary ledger data, analytics data
+**敏感交易信息 (Sensitive Transaction Information)**：
+交易、账单、商家、金额、分类及资金账户信息，由于能揭示财务状况、习惯和活动规律，因此被视为敏感个人信息。
+_避免使用_：普通账本数据、统计分析数据
 
-**Third-Party Service List**:
-A structured user-facing list of SDKs, cloud services, SMS providers, AI providers, analytics, and other third parties that may process user information.
-_Avoid_: Dependency list, vendor list
+**第三方服务清单 (Third-Party Service List)**：
+面向用户的结构化清单，列出可能处理用户信息 SDK、云服务、短信服务商、AI 提供商、统计分析及其他第三方。
+_避免使用_：依赖库清单、供应商清单
 
-**Capture Accuracy**:
-How reliably the app converts real WeChat and Alipay payment activity into pending entries.
-_Avoid_: Parser accuracy, notification accuracy
+**捕获准确率 (Capture Accuracy)**：
+应用将真实微信和支付宝支付活动可靠转换为待确认条目的精准程度。
+_避免使用_：解析器准确率、通知准确率
 
-**Deduplication Accuracy**:
-How reliably the app merges duplicate candidates without merging unrelated transactions.
-_Avoid_: Match score, duplicate rate
+**去重准确率 (Deduplication Accuracy)**：
+应用在不误合并无关交易的前提下，可靠合并重复候选对象的精准程度。
+_避免使用_：匹配得分、重复率
 
-**Review Efficiency**:
-How quickly and comfortably users can resolve pending entries into ledger entries.
-_Avoid_: Confirmation speed, task completion
+**确认/审核效率 (Review Efficiency)**：
+用户将待确认条目快速舒适地处理为账本条目的效率。
+_避免使用_：确认速度、任务完成度
 
-**Capture Reason**:
-The user-visible explanation for why a pending entry was created or matched, such as notification capture, bill sync, or duplicate merge.
-_Avoid_: Debug reason, parser trace
+**捕获原因 (Capture Reason)**：
+向用户展示的创建或匹配待确认条目的原因说明，如通知捕获、账单同步或重复合并。
+_避免使用_：调试原因、解析器追踪
 
-**Confidence State**:
-The user-visible trust level of a captured or suggested value, such as high confidence, needs review, or duplicate suspect.
-_Avoid_: Score, probability
+**置信度状态 (Confidence State)**：
+已捕获或建议值的用户可见信任等级，如高置信度、需审核或疑似重复。
+_避免使用_：得分、概率
 
-**Permission Retention**:
-How consistently users keep notification and accessibility permissions enabled after onboarding.
-_Avoid_: Permission conversion, activation rate
+**权限留存 (Permission Retention)**：
+用户在引导完成后持续保持通知与无障碍权限开启的稳定程度。
+_避免使用_：权限转化率、激活率
 
-**Progressive Onboarding**:
-An onboarding flow that introduces account setup, permissions, and optional features in stages as users reach the relevant workflow.
-_Avoid_: Setup wizard, first-run checklist
+**渐进式引导 (Progressive Onboarding)**：
+一种分阶段引导流程，在用户到达相关工作流时，再逐步介绍账号设置、权限及可选功能。
+_Avoid_: 设置向导、首次运行清单
 
-**Playful Copy**:
-Cute, character-led product language used to make bookkeeping feel lighter and friendlier.
-_Avoid_: Formal copy, system message
+**趣味文案 (Playful Copy)**：
+可爱、IP 角色主导的产品语言，使记账体验更加轻松友好。
+_避免使用_：正式文案、系统消息
 
-**Companion Character**:
-A fixed in-app character that appears across onboarding, review, reports, permissions, and confirmation flows.
-_Avoid_: Mascot, decoration
+**陪伴角色 (Companion Character)**：
+固定在应用内的 IP 角色，贯穿引导、待确认队列、报表、权限及确认流程。
+_避免使用_：吉祥物、装饰图案
 
-**Animal Companion**:
-A cute animal-style companion character used as the app's recurring guide and brand personality.
-_Avoid_: Abstract assistant, human assistant
+**动物陪伴角色 (Animal Companion)**：
+可爱的动物风格陪伴角色，作为应用的常驻引导者和品牌形象。
+_避免使用_：抽象助手、人类助手
 
-**Cat Companion**:
-The app's recurring animal companion, using a cat-like personality and visual direction.
-_Avoid_: Generic animal, pet theme
+**猫咪陪伴角色 (Cat Companion)**：
+应用常驻的动物陪伴角色，采用猫咪性格与视觉方向。
+_避免使用_：通用动物、宠物主题
 
-**Auto Bookkeeping**:
-A profile-area entry for enabling and maintaining automatic capture. It contains notification access, accessibility access, non-blocking background-reliability guidance, and continuous-monitoring health. Bookkeeping-result notifications are requested when needed after enabling rather than shown as a separate setting; user-started bill import remains on the Review Queue.
-_Avoid_: Permission center, permission tab
+**自动记账 (Auto Bookkeeping)**：
+个人中心区域用于开启和维护自动捕获的入口。包含通知权限、无障碍权限、非阻断性后台稳定性引导及连续监控健康状态。记账结果通知在开启后按需申请，不作为独立设置项展示；用户发起的账单导入依然留在待确认队列中。
+_避免使用_：权限中心、权限 Tab
 
-**Permission Center**:
-A compact section within Auto Bookkeeping that shows notification access, accessibility access, and non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
-_Avoid_: Profile-area entry, permission tab
+**权限中心 (Permission Center)**：
+“自动记账”页面内部的紧凑区域，展示通知权限、无障碍权限以及后台运行、自启动、电池优化、省电模式引导。
+_避免使用_：个人中心入口、权限 Tab
 
-**Permission Health**:
-The user-visible readiness state of permissions and device settings that affect capture, sync, AI categorization, or monitoring.
-_Avoid_: Permission granted, setup status
+**权限健康度 (Permission Health)**：
+影响捕获、同步、AI 分类或监控的权限与设备设置的用户可见就绪状态。
+_避免使用_：权限已授予、设置状态
 
-**CSV Export**:
-A plain-text spreadsheet-oriented export of the current ledger book for user inspection and external analysis.
-_Avoid_: Backup, sync
+**CSV 导出 (CSV Export)**：
+当前账本的纯文本表格化导出文件，供用户查看和外部分析。
+_避免使用_：备份、同步
 
-**Categorization Rule**:
-A user-visible rule that assigns a category when a transaction matches known merchant, title, source, amount, or transaction-kind patterns.
-_Avoid_: Hidden heuristic, classifier
+**分类规则 (Categorization Rule)**：
+用户可见的规则，当交易匹配已知的商家、标题、来源、金额或交易类型模式时为其分配分类。
+_避免使用_：隐藏启发式规则、分类器
 
-**AI Categorization**:
-A category suggestion produced by an AI model when rules are absent, weak, or conflicting.
-_Avoid_: Auto bookkeeping, smart ledger
+**AI 分类 (AI Categorization)**：
+当规则缺失、微弱或冲突时，由 AI 模型产生的分类建议。
+_避免使用_：自动记账、智能账本
 
-**AI Categorization Consent**:
-The user's explicit opt-in that allows selected transaction fields to be used for cloud-based AI categorization.
-_Avoid_: AI setting, smart mode
+**AI 分类同意 (AI Categorization Consent)**：
+用户的明确授权同意，允许将选定的交易字段用于云端 AI 分类。
+_避免使用_：AI 设置、智能模式
 
-**Enhanced AI Context**:
-Additional transaction context that the user may choose to share for better AI categorization accuracy beyond the default minimal fields.
-_Avoid_: Full data upload, accuracy mode
+**增强 AI 上下文 (Enhanced AI Context)**：
+用户可选择额外共享的交易上下文，以在默认最小化字段之外提高 AI 分类的准确率。
+_避免使用_：全量数据上传、精准模式
 
-Enhanced AI Context can be enabled only after AI Categorization Consent. Turning off AI Categorization revokes Enhanced AI Context; enabling AI again starts with the default minimal fields.
+“增强 AI 上下文”仅在开启“AI 分类同意”后方可启用。关闭 AI 分类会自动撤销增强 AI 上下文；重新开启 AI 将从默认最小化字段开始。
 
-**AI Categorization Log**:
-A backend-retained record of AI categorization requests and outcomes used to improve categorization quality.
-_Avoid_: Cloud ledger, synced transaction
+**AI 分类日志 (AI Categorization Log)**：
+由后端保留的 AI 分类请求与结果记录，用于改进分类质量。
+_避免使用_：云端账本、同步交易
 
-**Bill Sync**:
-A user-started import flow that reads payment-source bill pages to capture missed or historical transactions.
-_Avoid_: Crawl, scrape, scan
+**账单同步 (Bill Sync)**：
+由用户发起的手动导入流程，通过读取支付来源账单页面来捕获漏记或历史交易。
+_避免使用_：抓取、爬虫、扫描
 
-**Sync Step**:
-A user-visible stage in bill sync, such as opening the payment source, reading bills, parsing, deduplicating, or creating pending entries.
-_Avoid_: Job state, log line
+**同步步骤 (Sync Step)**：
+账单同步中用户可见的阶段，如打开支付来源、读取账单、解析、去重或创建待确认条目。
+_避免使用_：任务状态、日志行
 
-**Continuous Monitoring**:
-An optional advanced mode that keeps observing payment-related activity after the user enables the required permissions.
-_Avoid_: Background scraping, auto crawl
+**连续监控 (Continuous Monitoring)**：
+一种可选的高级模式，在用户开启所需权限后，持续观察支付相关活动。
+_避免使用_：后台后台抓取、自动爬虫

@@ -1,3 +1,3 @@
-# Track funding accounts without balance reconciliation
+# 追踪资金账户但不进行余额对账
 
-The app will record the source-reported payment method or funding account for transactions, but will not attempt balance reconciliation in the first product scope. Payment-source bills can expose useful funding-account labels, but they are not reliable enough to make the app responsible for complete asset balances.
+应用支持记录交易使用的资金账户（如微信零钱、支付宝余额、某银行卡、花呗），但定位为辅助分类与筛选维度，不提供复杂的账户余额对账或资产复式记账功能。

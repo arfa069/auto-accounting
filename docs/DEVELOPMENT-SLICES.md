@@ -1,283 +1,283 @@
-# Development Slices
-
-Each slice should be independently testable and leave the app in a coherent state.
-
-## Slice 0: Repository And Build Skeleton
-
-Outcome:
-- Android native project skeleton.
-- Backend Ktor skeleton.
-- Shared API/documentation conventions.
-
-Includes:
-- Kotlin/Compose/Room Android setup.
-- Ktor/PostgreSQL backend setup.
-- Basic CI commands documented.
-- Placeholder app shell with four bottom tabs.
-
-Verification:
-- Android debug build compiles.
-- Backend test task runs.
-- Empty app launches.
-
-## Slice 1: Local Ledger Foundation
-
-Outcome:
-- Local database can store named ledger books, their entries, pending entries, categories, shared funding accounts, and ignored entries.
-
-Includes:
-- Room schema.
-- Persisted current ledger-book selection and single-ledger-to-default-ledger migration.
-- Safe ledger-book creation, selection, and empty-book deletion.
-- Shared funding-account create, update, reference-aware delete, and exact-match reuse.
-- DAO tests.
-- Seed categories.
-- Basic repository APIs.
-
-Verification:
-- Unit tests for insert/update/query.
-- Migration tests preserve active and soft-deleted ledger entries and assign them to the default ledger book.
-- Deletion tests cover final-book, non-empty-book, and referenced-funding-account blocking.
-
-## Slice 2: Review Queue UI Without Real Capture
-
-Outcome:
-- User can review sample pending entries and confirm or ignore them.
-
-Includes:
-- Review tab summary.
-- Needs careful review / quick confirm grouping.
-- Swipe confirm/ignore with undo Snackbar.
-- Pending detail edit form.
-- Ignored list recovery.
-
-Verification:
-- Compose UI tests for confirm, ignore, undo, detail edit.
-- Pending-to-ledger transition test.
-
-## Slice 3: Ledger And Reports From Local Data
-
-Outcome:
-- Confirmed entries appear in the selected ledger book and its reports.
-
-Includes:
-- Ledger-book and funding-account management pages.
-- Ledger monthly summary.
-- Ledger search and filter panel.
-- Current-ledger recently deleted list and CSV scope.
-- Report overview.
-- Illustrated donut chart placeholder plus category ranking.
-- 6-month category trend.
-- Debug-only ledger provenance metadata with no Release composition.
-
-Verification:
-- Query tests for per-ledger monthly totals, category aggregates, recently deleted entries, and CSV rows.
-- UI smoke tests for ledger switching, funding-account management, reports, and Debug/Release metadata visibility.
-
-## Slice 4: Categorization Rules
-
-Outcome:
-- Local rules suggest categories and can be managed.
-
-Includes:
-- Rule model.
-- Rule matching on merchant, title keyword, source, transaction kind.
-- Rule list and simple rule form.
-- Ask before saving category correction as a rule.
-
-Verification:
-- Rule matching tests.
-- Rule priority and conflict tests.
-- UI tests for creating and editing rules.
-
-## Slice 5: Account UI And Local Mode
-
-Outcome:
-- Users can enter local mode or complete real registration, login, recovery, restart verification, logout, and account-deletion flows against the configured backend.
-
-Includes:
-- Login/register first screen.
-- Local mode explanation.
-- Agreement checkbox.
-- Registration flow.
-- Login flow.
-- Forgot password flow.
-- Form error copy.
-- SMS countdown UI.
-- Build-time backend URL and Debug-only cleartext boundary.
-- Keystore-encrypted Session persistence with offline-unverified and invalid-Session recovery states.
-
-Verification:
-- UI and repository tests for field errors, agreement blocking, local mode entry, success-only countdown, stable network/business errors, persistence failure revocation, restart recovery, and local-ledger isolation.
-
-## Slice 6: Backend Account And SMS
-
-Outcome:
-- Real backend supports account registration, login, recovery, SMS limits, and device/IP rate limits.
-
-Includes:
-- User table.
-- Password hashing.
-- SMS code issue/verify.
-- Rate-limit logic.
-- Login lockout.
-- Token handling.
-- Bearer-only protected identity, current-Session logout, HMAC verification codes, hashed Session storage, and legacy temporary-credential invalidation.
-
-Verification:
-- Backend unit/integration tests for SMS limits and login lockout.
-- Contract tests for app API responses.
-
-## Slice 7: Notification Capture
-
-Outcome:
-- App captures WeChat/Alipay payment notifications into pending entries.
-
-Includes:
-- Notification listener service.
-- Permission center notification item.
-- Parser interface.
-- Initial parser patterns.
-- Capture event evidence.
-
-Verification:
-- Parser unit tests with sample notification text.
-- Manual Android test with notification samples.
-- Review queue receives pending entries.
-
-## Slice 8: Bill Sync
-
-Outcome:
-- User-started bill sync can read supported bill pages and create pending entries.
-
-Includes:
-- Accessibility service.
-- Stepwise sync progress UI.
-- WeChat/Alipay source selection.
-- Bill page parser.
-- Deduplication against notification entries.
-
-Verification:
-- Parser tests with captured bill text fixtures.
-- Manual tests on target Android devices.
-- Sync failure states are visible and recoverable.
-
-## Slice 9: Deduplication
-
-Outcome:
-- High-confidence duplicates are auto-merged and low-confidence duplicates enter review.
-
-Includes:
-- Dedupe scoring.
-- Merge evidence.
-- Duplicate suspect confidence state.
-- Review detail evidence display.
-
-Verification:
-- Unit tests for notification/bill duplicate pairs.
-- Tests for false-positive avoidance.
-
-## Slice 10: Cloud AI Categorization
-
-Outcome:
-- Opt-in users can request AI category suggestions through backend proxy.
-
-Includes:
-- AI consent UI.
-- Minimal payload.
-- Enhanced context opt-in.
-- Backend AI proxy.
-- AI categorization logs for beta.
-- Clear/disable controls where feasible.
-
-Verification:
-- Backend tests for payload filtering.
-- App tests for consent gating.
-- No AI request when not logged in or not consented.
-
-## Slice 11: Backup, Export, And Local Deletion
-
-Outcome:
-- Users can export the current ledger book as CSV, export/import all local ledger books in an encrypted backup, and delete local data with safeguards.
-
-Includes:
-- Current-ledger CSV export with the ledger-book name in the file name.
-- Encrypted backup format with all ledger books, entry ownership, shared data, and current selection.
-- Legacy backup import into the default ledger book.
-- Restore flow.
-- Local data deletion with backup reminder, typed phrase, and recreation of one selected default ledger book.
-
-Verification:
-- All-ledger backup round-trip and legacy-version import tests.
-- Current-ledger CSV schema and isolation tests.
-- Deletion confirmation test.
-
-## Slice 12: Account Deletion
-
-Outcome:
-- Users can request account deletion with 7-day cooling-off and cancel it.
-
-Includes:
-- Deletion request backend state.
-- Deletion pending UI.
-- Cancel deletion.
-- Pause cloud AI/config writes.
-- Final deletion job.
-- Server-owned pending status/deadline and cleanup-before-account deletion retry semantics.
-
-Verification:
-- Backend state machine, cleanup failure retention/retry, route anti-impersonation, and Android confirmation/exit-failure tests.
-- App UI tests for pending state and cancel flow.
-
-## Slice 13: Compliance Materials
-
-Outcome:
-- Internal beta includes store-ready compliance material drafts.
-
-Includes:
-- Privacy policy page.
-- Personal information collection list.
-- Third-party service list.
-- Permission explanation page.
-- Store review notes.
-
-Verification:
-- In-app compliance pages are reachable before and after login.
-- Permission copy matches product decisions.
-- No unlisted SDK or network service exists in build.
-
-## Slice 14: Continuous Monitoring Advanced Mode
-
-Outcome:
-- Advanced users can enable continuous monitoring after trying bill sync.
-
-Includes:
-- Advanced settings entry.
-- Post-bill-sync prompt.
-- Explicit explanation.
-- Start/stop controls.
-- Permission center state.
-
-Verification:
-- Continuous monitoring is not shown in first-run main onboarding.
-- User can disable it at any time.
-- Monitoring only observes payment-related flows.
-
-## Slice 15: Internal Beta Hardening
-
-Outcome:
-- App is ready for controlled beta.
-
-Includes:
-- Crash/log integration.
-- Device matrix testing.
-- Permission retention measurement.
-- Capture accuracy measurement.
-- Deduplication accuracy measurement.
-- Review efficiency measurement.
-- Store compliance package review.
-
-Verification:
-- Beta checklist complete.
-- Known risks documented.
-- No secret keys in client or repository.
+# 开发切片规划 (Development Slices)
+
+每个切片应该可独立测试，并使应用保持在功能自恰的状态。
+
+## Slice 0: 仓库与构建骨架 (Repository And Build Skeleton)
+
+预期成果：
+- Android 原生项目骨架。
+- 后端 Ktor 骨架。
+- 共享 API 及文档规范。
+
+包含内容：
+- Kotlin / Compose / Room 的 Android 环境搭建。
+- Ktor / PostgreSQL 的后端环境搭建。
+- 基础 CI 命令文档化。
+- 包含四个底部 Tab 的占位应用 Shell。
+
+验证方式：
+- Android Debug 构建编译通过。
+- 后端测试任务成功运行。
+- 空应用顺利启动。
+
+## Slice 1: 本地账本基础 (Local Ledger Foundation)
+
+预期成果：
+- 本地数据库可存储具名账本、账本条目、待确认条目、分类、共享资金账户及已忽略条目。
+
+包含内容：
+- Room 数据库 Schema 设计。
+- 当前选中账本的持久化存储以及单账本升级到默认账本的数据库迁移。
+- 安全的账本创建、切换与空账本删除。
+- 共享资金账户的创建、更新、具备引用感知能力删除及精准匹配复用。
+- DAO 单元测试。
+- 种子分类数据预置。
+- 基础仓储 API。
+
+验证方式：
+- 插入/更新/查询的单元测试通过。
+- 迁移测试验证保留活动和软删除的账本条目，并将它们分配至默认账本。
+- 删除测试覆盖最后一个账本、非空账本及存在引用的资金账户的删除阻断。
+
+## Slice 2: 无真实捕获的待确认队列 UI (Review Queue UI Without Real Capture)
+
+预期成果：
+- 用户可以审核示例待确认条目，并进行确认入账或忽略操作。
+
+包含内容：
+- 待确认 Tab 的汇总卡片。
+- 需谨慎审核与快速确认的分组。
+- 带撤销 Snackbar 的滑动确认/忽略操作。
+- 待确认详情编辑表单。
+- 已忽略列表的恢复能力。
+
+验证方式：
+- 针对确认、忽略、撤销、详情编辑的 Compose UI 测试。
+- 待确认转换为账本条目的转换测试通过。
+
+## Slice 3: 基于本地数据的账本与报表 (Ledger And Reports From Local Data)
+
+预期成果：
+- 已确认的条目呈现在选中的账本及其报表中。
+
+包含内容：
+- 账本与资金账户管理页面。
+- 账本月度汇总。
+- 账本搜索与筛选面板。
+- 当前账本最近删除列表及 CSV 导出作用域。
+- 报表概览。
+- 插画风手绘环形图占位符及分类排行榜。
+- 6 个月分类趋势图。
+- 仅在 Debug 模式透出、Release 模式无组装的调试溯源元数据。
+
+验证方式：
+- 按账本月度总额、分类聚合、最近删除条目及 CSV 行的查询测试。
+- 账本切换、资金账户管理、报表及 Debug/Release 元数据可见性的 UI 冒烟测试。
+
+## Slice 4: 分类规则 (Categorization Rules)
+
+预期成果：
+- 本地规则能够建议分类并支持用户管理。
+
+包含内容：
+- 规则模型。
+- 基于商家、标题关键字、来源、交易类型的规则匹配。
+- 规则列表与简易规则表单。
+- 分类修正存规则时的确认询问。
+
+验证方式：
+- 规则匹配单元测试。
+- 规则优先级与冲突测试。
+- 创建与编辑规则的 UI 测试。
+
+## Slice 5: 账号 UI 与本地模式 (Account UI And Local Mode)
+
+预期成果：
+- 用户可以进入本地模式，或基于配置的后端完成真实注册、登录、找回密码、重启校验、退出登录及账号注销流程。
+
+包含内容：
+- 登录/注册首屏。
+- 本地模式说明。
+- 协议勾选框。
+- 注册流程。
+- 登录流程。
+- 忘记密码流程。
+- 表单错误文案。
+- 短信倒计时 UI。
+- 构建期后端 URL 与仅 Debug 允许明文流量的边界。
+- Keystore 加密的 Session 持久化，支持离线未校验及无效 Session 恢复状态。
+
+验证方式：
+- 针对字段错误、协议阻断、进入本地模式、仅成功倒计时、稳定网络/业务错误、持久化失效撤销、重启恢复及本地账本隔离的 UI 和仓储测试。
+
+## Slice 6: 后端账号与短信服务 (Backend Account And SMS)
+
+预期成果：
+- 真实后端支持账号注册、登录、找回密码、短信限流及设备/IP 频率限制。
+
+包含内容：
+- 用户表设计。
+- 密码哈希存储。
+- 短信验证码发送/校验。
+- 限流逻辑。
+- 登录锁定。
+- Token 处理机制。
+- 仅 Bearer 方式的受保护身份、当前 Session 退出登录、HMAC 验证码、哈希 Session 存储及旧临时凭据废弃。
+
+验证方式：
+- 针对短信限制和登录锁定的后端单元/集成测试。
+- 针对应用 API 响应的契约测试。
+
+## Slice 7: 通知捕获 (Notification Capture)
+
+预期成果：
+- 应用将微信/支付宝的支付通知捕获为待确认条目。
+
+包含内容：
+- 通知监听服务。
+- 权限中心通知配置项。
+- 解析器接口。
+- 初始解析器匹配模式。
+- 捕获事件证据。
+
+验证方式：
+- 使用示例通知文本的解析器单元测试。
+- 使用通知示例的手动 Android 真机测试。
+- 待确认队列成功接收待确认条目。
+
+## Slice 8: 账单同步 (Bill Sync)
+
+预期成果：
+- 用户发起的账单同步能够读取受支持的账单页面并创建待确认条目。
+
+包含内容：
+- 无障碍服务。
+- 分步同步进度 UI。
+- 微信/支付宝来源选择。
+- 账单页面解析器。
+- 针对通知条目的去重逻辑。
+
+验证方式：
+- 使用捕获的账单文本 Fixtures 的解析器测试。
+- 在目标 Android 设备上的手动测试。
+- 同步失败状态清晰可见且可恢复。
+
+## Slice 9: 去重匹配 (Deduplication)
+
+预期成果：
+- 高置信度重复项自动合并，低置信度重复项进入审核。
+
+包含内容：
+- 去重评分机制。
+- 合并证据保留。
+- 疑似重复置信度状态。
+- 审核详情页中的证据展示。
+
+验证方式：
+- 针对“通知/账单”重复对的单元测试。
+- 避免误报（False Positive）的测试。
+
+## Slice 10: 云端 AI 分类 (Cloud AI Categorization)
+
+预期成果：
+- 授权开启的用户可通过后端代理请求 AI 分类建议。
+
+包含内容：
+- AI 同意授权 UI。
+- 最小化 Payload 传输。
+- 增强上下文授权勾选。
+- 后端 AI 代理服务。
+- 用于内测的 AI 分类日志。
+- 可行的清除/关闭控制。
+
+验证方式：
+- 针对 Payload 过滤的后端测试。
+- 针对同意门禁的应用端测试。
+- 未登录或未同意时绝对不发起 AI 请求。
+
+## Slice 11: 备份、导出与本机数据删除 (Backup, Export, And Local Deletion)
+
+预期成果：
+- 用户可以将当前账本导出为 CSV，将所有本地账本加密导出/导入，并在安全保障下删除本机数据。
+
+包含内容：
+- 文件名中带有账本名称的当前账本 CSV 导出。
+- 包含所有账本、条目归属、共享数据与当前选择的加密备份格式。
+- 导入旧版本备份到默认账本。
+- 恢复流程。
+- 带备份提醒、确认文本输入及重新创建一个选定默认账本的本机数据删除。
+
+验证方式：
+- 所有账本备份 Round-trip 与旧版本导入测试。
+- 当前账本 CSV Schema 与隔离性测试。
+- 删除确认测试。
+
+## Slice 12: 账号注销 (Account Deletion)
+
+预期成果：
+- 用户可以申请账号注销并享受 7 天冷静期，且可在冷静期内取消注销。
+
+包含内容：
+- 后端注销申请状态。
+- 注销等待中 UI。
+- 取消注销功能。
+- 暂停云端 AI/配置写入。
+- 最终注销清理任务。
+- 服务端掌握的挂起状态/截止时间，以及账号注销前的清理重试机制。
+
+验证方式：
+- 后端状态机、清理失败保留/重试、路由防冒充及 Android 端确认/退出失败测试。
+- 针对等待状态和取消流程的应用 UI 测试。
+
+## Slice 13: 合规材料包 (Compliance Materials)
+
+预期成果：
+- 内测版本包含应用商店就绪的合规材料草案。
+
+包含内容：
+- 隐私政策页面。
+- 个人信息收集清单。
+- 第三方服务清单。
+- 权限使用说明页面。
+- 应用商店审核说明。
+
+验证方式：
+- 应用内合规页面在登录前后均可访问。
+- 权限文书与产品决策保持一致。
+- 构建中不存在未列出的 SDK 或网络服务。
+
+## Slice 14: 连续监控高级模式 (Continuous Monitoring Advanced Mode)
+
+预期成果：
+- 高级用户可在体验账单同步后开启连续监控模式。
+
+包含内容：
+- 高级设置入口。
+- 账单同步后提示。
+- 明确的说明。
+- 启动/停止控制。
+- 权限中心状态展示。
+
+验证方式：
+- 首次运行主引导中不展示连续监控。
+- 用户可以随时关闭该功能。
+- 监控仅观察支付相关流程。
+
+## Slice 15: 内测巩固与加固 (Internal Beta Hardening)
+
+预期成果：
+- 应用准备好面向受控用户进行内测。
+
+包含内容：
+- 崩溃/日志集成。
+- 设备矩阵测试。
+- 权限留存率测量。
+- 捕获准确率测量。
+- 去重准确率测量。
+- 确认/审核效率测量。
+- 商店合规包复核。
+
+验证方式：
+- 内测检查清单完成。
+- 已知风险文档化。
+- 客户端或代码仓库中无任何密钥口令泄露。

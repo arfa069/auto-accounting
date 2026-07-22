@@ -1,22 +1,17 @@
-# Persist Categorization Rules And AI Consent Settings
+# Issue 004: 持久化分类规则与 AI 同意/设置
 
-## What to build
+## 待构建内容
 
-Make category corrections, saved categorization rules, AI categorization consent, enhanced AI context preference, and continuous-monitoring setting durable so future captures and review decisions use the same user choices after restart.
+持久化分类修正、已保存的分类规则、AI 分类授权同意、增强 AI 上下文偏好及连续监控设置，确保应用重启后后续捕获与审核决策继续使用相同的用户选择。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Saving a category correction as a categorization rule persists it and applies it to later matching pending entries.
-- [x] Rule list, rule form, priority/matching behavior, and deletion/editing survive restart.
-- [x] AI categorization consent and enhanced AI context preference persist locally and remain reflected in the profile/permission center UI.
-- [x] Continuous monitoring enabled/disabled state persists but does not start monitoring unless the service boundary permits it.
-- [x] Tests cover rule persistence, rule matching after restart, and settings persistence.
+- [x] 将分类修正保存为分类规则能够持久化该规则，并将其应用于后续匹配的待确认条目。
+- [x] 规则列表、规则表单、优先级/匹配行为及删除/编辑在重启后完好保留。
+- [x] AI 分类授权同意与增强 AI 上下文偏好在本地持久化，并在个人中心/权限中心 UI 中实时体现。
+- [x] 连续监控的开启/关闭状态持久化保存，但除非服务边界允许，否则不会盲目启动监控。
+- [x] 测试覆盖规则持久化、重启后规则匹配及设置持久化。
 
-## Blocked by
+## 依赖项
 
-- Issue 1: Baseline Audit And Phase 2 Risk Map
-
-## Verification
-
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
+- Issue 1: 基线审计与 Phase 2 风险映射表

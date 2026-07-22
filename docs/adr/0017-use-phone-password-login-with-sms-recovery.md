@@ -1,3 +1,3 @@
-# Use phone password login with SMS recovery
+# 采用手机号密码登录与短信找回机制
 
-The account system will use phone number and password as the primary login method, with SMS verification for account recovery. This adds password storage and recovery responsibilities compared with passwordless SMS login, but gives users a stable credential model while keeping phone numbers as the main domestic account identity.
+账号认证采用手机号 + 密码方式，配有严格的密码强度要求；找回密码及敏感身份验证通过手机短信验证码完成，兼顾用户使用习惯与安全性。

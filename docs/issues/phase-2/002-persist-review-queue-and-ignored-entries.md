@@ -1,24 +1,17 @@
-# Persist Review Queue And Ignored Entries
+# Issue 002: 持久化待确认队列与已忽略条目
 
-## What to build
+## 待构建内容
 
-Make captured pending entries, review queue state, ignored entries, undo-sensitive transitions, and recovery behavior durable across app restart while preserving the rule that captured transactions never enter the ledger without confirmation.
+使已捕获的待确认条目、待确认队列状态、已忽略条目、带撤销敏感度的转换以及恢复行为在应用重启后完好保留，同时坚守“已捕获交易在未确认前绝不进入账本”的原则。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] A pending entry created from an app capture path remains visible in the review queue after Activity recreation and process restart.
-- [x] Confirm, ignore, undo, and ignored-entry recovery operate through the repository/persistence layer rather than only Compose state.
-- [x] Ignored entries retain recovery metadata and do not appear as ledger entries.
-- [x] Review queue grouping, confidence state, capture reason, duplicate suspect state, and evidence display survive restart.
-- [x] Repository and UI/integration tests cover pending-to-ignored and ignored-to-review recovery.
+- [x] 从应用捕获路径创建的待确认条目在 Activity 重建和进程重启后在待确认队列中依然可见。
+- [x] 确认、忽略、撤销及已忽略条目恢复通过仓储/持久化层运行，而非仅保存在 Compose 状态中。
+- [x] 已忽略条目保留恢复元数据，且不作为账本条目出现。
+- [x] 待确认队列的分组、置信度状态、捕获原因、疑似重复状态及证据展示在重启后依然保留。
+- [x] 仓储与 UI/集成测试覆盖“待确认 -> 已忽略”与“已忽略 -> 待确认恢复”。
 
-## Verification record
+## 依赖项
 
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests com.autoaccounting.feature.review.ReviewQueuePersistenceTest --tests com.autoaccounting.data.local.LocalLedgerRepositoryTest` - passed, including 1-to-2 Room migration validation.
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` - passed.
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug` - passed.
-- Manual device process-kill/restart smoke inspection is still pending; automated coverage verifies Room reopen/migration behavior plus the repository-backed review-queue persistence seam.
-
-## Blocked by
-
-- Issue 1: Baseline Audit And Phase 2 Risk Map
+- Issue 1: 基线审计与 Phase 2 风险映射表

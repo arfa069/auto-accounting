@@ -1,3 +1,3 @@
-# Support CSV export and encrypted backup
+# 支持 CSV 导出与加密备份
 
-The app will provide CSV export for spreadsheet analysis and encrypted backup export/import for device migration and recovery. CSV is intentionally not treated as a full backup because ledger data is sensitive and complete portable app state should leave the app only in encrypted form.
+应用支持将当前账本导出为明文 CSV 文件供用户自定义分析，同时支持将所有账本及配置打包导出为经过口令加密的二进制备份文件（`AUTO_ACCOUNTING_BACKUP`），并支持在安全校验后导入恢复。

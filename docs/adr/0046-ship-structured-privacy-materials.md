@@ -1,3 +1,3 @@
-# Ship structured privacy materials
+# 交付结构化的隐私材料包
 
-The store compliance package will include a full privacy policy, a personal information collection list, a third-party service list, and a permission explanation page. This makes sensitive behaviors such as notification listening, accessibility-based bill sync, account handling, cloud AI categorization, and AI logging easier for users and app-store reviewers to inspect than a single long legal document.
+在应用“合规与隐私”页面中，将隐私政策、个人信息收集清单、第三方服务清单及权限说明以结构化的交互页面独立展示，而非仅提供静态文本。

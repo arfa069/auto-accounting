@@ -1,3 +1,3 @@
-# Separate account deletion from local ledger deletion
+# 账号注销与本机数据删除相互隔离
 
-Account deletion will remove the cloud account, registered devices, cloud configuration, and AI categorization logs, while local ledger deletion requires separate confirmation on the device. This matches the local-first data model and prevents a cloud-account action from silently destroying the user's on-device bookkeeping history.
+明确区分“云端账号注销”与“本机数据删除”：账号注销仅清理云端身份及配置，保留本地账本；本机数据删除仅清理设备上的账本与本地配置。两者提供独立的受保护操作入口。

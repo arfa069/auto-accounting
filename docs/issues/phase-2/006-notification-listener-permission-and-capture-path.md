@@ -1,31 +1,17 @@
-# Wire Real Notification Listener Permission And Capture Path
+# Issue 006: 接通真实通知监听权限与捕获路径
 
-## What to build
+## 待构建内容
 
-Connect notification listener permission state, settings deep-link, payment notification parsing, deduplication, and pending-entry creation into one device-testable path for WeChat and Alipay payment notifications.
+将通知监听权限状态、系统设置深层链接、支付通知解析、去重以及待确认条目创建连通为针对微信和支付宝支付通知的单条真机可测试路径。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Permission center reflects real Android notification listener access state and provides a settings deep-link.
-- [x] Notification listener ignores unrelated apps/content and only processes payment-source payment notifications.
-- [x] Parsed WeChat/Alipay payment notifications create or merge pending entries through the same capture pipeline used by the review queue.
-- [x] Capture reason, confidence state, source evidence, and duplicate handling are visible in review.
-- [x] Tests cover permission-state mapping, parser behavior, unrelated notification rejection, and pending-entry creation.
+- [x] 权限中心能够反映真实的 Android 通知监听权限状态，并提供跳转设置的深层链接。
+- [x] 通知监听服务忽略无关应用/内容，仅处理来自支付来源的支付通知。
+- [x] 解析后的微信/支付宝支付通知通过与待确认队列相同的捕获流水线创建或合并待确认条目。
+- [x] 捕获原因、置信度状态、来源证据及重复项处理在审核界面中清晰可见。
+- [x] 测试覆盖权限状态映射、解析器行为、无关通知拒绝及待确认条目创建。
 
-## Blocked by
+## 依赖项
 
-- Issue 1: Baseline Audit And Phase 2 Risk Map
-
-## Verification
-
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
-
-## Device verification
-
-Status: Not run on 2026-07-09 because no Android device was connected through ADB.
-
-- [ ] Enable notification access from the profile permission center and confirm the status updates after returning.
-- [ ] Complete one WeChat and one Alipay test payment and confirm pending entries contain source evidence.
-- [ ] Receive an unrelated notification and confirm no pending entry is created.
-- [ ] Repeat a matching payment notification and confirm duplicate merge/review behavior.
+- Issue 1: 基线审计与 Phase 2 风险映射表

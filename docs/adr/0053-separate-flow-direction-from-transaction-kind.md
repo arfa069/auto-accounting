@@ -1,3 +1,3 @@
-# Separate flow direction from transaction kind
+# 区分资金流向与交易类型
 
-Ledger entries will store a positive amount and an independent flow direction of inflow, outflow, or neutral rather than deriving financial direction from transaction kind. This prevents transfers, red packets, repayments, and similar transaction kinds from being forced into incorrect income or expense totals while keeping their business meaning available for filtering and analysis.
+严格区分“资金流向 (Flow Direction)”与“交易类型 (Transaction Kind)”：资金流向决定交易是收入（流入）、支出（流出）还是中性（不计入收支总额）；交易类型决定交易的业务性质（如消费、退款、转账、红包等）。交易金额始终保持为正数。

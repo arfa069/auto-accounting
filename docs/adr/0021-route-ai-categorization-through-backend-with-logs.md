@@ -1,3 +1,3 @@
-# Route AI categorization through backend with logs
+# AI 分类经由后端代理并保留内测日志
 
-Cloud AI categorization will be called through the backend, and the backend will retain categorization request logs for product improvement. This keeps AI credentials out of the Android app and supports model-quality iteration, while creating a narrower exception to the no-cloud-ledger rule: AI logs may contain selected transaction context but are not treated as synced ledger data.
+Android 客户端绝不直接调用第三方 AI 服务商 API，所有 AI 请求统一由后端代理分发。内测期间后端保留 AI 分类日志，用于评估和优化提示词（Prompt）与分类质量。

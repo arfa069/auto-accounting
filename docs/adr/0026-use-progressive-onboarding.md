@@ -1,3 +1,3 @@
-# Use progressive onboarding
+# 采用渐进式用户引导
 
-The app will use progressive onboarding instead of asking for login, notification access, accessibility access, and AI consent all at once. This supports user trust by introducing sensitive permissions only when the related workflow becomes useful, while requiring the product to keep permission status and feature readiness visible after first launch.
+应用不在首次打开时强制用户完成所有账号注册与复杂权限申请，而是在用户到达对应功能工作流（如开启自动记账、使用云端 AI）时，再进行渐进式的引导与授权申请。

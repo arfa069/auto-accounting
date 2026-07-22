@@ -1,3 +1,3 @@
-# Use four-tab main navigation
+# 采用四 Tab 主导航架构
 
-The app will use four bottom tabs: review queue, ledger, reports, and profile. This keeps the daily bookkeeping loop prominent while leaving permissions, sync, AI settings, backup, and account management under profile instead of making configuration compete with transaction review.
+应用主界面采用标准的四 Tab 底部导航架构：待确认 (Review)、账本 (Ledger)、报表 (Reports)、我的 (Profile)。中央凸起按钮用于快速手动记账。

@@ -1,11 +1,11 @@
-# Secure and persist real account sessions
+# ADR 0056: 安全持久化真实账号 Session
 
-The Android account flow will use the Ktor backend instead of a production `FakeAccountRepository`. The backend URL is injected at build time: Debug defaults to the emulator host and may use cleartext HTTP, while Release accepts only an explicitly configured HTTPS URL. A Release build without that URL keeps local mode available and reports the account service as unavailable.
+Android 账号流程将使用真实的 Ktor 后端，而非生产环境中的 `FakeAccountRepository`。后端 URL 在构建时注入：Debug 默认使用模拟器宿主并可使用明文 HTTP，而 Release 仅接受显式配置的 HTTPS URL。没有该 URL 的 Release 构建保持本地模式可用，并报告账号服务不可用。
 
-Login, registration, recovery, SMS, session verification, current-session logout, and account-deletion operations use shared stable JSON contracts. Protected routes derive account identity only from `Authorization: Bearer`; form phone numbers and tokens never select the protected account. The backend stores SMS verification codes as keyed HMAC values and sessions as SHA-256 token hashes. The security migration clears old codes and sessions rather than retaining a plaintext compatibility path.
+登录、注册、找回密码、短信、Session 校验、当前 Session 退出登录及账号注销操作使用共享的稳定 JSON 契约。受保护的路由仅从 `Authorization: Bearer` 解析账号身份；表单手机号和 Token 绝不用于选取受保护账号。后端将短信验证码存储为带密钥的 HMAC 值，将 Session 存储为 SHA-256 Token 哈希。安全迁移会清理旧验证码和 Session，而不是保留明文兼容路径。
 
-Android stores the phone number and bearer token together under Android Keystore AES-GCM, separately from Room, ledger backup, diagnostics, and UI state restoration. A random persisted installation UUID is used for rate limits and device registration; hardware identifiers are not read.
+Android 在 Android Keystore AES-GCM 下将手机号和 Bearer Token 加密存储在一起，与 Room、账本备份、诊断和 UI 状态恢复相互隔离。随机持久化的安装 UUID 用于限流和设备注册；不读取硬件标识符。
 
-After restart, a restored session is verified in the background. A network or configuration failure keeps the user in offline-unverified mode with the local ledger available; only an explicit invalid-session response clears the encrypted session and returns to persistent local mode. Cloud writes and account-deletion operations remain paused until verification succeeds. Login state becomes active only after encrypted persistence succeeds, and logout clears local ciphertext only after the backend revokes the current session.
+重启后，恢复的 Session 在后台进行校验。网络或配置故障使用户保持在离线未校验模式，且本地账本可用；仅显式的无效 Session 响应会清除加密 Session 并返回持久化本地模式。云端写入和账号注销操作保持暂停，直到校验成功。仅在加密持久化成功后登录状态才变为活动状态，且仅在后端撤销当前 Session 后退出登录才清除本地密文。
 
-The server is the sole source of truth for account-deletion pending state and deadline. Final deletion first performs idempotent AI-log and cloud-configuration cleanup, then deletes the account, devices, and sessions. Cleanup failure retains the pending account for a later retry. Local ledger deletion remains a separate action and never clears or reallocates the account session.
+服务端是账号注销挂起状态和截止时间的唯一真实源。最终注销首先执行幂等的 AI 日志和云端配置清理，随后删除账号、设备及 Session。清理失败将保留挂起账号以便稍后重试。本地账本删除保持为单独的操作，绝对不清除或重新分配账号 Session。

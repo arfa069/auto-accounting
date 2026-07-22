@@ -1,3 +1,3 @@
-# Use native Android stack
+# 采用 Native Android 技术栈
 
-The app will use Kotlin, Jetpack Compose, and Room as its Android stack instead of Flutter or React Native. The product's hardest work is Android system integration, including notification listening, accessibility services, local sensitive-data storage, and domestic ROM behavior, so keeping the core app native reduces bridge complexity and makes permission-sensitive behavior easier to implement and review.
+Android 客户端采用现代原生技术栈构建：Kotlin 语言、Jetpack Compose 声明式 UI、Room 持久化数据库、Kotlin Coroutines/Flow 异步流，确保最佳的性能、后台服务稳定性与系统 API 兼容性。

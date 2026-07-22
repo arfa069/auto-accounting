@@ -1,23 +1,17 @@
-# Persist Ledger Reports And Local Data Deletion
+# Issue 003: 持久化账本、报表及本机数据删除
 
-## What to build
+## 待构建内容
 
-Make the confirm-to-ledger path durable end to end: a reviewed pending entry becomes a ledger entry, appears in ledger search/filter and reports after restart, and is removed by the separate local data deletion flow.
+使“确认 -> 账本”路径实现端到端持久化：已审核的待确认条目变为账本条目，重启后呈现在账本搜索/筛选与报表中，并可通过独立的本机数据删除流程进行清除。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Confirming a pending entry writes a durable ledger entry and removes the resolved pending entry from the review queue.
-- [x] Ledger monthly summary, search/filter, category ranking, and trend data are derived from persisted ledger data.
-- [x] Reports continue to show the same confirmed ledger data after app restart.
-- [x] Local data deletion clears ledger entries, pending entries, ignored entries, settings covered by this issue, and related local metadata.
-- [x] Tests cover confirm-to-ledger, report aggregate persistence, restart/recreate behavior, and local data deletion.
+- [x] 确认待确认条目会写入持久化的账本条目，并从待确认队列中移除已解决的待确认条目。
+- [x] 账本月度汇总、搜索/筛选、分类排行榜及趋势数据均衍生自持久化的账本数据。
+- [x] 应用重启后报表继续展示相同的已确认账本数据。
+- [x] 本机数据删除能够清除账本条目、待确认条目、已忽略条目、本 Issue 涵盖的设置及相关本地元数据。
+- [x] 测试覆盖“确认 -> 账本”、报表聚合持久化、重启/重建行为及本机数据删除。
 
-## Verification record
+## 依赖项
 
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests com.autoaccounting.data.local.LocalLedgerRepositoryTest --tests com.autoaccounting.feature.ledger.LedgerModelsTest` - passed.
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest` - passed.
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug` - passed.
-
-## Blocked by
-
-- Issue 1: Baseline Audit And Phase 2 Risk Map
+- Issue 1: 基线审计与 Phase 2 风险映射表

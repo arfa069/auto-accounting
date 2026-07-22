@@ -1,3 +1,3 @@
-# Prepare store compliance package during internal beta
+# 在内测期间准备商店合规与隐私材料包
 
-The internal beta will include the full store compliance package rather than deferring it until public submission. This raises first-phase scope, but forces notification access, accessibility usage, AI logging, account handling, and privacy disclosures to be tested as part of the product instead of as late-stage paperwork.
+在内测阶段即同步整理并完善隐私政策、个人信息收集清单、第三方 SDK 汇总、权限使用说明以及无障碍/通知监听的商店审核材料，为后续顺利通过应用商店审核做好准备。

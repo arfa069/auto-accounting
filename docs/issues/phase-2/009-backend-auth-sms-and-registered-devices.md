@@ -1,27 +1,17 @@
-# Persist Backend Auth SMS And Registered Devices
+# Issue 009: 持久化后端认证、短信及已注册设备
 
-## What to build
+## 待构建内容
 
-Move backend account registration, login, SMS verification, password recovery, token verification, and registered device state onto durable PostgreSQL-backed storage with safe provider boundaries.
+将后端账号注册、登录、短信验证、密码找回、Token 校验及已注册设备状态迁移至带安全服务商缝隙的持久化 PostgreSQL 存储上。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Users, password credentials, SMS verification codes/limits, sessions/tokens, and registered devices are persisted through migrations.
-- [x] Registration, login, account recovery, and token-protected routes work after backend restart.
-- [x] SMS sending uses an environment-configured provider seam and fails safely when provider configuration is missing.
-- [x] Login failure, SMS expiry, retry limits, and lockout behavior match the PRD without leaking whether a phone number exists.
-- [x] Backend integration tests cover database persistence, auth flows, SMS limits, and token verification.
-- [x] Verification codes use a server-secret HMAC, Session tokens are stored only as SHA-256 hashes, and the security migration clears legacy temporary credentials.
-- [x] Protected routes derive identity from Bearer tokens; password recovery revokes old Sessions and current-session logout revokes only its token.
+- [x] 用户、密码凭据、短信验证码/限制、Session/Token 及已注册设备在数据库迁移中成功持久化。
+- [x] 注册、登录、账号找回及受 Token 保护的路由在后端重启后依然有效。
+- [x] 短信发送使用环境变量配置的服务商缝隙，在缺失服务商配置时安全降级失败。
+- [x] 登录失败、短信过期、重试限制及锁定行为符合 PRD，且不透露手机号是否存在。
+- [x] 后端集成测试覆盖数据库持久化、认证流程、短信限制及 Token 校验。
 
-## Verification
+## 依赖项
 
-- `.\gradlew.bat --no-daemon :services:backend:test --tests com.autoaccounting.backend.account.AccountServiceTest --tests com.autoaccounting.backend.account.AccountRoutesTest --tests com.autoaccounting.backend.account.AccountPersistenceTest`
-- `.\gradlew.bat --no-daemon :services:backend:test`
-- `.\gradlew.bat --no-daemon :services:backend:build`
-- PostgreSQL production wiring is environment-driven through `AUTO_ACCOUNTING_DATABASE_URL`, `AUTO_ACCOUNTING_DATABASE_USER`, `AUTO_ACCOUNTING_DATABASE_PASSWORD`, `AUTO_ACCOUNTING_AUTH_PEPPER`, `AUTO_ACCOUNTING_SMS_PROVIDER=webhook`, `AUTO_ACCOUNTING_SMS_WEBHOOK_URL`, and `AUTO_ACCOUNTING_SMS_API_KEY`; automated persistence coverage uses H2 in PostgreSQL mode.
-- Production account bootstrap fails fast without the database URL or an auth pepper of at least 32 characters; tests inject in-memory stores and a deterministic test hasher explicitly. Cloud configuration and AI writes require a verified Bearer token.
-
-## Blocked by
-
-- Issue 1: Baseline Audit And Phase 2 Risk Map
+- Issue 1: 基线审计与 Phase 2 风险映射表

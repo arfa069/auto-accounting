@@ -1,3 +1,3 @@
-# Use cooling-off period for account deletion
+# 账号注销设置 7 天冷静期
 
-Account deletion will be submitted as a deletion request with a 7-day cooling-off period before cloud account data is removed. This reduces accidental irreversible deletion and gives users a recovery window, while requiring the product to clearly show deletion-pending status and provide a way to cancel during the cooling-off period.
+用户提交账号注销申请后，进入 7 天冷静期。冷静期内暂停云端写入，但用户可随时登录并撤销注销申请；冷静期满后后端定时清理云端数据。

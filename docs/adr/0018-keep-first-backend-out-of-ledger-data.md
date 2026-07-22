@@ -1,3 +1,3 @@
-# Keep first backend out of ledger data
+# 首版后端绝不存储或同步账本数据
 
-The first backend will handle accounts, registered devices, and non-ledger configuration, but will not store or sync ledger data. This supports the chosen full account system while preserving local-first ledger storage and delaying the privacy, conflict-resolution, and operational burden of cloud ledger data.
+首版后端架构严格恪守本地优先原则，数据库中不设计任何账本或交易数据表。后端仅处理认证凭据、已注册设备、云端配置开关及内测期间的 AI 分类代理日志。

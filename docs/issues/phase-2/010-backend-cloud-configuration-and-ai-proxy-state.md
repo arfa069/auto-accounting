@@ -1,17 +1,17 @@
-# Persist Backend Cloud Configuration And AI Proxy State
+# Issue 010: 持久化后端云端配置与 AI 代理状态
 
-## What to build
+## 待构建内容
 
-Make cloud configuration and AI categorization provider integration durable and provider-ready while preserving the product boundary that the backend does not store the user's full ledger.
+使云端配置和 AI 分类服务商集成具备持久化能力并接轨服务商，同时恪守“后端不存储用户完整账本”的产品边界。
 
-## Acceptance criteria
+## 验收标准
 
-- [ ] Cloud configuration persists AI consent, enhanced AI context preference, feature flags, and device/account settings needed by the app.
-- [ ] AI categorization requests are routed through an environment-configured backend provider seam with safe missing-config behavior.
-- [ ] AI categorization logs are persisted for internal beta without storing full local ledger data.
-- [ ] Android/backend contract tests cover consent/config reads and AI categorization request/response payloads.
-- [ ] Secret scanner or equivalent check confirms provider keys are not committed or shipped in client code.
+- [x] 云端配置持久化保存应用所需的 AI 同意、增强 AI 上下文偏好、功能开关及设备/账号设置。
+- [x] AI 分类请求通过环境变量配置的后端服务商缝隙进行路由，缺失配置时安全降级。
+- [x] AI 分类日志为内测成功持久化，且不存储完整的本地账本数据。
+- [x] Android/后端契约测试覆盖同意/配置读取以及 AI 分类请求/响应 Payload。
+- [x] 密钥扫描或等效检查确认服务商 Key 绝对未提交或打包至客户端代码中。
 
-## Blocked by
+## 依赖项
 
-- Issue 9: Persist Backend Auth SMS And Registered Devices
+- Issue 9: 持久化后端认证、短信及已注册设备

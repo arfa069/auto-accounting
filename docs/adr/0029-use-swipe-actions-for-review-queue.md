@@ -1,3 +1,3 @@
-# Use swipe actions for review queue
+# 待确认队列支持手势滑动操作
 
-The review queue will support swipe actions for quick confirm and ignore, while entry details provide full editing. This keeps high-confidence bookkeeping fast without making low-confidence or complex entries hard to correct.
+待确认队列列表项支持手势滑动：向右滑动快捷确认入账，向左滑动快捷忽略/驳回。滑动后弹出带“撤销”选项的 Snackbar，提升批处理效率。

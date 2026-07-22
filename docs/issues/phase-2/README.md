@@ -1,55 +1,38 @@
-# Phase 2 Issue Index
+# Phase 2 Issue 索引与跟踪状态
 
-Source plan: [../../PHASE-2-SLICES.md](../../PHASE-2-SLICES.md).
+本文档作为 Phase 2 的核心追踪索引，记录各 Issue 的状态、关系及解决记录。
 
-These issue files are ready for independent agent pickup. Work in dependency order unless a later issue is explicitly unblocked.
+## 来源规划
 
-## Issues
+- 计划文档：[Phase 2 Slices](../../PHASE-2-SLICES.md)
+- 历史基线：[Phase 2 Baseline Audit](../../PHASE-2-BASELINE-AUDIT.md)
 
-1. [Baseline Audit And Phase 2 Risk Map](./001-baseline-audit-and-risk-map.md)
-2. [Persist Review Queue And Ignored Entries](./002-persist-review-queue-and-ignored-entries.md)
-3. [Persist Ledger Reports And Local Data Deletion](./003-persist-ledger-reports-and-local-data-deletion.md)
-4. [Persist Categorization Rules And AI Consent Settings](./004-persist-categorization-rules-and-ai-consent-settings.md)
-5. [Make Encrypted Backup Restore Real Persisted App Data](./005-encrypted-backup-restores-persisted-app-data.md)
-6. [Wire Real Notification Listener Permission And Capture Path](./006-notification-listener-permission-and-capture-path.md)
-7. [Wire User Started Bill Sync Permission And Service Path](./007-user-started-bill-sync-permission-and-service-path.md)
-8. [Wire Continuous Monitoring Service Boundary And Guardrails](./008-continuous-monitoring-service-boundary-and-guardrails.md)
-9. [Persist Backend Auth SMS And Registered Devices](./009-backend-auth-sms-and-registered-devices.md)
-10. [Persist Backend Cloud Configuration And AI Proxy State](./010-backend-cloud-configuration-and-ai-proxy-state.md)
-11. [Persist Account Deletion And Scheduled Cloud Cleanup](./011-account-deletion-and-scheduled-cloud-cleanup.md)
-12. [Package Internal Beta QA Metrics And Release Build](./012-internal-beta-qa-metrics-and-release-build.md)
-13. [Correct Tester-Facing Android Copy Encoding](./013-correct-tester-facing-android-copy-encoding.md)
-14. [Execute Internal Beta Device Matrix And Capture Findings](./014-execute-internal-beta-device-matrix-and-capture-findings.md)
-15. [Persist Local-Mode Session Across App Restarts](./015-persist-local-mode-session-across-restarts.md)
-16. [实时捕获微信/支付宝支付结果并反馈记账状态](./016-cover-in-app-payment-message-capture-paths.md)
-17. [实现单笔账新增、查看、编辑、删除与恢复](./017-support-ledger-entry-crud-and-recovery.md)
-18. [完成：重构“我的”总览与账户管理](./018-rebuild-profile-overview-and-account-management.md)
-19. [完成：将自动记账迁移为独立页面](./019-move-automatic-bookkeeping-into-its-own-page.md)
-20. [完成：拆分分类规则与智能分类同意链](./020-separate-categorization-rules-and-ai-consent.md)
-21. [完成：迁移数据与备份并保护恢复操作](./021-protect-data-and-backup-restore.md)
-22. [完成：拆分合规与隐私并隔离开发者工具](./022-separate-compliance-privacy-and-developer-tools.md)
-23. [管理本地多账本、资金账户并隔离账目调试信息](./023-manage-local-ledgers-and-funding-accounts.md)
-24. [完成：新增报表环形图与七个月现金流](./024-add-report-donut-and-seven-month-cash-flow.md)
-25. [完成：接通 Android 真实账户核心闭环](./025-connect-android-account-core-loop.md)
+## 状态总览
 
-## Supporting Lists
-
-- [可选真机验证清单](./OPTIONAL-VALIDATIONS.md)：记录因隐私或范围影响而默认不执行、需产品负责人另行决定的验证。
-
-## Dependency Shape
-
-- Issue 1 unblocks all Phase 2 implementation work.
-- Issues 2, 3, and 4 unblock Issue 5.
-- Issues 6 and 7 unblock Issue 8.
-- Issue 9 unblocks Issues 10 and 11.
-- Issues 2-11 and Issue 13 unblock Issue 12.
-- Issue 12 unblocks Issue 14.
-- Issue 13 can start after Issue 1 and must finish before any internal tester build.
-- Issue 14 identified Issue 15; Issue 15 is independently implementable and must complete before beta distribution.
-- Issue 14 identified Issue 16; Issue 16 builds on Issues 6 and 8, removes manual bill sync from the automatic-capture prerequisite, and preserves the pending-only capture boundary.
-- Issue 17 builds on Issues 2, 3, and 5 to complete the persisted ledger-entry lifecycle without changing the pending-only automatic-capture boundary.
-- Issue 18 establishes the profile overview and account-management navigation used by Issues 19-22.
-- Issues 19-22 are independently implementable after Issue 18.
-- Issue 23 builds on the persisted ledger lifecycle, protected backup flow, and Debug/Release isolation established by Issues 17, 21, and 22; it remains entirely local and does not depend on backend work.
-- Issue 24 builds on the current-ledger scope and report semantics established by Issues 17 and 23; it replaces the category-selectable six-month trend without changing persisted data, backend APIs, or shared contracts.
-- Issue 25 closes the Android/backend account boundary built by Issues 9, 11, and 18; it keeps local ledger data and registered-device UI outside the account transport scope.
+| Issue | 名称 | 状态 | 阻断项 | 覆盖主要故事 |
+|---|---|---|---|---|
+| [001](./001-baseline-audit-and-risk-map.md) | 基线审计与 Phase 2 风险映射表 | 已完成 | 无 | 内测就绪、可维护性、真实文档 |
+| [002](./002-persist-review-queue-and-ignored-entries.md) | 持久化待确认队列与已忽略条目 | 已完成 | 001 | 捕获支付活动、审核待确认条目、恢复已忽略条目 |
+| [003](./003-persist-ledger-reports-and-local-data-deletion.md) | 持久化账本、报表及本机数据删除 | 已完成 | 001 | 审核待确认条目、查看账本与报表、删除本机数据 |
+| [004](./004-persist-categorization-rules-and-ai-consent-settings.md) | 持久化分类规则与 AI 同意/设置 | 已完成 | 001 | 构建分类规则、管理 AI 分类授权同意 |
+| [005](./005-encrypted-backup-restores-persisted-app-data.md) | 实现加密备份恢复真实持久化应用数据 | 已完成 | 002, 003, 004 | 导出 CSV、创建加密备份、恢复应用数据 |
+| [006](./006-notification-listener-permission-and-capture-path.md) | 接通真实通知监听权限与捕获路径 | 已完成 | 001 | 捕获微信/支付宝支付通知、管理权限 |
+| [007](./007-user-started-bill-sync-permission-and-service-path.md) | 接通用户发起的账单同步权限与服务路径 | 已完成 | 001 | 手动同步微信/支付宝账单、审核捕获的待确认条目 |
+| [008](./008-continuous-monitoring-service-boundary-and-guardrails.md) | 接通连续监控服务边界与安全护栏 | 已完成 | 006, 007 | 开启连续监控、随时关闭监控 |
+| [009](./009-backend-auth-sms-and-registered-devices.md) | 持久化后端认证、短信及已注册设备 | 已完成 | 001 | 注册、登录、找回账号、注册设备 |
+| [010](./010-backend-cloud-configuration-and-ai-proxy-state.md) | 持久化后端云端配置与 AI 代理状态 | 已完成 | 009 | 管理云端 AI 同意、安全请求 AI 分类 |
+| [011](./011-account-deletion-and-scheduled-cloud-cleanup.md) | 持久化账号注销与定时云端清理 | 已完成 | 009, 010 | 申请账号注销、冷静期内取消注销、删除云端账号数据 |
+| [012](./012-internal-beta-qa-metrics-and-release-build.md) | 打包内测 QA、质量指标与发布构建产物 | 已完成 | 002-011, 013 | 内测验证、捕获质量测量、发布就绪 |
+| [013](./013-correct-tester-facing-android-copy-encoding.md) | 修正面向测试人员的 Android 端文案编码乱码 | 已完成 | 001 | 内测可读性、合规透明度、账号与权限易理解度 |
+| [014](./014-execute-internal-beta-device-matrix-and-capture-findings.md) | 执行内测设备矩阵并记录测试结论 | 进行中 | 012, 013 | 内测验证、设备矩阵证据、发布 Go/No-Go 决策 |
+| [015](./015-persist-local-mode-session-across-restarts.md) | 跨应用重启持久化本地模式会话 | 已完成 | 014 | 纯本地模式引导、重启恢复能力 |
+| [016](./016-cover-in-app-payment-message-capture-paths.md) | 覆盖应用内支付消息捕获路径 | 已完成 | 006, 008 | 自动捕获包含受支持支付结果的账单页面 |
+| [017](./017-support-ledger-entry-crud-and-recovery.md) | 支持账本条目 CRUD 与恢复能力 | 已完成 | 003, 005 | 手动账本条目增删改查、软删除与恢复 |
+| [018](./018-rebuild-profile-overview-and-account-management.md) | 重构 Profile 概览与账号管理 | 已完成 | 009, 015 | 个人中心整体框架与账号管理二级页 |
+| [019](./019-move-automatic-bookkeeping-into-its-own-page.md) | 移动自动记账至独立二级页 | 已完成 | 006, 008 | 自动记账控制与权限中心 |
+| [020](./020-separate-categorization-rules-and-ai-consent.md) | 独立分类规则与 AI 同意控制 | 已完成 | 004, 010 | 分类规则与 AI 同意管理 |
+| [021](./021-protect-data-and-backup-restore.md) | 受保护的数据与备份恢复 | 已完成 | 003, 005 | CSV 导出、加密备份与本机数据删除危险区 |
+| [022](./022-separate-compliance-privacy-and-developer-tools.md) | 拆分合规与隐私与开发者工具 | 已完成 | 001, 013 | 合规与隐私二级页及独立开发者工具 |
+| [023](./023-manage-local-ledgers-and-funding-accounts.md) | 管理本地账本与资金账户 | 已完成 | 003, 005, 017 | 多账本与资金账户独立管理 |
+| [024](./024-add-report-donut-and-seven-month-cash-flow.md) | 增加报表环形图与七个月现金流 | 已完成 | 003, 017, 023 | 报表手绘环形图与七个月现金流趋势 |
+| [025](./025-connect-android-account-core-loop.md) | 接通 Android 账号核心闭环 | 已完成 | 009, 018 | 真机/后端账号登录与 Session 恢复 |

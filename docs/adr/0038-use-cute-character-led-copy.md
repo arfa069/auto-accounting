@@ -1,3 +1,3 @@
-# Use cute character-led copy
+# 采用可爱 IP 角色主导的文案风格
 
-The app will use cute, character-led copy with playful wording instead of a purely professional or neutral voice. This strengthens the young visual direction, but money changes, privacy permissions, irreversible actions, and compliance disclosures must remain clear enough that cuteness never hides risk or consent.
+应用内的引导、提示、空状态与确认文案采用可爱、通俗、亲切的 IP 角色口吻，使记账过程更加轻松愉快。

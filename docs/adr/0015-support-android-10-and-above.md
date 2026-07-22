@@ -1,3 +1,3 @@
-# Support Android 10 and above
+# 支持 Android 10 (API 29) 及以上版本
 
-The app will target Android 10 and above for its first supported range. This keeps enough device coverage for a domestic Android app while avoiding the testing and compatibility burden of older notification, accessibility, background, and storage behaviors.
+应用的目标最低 SDK 版本设置为 Android 10 (API 29)。该版本具备成熟的沙盒存储、Scoped Storage 以及权限控制机制，能够兼顾国内绝大多数主流真机设备与现代安全标准。

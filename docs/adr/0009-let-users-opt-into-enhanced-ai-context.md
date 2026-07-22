@@ -1,3 +1,3 @@
-# Let users opt into enhanced AI context
+# 允许用户选择开启增强 AI 上下文
 
-Cloud AI categorization will use minimal transaction fields by default, while offering a user-controlled option to share enhanced context for better accuracy. This preserves a privacy-first default without locking advanced users out of stronger AI suggestions when they explicitly accept the additional data sharing.
+在默认的最小化 AI 请求 Payload（仅商家/标题、交易类型、金额范围）之外，允许用户单独选择开启“增强 AI 上下文”，以提供更完整的商品明细或上下文信息，从而提高 AI 分类准确率。关闭 AI 分类会自动撤销增强上下文授权。

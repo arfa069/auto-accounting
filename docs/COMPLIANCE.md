@@ -1,192 +1,192 @@
-# Compliance And Privacy Draft
+# 合规与隐私评估草案 (Compliance And Privacy Draft)
 
-This document is a product and engineering compliance draft, not legal advice. Before public submission, legal counsel should review the privacy policy, user agreement, permission descriptions, third-party service list, AI logging policy, and account deletion process.
+本文档属于产品与工程合规评估草案，不构成法律意见。在公开发布到应用商店前，法务团队应对隐私政策、用户协议、权限说明文书、第三方服务清单、AI 日志策略及账号注销流程进行全面复核。
 
-Reference anchors:
-- [Personal Information Protection Law, official database](https://flk.npc.gov.cn/detail2.html?ZmY4MDgxODE3YjY0NzJhMzAxN2I2NTZjYzIwNDAwNDQ%3D=)
-- [Android NotificationListenerService](https://developer.android.com/reference/android/service/notification/NotificationListenerService)
-- [Google Play AccessibilityService API policy](https://support.google.com/googleplay/android-developer/answer/10964491), used as a risk reference even though the target is domestic Android stores.
+参考依据锚点：
+- [《中华人民共和国个人信息保护法》官方数据库](https://flk.npc.gov.cn/detail2.html?ZmY4MDgxODE3YjY0NzJhMzAxN2I2NTZjYzIwNDAwNDQ%3D=)
+- [Android NotificationListenerService 官方文档](https://developer.android.com/reference/android/service/notification/NotificationListenerService)
+- [Google Play 无障碍服务 API 政策](https://support.google.com/googleplay/android-developer/answer/10964491)（即使目标为国内 Android 商店，仍作为风险参考标准）。
 
-## 1. Compliance Package
+## 1. 商店合规材料包 (Compliance Package)
 
-The internal beta must include:
-- Privacy policy.
-- Personal information collection list.
-- Third-party service list.
-- Permission explanation page.
-- Store review notes for notification listening and accessibility.
-- Screenshots or screen recording showing permission explanations and bill sync boundaries.
+内测发布前必须准备齐全以下材料：
+- 隐私政策。
+- 个人信息收集清单。
+- 第三方服务清单。
+- 权限使用说明页面。
+- 针对通知监听与无障碍服务的应用商店审核说明材料。
+- 展示权限使用说明及账单同步边界的界面截图或录屏。
 
-## 2. Data Classification
+## 2. 数据分类 (Data Classification)
 
-Sensitive transaction information:
-- Transaction amount.
-- Merchant/title.
-- Bill text.
-- Raw notification text.
-- Category.
-- Transaction kind.
-- Funding account.
-- Source.
-- Time.
-- Notes.
+敏感交易信息定义：
+- 交易金额。
+- 商家/标题。
+- 账单文本。
+- 原始通知文本。
+- 分类。
+- 交易类型。
+- 资金账户。
+- 支付来源。
+- 交易时间。
+- 备注说明。
 
-Treat these as sensitive personal information because they may reveal financial status, habits, and movement patterns.
+由于上述信息能够揭示用户的财务状况、生活习惯及活动规律，均被严格视为**敏感个人信息**。
 
-## 3. Personal Information Collection List
+## 3. 个人信息收集清单 (Personal Information Collection List)
 
-Suggested rows:
+建议罗列项：
 
-- Phone number: account registration, login, recovery, deletion verification; required for account mode, not required for local mode.
-- Password hash: password login; required for account mode.
-- Device information: registered-device security, fraud prevention, SMS rate limits, configuration; required for account mode and SMS risk control.
-- Android uses a random app-installation UUID for this purpose and does not read a hardware identifier.
-- Notification content from WeChat/Alipay payment notifications: create pending entries; required only after notification permission is enabled.
-- Payment-result and payment-record page content from WeChat/Alipay: automatic capture after explicit opt-in, or user-started history backfill.
-- Automatic accessibility observations: create pending entries after payment completion; optional and user-controlled. Accessibility nodes are preferred; blank WeChat payment-result surfaces may use transient on-device screenshot OCR on Android 11 or later.
-- Ledger and pending-entry data: local bookkeeping; required for core bookkeeping.
-- AI categorization payload: cloud AI suggestions; optional.
-- Enhanced AI context: improve cloud AI accuracy; optional.
-- AI categorization logs: internal beta improvement; optional through AI consent and must be revisited before public submission.
-- Internal-beta readiness and quality metrics: locally derived readiness status and aggregate QA inputs shown only in Debug Developer Tools; this is not a separate raw-log store.
-- Sensitive diagnostic logs: payment notification/page/OCR text, parsed transaction fields, capture evidence, and complete exceptions for troubleshooting. Debug defaults on; Release defaults off and requires a separate informed opt-in.
-- App distribution statistics: store delivery and basic distribution measurement.
+- **手机号码**：用于账号注册、登录、找回密码及注销身份校验；账号模式下为必需，本地模式下非必需。
+- **密码哈希值**：用于密码登录验证；账号模式下为必需。
+- **设备信息**：用于已注册设备安全防护、防欺诈、短信限流及配置分发；账号模式与短信风控所必需。
+  - Android 端为此目的使用随机生成的应用安装 UUID，不读取任何硬件标识符。
+- **来自微信/支付宝支付通知的通知内容**：用于创建待确认条目；仅在开启通知权限后方才收集。
+- **来自微信/支付宝的支付结果与支付记录页面内容**：用于显式开启后的自动捕获，或用户发起的历史账单导入。
+- **无障碍服务自动观察内容**：用于支付完成后创建待确认条目；属于可选功能，由用户完全掌控。优先使用无障碍节点；在 Android 11 及以上版本，针对空白微信支付结果界面可使用一次性本机临时截图 OCR。
+- **账本与待确认条目数据**：用于本地记账功能；核心记账业务所必需。
+- **AI 分类 Payload**：用于提供云端 AI 分类建议；属于可选功能。
+- **增强 AI 上下文**：用于提高云端 AI 分类的准确率；属于可选功能。
+- **AI 分类日志**：用于内测期间改进服务质量；通过 AI 同意获得可选授权，在公开发布前必须重新评估留存策略。
+- **内测就绪与质量指标**：仅在 Debug 开发者工具中展示的本地衍生就绪状态与聚合 QA 输入；不构成独立的原始日志存储。
+- **敏感诊断日志**：包含支付通知/页面/OCR 文本、解析出的交易字段、捕获证据及用于排查错误的完整异常栈。Debug 默认开启；Release 默认关闭并要求独立的知情同意。
+- **应用分发统计数据**：用于应用商店分发与基础分发效果测量。
 
-Important classification:
-- Local transaction processing is required for bookkeeping.
-- Cloud AI categorization is optional.
+重要分类原则：
+- 本地交易处理是记账的核心必需项。
+- 云端 AI 分类属于完全可选的附加功能。
 
-## 4. Permission Boundaries
+## 4. 权限使用边界 (Permission Boundaries)
 
-Notification listening:
-- Purpose: identify WeChat and Alipay payment notifications and generate pending entries.
-- It must not process unrelated notifications beyond what is necessary to identify payment activity.
+通知监听 (Notification Listening)：
+- 目的：识别微信和支付宝的支付通知，并生成待确认条目。
+- 绝对不得处理除识别支付活动所必需之外的任何无关通知。
 
-Automatic-bookkeeping accessibility service:
-- Purpose: observe allowlisted WeChat and Alipay payment-result/payment-record pages after explicit opt-in, and read bill pages during user-started history backfill.
-- The privacy policy must state that the app does not read chats or ordinary messages, send messages, or initiate payments, transfers, or refunds.
-- For a blank WeChat accessibility surface, the app may take one transient screenshot for bundled on-device OCR. Android 14 or later limits capture to the active app window; Android 11-13 uses the display screenshot API. The image must never be persisted or uploaded. Raw OCR text remains outside the ledger/database; when the user separately enables sensitive diagnostic logs, text from an accepted payment surface or active manual-import session may be retained only in the encrypted local diagnostic store.
+自动记账无障碍服务 (Automatic-Bookkeeping Accessibility Service)：
+- 目的：在显式开启后观察白名单内的微信与支付宝支付结果/支付记录页面，并在用户发起历史账单导入时读取账单页面。
+- 隐私政策必须明确声明：应用**不读取**聊天记录或普通消息、**不发送**消息、**不发起**支付、转账或退款。
+- 针对空白微信无障碍界面，应用可进行一次临时截图以供内置本机 OCR 使用。Android 14 及以上仅捕获活动应用窗口；Android 11-13 使用屏幕截图 API。图片绝不持久化、绝不上传。原始 OCR 文本保持在账本/数据库之外；当用户单独开启敏感诊断日志时，接受的支付界面或活动手动导入会话中的文本可仅加密保留在本地诊断存储中。
 
-Sensitive diagnostic logging:
-- The binding design and operator controls are documented in [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md) and [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md).
-- Available in Debug and Release. Debug defaults on; Release defaults off and requires an explicit confirmation under Compliance and Privacy.
-- Payment-related notification text, accepted payment-page/manual-session text, accepted OCR output, amount, merchant, note, payment account/method, order identifiers, capture evidence, and complete exceptions may be recorded.
-- Ordinary notifications, chats, unsupported packages, and unrelated pages record rejection metadata only, never visible text.
-- Screenshots are never stored. Authentication secrets such as passwords, verification codes, tokens, cookies, Authorization headers, API keys, backup passphrases, signing keys, and private keys are always redacted before write.
-- Events are individually encrypted with Android Keystore AES-256-GCM in `noBackupFilesDir`; 1 MB segments rotate only when total ciphertext exceeds 10 MB. Logs are not uploaded or included in ledger/system backup.
-- Closing the switch stops new events without deleting history. Clear removes segments and the Keystore key. Local-data deletion also removes the Release preference, while exported Downloads files remain the user's responsibility.
-- Export requires a non-persisted passphrase of at least eight characters, confirmation, and produces an independently encrypted `.aadiag` file.
+敏感诊断日志 (Sensitive Diagnostic Logging)：
+- 绑定设计与运维控制详见 [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md) 与 [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md)。
+- 在 Debug 和 Release 构建中均可用。Debug 默认开启；Release 默认关闭并要求在“合规与隐私”下进行显式确认。
+- 可记录支付相关通知文本、接受的支付页面/手动会话文本、接受的 OCR 输出、金额、商家、备注、支付账户/方式、订单标识符、捕获证据及完整异常。
+- 普通通知、聊天、不受支持的包名及无关页面仅记录拒绝元数据，绝不记录可见文本。
+- 绝不存储截图。身份凭证与密钥（如密码、验证码、Token、Cookie、Authorization 报头、API 密钥、备份口令、签名密钥和私钥）在写入前始终脱敏。
+- 事件使用 Android Keystore AES-256-GCM 在 `noBackupFilesDir` 中独立加密；1 MB 分段仅在密文总大小超过 10 MB 时滚动删除。日志不上传，也不包含在账本/系统备份中。
+- 关闭开关停止记录新事件但不删除历史。清除操作会删除所有分段及 Keystore 密钥。本地数据删除还会删除 Release 偏好设置，而已导出到 Downloads 的文件仍由用户自行管理。
+- 导出需要至少 8 个字符的非持久化口令及确认，并生成独立加密的 `.aadiag` 文件。
 
-Automatic capture:
-- Explicit opt-in.
-- Purpose: observe supported payment-result and payment-record pages and create pending entries.
-- Must be closable at any time.
-- Notification-listener access is not a prerequisite.
+自动捕获 (Automatic Capture)：
+- 必须由用户显式开启。
+- 目的：观察受支持的支付结果和支付记录页面并创建待确认条目。
+- 必须支持随时关闭。
+- 不以获得通知监听权限为先决条件。
 
-Bookkeeping result notifications:
-- Purpose: report pending, categorization, dedupe, or failure outcomes after local processing.
-- Denial must not block local capture or persistence.
-- Lock-screen public content must omit amount, merchant, counterparty, and raw evidence.
+记账结果通知 (Bookkeeping Result Notifications)：
+- 目的：在本地处理完成后提示待确认、分类、去重或失败结果。
+- 拒绝授权不得阻断本地捕获或持久化。
+- 锁屏公开内容必须隐藏金额、商家、交易对方及原始证据。
 
-Cloud AI:
-- Disabled by default.
-- Requires explicit user consent.
-- Minimal fields by default.
-- Enhanced context requires a separate user choice.
-- AI logs are retained during internal beta and must be redefined before public store submission.
+云端 AI (Cloud AI)：
+- 默认处于关闭状态。
+- 需要用户明确授权同意。
+- 默认仅传输最小化字段。
+- 增强上下文需要用户单独勾选授权。
+- AI 日志仅在内测期间保留，公开发布前必须重新界定。
 
-## 5. Third-Party Service List
+## 5. 第三方服务清单 (Third-Party Service List)
 
-First-version third-party categories:
-- SMS provider.
-- Cloud AI provider.
-- No diagnostic-log provider: sensitive diagnostics remain on-device and are never uploaded by this feature.
-- App distribution statistics provider.
-- Google ML Kit Chinese Text Recognition bundled model: on-device OCR only; transient payment-screen pixels and recognized text are not sent by the app to a cloud OCR service.
+首版引入的第三方服务类别：
+- 短信服务商。
+- 云端 AI 提供商。
+- 无诊断日志服务商：敏感诊断日志保留在设备端，该功能绝不上传日志。
+- 应用分发统计服务商。
+- Google ML Kit 中文文本识别内置模型：仅限本机 OCR；临时支付屏幕像素及识别出的文本绝不被应用发送至云端 OCR 服务。
 
-Excluded in first version:
-- Advertising SDKs.
-- Marketing tracking SDKs.
+首版明确排除：
+- 广告 SDK。
+- 营销追踪 SDK。
 
-Each third-party entry should include:
-- Provider name.
-- Service purpose.
-- Personal information category.
-- Processing method.
-- Data retention or deletion policy, if available.
-- Link to provider privacy terms.
+第三方清单中各项应包含：
+- 提供商名称。
+- 服务目的。
+- 收集个人信息类别。
+- 处理方式。
+- 数据留存或删除策略（若有）。
+- 提供商隐私条款链接。
 
-## 6. Data Retention
+## 6. 数据留存策略 (Data Retention)
 
-Retention must be written by data type:
+按数据类型明确写明留存期限：
 
-- Local ledger: retained on device until user deletes entries, deletes local data, uninstalls the app, or restores/replaces data.
-- Pending entries: retained until confirmed, ignored, deleted, or expired by product rules.
-- Ignored entries: recoverable for 30 days.
-- Encrypted backup: controlled by the user after export.
-- CSV export: controlled by the user after export and should be described as plain-text.
-- Account data: retained while account exists; deleted after account deletion cooling-off completes.
-- Registered device and cloud configuration: retained while account exists; deleted after account deletion completes.
-- AI categorization logs: retained during internal beta; retention must be revisited before public submission.
-- Internal-beta readiness and quality metrics: retained only as ordinary local app state or explicit QA records; they do not create a separate raw-log store.
-- SMS verification data: retain only as needed for verification, fraud prevention, audit, and security.
+- **本地账本**：在设备端持续保留，直至用户删除条目、删除本机数据、卸载应用或恢复/替换数据。
+- **待确认条目**：保留至被确认、忽略、删除或被产品规则过期处理。
+- **已忽略条目**：可恢复期限为 30 天。
+- **加密备份**：导出后由用户自行控制。
+- **CSV 导出文件**：导出后由用户自行控制，应明确说明为纯文本格式。
+- **账号数据**：账号存在期间持续保留；在账号注销冷静期满后予以删除。
+- **已注册设备与云端配置**：账号存在期间持续保留；账号注销完成后予以删除。
+- **AI 分类日志**：内测期间保留；在应用商店公开发布前必须重新复核留存期限。
+- **内测就绪与质量指标**：仅作为普通本地应用状态或显式 QA 记录保留；不创建独立的原始日志存储。
+- **短信验证数据**：仅按验证、防欺诈、审计与安全所需的最短期限保留。
 
-## 7. User Rights And Controls
+## 7. 用户权利与控制选项 (User Rights And Controls)
 
-In-app controls:
-- View privacy policy and collection list.
-- View third-party service list.
-- Enable/disable cloud AI.
-- Enable/disable enhanced AI context.
-- Clear AI categorization logs where technically available.
-- Export CSV.
-- Export/import encrypted backup.
-- Request account deletion.
-- Cancel account deletion during 7-day cooling-off period.
-- Delete local data through a separate confirmation flow.
-- Enable automatic bookkeeping; on Android 13 or later this action may also request result-notification permission, whose denial does not block local capture or persistence.
-- Open system settings for notification listening, accessibility, background running, auto-start, battery optimization, and battery saver. Background reliability suggestions are non-blocking and must not be presented as reliably verified permissions when the operating system does not expose their state.
+应用内提供的控制项：
+- 查看隐私政策与个人信息收集清单。
+- 查看第三方服务清单。
+- 开启/关闭云端 AI。
+- 开启/关闭增强 AI 上下文。
+- 在技术可行时清除 AI 分类日志。
+- 导出 CSV。
+- 导出/导入加密备份。
+- 申请注销账号。
+- 在 7 天冷静期内取消账号注销。
+- 通过单独的确认流程删除本机数据。
+- 开启自动记账；在 Android 13 及以上版本，此操作还可申请结果通知权限，拒绝授权不阻断本地捕获与持久化。
+- 打开系统设置以管理通知监听、无障碍、后台运行、自启动、电池优化及省电模式。后台稳定性建议为非阻断性的，在操作系统未透出其状态时不得假装已可靠验证。
 
-## 8. Account Deletion And Local Data Deletion
+## 8. 账号注销与本机数据删除 (Account Deletion And Local Data Deletion)
 
-Account deletion:
-- Starts a 7-day cooling-off period.
-- During cooling-off, user may log in and cancel deletion.
-- During cooling-off, cloud AI and device configuration writes are paused.
-- After cooling-off, delete cloud account, registered devices, cloud configuration, and AI categorization logs.
-- AI logs and cloud configuration are cleaned first; if either cleanup fails, retain the pending account and retry later instead of partially deleting account identity.
+账号注销流程：
+- 触发 7 天冷静期。
+- 冷静期内，用户仍可登录并取消注销。
+- 冷静期内，暂停云端 AI 及设备配置的写入。
+- 冷静期满后，清理云端账号、已注册设备、云端配置及 AI 分类日志。
+- 先清理 AI 日志和云端配置；若任一清理失败，保留等待注销账号以便稍后重试，避免部分删除账号身份。
 
-Account credentials and Session handling:
-- Android encrypts the phone number and bearer token with Android Keystore AES-GCM and keeps them outside ledger backup, diagnostics, logs, and screenshots.
-- The backend stores verification codes only as server-secret HMAC values and Session tokens only as SHA-256 hashes. Security migration invalidates legacy temporary credentials rather than keeping plaintext compatibility.
-- SMS IP rate limits use the server-observed remote address; client-submitted IP values are ignored.
+账号凭据与 Session 处理：
+- Android 端使用 Android Keystore AES-GCM 加密手机号和 Bearer Token，并保持在账本备份、诊断、日志及截图之外。
+- 后端仅将验证码作为服务端密钥 HMAC 值存储，Session Token 仅作为 SHA-256 哈希值存储。安全迁移将使旧的临时凭据作废，而不是保持明文兼容。
+- 短信 IP 限流使用服务端观察到的远程地址；客户端提交的 IP 值将被忽略。
 
-Local data deletion:
-- Separate settings entry.
-- Show backup reminder first.
-- Require typed confirmation phrase "删除本机数据".
-- Delete local ledger and app data from the device.
-- Delete diagnostic segments, their Keystore key, and the Release enable preference. Warn that `.aadiag` files already exported to Downloads are not automatically deleted.
+本机数据删除流程：
+- 独立于账号注销的设置入口。
+- 优先展示备份提醒。
+- 要求输入确认文本：“删除本机数据”。
+- 从设备上清除本地账本及应用数据。
+- 删除诊断分段、其 Keystore 密钥及 Release 开启偏好设置。警告已导出到 Downloads 的 `.aadiag` 文件不会被自动删除。
 
-## 9. Store Review Risks
+## 9. 应用商店审核风险点 (Store Review Risks)
 
-High-risk areas:
-- Notification listening.
-- Accessibility service.
-- Automatic accessibility capture.
-- Transient accessibility screenshot and local OCR fallback.
-- Cloud AI uploads.
-- AI categorization logs.
-- Account deletion and data deletion.
-- Cute companion copy on sensitive screens.
+高风险关注区域：
+- 通知监听服务。
+- 无障碍服务。
+- 自动无障碍捕获。
+- 临时无障碍截图与本地 OCR 降级。
+- 云端 AI 数据上传。
+- AI 分类日志留存。
+- 账号注销与数据删除。
+- 敏感界面上的猫咪陪伴文案。
 
-Mitigations:
-- Use clear permission copy.
-- Provide structured privacy materials.
-- Keep automatic capture behind a clear user-controlled switch.
-- Restrict local OCR to blank WeChat surfaces on Android 11 or later, require payment-completion plus currency evidence before persistence, and release the screenshot immediately after recognition. OCR text is retained only in the separately enabled encrypted diagnostic store and only within the accepted payment/manual-session boundary.
-- Make the diagnostic entry visible in both builds, keep sensitive values masked by default, re-mask on background/exit, apply `FLAG_SECURE` while revealed, and require passphrase-encrypted export.
-- Show stepwise bill sync progress.
-- Default to local rules and keep cloud AI off.
-- Do not include ad or marketing tracking SDKs.
-- Keep sensitive screens plain and unambiguous even with the cat companion.
+缓解与规避措施：
+- 使用清晰透明的权限申请文案。
+- 提供结构化的隐私与合规材料。
+- 将自动捕获限制在用户完全可控的显式开关之后。
+- 将本地 OCR 限制在 Android 11 及以上版本的空白微信界面，持久化前必须具备支付完成加货币证据，且在识别后立即释放截图。OCR 文本仅在单独开启的加密诊断存储中、且仅在接受的支付/手动会话边界内留存。
+- 使诊断日志入口在两个构建版本中均可见，默认对敏感值脱敏，后台/退出时重新脱敏，在透出时应用 `FLAG_SECURE`，并要求加密口令导出。
+- 展示清晰的分步账单同步进度。
+- 默认采用本地规则，保持云端 AI 默认关闭。
+- 绝不引入任何广告或营销追踪 SDK。
+- 即使有猫咪陪伴角色，敏感界面仍保持严肃、清晰、无歧义的表述。

@@ -1,17 +1,17 @@
-# Baseline Audit And Phase 2 Risk Map
+# Issue 001: 基线审计与 Phase 2 风险映射表
 
-## What to build
+## 待构建内容
 
-Review the completed Phase 1 skeleton against the PRD, architecture, glossary, and Phase 2 plan. Produce a clean baseline for agent work by isolating non-production shortcuts, documenting current limitations, and filing follow-up risks without changing unrelated behavior.
+对照 PRD、架构设计、术语表及 Phase 2 计划，全面复核已完成的 Phase 1 框架。通过隔离非生产快捷实现、文档化当前限制以及提出后续风险项，为 Agent 工作建立干净的基线，且不修改无关行为。
 
-## Acceptance criteria
+## 验收标准
 
-- [ ] Current implementation is reviewed against Slice 0-15, PRD, architecture, and glossary terminology.
-- [ ] Mock gateways, demo passphrases, in-memory shortcuts, and non-production seams are listed with owner area and follow-up recommendation.
-- [ ] README/docs accurately describe what is real, what is mocked, and what is still local-only.
-- [ ] Duplicate or fragile UI/state paths are identified without broad refactoring.
-- [ ] Full test/build command set is run, or every skipped command is documented with reason.
+- [x] 对照 Slice 0-15、PRD、架构与术语表复核当前实现。
+- [x] 罗列 Mock 门面、Demo 口令、内存快捷实现及非生产缝隙，附带归属模块与后续建议。
+- [x] README/文档精准描述哪些已真实实现、哪些为 Mock、哪些仍仅限本地。
+- [x] 在不大范围重构的前提下识别重复或脆弱的 UI/状态路径。
+- [x] 运行完整的测试/构建命令集，或对每个跳过的命令记录明确原因。
 
-## Blocked by
+## 依赖项
 
-None - can start immediately.
+无 - 可立即开始。

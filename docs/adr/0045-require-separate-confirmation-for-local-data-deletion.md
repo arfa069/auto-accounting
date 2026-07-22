@@ -1,3 +1,3 @@
-# Require separate confirmation for local data deletion
+# 本机数据删除要求单独二次确认
 
-Local ledger data deletion will be a separate settings action with a backup reminder and an explicit typed confirmation phrase. This protects the user's primary bookkeeping history from accidental deletion and keeps local data removal distinct from cloud account deletion.
+“本机数据删除”属于不可逆的高风险操作，必须先展示备份提醒，并要求用户手动输入指定确认文本（如“删除本机数据”）后方可执行。

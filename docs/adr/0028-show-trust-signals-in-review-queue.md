@@ -1,3 +1,3 @@
-# Show trust signals in review queue
+# 在待确认队列中展示信任标识与证据
 
-Review-queue items will show amount, merchant or title, category suggestion, source, capture reason, and confidence state. This gives users enough context to trust or correct automatic bookkeeping decisions without forcing full raw notification or bill text into the main list.
+待确认条目列表中清晰展示捕获来源（微信/支付宝）、捕获原因、置信度状态及原始通知/账单证据，增强用户对自动捕获结果的信任感与掌控感。

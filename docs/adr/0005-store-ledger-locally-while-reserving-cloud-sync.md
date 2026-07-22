@@ -1,3 +1,3 @@
-# Store ledger locally while reserving cloud sync
+# 本地存储账本数据并预留云端同步能力
 
-The app will store ledger data locally on the Android device as the primary source of truth, while keeping the product and data model open to future cloud sync. This avoids introducing account, server, and cross-device privacy risk in the first version, but prevents the design from assuming that ledger data can only ever live on one phone.
+用户的账本数据全量存储在 Android 设备本地（Room 数据库），确保本地优先（Local-first）与绝对的数据隐私。首版后端绝不存储或同步用户的账本条目，但数据模型保留全局唯一标识符以预留未来的云端同步能力。

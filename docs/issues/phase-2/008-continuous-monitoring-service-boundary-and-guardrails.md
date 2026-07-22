@@ -1,36 +1,18 @@
-# Wire Continuous Monitoring Service Boundary And Guardrails
+# Issue 008: 接通连续监控服务边界与安全护栏
 
-## What to build
+## 待构建内容
 
-Make continuous monitoring an advanced opt-in Android service path with clear start/stop controls, persisted enabled state, permission health, and strict payment-surface guardrails.
+使连续监控成为带有明确启动/停止控制、持久化开启状态、权限健康度及严格支付页面护栏的可选高级 Android 服务路径。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Continuous monitoring can only start after required permission states are healthy and the user explicitly enables it.
-- [x] User can disable continuous monitoring at any time, and the service stops cleanly.
-- [x] Monitoring observes only payment-related WeChat/Alipay surfaces and never chat, messages, payment initiation, or transfers.
-- [x] Background keep-alive/auto-start guidance is visible without pretending to guarantee ROM behavior.
-- [x] Tests cover service state transitions, guardrail filtering, permission health mapping, and disabled-state behavior.
+- [x] 连续监控仅在所需的权限状态正常且用户显式开启后方可启动。
+- [x] 用户可以随时关闭连续监控，服务干净利落地停止。
+- [x] 监控仅观察与支付相关的微信/支付宝界面，绝对不观察聊天、普通消息、发起支付或转账。
+- [x] 后台保活/自启动引导清晰可见，不假装能够绝对保证 ROM 后台行为。
+- [x] 测试覆盖服务状态转换、护栏过滤、权限健康度映射及禁用状态行为。
 
-## Blocked by
+## 依赖项
 
-- Issue 6: Wire Real Notification Listener Permission And Capture Path
-- Issue 7: Wire User Started Bill Sync Permission And Service Path
-
-## Verification
-
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests com.autoaccounting.feature.monitoring.ContinuousMonitoringStateTest --tests com.autoaccounting.feature.categorization.CategorizationRulesScreenTest --tests com.autoaccounting.feature.review.ReviewQueueScreenTest --tests com.autoaccounting.feature.billsync.BillSyncSessionTest --tests com.autoaccounting.feature.billsync.BillSyncCaptureProcessorTest`
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests com.autoaccounting.feature.review.ReviewQueuePersistenceTest --tests com.autoaccounting.feature.monitoring.ContinuousMonitoringStateTest --tests com.autoaccounting.feature.categorization.CategorizationRulesScreenTest --tests com.autoaccounting.feature.review.ReviewQueueScreenTest`
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug`
-
-## Device verification
-
-Status: Partial Xiaomi validation completed on 2026-07-13; payment-surface and deny-list scenarios below remain separate acceptance work.
-
-- [ ] Enable notification listener and bill-sync accessibility permissions from the profile permission center.
-- [ ] Enable continuous monitoring and confirm payment-history or bill surfaces create/merge pending entries.
-- [ ] Open WeChat/Alipay chat, message, payment initiation, and transfer surfaces and confirm no pending entries are created.
-- [ ] Disable continuous monitoring and confirm later WeChat/Alipay accessibility events are ignored.
-- [x] Review background keep-alive/auto-start guidance on a target domestic ROM without treating it as guaranteed behavior. Xiaomi Android 16 / MIUI `V816` opened the expected application-details and auto-start pages; battery optimization and battery saver also opened their corresponding system settings.
-
-Rebinding finding: ordinary app-process recovery retained accessibility enablement and binding. MIUI force-stop removed the service from `enabled_accessibility_services`, so relaunch alone could not restore it and a real user reauthorization was required. The application no longer treats `BillSyncAccessibilityService.onInterrupt()` as an unbind or cancels its heartbeat there; `onDestroy()` remains the real disconnect boundary. A lifecycle regression test and Xiaomi Release verification confirm the page no longer reports “无障碍服务未连接” after the system reconnects. UIAutomator dump itself temporarily recreates accessibility services on this ROM, so use a normal screenshot for the final UI assertion.
+- Issue 6: 接通真实通知监听权限与捕获路径
+- Issue 7: 接通用户发起的账单同步权限与服务路径

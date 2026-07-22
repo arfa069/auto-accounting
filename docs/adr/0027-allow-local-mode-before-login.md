@@ -1,3 +1,3 @@
-# Allow local mode before login
+# 允许登录前使用本地模式
 
-Users may skip login and use the app in local mode, while cloud-linked capabilities such as AI categorization, registered-device configuration, and future sync require login. This preserves the value of the local-first ledger and lowers onboarding friction without removing the first-version account system.
+应用提供“本地模式 (Local Mode)”，用户在无需注册或登录账号的情况下，即可完全使用本地账本、手动记账、通知捕获及数据备份功能，最大程度降低试用门槛。

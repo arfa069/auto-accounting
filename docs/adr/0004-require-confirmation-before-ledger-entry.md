@@ -1,3 +1,3 @@
-# Require confirmation before ledger entry
+# 账本入账前必须经由用户确认
 
-Automatically captured transactions from notifications or bill sync will become pending entries first, not ledger entries. This protects the ledger from duplicate captures, incomplete merchant names, refunds, transfers, and other ambiguous payment-source events until the user confirms or corrects them.
+所有自动捕获或同步获取的交易候选对象均先进入待确认队列（Review Queue），必须经过用户的显式确认或修正后方可正式写入账本。应用绝对不自动将未经确认的捕获数据直接写入正式账本。

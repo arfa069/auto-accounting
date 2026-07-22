@@ -1,3 +1,3 @@
-# Ask before saving categorization rules
+# 将分类修正保存为规则前进行二次确认
 
-When a user corrects a pending entry category, the app will ask whether to remember that correction as a categorization rule instead of always saving it automatically. This prevents one-off corrections from becoming durable behavior while still making repeated merchant or description patterns faster over time.
+当用户在待确认队列或账本中修正某笔交易的分类时，应用弹窗询问是否将此修正保存为未来的自动分类规则，避免在用户不知情的情况下静默创建不符合预期的规则。

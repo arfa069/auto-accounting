@@ -1,21 +1,21 @@
-# Assign entries to local ledger books and restrict destructive deletion
+# ADR 0054: 将条目归属于本地账本并限制破坏性删除
 
-## Context
+## 上下文
 
-The local-first product previously treated confirmed entries as one undivided ledger and exposed funding-account creation only from a transaction form. Adding multiple named ledger books creates two durable risks: an entry can be written to the wrong book if selection changes during an asynchronous action, and deleting a book or shared funding account can orphan retained data.
+此前的“本地优先”产品将已确认条目视为单一不可分割的账本，且仅在交易表单中透出资金账户创建。引入多个具名账本带来了两个持久性风险：如果在异步操作期间切换选择，条目可能会被写入错误的账本；删除账本或共享资金账户可能会导致保留的数据变为孤儿数据。
 
-## Decision
+## 决策
 
-- Every active or soft-deleted ledger entry belongs to exactly one local ledger book through a non-null restricted foreign key.
-- The current ledger-book ID is persisted. Manual creation and pending-entry confirmation capture their target ID before starting the write.
-- A single-ledger installation migrates to a fixed-ID “默认账本”. Pending entries, ignored entries, deduplication, categories, and funding accounts remain global; active ledger queries, reports, CSV export, and recently deleted entries use the current book.
-- Encrypted backup covers all ledger books and the current selection. Legacy supported backups map their entries to “默认账本”.
-- The final ledger book cannot be deleted. Any active or soft-deleted entry makes a book non-empty and blocks deletion. Deleting the current empty book selects the earliest-created remaining book in the same transaction.
-- Funding accounts are shared across books and preserve identity when edited. Hard deletion is allowed only when active/deleted ledger entries, pending entries, and ignored entries contain no reference; a blocked operation reports reference counts instead of clearing or rewriting those records.
+- 每个活动或软删除的账本条目均通过非空限制外键精准属于一个本地账本。
+- 持久化保存当前账本 ID。手动创建与待确认条目确认在开始写入前即锁定其目标 ID。
+- 单账本升级的设备迁移至固定 ID 的“默认账本”。待确认条目、已忽略条目、去重、分类及资金账户保持全局；活动账本查询、报表、CSV 导出和最近删除条目使用当前账本。
+- 加密备份涵盖所有账本及当前选择。受支持的旧版本备份将其条目映射至“默认账本”。
+- 最后一个账本不得删除。任何包含活动或软删除条目的账本均为非空账本并阻断删除。在同一个事务中删除当前空账本会自动选择最早创建的剩余账本。
+- 资金账户在账本间共享，编辑时保留其标识。仅当活动/已删除账本条目、待确认条目及已忽略条目均无引用时才允许硬删除；被阻断的操作报告引用计数，而非清理或重写这些记录。
 
-## Consequences
+## 后果
 
-- The app always has a valid ledger-book context and cannot silently redirect an in-flight write after the user switches books.
-- Users get separate bookkeeping views without duplicating categories or funding accounts, while encrypted backup still represents one complete local snapshot.
-- Ledger-book and funding-account deletion require transactional reference checks and explicit failure states, adding implementation and test complexity in exchange for preventing orphaned or silently altered financial records.
-- This decision does not introduce cloud ledger sync, account balances, ledger renaming, or moving existing entries between books.
+- 应用始终具有有效的账本上下文，并且不会在用户切换账本后静默重定向正在进行的写入。
+- 用户可以获得独立的记账视图，而无需重复创建分类或资金账户，同时加密备份仍代表一个完整的本地快照。
+- 账本和资金账户的删除需要事务性引用检查和显式失败状态，增加了实现和测试复杂度，换取了防止孤立或被静默修改的财务记录。
+- 该决策不引入云端账本同步、账户余额、账本重命名或在账本之间移动现有条目的功能。

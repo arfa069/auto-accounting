@@ -1,3 +1,3 @@
-# Use 2D companion art with light animation
+# 采用轻量微动画的 2D 插画陪伴艺术风格
 
-The cat companion will be delivered as 2D illustration assets with limited lightweight animation for key states. This gives the app a playful personality while keeping implementation, package size, and design production manageable for the internal beta.
+猫咪陪伴形象采用 2D 扁平插画风格，结合轻量级的 Lottie/Compose 姿态微动画，确保高帧率与低内存占用。

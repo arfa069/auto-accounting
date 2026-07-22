@@ -1,3 +1,3 @@
-# Build account system for future sync
+# 建立账号系统为未来云端同步作准备
 
-The first version will include a full user account system even though ledger storage remains local-first. This increases authentication, privacy, and backend scope early, but prepares the product for future cloud sync and avoids redesigning identity once ledger data needs to move across devices.
+首版即建立轻量级的后端账号体系（包含注册、登录、设备绑定），主要用于账号认证、云端配置分发、AI 分类代理及注销管理，并为后续可能的跨端数据同步奠定账号架构基础。

@@ -1,3 +1,3 @@
-# Use rules and AI for categorization
+# 采用本地规则与 AI 结合的分类机制
 
-The app will combine user-visible categorization rules with AI categorization suggestions. Rules preserve explainability and let user corrections become durable behavior, while AI helps classify unfamiliar merchants and ambiguous transaction descriptions that would otherwise require repetitive manual work.
+分类引擎优先匹配用户自定义及内置的本地正则表达式/关键字规则；当本地规则未命中或置信度较低时，再降级请求 AI 分类建议，兼顾响应速度、隐私安全与准确率。

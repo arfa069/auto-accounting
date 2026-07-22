@@ -1,3 +1,3 @@
-# Retain deleted ledger entries for thirty days
+# 已删除的账本条目保留 30 天可恢复
 
-Deleting an individual ledger entry will remove it from the active ledger, search results, and reports while retaining it as a recoverable deleted ledger entry for 30 days. This favors protection from accidental deletion over immediate storage reclamation; users can restore entries during that period, while permanent deletion occurs automatically after retention or through an explicitly confirmed permanent-delete action.
+删除单个账本条目会将其从活动账本、搜索结果和报表中移除，同时将其作为可恢复的已删除账本条目保留 30 天。这优先考虑了防误删保护而非立即回收存储空间；用户在此期间可以恢复条目，而在保留期满后系统会自动彻底删除，或者由用户通过显式确认的永久删除操作予以清理。

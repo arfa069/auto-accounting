@@ -1,3 +1,3 @@
-# Preserve original capture provenance when ledger entries are edited
+# 保留原始捕获溯源信息
 
-Users may correct every user-visible transaction field on both manual and automatically captured ledger entries, including the payment source. Automatically captured entries will retain their original capture source, entry origin, pending-entry reference, first confirmation time, and capture evidence as immutable provenance so corrections do not erase how the entry was produced.
+自动捕获的交易首次进入应用时记录的“原始捕获来源 (Original Capture Source)”作为不可变的溯源证据保留。即使后续用户在待确认队列或账本中修正了其“支付来源”，原始捕获来源及关联的捕获证据仍保持原样，以便进行问题排查与审计。

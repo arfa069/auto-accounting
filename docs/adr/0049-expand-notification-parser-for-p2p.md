@@ -1,26 +1,26 @@
-# ADR 0049: Expand Notification Parser for P2P Transactions
+# ADR 0049: 扩展通知解析器以支持 P2P 个人转账与红包
 
-## Status
+## 状态
 
-Accepted
+已通过 (Accepted)
 
-## Context
+## 上下文
 
-During internal beta validation (Issue 14), the notification capture pipeline failed to capture WeChat red packets and Alipay peer-to-peer transfers. Investigation confirmed that `PaymentNotificationParser.extractMerchantTitle()` only matches merchant-format notifications (e.g., "商户：xxx"), silently dropping all P2P notifications.
+在内测验证 (Issue 14) 期间，通知捕获流水线未能捕获微信红包和支付宝个人转账。排查确认 `PaymentNotificationParser.extractMerchantTitle()` 仅匹配商家格式的通知（例如“商户：xxx”），静默丢弃了所有 P2P 类型的通知。
 
-## Decision
+## 决策
 
-Expand `PaymentNotificationParser` to handle P2P (peer-to-peer) notifications in both directions:
+扩展 `PaymentNotificationParser` 以处理双向的 P2P（个人对个人）通知：
 
-- **Incoming**: "收到xxx的红包", "收到xxx的转账", "xxx向你转账" → classified as income, counterparty name extracted.
-- **Outgoing**: "发出红包", "红包已发出", "转账给xxx", "向xxx转账" → classified as expense, counterparty or "红包" as title.
-- **Fallback**: When a valid payment source + amount + transaction kind are detected but no counterparty can be extracted, use "未知来源" as the merchant title instead of dropping the notification entirely.
+- **收入**："收到xxx的红包", "收到xxx的转账", "xxx向你转账" → 归类为收入，提取对方姓名。
+- **支出**："发出红包", "红包已发出", "转账给xxx", "向xxx转账" → 归类为支出，以对方姓名或“红包”作为标题。
+- **降级处理**：当检测到有效的支付来源 + 金额 + 交易类型，但无法提取交易对方时，使用“未知来源”作为商家标题，而非直接丢弃通知。
 
-The original merchant-payment regex patterns retain highest priority and are not affected.
+原始的商家支付正则表达式保持最高优先级，不受影响。
 
-## Consequences
+## 后果
 
-- The parser becomes more permissive: some non-payment P2P notifications from WeChat/Alipay could potentially be captured. This is acceptable during internal beta as entries go through the review queue before reaching the ledger.
-- P2P notification formats vary across app versions and ROM vendors. The regex patterns cover common variants observed on Xiaomi/MIUI but may need calibration after wider device testing.
-- Six new test cases cover the expanded scenarios and protect against regressions.
-- Later Issue 14 validation found notification capture is only a partial source: Alipay transfer notifications can be captured, but Alipay merchant QR / tap-to-pay and observed WeChat payment flows may keep records inside in-app message or bill surfaces instead of Android notifications. Issue 16 tracks that non-notification capture path.
+- 解析器变得更加包容：来自微信/支付宝的一些非支付 P2P 通知可能会被捕获。这在内测期间是可以接受的，因为条目在进入账本前会先经过待确认队列。
+- P2P 通知格式在不同应用版本和 ROM 厂商之间存在差异。正则表达式覆盖了在小米/MIUI 上观察到的常见变体，但在更广泛的设备测试后可能需要微调。
+- 六个新的测试用例覆盖了扩展场景并防止回归。
+- 随后的 Issue 14 验证发现通知捕获仅为部分来源：支付宝转账通知可以捕获，但支付宝商家扫码/碰一碰及观察到的微信支付流程可能会将记录保留在应用内消息或账单界面中，而非发送 Android 通知。Issue 16 对该非通知捕获路径进行了追踪。

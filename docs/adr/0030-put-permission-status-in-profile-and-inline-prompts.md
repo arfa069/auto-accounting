@@ -1,3 +1,3 @@
-# Put permission status in profile and inline prompts
+# 将权限状态置于个人中心并提供内嵌引导
 
-Permission status will live in the profile-area permission center, with contextual prompts shown where missing permissions block capture, bill sync, AI categorization, or monitoring. This keeps permissions out of primary navigation while making missing setup visible at the point of need.
+通知监听与无障碍权限的集中管理放置在“我的 -> 自动记账”页面中；当用户触发需要特定权限的功能而权限缺失时，在对应界面中提供内嵌的提示与跳转设置引导。

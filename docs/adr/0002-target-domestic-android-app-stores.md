@@ -1,3 +1,3 @@
-# Target domestic Android app stores
+# 国内 Android 应用商店发布定位
 
-The Android app will be designed for distribution through domestic Android app stores rather than only private APK sharing. Because the app observes payment activity and uses accessibility-based bill-page reading, privacy disclosures, permission minimization, and a usable non-accessibility path must be treated as product requirements rather than afterthoughts.
+应用优先面向国内主要 Android 应用商店（如华为、小米、OPPO、vivo、应用宝）发布。这意味着权限申请、隐私政策、第三方 SDK 列表、账号注销及数据合规等设计必须严格遵守国内个人信息保护法（PIPL）及国内应用商店审核规范。

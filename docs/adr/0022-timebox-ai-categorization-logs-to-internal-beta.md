@@ -1,3 +1,3 @@
-# Timebox AI categorization logs to internal beta
+# AI 分类日志留存仅限内测期间
 
-AI categorization logs will be retained during the internal beta to improve categorization quality, but their retention and deletion policy must be revisited before public store submission. This gives the team learning data while preventing internal-beta logging assumptions from silently becoming production privacy behavior.
+云端 AI 分类日志的保留仅限于内测评估阶段。在商店公开发布前，必须对日志留存策略、敏感字段脱敏及数据清理周期进行合规复核与重新界定。

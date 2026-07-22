@@ -1,21 +1,21 @@
-# Auto Accounting Docs
+# 自动记账项目文档索引 (Auto Accounting Docs)
 
-Start here:
+从这里开始阅读：
 
-- [PRD](./PRD.md)
-- [Architecture Draft](./ARCHITECTURE.md)
-- [UI Design Specification](./UI-DESIGN.md)
-- [Compliance And Privacy Draft](./COMPLIANCE.md)
-- [Development Slices](./DEVELOPMENT-SLICES.md)
-- [Phase 2 Slices](./PHASE-2-SLICES.md)
-- [Phase 2 Baseline Audit](./PHASE-2-BASELINE-AUDIT.md)
-- [Phase 2 Issues](./PHASE-2-ISSUES.md)
-- [Phase 2 Issue Files](./issues/phase-2/)
-- [Internal Beta Release And QA](./INTERNAL-BETA-RELEASE.md)
-- [Diagnostic Logs Operations](./DIAGNOSTIC-LOGS.md)
-- [Android Performance Audit](./performance-audit/)
-- [Domain Glossary](../CONTEXT.md)
-- [Auto Bookkeeping Flow Research](./research/auto-bookkeeping-flow.md)
-- [Architecture Decision Records](./adr/)
+- [产品需求文档 (PRD)](./PRD.md)
+- [系统架构设计草案](./ARCHITECTURE.md)
+- [UI 设计规范](./UI-DESIGN.md)
+- [合规与隐私评估草案](./COMPLIANCE.md)
+- [开发切片规划 (Development Slices)](./DEVELOPMENT-SLICES.md)
+- [阶段 2 切片规划 (Phase 2 Slices)](./PHASE-2-SLICES.md)
+- [阶段 2 基线审计 (Phase 2 Baseline Audit)](./PHASE-2-BASELINE-AUDIT.md)
+- [阶段 2 Issue 规划 (Phase 2 Issues)](./PHASE-2-ISSUES.md)
+- [阶段 2 Issue 跟踪文件](./issues/phase-2/)
+- [内测发布与 QA 验证](./INTERNAL-BETA-RELEASE.md)
+- [诊断日志操作手册](./DIAGNOSTIC-LOGS.md)
+- [Android 性能审计与 Trace 分析](./performance-audit/)
+- [领域语言与术语表](../CONTEXT.md)
+- [自动记账流程研究](./research/auto-bookkeeping-flow.md)
+- [架构决策记录 (ADR)](./adr/)
 
-The ADRs capture the decision trail from the grill-with-docs session. The PRD and supporting docs describe the current product baseline; the Phase 2 baseline audit is retained as a historical snapshot, while the issue files and internal-beta release document track execution status and remaining validation.
+ADR 记录了文档对齐研讨过程中的关键技术与产品决策路径。PRD 及相关支撑文档描述了当前产品的基线；Phase 2 基线审计作为历史快照保留，而 Issue 文件与内测发布文档用于跟踪当前的执行状态与剩余验证项。

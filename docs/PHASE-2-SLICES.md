@@ -1,122 +1,122 @@
-# Phase 2 Slices
+# 阶段 2 切片规划 (Phase 2 Slices)
 
-Phase 1 in [Development Slices](./DEVELOPMENT-SLICES.md) produced a feature-complete internal beta skeleton. Phase 2 turns that skeleton into a real-device-testable internal beta.
+在 [开发切片规划](./DEVELOPMENT-SLICES.md) 中完成的 Phase 1 产出了一个功能完备的内测框架。Phase 2 旨在将该框架转化为可在真实设备上进行测试的内测版本。
 
-> Execution status as of 2026-07-13: Issues 18-22 have completed the Profile decomposition. The authoritative completion and blocker record is [the Phase 2 issue index](./issues/phase-2/README.md); the planned device matrix remains incomplete, so this document is a plan rather than a beta-distribution approval.
+> **执行状态说明（截至 2026-07-13）**：Issue 18-22 已完成对 Profile 个人中心页面的重构拆分。权威的完成记录与阻断项以 [Phase 2 Issue 索引](./issues/phase-2/README.md) 为准；规划的设备矩阵尚未全部完成，因此本文档属于计划规划而非内测分发许可。
 
-Each slice should be independently testable and leave the app in a coherent state.
+每个切片应该可独立测试，并使应用保持在功能自恰的状态。
 
-## P2-Slice 1: Review And Technical Debt Cleanup
+## P2-Slice 1: 代码复核与技术债清理 (Review And Technical Debt Cleanup)
 
-Outcome:
-- Phase 1 codebase is reviewed, cleaned, and documented as a stable baseline for Phase 2.
+预期成果：
+- Phase 1 代码库经过全面复核、清理与文档化，为 Phase 2 奠定稳定的基线。
 
-Includes:
-- Review Slice 0-15 against the PRD and current code.
-- Remove or isolate mock gateways, demo passphrases, and purely in-memory shortcuts where they block Phase 2.
-- Identify duplicated UI/state logic and fragile module boundaries.
-- Sync README and docs with actual behavior.
-- Write a known-risk list for remaining non-production pieces.
+包含内容：
+- 对照 PRD 与当前代码，对 Slice 0-15 进行全面复核。
+- 移除或隔离在 Phase 2 中产生阻断的 Mock GateWay、Demo 备份口令以及纯内存快捷实现。
+- 识别重复的 UI/状态逻辑与脆弱的模块边界。
+- 将 README 与文档更新至与实际行为完全一致。
+- 编写剩余非生产组件的已知风险清单。
 
-Verification:
-- Full test/build passes.
-- Code review findings are triaged into Phase 2 follow-up issues.
-- README and docs describe current limitations accurately.
-- No unrelated refactors or behavior changes are mixed into cleanup.
+验证方式：
+- 完整的 test/build 命令通过。
+- 代码复核发现的问题归类并排入 Phase 2 的后续 Issue 中。
+- README 和文档精准描述当前的限制。
+- 不混入无关的重构或行为变更。
 
-## P2-Slice 2: Room Persistence Closure
+## P2-Slice 2: Room 数据持久化闭环 (Room Persistence Closure)
 
-Outcome:
-- Core local app state survives process death and app restart.
+预期成果：
+- 核心本地应用状态能够跨进程销毁与应用重启完好保留。
 
-Includes:
-- Connect review queue, ledger, ignored entries, categorization rules, AI settings, continuous monitoring settings, and backup/restore to the Room/repository layer.
-- Replace in-memory app state in `MainActivity` where persistence is required.
-- Preserve the local-first ledger contract.
-- Make local data deletion clear persisted data.
-- Ensure encrypted backup uses persisted app data, not only Compose state.
+包含内容：
+- 将待确认队列、账本、已忽略条目、分类规则、AI 设置、连续监控设置及备份/恢复接入 Room/Repository 层。
+- 在需要持久化的位置替换 `MainActivity` 中的内存应用状态。
+- 维护“本地优先”的账本契约。
+- 确保本机数据删除能彻底清除持久化数据。
+- 确保加密备份使用持久化的应用数据，而非仅基于 Compose 状态。
 
-Verification:
-- Repository tests cover persisted settings, rules, and review state.
-- UI or integration test proves restart/recreate restores data.
-- Backup round-trip restores persisted data.
-- Local data deletion clears persisted data.
+验证方式：
+- 仓储测试覆盖持久化的设置、规则及待确认状态。
+- UI 或集成测试证明重启/重建后能够完整恢复数据。
+- 备份 Round-trip 能够成功恢复持久化数据。
+- 本机数据删除能够彻底清除持久化数据。
 
-## P2-Slice 3: Android Device Permission And Service Closure
+## P2-Slice 3: Android 设备权限与服务闭环 (Android Device Permission And Service Closure)
 
-Outcome:
-- Notification capture, bill sync, and continuous monitoring are wired to real Android permission/service flows.
+预期成果：
+- 将通知捕获、账单同步和连续监控接入真正的 Android 权限/服务流程。
 
-Includes:
-- Notification listener permission state detection and settings deep-link.
-- Accessibility permission state detection and settings deep-link.
-- Real bill sync service/session boundary for user-started WeChat/Alipay bill reading.
-- Continuous monitoring start/stop controls backed by a service boundary.
-- ROM-specific guidance for background keep-alive and auto-start behavior.
-- Guardrails: monitor only payment-related surfaces; never chat, messages, payment initiation, or transfers.
+包含内容：
+- 通知监听权限状态检测及设置深层链接 (Deep-link)。
+- 无障碍权限状态检测及设置深层链接 (Deep-link)。
+- 用户发起的微信/支付宝账单读取的真实账单同步服务/会话边界。
+- 由服务边界支撑的连续监控启动/停止控制。
+- 针对后台保活与自启动行为的 ROM 特定引导。
+- 安全护栏：仅监控支付相关界面；绝对不得监控聊天、普通消息、发起支付或发起转账。
 
-Verification:
-- Unit tests cover permission-state mapping.
-- Service boundary tests are added where possible.
-- Manual device scripts cover Android 10-15 and major domestic ROMs.
-- User can disable continuous monitoring at any time.
+验证方式：
+- 单元测试覆盖权限状态的映射。
+- 在可行的情况下添加服务边界测试。
+- 手动真机脚本覆盖 Android 10-15 及主流国产 ROM。
+- 用户可随时关闭连续监控。
 
-## P2-Slice 4: Backend Persistence And Real Provider Integration
+## P2-Slice 4: 后端持久化与真实提供商集成 (Backend Persistence And Real Provider Integration)
 
-Outcome:
-- Backend account, device/config, deletion, SMS, and AI proxy state are durable and provider-ready.
+预期成果：
+- 后端账号、设备/配置、注销、短信及 AI 代理状态具备持久化能力并接入真实服务商。
 
-Includes:
-- PostgreSQL schema and migrations for users, SMS codes/limits, registered devices, cloud configuration, deletion requests, and AI logs.
-- Token verification and route auth.
-- Real SMS provider seam using environment variables.
-- Real AI provider seam using environment variables.
-- Scheduled account deletion job.
-- Explicit secret handling: no provider keys in the client or repository.
+包含内容：
+- 针对用户、短信验证码/限流、已注册设备、云端配置、注销申请及 AI 日志的 PostgreSQL Schema 和迁移。
+- Token 校验与路由认证。
+- 使用环境变量的真实短信服务商对接缝隙。
+- 使用环境变量的真实 AI 服务商对接缝隙。
+- 定时账号注销清理任务。
+- 显式的密钥安全管理：客户端和代码仓库中严禁硬编码服务商密钥。
 
-Verification:
-- Backend integration tests run against a database test container or local test database.
-- Contract tests cover Android repository/client seams.
-- Deletion job removes account, devices, cloud config, and AI logs.
-- Missing provider environment variables fail safely.
-- Secret scanner passes.
+验证方式：
+- 基于数据库测试容器或本地测试数据库运行后端集成测试。
+- 契约测试覆盖 Android 仓储/客户端缝隙。
+- 注销任务能够清理账号、设备、云端配置及 AI 日志。
+- 缺失服务商环境变量时能安全降级失败。
+- 密钥扫描测试通过。
 
-## P2-Slice 5: Internal Beta QA And Release Package
+## P2-Slice 5: 内测 QA 与发布产物打包 (Internal Beta QA And Release Package)
 
-Outcome:
-- The app can be distributed to controlled internal beta testers with a repeatable validation package.
+预期成果：
+- 应用可通过可重复的验证包分发给受控的内部测试人员。
 
-Includes:
-- Device matrix and manual test scripts.
-- Capture accuracy, dedupe accuracy, review efficiency, and permission retention measurement plan.
-- Store compliance package review checklist.
-- Beta APK build procedure and artifact naming.
-- Regression checklist for account, local mode, notification capture, bill sync, AI, backup, deletion, and compliance.
-- Known risks and beta exit criteria.
+包含内容：
+- 设备矩阵与手动测试脚本。
+- 捕获准确率、去重准确率、确认/审核效率及权限留存率测量计划。
+- 商店合规包复核清单。
+- 内测 APK 构建流程与产物命名。
+- 涵盖账号、本地模式、通知捕获、账单同步、AI、备份、注销与合规的回归测试清单。
+- 已知风险与内测出口标准。
 
-Resolved during beta validation:
-- Phase 2 Issue 15 persists the non-sensitive local-mode confirmation across force-stop/relaunch without storing account credentials.
-- Phase 2 Issue 16 tracks payment records that source apps keep inside in-app message or bill surfaces instead of posting as Android notifications.
-- Phase 2 Issue 17 completes manual ledger-entry creation plus single-entry detail, editing, soft deletion, recovery, migration, and backup compatibility.
-- Phase 2 Issues 18-22 restructure the Profile area into Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, and Compliance and Privacy, with Issue 18 establishing the shared overview navigation.
+内测验证期间已解决项：
+- Phase 2 Issue 15 实现了非敏感本地模式确认状态跨强行停止/重新启动的持久化，且不存储账号凭据。
+- Phase 2 Issue 16 解决了源应用将支付记录保留在应用内消息或账单界面而非发送 Android 通知的问题。
+- Phase 2 Issue 17 补全了手动账本条目创建、单条目详情、编辑、软删除、恢复、迁移及备份兼容性。
+- Phase 2 Issue 18-22 将个人中心 Profile 拆分为账号管理、自动记账、分类规则、数据与备份及合规与隐私，其中 Issue 18 建立了共享的概览导航。
 
-Verification:
-- `.\gradlew.bat --no-daemon test` passes.
-- `.\gradlew.bat --no-daemon build` passes.
-- Beta APK is generated and its path is recorded.
-- Manual QA checklist is completed, or blocked items are documented.
-- No known secrets are present in source or build artifacts.
+验证方式：
+- `.\gradlew.bat --no-daemon test` 通过。
+- `.\gradlew.bat --no-daemon build` 通过。
+- 成功生成内测 APK 并记录其路径。
+- 完成手动 QA 检查清单，或对阻断项予以文档化。
+- 源码或构建产物中不存在任何已知密钥泄露。
 
-## Issue Readiness
+## Issue 就绪规范 (Issue Readiness)
 
-Each Phase 2 slice should be split into implementation issues only after P2-Slice 1 confirms the current code baseline. Each issue should include:
-- Scope.
-- Non-goals.
-- Target files/modules.
-- Acceptance tests.
-- Manual verification, if device behavior is involved.
-- Rollback or safety notes.
+每个 Phase 2 切片应在 P2-Slice 1 确认当前代码基线后，再拆分为具体的实现 Issue。每个 Issue 应包含：
+- 范围 (Scope)。
+- 非目标 (Non-goals)。
+- 目标文件/模块 (Target files/modules)。
+- 验收测试 (Acceptance tests)。
+- 手动验证（若涉及设备行为）。
+- 回滚或安全注意事项。
 
-## Recommended Start
+## 推荐开始顺序
 
-Start with P2-Slice 1 because it turns the Phase 1 skeleton into a trustworthy baseline before deeper persistence and Android service work.
+从 P2-Slice 1 开始，因为它能在进入更深度的持久化与 Android 服务工作之前，将 Phase 1 框架转化为值得信赖的基线。

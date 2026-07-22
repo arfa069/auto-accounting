@@ -1,3 +1,3 @@
-# Cover all payment-source transaction kinds
+# 覆盖支付来源包含的所有交易类型
 
-The MVP will attempt to capture every transaction kind exposed by WeChat and Alipay bill pages, not only expense, income, and refunds. This increases parser, deduplication, and review-interface complexity, but prevents the product from silently dropping financially important activity such as transfers, red packets, repayments, investment movements, fees, and other source-specific events.
+捕获与分类逻辑需要覆盖支付来源透出的所有业务交易类型，包括普通消费、退款、个人转账、微信红包、信用卡还款、投资理财、手续费等，不局限于单一的支出消费场景。

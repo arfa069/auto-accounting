@@ -1,333 +1,333 @@
-# UI Design Specification
-
-## 1. Product Personality
-
-The app is young, playful, and colorful. It uses a cat companion throughout the experience, including onboarding, review, reports, permissions, and confirmation flows.
-
-The UI can be cute, but sensitive moments must stay clear:
-- Money movement.
-- Privacy permission.
-- AI data upload.
-- Account deletion.
-- Local data deletion.
-- Backup and restore.
-
-## 2. Navigation
-
-Home bottom-navigation destinations:
-- Review.
-- Ledger.
-- Reports.
-- Profile.
-
-The four destination illustrations straddle the navigation surface's top edge and use a surface-colored outline. Use 52 dp artwork with 15 sp labels. A concave center cutout holds the existing purple circular add button with one soft shadow; the add button is not a fifth selectable destination. Destination screens hide the bottom navigation and expose an explicit return-to-home action.
-
-The review queue is the first destination in navigation order. Permission status and setup tools live in Profile, with inline prompts where missing setup blocks a workflow.
-
-## 3. Review Queue
-
-First screen:
-- Header with Home, `待确认`, ignored records, and `确认后记入「<当前账本名>」`.
-- One status summary card.
-- A separate full-width `补录账单` action card.
-- One pending-record list.
-
-Top summary:
-- Pending total.
-- Duplicate suspect count.
-- Today's pending count.
-
-Pending list:
-- A single `待确认记录` group contains every pending entry.
-- Confidence state remains visible on each row.
-
-Default sorting:
-- Duplicate suspect and low-confidence first.
-- Then capture time descending.
-
-List item content:
-- Amount.
-- Merchant/title.
-- Suggested category.
-- Source.
-- Capture reason.
-- Confidence state.
-
-Swipe actions:
-- Right swipe confirms.
-- Left swipe ignores.
-- Resolve only after the row moves about 40% of its width; shorter slow or fast swipes settle without an action.
-- Both show undo Snackbar.
-
-Ignored entries:
-- Recoverable from ignored list for 30 days.
-
-## 4. Pending Entry Detail
-
-Layout:
-- Parsed result summary first.
-- Editable fields next.
-- Evidence section collapsed by default.
-- Bottom fixed action bar.
-
-Editable fields:
-- Amount.
-- Time.
-- Transaction kind.
-- Category.
-- Funding account.
-- Merchant/title.
-- Note.
-
-Evidence section:
-- Source.
-- Capture time.
-- Raw notification or bill text.
-- Parsed fields.
-
-Actions:
-- Above the confirm action, show "确认后记入「<当前账本名>」".
-- Confirm into ledger.
-- Ignore.
-
-## 5. Manual Bill Import Flow
-
-Entry points:
-- Review Queue `补录账单` card.
-- The entry opens the app-level `ManualBillImportHost`; source selection and progress are not duplicated inside the Review Queue screen.
-
-Preflight:
-- Check accessibility permission first. If missing, explain the limited purpose and show Settings.
-- Check the live accessibility-service connection separately. If disconnected, do not launch a source; show Recheck, Settings, and Close.
-- Source-app launch failure becomes an explicit retryable result.
-- Selecting WeChat or Alipay automatically authorizes local OCR for that import session; the authorization expires when the session ends. State that screenshots are never saved or uploaded and OCR text does not enter the ledger; if sensitive diagnostics are separately enabled, accepted text may be retained in the encrypted local log.
-
-Progress UI:
-- Stepwise progress, not silent background work.
-- State clearly that each run reads only the currently visible page and does not auto-scroll, paginate, or scan all history.
-- After opening WeChat or Alipay, ask the user to enter a bill, transaction-detail, or payment-result page, remain briefly, and return after recognition.
-- Waiting expires after 90 seconds only for the matching session still awaiting a bill page.
-- The authorized manual path covers WeChat history-bill details without depending on a mini-program or wallet Activity class; automatic OCR keeps its narrower Activity allowlist.
-- OCR requires the exact field relationship `当前状态: 支付成功` (same line or adjacent key/value lines) plus one unambiguous amount. `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, and `已取消` reject the page even if the positive pair is also visible.
-
-Steps:
-- Open source.
-- Read bills.
-- Parse.
-- Deduplicate.
-- Create pending entries.
-
-Completion:
-- Show added and deduplicated counts.
-- Primary action: `查看待确认`.
-- Secondary action: Close.
-- If automatic bookkeeping is off, offer `开启自动记账` as an additional secondary action.
-- UI displays progress only. `BillSyncCaptureProcessor` and `ReviewQueuePersistence` write Room; the Review Queue refreshes from Room Flow.
-
-## 6. Ledger
-
-Header:
-- Use the current ledger-book name as the screen title.
-- The overflow menu lists Ledger Management, Funding Accounts, and Recently Deleted in that order.
-
-Top monthly summary:
-- Monthly expense.
-- Monthly income.
-- Net amount.
-
-Primary action:
-- The raised center action in the home bottom navigation opens the manual-entry form.
-- The ledger screen does not duplicate this action with a local floating button.
-- Manual entry is not duplicated on the review-queue screen.
-
-List:
-- Show one available month at a time with `上一月` and `下一月` controls; disable navigation beyond the first or last month containing entries.
-- Row fields: merchant/title, category, time, amount, source marker.
-- Tapping a row opens the shared ledger-entry editor directly.
-- The list, summary, search, and filters use the current ledger book only.
-
-Ledger management:
-- List every ledger book with its name, entry count, and current indicator.
-- Selecting a ledger book persists the selection and returns to that book's ledger.
-- New ledger-book creation trims the name, rejects blank or duplicate names, and selects the new book immediately.
-- Delete requires confirmation. A book with active or recently deleted entries, or the last remaining book, shows a specific blocked-deletion reason instead of deleting.
-- This version does not expose ledger-book rename or move-entry actions.
-
-Funding accounts:
-- List all funding accounts shared across ledger books and provide create, edit, and delete actions.
-- The form contains a required name and an optional WeChat or Alipay payment source.
-- Reject an equal normalized name within the same payment source; allow equal names under different payment sources.
-- Editing preserves the existing account identity and does not rewrite historical ledger-entry payment sources.
-- Delete requires confirmation. When references exist, keep the account and show counts for active/deleted ledger entries, pending entries, and ignored entries.
-- Funding accounts are created only from the independent Funding Accounts page; creation is not exposed from ledger-entry creation or editing.
-
-Ledger-entry editor:
-- Show the current transaction fields first.
-- Show flow direction separately from transaction kind and amount.
-- Display currency as CNY without offering a currency selector in the first version.
-- Amount input accepts a positive value with at most two decimal places; flow direction controls the displayed sign.
-- The date-time picker does not allow a value later than the current device time.
-- The funding-account selector lists existing accounts; it does not provide inline account creation.
-- The category selector uses existing categories and Uncategorized without an inline category-creation action.
-- Entry origin, lifecycle timestamps, original capture source, original pending-entry ID, and capture evidence remain persisted but are not composed in the current ledger UI.
-- Manual creation and editing reuse the same transaction form.
-- Form changes remain local until the user taps Save.
-- Navigating back with unsaved changes opens a choice to discard changes or continue editing.
-- The editor contains Delete; confirmation explains that the entry moves to Recently Deleted for 30 days.
-- After deletion, return to the ledger and show a "Moved to Recently Deleted" Snackbar with Undo.
-
-Recently deleted:
-- Scope the list to the current ledger book.
-- Show deletion time and the number of retention days remaining for each entry.
-- Each entry offers Restore and Permanently Delete actions.
-- Permanent deletion requires a confirmation that clearly states the entry cannot be recovered.
-- Entries are removed automatically after 30 days.
-
-Search and filtering:
-- Search icon.
-- Filter panel.
-- Filter fields: time, source, category, transaction kind, amount range.
-
-## 7. Reports
-
-First screen:
-- Scope every total, category-share, and cash-flow query to the current ledger book.
-- Let `x` be the latest month in the current ledger book with at least one reportable income or expense entry; neutral entries do not establish `x`.
-- Show month `x` income and expense totals above the report panels.
-- Place Panel A, the month `x` expense-category share, before Panel B, the seven-month cash-flow table.
-
-Panel A — expense category share:
-- Render a hand-drawn-style donut with Compose `Canvas`.
-- Include outflow entries from month `x` only. Sort categories by expense amount, keep the first four, and combine any remaining categories into "其他".
-- Pair the donut with a legend showing category name and one-decimal percentage. Keep the existing ranking as a read-only list showing category name and amount; color is decorative reinforcement, never the only way to identify a segment.
-- When month `x` has income but no expense, replace the donut and ranking with "本月暂无支出分类" while keeping the income overview visible.
-
-Panel B — seven-month cash flow:
-- Display the inclusive window `[x-3, x+3]` as month, expense, and income columns ordered by month.
-- Fill missing months in that window with zero, keep all seven month rows available by scrolling, highlight row `x` with a light-purple background, and use coral for expense and teal for income.
-- Do not offer category selection or retain the previous category-specific six-month trend.
-
-Report-level no-data state:
-- If the current ledger book has no reportable income or expense entries, there is no `x`; show "当前账本暂无可分析的收支" instead of overview totals or zero-filled report content.
-- Neutral entries remain outside income, expense, category-share, and cash-flow calculations.
-
-## 8. Profile
-
-Top area:
-- A compact account-state card links to Account Management.
-- Local mode reads "Local mode · ledgers stored on this device".
-- Signed-in mode shows a masked phone number and account state.
-- Do not add avatar, nickname, signature, or other personal-profile fields.
-
-Overview entries, in order:
-1. Account Management.
-2. Automatic Bookkeeping.
-3. Categorization Rules.
-4. Data and Backup.
-5. Compliance and Privacy.
-
-Each overview row contains one status summary and a navigation affordance only. It never contains switches, permission buttons, or backup-password fields. Selecting a row opens a full secondary page with a title and back action. Destination and secondary pages hide bottom navigation; back from a Profile secondary page returns to the Profile overview, and back from the Profile overview returns Home.
-
-Account Management:
-- In local mode, explain the state and offer sign-in or registration.
-- When signed in, show masked account state, a normal sign-out action, and a visually separated account-deletion danger area.
-- Sign-out keeps all local ledger books, while account deletion follows its separate cooling-off flow.
-- Visible and system back actions follow the same hierarchy: Recovery returns to Login; Login, Registration, Local Mode Explanation, and Compliance Materials return to the account landing page; an account landing page opened from Account Management returns to Account Management.
-
-Automatic Bookkeeping:
-- Order sections as state, then required permissions and background-reliability guidance.
-- Overview status is Ready, Needs attention with a specific reason, or Off. Result notifications do not block capture and do not produce Needs attention.
-- Keep the accessibility description explicit: it is limited to payment-result and permitted bill pages, and does not read chats or ordinary messages.
-
-Categorization Rules:
-- Keep local rule management available in every account state.
-- In local mode, describe cloud AI as login-required and do not offer an enable control.
-- After AI is enabled, show enhanced context as a separate opt-in. Turning off AI also turns off enhanced context; enabling AI again starts with minimal fields.
-
-Data and Backup:
-- Keep current-ledger CSV export and all-ledger encrypted-backup export/import in the normal area; their descriptions must make the different scopes explicit.
-- Place Local Data Deletion at the bottom in a distinct danger area, retaining the backup reminder and typed confirmation.
-- Import first validates the backup and passphrase without changing local data; only a second explicit confirmation permits replacing the local snapshot.
-
-Compliance and Privacy:
-- Show separate rows for Privacy Policy, Personal Information Collection List, Third-Party Service List, Permission Explanations, and Diagnostic Logs; each opens its own page and remains available in local mode.
-- Diagnostic Logs is a user-controlled entry in both builds and follows section 12. Store-review materials, device matrices, permission-retention checks, and quality metrics remain Debug-build Developer Tools only.
-
-## 9. Login, Registration, Recovery
-
-Login/register first screen:
-- Cat companion.
-- Value explanation.
-- Phone number input.
-- Local mode entry.
-
-Registration:
-- Phone number.
-- Verification code.
-- Set password.
-
-Local mode:
-- Entry is visible.
-- One-time explanation: local bookkeeping is available, but cloud AI, registered-device configuration, and future sync are unavailable.
-
-Agreement:
-- Login, registration, and local mode require agreement to user agreement and privacy policy.
-
-Forgot password:
-- Entry at bottom of password input page.
-- Flow: phone confirmation, SMS code, new password.
-
-## 10. Account Form Feedback
-
-Tone:
-- Friendly and direct.
-- Explain what is wrong and how to fix it.
-- Do not overuse cat jokes for account, security, privacy, or payment errors.
-
-Placement:
-- Field errors appear below the relevant input.
-- Global errors use a top or bottom message bar.
-
-Fixed copy:
-- Phone format: "请输入 11 位手机号".
-- Password rule: "密码需 8-32 位，包含大小写字母、数字和符号".
-- Verification code wrong: "验证码不正确，请重新输入".
-- Verification code expired: "验证码已过期，请重新获取".
-- Too frequent verification-code request: "获取太频繁，请稍后再试".
-- Password/login failed: "手机号或密码不正确".
-- Temporary account lock: "尝试次数过多，请稍后再试，或使用短信找回密码".
-- Network failed: "网络连接失败，请检查后重试".
-- Agreement unchecked: "请先阅读并同意用户协议和隐私政策".
-- SMS send failed: "验证码发送失败，请稍后重试".
-- Phone already registered: "该手机号已注册，请直接登录".
-- Phone not registered: "该手机号尚未注册，请先创建账号".
-- Password confirmation mismatch: "两次输入的密码不一致".
-
-## 11. Automatic Bookkeeping Permission Section
-
-First screen items:
-- Notification listening.
-- Automatic-bookkeeping accessibility service.
-- Background running, auto-start, battery optimization, and battery-saver suggestions.
-
-Each item:
-- Title.
-- One-sentence purpose.
-- Short status and settings action.
-
-Fixed copy:
-- Notification listening: "用于识别微信、支付宝支付通知".
-- Automatic-bookkeeping accessibility service: "用于识别支付结果页和支付记录".
-- Automatic capture: "开启后自动识别受支持的支付通知和支付结果页".
-- Background running: "避免系统关闭后台导致自动记账失效".
-- Auto-start: "允许手机重启后恢复自动记账服务"; a short manufacturer-specific settings path may follow.
-- Ignore battery optimization: "避免系统休眠导致自动记账中断".
-- Disable battery saver: "避免省电策略限制后台自动记账".
-- Bookkeeping result notifications are enabled with automatic bookkeeping and requested when needed on Android 13 or later; denial does not block capture or persistence.
-- Background reliability suggestions never block automatic bookkeeping because auto-start and background-run state cannot be read reliably across manufacturers.
-- Cloud AI: "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文".
-
-## 12. Diagnostic Logs
+# UI 设计规范 (UI Design Specification)
+
+## 1. 产品性格 (Product Personality)
+
+本应用定位年轻、趣味、色彩丰富。贯穿整个体验采用猫咪陪伴 IP 角色，包括引导、待确认队列、报表、权限及确认流程。
+
+UI 可以可爱，但在敏感时刻必须保持严肃、清晰、无歧义：
+- 资金变动。
+- 隐私权限。
+- AI 数据上传。
+- 账号注销。
+- 本机数据删除。
+- 备份与恢复。
+
+## 2. 导航架构 (Navigation)
+
+主页底部导航目的地：
+- 待确认 (Review)。
+- 账本 (Ledger)。
+- 报表 (Reports)。
+- 我的 (Profile)。
+
+四个导航选项卡插图跨越导航栏顶边，并使用表面颜色的轮廓。使用 52 dp 的艺术图和 15 sp 的标签。凹陷的中央切口容纳现有的带柔和阴影的紫色圆形“添加”按钮；“添加”按钮不是第五个可选择的导航目的地。二级目的地页面隐藏底部导航并透出明确的返回主页操作。
+
+待确认队列在导航顺序中排在第一位。权限状态与设置工具位于“我的”页面中，在缺少设置阻断工作流时提供内嵌提示。
+
+## 3. 待确认队列 (Review Queue)
+
+主界面构成：
+- 顶部 Header 包含主页图标、`待确认` 标题、已忽略记录入口，以及 `确认后记入「<当前账本名>」` 提示。
+- 一张状态汇总卡片。
+- 一张独立的通栏 `补录账单` 操作卡片。
+- 一个待确认记录列表。
+
+顶部汇总卡片：
+- 待确认总额。
+- 疑似重复笔数。
+- 今日待确认笔数。
+
+待确认列表：
+- 单个 `待确认记录` 分组包含每一个待确认条目。
+- 每一行上置信度状态保持可见。
+
+默认排序规则：
+- 疑似重复与低置信度优先排列。
+- 随后按捕获时间倒序排列。
+
+列表项展示内容：
+- 金额。
+- 商家/标题。
+- 建议分类。
+- 来源。
+- 捕获原因。
+- 置信度状态。
+
+滑动操作 (Swipe Actions)：
+- 向右滑动：确认入账。
+- 向左滑动：忽略。
+- 仅当行滑动超过其宽度的 约 40% 时方可触发处理；较短的慢速或快速滑动松开后复位而不触发操作。
+- 两种滑动均展示带“撤销”选项的 Snackbar。
+
+已忽略条目：
+- 可在已忽略列表中保留 30 天并支持恢复。
+
+## 4. 待确认条目详情页 (Pending Entry Detail)
+
+页面布局：
+- 顶部优先展示解析结果汇总。
+- 接下来展示可编辑字段。
+- 证据区域默认折叠。
+- 底部固定操作栏。
+
+可编辑字段：
+- 金额。
+- 时间。
+- 交易类型。
+- 分类。
+- 资金账户。
+- 商家/标题。
+- 备注。
+
+证据区域：
+- 来源。
+- 捕获时间。
+- 原始通知或账单文本。
+- 解析出的字段。
+
+操作按钮：
+- 确认按钮上方显示：“确认后记入「<当前账本名>」”。
+- 确认入账。
+- 忽略。
+
+## 5. 手动账单导入流程 (Manual Bill Import Flow)
+
+入口点：
+- 待确认队列页面中的 `补录账单` 卡片。
+- 入口打开应用级的 `ManualBillImportHost`；来源选择与进度不在待确认队列页面内重复实现。
+
+预检逻辑 (Preflight)：
+- 优先检查无障碍权限。若缺失，解释其限定用途并引导跳转系统设置。
+- 独立检查无障碍服务的实时在线连接。若断开，不启动来源应用；展示“重新检查”、“系统设置”和“关闭”。
+- 来源应用启动失败将作为明确的可重试结果透出。
+- 选择微信或支付宝会自动授权该次导入会话的本地 OCR；授权在会话结束时失效。明确说明截图绝不保存、绝不上传，OCR 文本不进入账本；若单独开启敏感诊断，接受的文本可保留在加密本地日志中。
+
+进度 UI (Progress UI)：
+- 呈现分步进度，而非静默后台处理。
+- 明确说明每次运行仅读取当前可见的页面，不进行自动滚动、翻页或全量历史扫描。
+- 打开微信或支付宝后，提示用户进入账单、交易详情或支付结果页面，稍作停留，识别完成后返回。
+- 90 秒等待仅针对处于 `AwaitingBillPage` 状态的匹配会话超时。
+- 授权的手动路径覆盖微信历史账单详情页，而不依赖小程序或钱包的 Activity 类；自动 OCR 保持其较窄的 Activity 白名单。
+- OCR 必须具备精确的字段关系 `当前状态: 支付成功`（同行或相邻键值行）以及一个无歧义的金额。即使同时可见正面证据，`确认支付`、`立即支付`、`收银台`、`支付密码`、`待支付`、`处理中`、`支付失败` 和 `已取消` 也会拒绝页面。
+
+步骤阶段：
+- 打开来源。
+- 读取账单。
+- 解析。
+- 去重。
+- 创建待确认条目。
+
+完成反馈：
+- 展示新增笔数与去重笔数。
+- 主要操作：`查看待确认`。
+- 次要操作：关闭。
+- 若自动记账处于关闭状态，提供 `开启自动记账` 作为额外的次要操作。
+- UI 仅展示进度。`BillSyncCaptureProcessor` 与 `ReviewQueuePersistence` 负责写入 Room；待确认队列从 Room Flow 实时刷新。
+
+## 6. 账本 (Ledger)
+
+Header 区域：
+- 使用当前账本名称作为页面标题。
+- Overflow 溢出菜单按顺序排列“账本管理”、“资金账户”和“最近删除”。
+
+顶部月度汇总：
+- 月度支出。
+- 月度收入。
+- 结余/净额。
+
+主要操作：
+- 主页底部导航中的抬高中央操作按钮打开手动录入表单。
+- 账本页面不通过本地悬浮按钮重复此操作。
+- 手动录入不在待确认队列页面中重复出现。
+
+列表展示：
+- 一次展示一个可用月份，配有 `上一月` 与 `下一月` 切换控件；包含条目的首月之前或末月之后禁用导航。
+- 列表行字段：商家/标题、分类、时间、金额、来源标识。
+- 点击列表行直接打开共享的账本条目编辑器。
+- 列表、汇总、搜索及筛选均仅针对当前账本。
+
+账本管理：
+- 罗列每个账本及其名称、条目数量和当前标识。
+- 选择账本会持久化该选择并返回该账本的账面。
+- 新建账本会去除名称前后空格，拒绝空白或重复名称，并立即选中新建的账本。
+- 删除需要二次确认。包含活动或最近删除条目的账本，或最后一个剩余账本，显示具体的阻断原因而非直接删除。
+- 本版本不透出账本重命名或移动条目操作。
+
+资金账户：
+- 罗列跨账本共享的所有资金账户，并提供新建、编辑和删除操作。
+- 表单包含必填名称和可选的微信/支付宝支付来源。
+- 拒绝在同一支付来源下存在规范化后的相同名称；允许不同支付来源下使用相同名称。
+- 编辑保留现有账户标识，不重写历史账本条目的支付来源。
+- 删除需要二次确认。当存在引用时，保留该账户并展示活动/已删除账本条目、待确认条目及已忽略条目的引用计数。
+- 资金账户仅从独立的“资金账户”页面创建；不从账本条目的创建或编辑中透出新建入口。
+
+账本条目编辑器：
+- 优先展示当前交易字段。
+- 将资金流向与交易类型、金额分开独立展示。
+- 货币显示为 CNY，首版本不提供货币选择器。
+- 金额输入框仅接受至多两位小数的正数；资金流向控制展示的正负号。
+- 日期时间选择器不允许选择晚于当前设备时间的值。
+- 资金账户选择器罗列已有账户；不提供内嵌创建账户功能。
+- 分类选择器使用已有分类及“未分类”，无内嵌创建分类操作。
+- 条目来源、生命周期时间戳、原始捕获来源、原始待确认条目 ID 及捕获证据保持持久化，但在当前账本 UI 中不组装展示。
+- 手动创建与编辑复用相同的交易表单。
+- 在用户点击“保存”之前，表单修改保持在本地。
+- 带未保存修改返回时，弹窗询问放弃修改或继续编辑。
+- 编辑器包含“删除”按钮；二次确认明确告知条目将移至“最近删除”保留 30 天。
+- 删除后返回账本，并展示“已移至最近删除”带撤销选项的 Snackbar。
+
+最近删除：
+- 列表作用域限定为当前账本。
+- 显示删除时间及每个条目剩余的保留天数。
+- 每个条目提供“恢复”与“永久删除”操作。
+- 永久删除需要二次确认，明确告知该条目无法恢复。
+- 超过 30 天后条目自动彻底清除。
+
+搜索与筛选：
+- 搜索图标。
+- 筛选面板。
+- 筛选字段：时间、来源、分类、交易类型、金额区间。
+
+## 7. 报表 (Reports)
+
+主界面：
+- 将所有总额、分类占比和现金流查询的作用域限定在当前账本。
+- 设 `x` 为当前账本中至少包含一笔可报表收入或支出条目的最新月份；中性条目不确立 `x`。
+- 在报表面板上方展示 `x` 月的收入与支出总额。
+- 将面板 A（`x` 月支出分类占比）排在面板 B（七个月现金流表格）之前。
+
+面板 A — 支出分类占比：
+- 使用 Compose `Canvas` 绘制手绘风手绘环形图 (Donut)。
+- 仅包含 `x` 月的流出/支出条目。按支出金额对分类排序，保留前四个，将剩余分类合并为“其他”。
+- 环形图配有图例，显示分类名称和一位小数百分比。保留现有的排行榜作为只读列表，显示分类名称和金额；颜色作为装饰性强化，绝不作为识别分段的唯一方式。
+- 当 `x` 月有收入但无支出时，将环形图和排行榜替换为“本月暂无支出分类”，同时保持收入概览可见。
+
+面板 B — 七个月现金流：
+- 将包含窗口 `[x-3, x+3]` 显示为按月份排序的月份、支出和收入列。
+- 用 0 补全该窗口中缺失的月份，通过滚动保持所有七个月份行可用，使用淡紫色背景高亮第 `x` 行，支出使用珊瑚色，收入使用青绿色。
+- 不提供分类选择，也不保留以前特定于分类的六个月趋势图。
+
+报表级无数据状态：
+- 若当前账本没有可报表的收入或支出条目，则不存在 `x`；显示“当前账本暂无可分析的收支”，而非概览总额或填零的报表内容。
+- 中性条目排除在收入、支出、分类占比和现金流计算之外。
+
+## 8. 我的 (Profile)
+
+顶部区域：
+- 紧凑的账号状态卡片链接至“账号管理”。
+- 本地模式显示：“本地模式 · 账本存储在本机”。
+- 已登录模式显示脱敏手机号及账号状态。
+- 不添加头像、昵称、签名或其它个人资料字段。
+
+二级入口列表（按顺序）：
+1. 账号管理。
+2. 自动记账。
+3. 分类规则。
+4. 数据与备份。
+5. 合规与隐私。
+
+每个概览行仅包含一个状态摘要和一个导航指示器。绝对不包含开关、权限按钮或备份密码输入框。选择某行会打开带标题和返回操作的完整二级页面。目的地页面和二级页面隐藏底部导航；从 Profile 二级页面返回会回到 Profile 概览，从 Profile 概览返回会回到主页。
+
+账号管理：
+- 在本地模式下，解释当前状态并提供登录或注册入口。
+- 已登录时，展示脱敏账号状态、正常的退出登录操作，以及视觉隔离的账号注销危险区域。
+- 退出登录会保留所有本地账本，而账号注销遵循其独立的冷静期流程。
+- 可见返回与系统返回按同一层级导航：找回密码返回登录；登录、注册、本地模式说明和合规材料返回账号落地页；从“账号管理”打开的账号落地页返回“账号管理”。
+
+自动记账：
+- 节内容按状态、所需权限和后台稳定性引导排序。
+- 概览状态为“就绪”、“需注意”（带具体原因）或“已关闭”。结果通知不阻断捕获，也不产生“需注意”状态。
+- 保持无障碍说明明确：仅限于支付结果和允许的账单页面，不读取聊天或普通消息。
+
+分类规则：
+- 在每种账号状态下保持本地规则管理可用。
+- 在本地模式下，将云端 AI 描述为需要登录，不提供开启控件。
+- AI 开启后，增强上下文作为单独的选项显示。关闭 AI 也会关闭增强上下文；重新开启 AI 将从最小字段开始。
+
+数据与备份：
+- 将当前账本 CSV 导出和所有账本加密备份导出/导入保留在常规区域；其描述必须明确不同的作用域。
+- 将“本机数据删除”放在底部的独立危险区域，保留备份提醒和文本输入确认。
+- 导入首先在不更改本地数据的情况下校验备份和口令；只有第二次显式确认才允许替换本地快照。
+
+合规与隐私：
+- 分别展示“隐私政策”、“个人信息收集清单”、“第三方服务清单”、“权限使用说明”和“诊断日志”的独立入口；每个入口打开各自的页面，并在本地模式下保持可用。
+- “诊断日志”在两个构建版本中都是用户可控的入口，遵循第 12 节规范。商店审核材料、设备矩阵、权限留存检查和质量指标仅保留在 Debug 构建的开发者工具中。
+
+## 9. 登录、注册与找回密码
+
+登录/注册首屏：
+- 猫咪陪伴形象。
+- 价值主张说明。
+- 手机号输入框。
+- 本地模式入口。
+
+注册流程：
+- 手机号。
+- 短信验证码。
+- 设置密码。
+
+本地模式：
+- 入口清晰可见。
+- 一次性弹窗说明：本地记账可用，但云端 AI、已注册设备配置及未来同步不可用。
+
+协议同意：
+- 登录、注册及本地模式均要求勾选同意用户协议和隐私政策。
+
+忘记密码：
+- 入口位于密码输入页底部。
+- 流程：手机号确认 -> 短信验证码 -> 设置新密码。
+
+## 10. 账号表单反馈与文案 (Account Form Feedback)
+
+文案基调：
+- 友好、直截了当。
+- 明确说明出了什么问题以及如何解决。
+- 不要在账号、安全、隐私或支付错误中过度使用猫咪梗。
+
+位置提示：
+- 字段错误出现在相关输入框下方。
+- 全局错误使用顶部或底部消息条提示。
+
+固定文案规范：
+- 手机号格式："请输入 11 位手机号"。
+- 密码规则："密码需 8-32 位，包含大小写字母、数字和符号"。
+- 验证码错误："验证码不正确，请重新输入"。
+- 验证码过期："验证码已过期，请重新获取"。
+- 验证码频繁："获取太频繁，请稍后再试"。
+- 密码/登录失败："手机号或密码不正确"。
+- 账号临时锁定："尝试次数过多，请稍后再试，或使用短信找回密码"。
+- 网络失败："网络连接失败，请检查后重试"。
+- 协议未勾选："请先阅读并同意用户协议和隐私政策"。
+- 短信发送失败："验证码发送失败，请稍后重试"。
+- 手机号已注册："该手机号已注册，请直接登录"。
+- 手机号未注册："该手机号尚未注册，请先创建账号"。
+- 两次密码不一致："两次输入的密码不一致"。
+
+## 11. 自动记账权限配置区 (Automatic Bookkeeping Permission Section)
+
+首屏项目：
+- 通知监听服务。
+- 自动记账无障碍服务。
+- 后台运行、自启动、电池优化及省电模式引导。
+
+每个配置项包含：
+- 标题。
+- 一句话用途说明。
+- 简短状态与跳转设置操作。
+
+固定文案规范：
+- 通知监听服务："用于识别微信、支付宝支付通知"。
+- 自动记账无障碍服务："用于识别支付结果页和支付记录"。
+- 自动捕获："开启后自动识别受支持的支付通知和支付结果页"。
+- 后台运行："避免系统关闭后台导致自动记账失效"。
+- 自启动："允许手机重启后恢复自动记账服务"；后可接厂商特定的设置路径提示。
+- 忽略电池优化："避免系统休眠导致自动记账中断"。
+- 关闭省电模式："避免省电策略限制后台自动记账"。
+- 记账结果通知随自动记账开启，并在 Android 13 或更高版本按需申请；拒绝授权不阻断捕获或持久化。
+- 后台稳定性建议绝不阻断自动记账，因为跨厂商无法可靠读取自启动和后台运行状态。
+- 云端 AI："开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文"。
+
+## 12. 诊断日志 (Diagnostic Logs)
 
 - “合规与隐私”在 Debug、Release 都显示“诊断日志”；原“开发者工具”仍仅 Debug 可见。
 - Release 首次开启前明确列出记录字段、排障用途、10 MB 上限、超过上限才轮转、设备内加密、关闭/清空方式和加密导出风险。
@@ -336,20 +336,20 @@ Fixed copy:
 - 操作包括启停、刷新、至少 8 位口令并二次确认的 `.aadiag` 导出、二次确认清空。导出期间口令输入和确认按钮禁用并显示进度，用户可取消；完成、失败或取消均使用当前可见弹窗反馈，成功信息包含准确文件名。关闭不删除历史；清空删除密文和设备密钥。
 - 导出成功后提示 Downloads 文件不会随本机数据删除，需要用户自行保管或删除。
 
-## 13. Visual System
+## 13. 视觉系统 (Visual System)
 
-Color semantics:
-- Expense: warm color.
-- Income: green.
-- Risk/permission problem: red.
-- Brand primary: lively blue or purple.
+色彩语义：
+- 支出：暖色调（如珊瑚红/橙）。
+- 收入：绿色。
+- 风险/权限问题：红色。
+- 品牌主色：活泼的蓝色或紫色。
 
-Charts:
-- Illustrated and playful.
-- Must keep labels, totals, and comparisons clear.
+图表风格：
+- 手绘插画风与趣味性。
+- 必须保持数值标签、总额及对比关系清晰易读。
 
-Cat companion:
-- 2D illustration.
-- Light animation.
-- Can appear across all flows.
-- Must not replace clear consent or warning copy.
+猫咪陪伴形象：
+- 2D 插画。
+- 动态轻量微动画。
+- 可出现在所有体验流程中。
+- 绝对不得替代清晰的授权同意或警告文案。

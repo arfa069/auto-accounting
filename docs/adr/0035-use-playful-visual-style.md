@@ -1,3 +1,3 @@
-# Use playful visual style
+# 采用趣味化视觉风格
 
-The app will use a younger, more colorful visual style that makes bookkeeping feel lighter and more approachable. This trades some financial-tool seriousness for onboarding warmth and store appeal, so permission, privacy, and money-related states must still use clear wording and trustworthy interaction patterns.
+整体 UI 视觉采用年轻、活泼、充满色彩感的设计风格，结合手绘插画风图表与圆润的卡片质感，摆脱传统记账软件冰冷沉闷的刻板印象。

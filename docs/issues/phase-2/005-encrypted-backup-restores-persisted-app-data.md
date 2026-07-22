@@ -1,24 +1,19 @@
-# Make Encrypted Backup Restore Real Persisted App Data
+# Issue 005: 实现加密备份恢复真实持久化应用数据
 
-## What to build
+## 待构建内容
 
-Change encrypted backup export/import so it operates on the real persisted app state instead of transient UI state, covering ledger, pending entries, ignored entries, categorization rules, funding accounts, and relevant local settings.
+改造加密备份的导出/导入，使其对真实持久化的应用状态进行操作（而非针对临时 UI 状态），覆盖账本、待确认条目、已忽略条目、分类规则、资金账户及相关本地设置。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Encrypted backup export reads from persisted app data and contains the expected local-first bookkeeping state.
-- [x] Backup import restores data into the repository/database layer and updates review queue, ledger, reports, rules, and settings.
-- [x] Backup reminder remains separate from local data deletion confirmation.
-- [x] CSV export remains a plain ledger export and is not confused with encrypted backup.
-- [x] Tests cover backup round-trip, wrong passphrase failure, and restored UI/repository state.
+- [x] 加密备份导出从持久化应用数据中读取，并包含预期的“本地优先”记账状态。
+- [x] 备份导入将数据恢复至仓储/数据库层，并更新待确认队列、账本、报表、规则及设置。
+- [x] 备份提醒保持独立于本机数据删除的二次确认。
+- [x] CSV 导出保持为纯账本导出，不与加密备份混淆。
+- [x] 测试覆盖备份 Round-trip、错误口令失败处理及恢复后的 UI/仓储状态。
 
-## Blocked by
+## 依赖项
 
-- Issue 2: Persist Review Queue And Ignored Entries
-- Issue 3: Persist Ledger Reports And Local Data Deletion
-- Issue 4: Persist Categorization Rules And AI Consent Settings
-
-## Verification
-
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
+- Issue 2: 持久化待确认队列与已忽略条目
+- Issue 3: 持久化账本、报表及本机数据删除
+- Issue 4: 持久化分类规则与 AI 同意/设置

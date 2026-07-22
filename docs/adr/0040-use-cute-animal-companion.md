@@ -1,3 +1,3 @@
-# Use cute animal companion
+# 采用可爱的动物形象作为陪伴角色
 
-The companion character will use a cute animal direction rather than an abstract helper, wallet object, or human assistant. This makes the product warmer and more memorable, while requiring strict tone control so sensitive money, permission, privacy, and consent moments remain clear rather than childish.
+陪伴 IP 角色选型确定为可爱的动物风格形象，作为应用常驻的引导者与品牌代言人。

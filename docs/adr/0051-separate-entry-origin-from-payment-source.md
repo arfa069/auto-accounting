@@ -1,3 +1,3 @@
-# Separate entry origin from payment source
+# 区分条目来源与支付来源
 
-The ledger will model how a transaction entered the app separately from any external payment source. Manual entries can represent cash, bank-card, or other transactions without pretending that "manual" is a payment source, while funding accounts continue to describe the money account or payment method involved.
+严格区分“条目来源 (Entry Origin)”与“支付来源 (Payment Source)”：条目来源表示交易进入应用的方式（如手动录入、通知捕获、账单同步或重复合并）；支付来源表示交易关联的外部应用或渠道（如微信、支付宝）。两者在数据模型与 UI 中独立存储与展现。

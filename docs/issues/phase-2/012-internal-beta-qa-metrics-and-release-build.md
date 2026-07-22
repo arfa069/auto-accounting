@@ -1,34 +1,17 @@
-# Package Internal Beta QA Metrics And Release Build
+# Issue 012: 打包内测 QA、质量指标与发布构建产物
 
-## What to build
+## 待构建内容
 
-Create the internal beta release package: repeatable build procedure, device matrix, manual test scripts, quality metrics, compliance checklist, known risks, and beta exit criteria.
+创建内测发布打包件：包含可重复的构建流程、设备矩阵、手动测试脚本、质量指标、合规复核清单、已知风险及内测出口标准。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Device matrix covers Android 10-15 and major domestic ROM families targeted for beta.
-- [x] Manual QA scripts cover account/local mode, notification capture, bill sync, continuous monitoring, review queue, ledger, reports, AI, backup, deletion, and compliance pages.
-- [x] Capture accuracy, deduplication accuracy, review efficiency, and permission retention measurement plan is documented.
-- [x] Beta APK build command, artifact naming, output path, and signing assumptions are documented.
-- [x] Full test/build passes, beta APK is generated, and blocked manual checks are explicitly recorded.
+- [x] 设备矩阵覆盖内测针对的 Android 10-15 及主流国产 ROM 系列。
+- [x] 手动 QA 脚本覆盖账号/本地模式、通知捕获、账单同步、连续监控、待确认队列、账本、报表、AI、备份、注销及合规页面。
+- [x] 文档化捕获准确率、去重准确率、确认/审核效率及权限留存率的测量计划。
+- [x] 文档化内测 APK 构建命令、产物命名、输出路径及签名假定。
+- [x] 完整测试/构建通过，生成内测 APK，并明确记录受阻的手动检查项。
 
-## Verification
+## 依赖项
 
-- `.\gradlew.bat --no-daemon :services:backend:test`
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
-- Release artifact generated at `apps/android/build/outputs/apk/release/android-release-unsigned.apk`.
-- Signed beta distribution APK remains blocked by local signing material, and that blocker is explicitly recorded in [docs/INTERNAL-BETA-RELEASE.md](../../INTERNAL-BETA-RELEASE.md).
-
-## Blocked by
-
-- Issue 2: Persist Review Queue And Ignored Entries
-- Issue 3: Persist Ledger Reports And Local Data Deletion
-- Issue 4: Persist Categorization Rules And AI Consent Settings
-- Issue 5: Make Encrypted Backup Restore Real Persisted App Data
-- Issue 6: Wire Real Notification Listener Permission And Capture Path
-- Issue 7: Wire User Started Bill Sync Permission And Service Path
-- Issue 8: Wire Continuous Monitoring Service Boundary And Guardrails
-- Issue 9: Persist Backend Auth SMS And Registered Devices
-- Issue 10: Persist Backend Cloud Configuration And AI Proxy State
-- Issue 11: Persist Account Deletion And Scheduled Cloud Cleanup
+- Issue 2-11 与 Issue 13

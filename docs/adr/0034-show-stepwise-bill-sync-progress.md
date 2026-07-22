@@ -1,3 +1,3 @@
-# Show stepwise bill sync progress
+# 展示分步账单同步进度
 
-Bill sync will show stepwise progress, including opening the source, reading bills, parsing, deduplicating, and creating pending entries. Because accessibility-based bill reading may require user attention and touches sensitive screens, the app must make sync activity explicit rather than behaving like an opaque background job.
+手动账单同步过程中，弹窗界面清晰展示“打开来源 -> 读取账单 -> 解析 -> 去重 -> 创建待确认”的分步进度状态与结果反馈，避免静默后台等待带来的焦虑。

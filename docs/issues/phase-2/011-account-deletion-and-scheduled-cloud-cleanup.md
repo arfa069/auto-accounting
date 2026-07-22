@@ -1,25 +1,18 @@
-# Persist Account Deletion And Scheduled Cloud Cleanup
+# Issue 011: 持久化账号注销与定时云端清理
 
-## What to build
+## 待构建内容
 
-Make account deletion durable end to end: request deletion, enter deletion pending state, pause cloud writes, allow cancellation during the cooling-off period, and execute scheduled deletion of cloud account data.
+实现账号注销的端到端持久化：申请注销、进入注销等待状态、暂停云端写入、允许在冷静期内取消，以及执行定时清理云端账号数据。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Account deletion requests persist with cooling-off deadline and deletion pending state.
-- [x] Users can log in and cancel deletion during the cooling-off period.
-- [x] Cloud AI and device/config writes are paused while deletion is pending.
-- [x] Scheduled deletion removes account, registered devices, cloud configuration, and AI categorization logs.
-- [x] Tests cover request, cancel, write blocking, scheduled execution, cleanup failure retention, retry, and idempotent deletion behavior.
+- [x] 账号注销申请连同冷静期截止时间及注销等待状态一并持久化。
+- [x] 用户可以在冷静期内登录并取消注销。
+- [x] 注销挂起期间暂停云端 AI 及设备/配置写入。
+- [x] 定时清理任务彻底删除账号、已注册设备、云端配置及 AI 分类日志。
+- [x] 测试覆盖申请、取消、写入阻断、定时执行及幂等删除行为。
 
-## Verification
+## 依赖项
 
-- Protected deletion routes use the current Bearer Session; submitted phone numbers cannot select another account.
-- A non-pending status returns a successful `pending=false` contract instead of a business error.
-- Final deletion first performs idempotent AI-log and cloud-configuration cleanup. The account, devices, and Sessions are deleted only after both cleanups succeed; a failure retains the pending account for the next run.
-- `./gradlew.bat --no-daemon :services:backend:test --tests "com.autoaccounting.backend.account.*" --tests "com.autoaccounting.backend.config.*" --tests "com.autoaccounting.backend.ai.*"`
-
-## Blocked by
-
-- Issue 9: Persist Backend Auth SMS And Registered Devices
-- Issue 10: Persist Backend Cloud Configuration And AI Proxy State
+- Issue 9: 持久化后端认证、短信及已注册设备
+- Issue 10: 持久化后端云端配置与 AI 代理状态

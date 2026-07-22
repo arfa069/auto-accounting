@@ -1,3 +1,3 @@
-# Treat transaction data as sensitive personal information
+# 将交易数据视为敏感个人信息
 
-Transaction, bill, merchant, amount, category, and funding-account information will be treated as sensitive personal information. Even when processed locally, this data can reveal financial status, habits, and movement patterns, so storage, consent, cloud AI handling, logs, backups, export, and deletion must use a high-sensitivity privacy posture.
+将用户的账本、交易金额、商家、备注、支付账户及原始证据等全量交易数据均严格视为**敏感个人信息**，在传输、加密备份及诊断日志中执行最高级别的安全防护与脱敏策略。

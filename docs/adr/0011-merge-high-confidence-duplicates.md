@@ -1,3 +1,3 @@
-# Merge high-confidence duplicates
+# 自动合并高置信度重复项
 
-The app will automatically merge high-confidence duplicates while sending lower-confidence duplicate candidates to user review. This handles the expected overlap between notification capture and bill sync without forcing users to clean every duplicate manually or risking broad automatic merges based only on weak similarities.
+对于同一笔交易产生多条捕获来源（例如既收到通知又通过账单同步获取）的情况，当来源订单号相同或金额/商家/时间高度精准匹配时，系统自动进行高置信度合并；疑虑项则标为“疑似重复”由用户在待确认队列中手动裁决。

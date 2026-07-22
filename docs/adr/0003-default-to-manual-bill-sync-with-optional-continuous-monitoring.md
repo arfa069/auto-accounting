@@ -1,3 +1,3 @@
-# Default to manual bill sync with optional continuous monitoring
+# 默认手动账单同步与可选连续监控
 
-The app will default to user-started bill sync for WeChat and Alipay bill pages, while allowing continuous monitoring as an advanced opt-in mode. This keeps the main product behavior easier to explain and review, but preserves a path for users who want more complete automatic capture and accept the extra permission sensitivity.
+应用默认使用由用户主动发起的手动账单同步功能。连续监控（Continuous Monitoring）作为可选的高级模式放置在高级设置中，且仅在用户显式开启授权后运行，避免因后台持续观察带来不必要的系统资源消耗与合规风险。

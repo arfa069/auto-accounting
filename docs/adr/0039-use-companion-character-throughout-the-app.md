@@ -1,3 +1,3 @@
-# Use companion character throughout the app
+# 在全应用中贯穿使用陪伴 IP 角色
 
-The app will use a fixed companion character throughout the product, including permissions and confirmation flows. This strengthens brand personality and makes bookkeeping feel more approachable, but sensitive screens must still prioritize clear consent, plain risk wording, and unambiguous user actions over playful expression.
+固定一个 IP 陪伴角色，贯穿引导、待确认队列、报表、权限及确认流程，建立统一的产品品牌形象与用户陪伴感。

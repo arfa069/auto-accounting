@@ -1,3 +1,3 @@
-# Gate continuous monitoring behind advanced settings
+# 将连续监控入口收纳于高级设置中
 
-Continuous accessibility monitoring will live in advanced settings and may be suggested only after the user has tried bill sync. This keeps the default path focused on notification capture and user-started sync while still offering deeper automation to users who understand the trade-off.
+连续监控功能定位为高级功能，入口收纳在“自动记账”的高级设置中，并在开启前明确告知观察边界与权限需求，避免普通用户误开启。

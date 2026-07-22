@@ -1,3 +1,3 @@
-# Retain ignored entries for recovery
+# 保留已忽略条目以便恢复
 
-Ignored pending entries will be recoverable from an ignored list for 30 days. This makes quick swipe-ignore safe enough for daily use while avoiding permanent retention of dismissed sensitive transaction candidates.
+被用户忽略/驳回的待确认条目不会被立即从数据库中物理删除，而是进入“已忽略列表”保留 30 天，在此期间用户可随时将其恢复至待确认队列。

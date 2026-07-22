@@ -1,3 +1,3 @@
-# Hide categorization source in primary UI
+# 主 UI 中隐藏分类来源标识
 
-The primary UI will show the selected or suggested category without exposing whether it came from a rule, AI, manual input, or an uncategorized state. This keeps the review and ledger interfaces visually simple, while detailed provenance can remain available outside the main flow if needed for troubleshooting.
+在账本列表和报表的主展示界面中，隐藏分类是由“规则生成”还是由“AI 建议”的内部来源标识，保持界面的纯粹与简洁，仅在调试元数据中保留。

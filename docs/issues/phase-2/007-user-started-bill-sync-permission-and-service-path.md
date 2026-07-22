@@ -1,32 +1,17 @@
-# Wire User Started Bill Sync Permission And Service Path
+# Issue 007: 接通用户发起的账单同步权限与服务路径
 
-## What to build
+## 待构建内容
 
-Make manual bill sync a real user-started Android flow: accessibility permission detection, settings deep-link, sync session state, bill-page parsing, deduplication, progress display, and pending-entry creation.
+使手动账单同步成为真实的由用户发起的 Android 流程：包含无障碍权限检测、设置深层链接、同步会话状态、账单页解析、去重、进度展示及待确认条目创建。
 
-## Acceptance criteria
+## 验收标准
 
-- [x] Permission center reflects real accessibility service state and provides a settings deep-link.
-- [x] Starting bill sync requires explicit user action and shows sync steps from launch through completion/failure.
-- [x] WeChat/Alipay bill-page parsing creates pending entries or duplicate candidates through the capture pipeline.
-- [x] Sync cancellation/failure leaves the review queue and ledger in a coherent state.
-- [x] Tests cover permission-state mapping, parser/session state, dedupe handoff, and progress/failure rendering.
+- [x] 权限中心能够反映真实的无障碍服务状态，并提供跳转设置的深层链接。
+- [x] 发起账单同步需要用户显式触发，并展示从启动到完成/失败的分步同步阶段。
+- [x] 微信/支付宝账单页解析通过捕获流水线创建待确认条目或重复候选对象。
+- [x] 同步取消/失败能让待确认队列和账本保持在一致的状态。
+- [x] 测试覆盖权限状态映射、解析器/会话状态、去重接手及进度/失败渲染。
 
-## Blocked by
+## 依赖项
 
-- Issue 1: Baseline Audit And Phase 2 Risk Map
-
-## Verification
-
-- `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
-- `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
-
-## Device verification
-
-Status: Not run on 2026-07-09 because no Android device was connected through ADB.
-
-- [ ] Enable the bill-sync accessibility service from the profile permission center.
-- [ ] Start WeChat sync and confirm the app opens only after explicit source selection.
-- [ ] Start Alipay sync and confirm visible bill rows create pending entries.
-- [ ] Cancel an active session and confirm later page events are ignored.
-- [ ] Open a non-bill page and confirm failure progress without queue or ledger changes.
+- Issue 1: 基线审计与 Phase 2 风险映射表

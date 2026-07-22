@@ -1,3 +1,3 @@
-# Use cat companion
+# 采用猫咪作为陪伴 IP 角色
 
-The app's companion character will be cat-like. This supports a smart, light, and watchful bookkeeping personality that can appear across review, reports, onboarding, permissions, and store materials while still requiring clear wording in sensitive financial and privacy moments.
+动物陪伴角色具体确定为猫咪形象，结合猫咪性格特征设计轻量微动画与视觉元素。
