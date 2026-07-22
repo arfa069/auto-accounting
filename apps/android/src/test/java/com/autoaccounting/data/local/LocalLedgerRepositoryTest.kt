@@ -387,6 +387,19 @@ class LocalLedgerRepositoryTest {
     }
 
     @Test
+    fun expiredDeletionUsesInjectedClockByDefault() = runBlocking {
+        repository.seedSystemCategories()
+        val expired = repository.createManualEntry(sampleLedgerInput())
+        repository.moveLedgerEntryToDeleted(expired.id)
+        currentTime = NOW + LocalLedgerRepository.DELETED_RETENTION_MILLIS
+
+        val purged = repository.purgeExpiredDeletedLedgerEntries()
+
+        assertEquals(1, purged)
+        assertNull(repository.getLedgerEntry(expired.id))
+    }
+
+    @Test
     fun lastActiveAndRecentlyDeletedLedgerBooksCannotBeDeleted() = runBlocking {
         repository.seedSystemCategories()
         repository.ensureDefaultLedgerBook()
