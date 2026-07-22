@@ -32,6 +32,7 @@ class MonitoringStateCoordinator(
     private val monitoringServiceHealthHandler = Handler(Looper.getMainLooper())
     private val refreshMonitoringServiceHealth = object : Runnable {
         override fun run() {
+            if (activity.isFinishing || activity.isDestroyed) return
             billSyncAccessibilityServiceConnected.value =
                 ContinuousMonitoringServiceHealth.isServiceConnected(activity)
             monitoringServiceHealthHandler.postDelayed(
@@ -62,6 +63,10 @@ class MonitoringStateCoordinator(
         resultNotificationPermissionGranted.value = BookkeepingResultNotificationPermission.isGranted(activity)
         backgroundReliabilityState.value = BackgroundReliability.read(activity)
         permissionStateLoaded.value = true
+    }
+
+    fun onStop() {
+        monitoringServiceHealthHandler.removeCallbacks(refreshMonitoringServiceHealth)
     }
 
     fun onDestroy() {

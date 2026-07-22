@@ -140,6 +140,11 @@ class MainActivity : ComponentActivity() {
         coordinator.onResume()
     }
 
+    override fun onStop() {
+        coordinator.onStop()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         coordinator.onDestroy()
         super.onDestroy()
