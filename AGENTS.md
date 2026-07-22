@@ -18,6 +18,7 @@
 - `.\gradlew.bat :apps:android:testDebugUnitTest`：运行 Android JVM、Compose、Room 与 Robolectric 测试。
 - `.\gradlew.bat :services:backend:test`：运行后端单元测试及 Ktor 集成测试。
 - `.\gradlew.bat coverageReport`：运行三个模块的测试并生成各模块 JaCoCo HTML/XML 覆盖率报告。
+- `.\gradlew.bat detekt`：运行 Kotlin 静态代码规范、复杂度及架构规则检查。
 - `.\gradlew.bat :apps:android:assembleDebug`：构建调试版 APK。
 - `.\gradlew.bat :apps:android:assembleRelease`：构建 Release APK；只有本地 keystore 与三项签名凭据齐全时才会生成可分发的已签名产物。
 - `.\gradlew.bat :services:backend:run`：本地启动后端。
