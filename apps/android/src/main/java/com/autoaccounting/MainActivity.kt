@@ -1,23 +1,16 @@
 package com.autoaccounting
 
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,12 +20,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
@@ -41,11 +33,10 @@ import com.autoaccounting.data.local.LedgerBookDeleteResult as DataLedgerBookDel
 import com.autoaccounting.data.local.LedgerRepositoryState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
-import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountCredentials
+import com.autoaccounting.feature.account.AccountDeletionUiState
 import com.autoaccounting.feature.account.AccountManagementScreen
 import com.autoaccounting.feature.account.AccountRepository
-import com.autoaccounting.feature.account.AccountRepositoryResult
 import com.autoaccounting.feature.account.AccountRuntimeState
 import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountScreen
@@ -57,7 +48,6 @@ import com.autoaccounting.feature.account.InstallationIdStore
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.SecureAccountSessionStore
 import com.autoaccounting.feature.account.resolveAccountSessionVerification
-import com.autoaccounting.feature.billsync.BillSyncPermission
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.billsync.ManualBillImportHost
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
@@ -67,106 +57,71 @@ import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
-import com.autoaccounting.feature.diagnostics.DiagnosticLogs
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticEvent
 import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
 import com.autoaccounting.feature.diagnostics.DiagnosticLevel
+import com.autoaccounting.feature.diagnostics.DiagnosticLogs
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
-import com.autoaccounting.feature.capture.NotificationListenerPermission
-import com.autoaccounting.feature.capture.BookkeepingResultNotificationPermission
-import com.autoaccounting.feature.capture.shouldRequestBookkeepingResultNotificationPermission
 import com.autoaccounting.feature.home.HomeScreen
-import com.autoaccounting.feature.ledger.LedgerUiEntry
-import com.autoaccounting.feature.ledger.LedgerScreen
-import com.autoaccounting.feature.ledger.LedgerBookUiModel
-import com.autoaccounting.feature.ledger.LedgerBookDeleteResult as UiLedgerBookDeleteResult
 import com.autoaccounting.feature.ledger.FundingAccountDeleteResult as UiFundingAccountDeleteResult
+import com.autoaccounting.feature.ledger.LedgerBookDeleteResult as UiLedgerBookDeleteResult
+import com.autoaccounting.feature.ledger.LedgerBookUiModel
+import com.autoaccounting.feature.ledger.LedgerScreen
 import com.autoaccounting.feature.ledger.ManualLedgerEntryScreen
 import com.autoaccounting.feature.ledger.ReportsScreen
 import com.autoaccounting.feature.ledger.buildLedgerReportUiModel
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.AutomaticBookkeepingScreen
-import com.autoaccounting.feature.monitoring.BackgroundReliability
 import com.autoaccounting.feature.monitoring.BackgroundReliabilityState
+import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringServiceHealth
-import com.autoaccounting.feature.monitoring.SERVICE_HEARTBEAT_INTERVAL_MILLIS
+import com.autoaccounting.feature.monitoring.MonitoringStateCoordinator
 import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
-import com.autoaccounting.feature.monitoring.launchSettingsIntent
 import com.autoaccounting.feature.profile.ProfileDestination
 import com.autoaccounting.feature.profile.ProfileOverviewScreen
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
-import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import com.autoaccounting.feature.settings.DataAndBackupScreen
+import com.autoaccounting.feature.settings.LocalDataBackupRepository
 import com.autoaccounting.ui.components.AppBottomNavigationBar
-import com.autoaccounting.ui.components.AppBottomNavigationItem
 import com.autoaccounting.ui.components.SlidePageTransition
+import com.autoaccounting.ui.rememberAutoAccountingAppState
 import com.autoaccounting.ui.requestHighRefreshRate
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-    private val notificationListenerAccessGranted = mutableStateOf(false)
-    private val billSyncAccessibilityAccessGranted = mutableStateOf(false)
-    private val billSyncAccessibilityServiceConnected = mutableStateOf(false)
-    private val resultNotificationPermissionGranted = mutableStateOf(false)
-    private val backgroundReliabilityState = mutableStateOf(BackgroundReliabilityState())
-    private val permissionStateLoaded = mutableStateOf(false)
+    private val coordinator by lazy { MonitoringStateCoordinator(this) }
     private val reviewNavigationRequest = mutableStateOf(0L)
     private val pendingEntryNavigationId = mutableStateOf<String?>(null)
-    private val requestResultNotificationPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        resultNotificationPermissionGranted.value = granted
-    }
-    private var monitoringServiceHealthListener:
-        SharedPreferences.OnSharedPreferenceChangeListener? = null
-    private val monitoringServiceHealthHandler = Handler(Looper.getMainLooper())
-    private val refreshMonitoringServiceHealth = object : Runnable {
-        override fun run() {
-            billSyncAccessibilityServiceConnected.value =
-                ContinuousMonitoringServiceHealth.isServiceConnected(this@MainActivity)
-            monitoringServiceHealthHandler.postDelayed(
-                this,
-                SERVICE_HEARTBEAT_INTERVAL_MILLIS
-            )
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleNavigationIntent(intent)
-        billSyncAccessibilityServiceConnected.value =
-            ContinuousMonitoringServiceHealth.isServiceConnected(this)
-        monitoringServiceHealthListener = ContinuousMonitoringServiceHealth.registerListener(this) {
-            connected -> billSyncAccessibilityServiceConnected.value = connected
-        }
-        monitoringServiceHealthHandler.post(refreshMonitoringServiceHealth)
+        coordinator.onCreate()
         setContent {
             AutoAccountingApp(
-                notificationListenerAccessGranted = notificationListenerAccessGranted.value,
-                onOpenNotificationListenerSettings = ::openNotificationListenerSettings,
-                billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted.value,
-                billSyncAccessibilityServiceConnected = billSyncAccessibilityServiceConnected.value,
-                onOpenBillSyncAccessibilitySettings = ::openBillSyncAccessibilitySettings,
-                resultNotificationPermissionGranted = resultNotificationPermissionGranted.value,
-                onRequestResultNotificationPermission = ::requestResultNotificationPermission,
-                backgroundReliabilityState = backgroundReliabilityState.value,
-                onOpenBackgroundRunningSettings = ::openBackgroundRunningSettings,
-                onOpenAutoStartSettings = ::openAutoStartSettings,
-                onOpenBatteryOptimizationSettings = ::openBatteryOptimizationSettings,
-                onOpenBatterySaverSettings = ::openBatterySaverSettings,
-                onLaunchBillSyncSource = ::launchBillSyncSource,
-                permissionStateLoaded = permissionStateLoaded.value,
+                notificationListenerAccessGranted = coordinator.notificationListenerAccessGranted.value,
+                onOpenNotificationListenerSettings = coordinator::openNotificationListenerSettings,
+                billSyncAccessibilityAccessGranted = coordinator.billSyncAccessibilityAccessGranted.value,
+                billSyncAccessibilityServiceConnected = coordinator.billSyncAccessibilityServiceConnected.value,
+                onOpenBillSyncAccessibilitySettings = coordinator::openBillSyncAccessibilitySettings,
+                resultNotificationPermissionGranted = coordinator.resultNotificationPermissionGranted.value,
+                onRequestResultNotificationPermission = coordinator::requestResultNotificationPermission,
+                backgroundReliabilityState = coordinator.backgroundReliabilityState.value,
+                onOpenBackgroundRunningSettings = coordinator::openBackgroundRunningSettings,
+                onOpenAutoStartSettings = coordinator::openAutoStartSettings,
+                onOpenBatteryOptimizationSettings = coordinator::openBatteryOptimizationSettings,
+                onOpenBatterySaverSettings = coordinator::openBatterySaverSettings,
+                onLaunchBillSyncSource = coordinator::launchBillSyncSource,
+                permissionStateLoaded = coordinator.permissionStateLoaded.value,
                 reviewNavigationRequest = reviewNavigationRequest.value,
                 pendingEntryNavigationId = pendingEntryNavigationId.value
             )
@@ -182,77 +137,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        notificationListenerAccessGranted.value =
-            NotificationListenerPermission.isGranted(this)
-        billSyncAccessibilityAccessGranted.value = BillSyncPermission.isGranted(this)
-        billSyncAccessibilityServiceConnected.value =
-            ContinuousMonitoringServiceHealth.isServiceConnected(this)
-        resultNotificationPermissionGranted.value =
-            BookkeepingResultNotificationPermission.isGranted(this)
-        backgroundReliabilityState.value = BackgroundReliability.read(this)
-        permissionStateLoaded.value = true
+        coordinator.onResume()
     }
 
     override fun onDestroy() {
-        monitoringServiceHealthListener?.let { listener ->
-            ContinuousMonitoringServiceHealth.unregisterListener(this, listener)
-        }
-        monitoringServiceHealthListener = null
-        monitoringServiceHealthHandler.removeCallbacks(refreshMonitoringServiceHealth)
+        coordinator.onDestroy()
         super.onDestroy()
-    }
-
-    private fun openNotificationListenerSettings() {
-        runCatching {
-            startActivity(NotificationListenerPermission.settingsIntent())
-        }.getOrElse {
-            startActivity(Intent(Settings.ACTION_SETTINGS))
-        }
-    }
-
-    private fun openBillSyncAccessibilitySettings() {
-        runCatching {
-            startActivity(BillSyncPermission.settingsIntent())
-        }.getOrElse {
-            startActivity(Intent(Settings.ACTION_SETTINGS))
-        }
-    }
-
-    private fun requestResultNotificationPermission() {
-        if (
-            !shouldRequestBookkeepingResultNotificationPermission(
-                sdkInt = android.os.Build.VERSION.SDK_INT,
-                isGranted = BookkeepingResultNotificationPermission.isGranted(this)
-            )
-        ) return
-        requestResultNotificationPermission.launch(
-            BookkeepingResultNotificationPermission.permission
-        )
-    }
-
-    private fun openBackgroundRunningSettings() {
-        startFirstAvailable(BackgroundReliability.backgroundRunningIntents(this))
-    }
-
-    private fun openAutoStartSettings() {
-        startFirstAvailable(BackgroundReliability.autoStartIntents(this))
-    }
-
-    private fun openBatteryOptimizationSettings() {
-        startFirstAvailable(BackgroundReliability.batteryOptimizationIntents(this))
-    }
-
-    private fun openBatterySaverSettings() {
-        startFirstAvailable(BackgroundReliability.batterySaverIntents(this))
-    }
-
-    private fun startFirstAvailable(intents: List<Intent>) {
-        launchSettingsIntent(
-            intents = intents,
-            fallback = BackgroundReliability.applicationDetailsIntent(this),
-            canResolve = { it.resolveActivity(packageManager) != null },
-            launch = ::startActivity
-        )
     }
 
     private fun handleNavigationIntent(intent: Intent?) {
@@ -260,15 +150,6 @@ class MainActivity : ComponentActivity() {
             pendingEntryNavigationId.value = intent.getStringExtra(EXTRA_PENDING_ENTRY_ID)
             reviewNavigationRequest.value += 1
         }
-    }
-
-    private fun launchBillSyncSource(source: BillSyncSource): Boolean {
-        val launchIntent = packageManager.getLaunchIntentForPackage(source.packageName)
-            ?: return false
-        return runCatching {
-            startActivity(launchIntent)
-            true
-        }.getOrDefault(false)
     }
 
     companion object {
@@ -299,27 +180,13 @@ fun AutoAccountingApp(
     persistAccountSessionOverride: ((AccountCredentials) -> Boolean)? = null
 ) {
     val context = LocalContext.current
-    val database = remember {
-        AutoAccountingDatabaseProvider.get(context)
-    }
-    val localLedgerRepository = remember(database) {
-        LocalLedgerRepository(database)
-    }
-    val localPreferencesRepository = remember(database) {
-        LocalPreferencesRepository(database)
-    }
-    val localDataBackupRepository = remember(database) {
-        LocalDataBackupRepository(database)
-    }
-    val localModeSessionStore = remember(context.applicationContext) {
-        LocalModeSessionStore(context.applicationContext)
-    }
-    val secureAccountSessionStore = remember(context.applicationContext) {
-        SecureAccountSessionStore(context.applicationContext)
-    }
-    val installationIdStore = remember(context.applicationContext) {
-        InstallationIdStore(context.applicationContext)
-    }
+    val database = remember { AutoAccountingDatabaseProvider.get(context) }
+    val localLedgerRepository = remember(database) { LocalLedgerRepository(database) }
+    val localPreferencesRepository = remember(database) { LocalPreferencesRepository(database) }
+    val localDataBackupRepository = remember(database) { LocalDataBackupRepository(database) }
+    val localModeSessionStore = remember(context.applicationContext) { LocalModeSessionStore(context.applicationContext) }
+    val secureAccountSessionStore = remember(context.applicationContext) { SecureAccountSessionStore(context.applicationContext) }
+    val installationIdStore = remember(context.applicationContext) { InstallationIdStore(context.applicationContext) }
     val productionAccountRepository = remember(installationIdStore) {
         HttpAccountRepository(
             backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
@@ -327,26 +194,11 @@ fun AutoAccountingApp(
         )
     }
     val accountRepository = accountRepositoryOverride ?: productionAccountRepository
-    val diagnosticLogs = remember(context.applicationContext) {
-        DiagnosticLogs.get(context.applicationContext)
-    }
-    val reviewQueuePersistence = remember(localLedgerRepository) {
-        ReviewQueuePersistence(localLedgerRepository)
-    }
+    val diagnosticLogs = remember(context.applicationContext) { DiagnosticLogs.get(context.applicationContext) }
+    val reviewQueuePersistence = remember(localLedgerRepository) { ReviewQueuePersistence(localLedgerRepository) }
     val coroutineScope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val ledgerEntryListState = rememberLazyListState()
-    val reportCategoryRankingListState = rememberLazyListState()
-    val tabs = remember { AppTab.entries.toList() }
-    val bottomNavigationItems = remember(tabs) {
-        tabs.map { tab ->
-            AppBottomNavigationItem(
-                key = tab.name,
-                label = tab.label,
-                iconRes = tab.iconRes
-            )
-        }
-    }
+    val appState = rememberAutoAccountingAppState()
+
     var selectedTab by remember { mutableStateOf<AppTab?>(null) }
     var manualEntryOpen by remember { mutableStateOf(false) }
     var manualBillImportRequestId by remember { mutableLongStateOf(0L) }
@@ -362,6 +214,7 @@ fun AutoAccountingApp(
     var reviewTransitionInFlight by remember { mutableStateOf(false) }
     var ledgerState by remember { mutableStateOf(LedgerRepositoryState()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
+
     val activeLedgerName = ledgerState.activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
     val ledgerEntries = remember(ledgerState.ledgerEntries) {
         ledgerState.ledgerEntries.map { it.toLedgerUiEntry() }
@@ -444,12 +297,10 @@ fun AutoAccountingApp(
                 )
             )
         ) {
-            is AccountSessionVerificationDecision.Verified -> applyVerifiedCredentials(
-                decision.credentials
-            )
+            is AccountSessionVerificationDecision.Verified -> applyVerifiedCredentials(decision.credentials)
             AccountSessionVerificationDecision.ClearInvalidSession -> {
                 moveAccountToLocalMode()
-                snackbarHostState.showSnackbar("登录状态已失效，已切换到本地模式")
+                appState.snackbarHostState.showSnackbar("登录状态已失效，已切换到本地模式")
             }
             AccountSessionVerificationDecision.KeepOfflineSession ->
                 accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.OfflineUnverified)
@@ -464,21 +315,14 @@ fun AutoAccountingApp(
 
     fun persistReviewTransition(previousState: ReviewQueueState, nextState: ReviewQueueState) {
         if (reviewTransitionInFlight) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("上一项操作正在保存，请稍后重试")
-            }
+            coroutineScope.launch { appState.snackbarHostState.showSnackbar("上一项操作正在保存，请稍后重试") }
             return
         }
-        val previousConfirmedIds =
-            previousState.confirmedEntries.mapTo(mutableSetOf()) { it.originPendingId }
-        val addsConfirmation = nextState.confirmedEntries.any {
-            it.originPendingId !in previousConfirmedIds
-        }
+        val previousConfirmedIds = previousState.confirmedEntries.mapTo(mutableSetOf()) { it.originPendingId }
+        val addsConfirmation = nextState.confirmedEntries.any { it.originPendingId !in previousConfirmedIds }
         val targetLedgerBookId = ledgerState.activeLedgerBook?.id
         if (addsConfirmation && targetLedgerBookId == null) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("当前账本尚未加载，请稍后重试")
-            }
+            coroutineScope.launch { appState.snackbarHostState.showSnackbar("当前账本尚未加载，请稍后重试") }
             return
         }
         reviewTransitionInFlight = true
@@ -495,21 +339,15 @@ fun AutoAccountingApp(
                 val persistedState = runCatching {
                     reviewQueuePersistence.observeState().first()
                 }.getOrElse {
-                    previousState.copy(
-                        confirmedEntries = emptyList(),
-                        lastAction = null
-                    )
+                    previousState.copy(confirmedEntries = emptyList(), lastAction = null)
                 }
                 reviewState = persistedState.copy(
-                    undoEventSequence = maxOf(
-                        persistedState.undoEventSequence,
-                        previousState.undoEventSequence
-                    )
+                    undoEventSequence = maxOf(persistedState.undoEventSequence, previousState.undoEventSequence)
                 )
             }
             reviewTransitionInFlight = false
             if (failure != null) {
-                snackbarHostState.showSnackbar("保存待确认操作失败，请重试")
+                appState.snackbarHostState.showSnackbar("保存待确认操作失败，请重试")
             }
         }
     }
@@ -520,16 +358,12 @@ fun AutoAccountingApp(
 
     fun persistCategorizationRules(nextRules: List<CategorizationRule>) {
         categorizationRules = nextRules
-        coroutineScope.launch {
-            localPreferencesRepository.replaceCategorizationRules(nextRules)
-        }
+        coroutineScope.launch { localPreferencesRepository.replaceCategorizationRules(nextRules) }
     }
 
     fun persistAiSettings(nextSettings: AiCategorizationSettings) {
         aiSettings = nextSettings
-        coroutineScope.launch {
-            localPreferencesRepository.updateAiSettings(nextSettings)
-        }
+        coroutineScope.launch { localPreferencesRepository.updateAiSettings(nextSettings) }
     }
 
     fun persistContinuousMonitoringState(nextState: ContinuousMonitoringState) {
@@ -549,9 +383,7 @@ fun AutoAccountingApp(
                 )
             )
         }
-        coroutineScope.launch {
-            localPreferencesRepository.updateContinuousMonitoringState(nextState)
-        }
+        coroutineScope.launch { localPreferencesRepository.updateContinuousMonitoringState(nextState) }
     }
 
     LaunchedEffect(
@@ -559,26 +391,17 @@ fun AutoAccountingApp(
         continuousMonitoringPermissionHealth,
         continuousMonitoringState.enabled
     ) {
-        if (!permissionStateLoaded || !continuousMonitoringState.enabled) {
-            return@LaunchedEffect
-        }
+        if (!permissionStateLoaded || !continuousMonitoringState.enabled) return@LaunchedEffect
         val refreshedState = reduceContinuousMonitoringState(
             continuousMonitoringState,
-            ContinuousMonitoringAction.RefreshPermissionHealth(
-                continuousMonitoringPermissionHealth
-            )
+            ContinuousMonitoringAction.RefreshPermissionHealth(continuousMonitoringPermissionHealth)
         )
         if (refreshedState != continuousMonitoringState) {
-            // Permission health is runtime state; only explicit user actions persist enabled.
             continuousMonitoringState = refreshedState
             diagnosticLogs.record(
                 DiagnosticEvent(
                     metadata = DiagnosticEventMetadata(
-                        level = if (refreshedState.blockReason == null) {
-                            DiagnosticLevel.Info
-                        } else {
-                            DiagnosticLevel.Warning
-                        },
+                        level = if (refreshedState.blockReason == null) DiagnosticLevel.Info else DiagnosticLevel.Warning,
                         component = DiagnosticComponent.Monitoring,
                         event = "automatic_bookkeeping_permission_health",
                         source = DiagnosticSource.System,
@@ -611,9 +434,7 @@ fun AutoAccountingApp(
     }
 
     LaunchedEffect(localPreferencesRepository) {
-        localPreferencesRepository.categorizationRules.collect { rules ->
-            categorizationRules = rules
-        }
+        localPreferencesRepository.categorizationRules.collect { rules -> categorizationRules = rules }
     }
 
     LaunchedEffect(localPreferencesRepository) {
@@ -676,9 +497,7 @@ fun AutoAccountingApp(
                     selectedTab = null
                 }
 
-                BackHandler(
-                    enabled = selectedTab == AppTab.Profile && profileDestination != null
-                ) {
+                BackHandler(enabled = selectedTab == AppTab.Profile && profileDestination != null) {
                     profileDestination = null
                 }
 
@@ -688,15 +507,15 @@ fun AutoAccountingApp(
                 ) {
                     Scaffold(
                         containerColor = Color.Transparent,
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        snackbarHost = { SnackbarHost(appState.snackbarHostState) },
                         bottomBar = {
                             if (selectedTab == null && !manualEntryOpen) {
                                 AppBottomNavigationBar(
-                                    items = bottomNavigationItems,
+                                    items = appState.bottomNavigationItems,
                                     selectedKey = null,
                                     onItemSelected = { key ->
                                         if (!manualEntryOpen) {
-                                            selectedTab = tabs.first { it.name == key }
+                                            selectedTab = appState.tabs.first { it.name == key }
                                             profileDestination = null
                                         }
                                     },
@@ -713,9 +532,7 @@ fun AutoAccountingApp(
                         val route = remember(selectedTab, profileDestination, manualEntryOpen) {
                             AppRoute(
                                 tab = selectedTab,
-                                profileDestination = profileDestination.takeIf {
-                                    selectedTab == AppTab.Profile
-                                },
+                                profileDestination = profileDestination.takeIf { selectedTab == AppTab.Profile },
                                 manualEntryOpen = manualEntryOpen
                             )
                         }
@@ -746,151 +563,81 @@ fun AutoAccountingApp(
                                             selectedTab = AppTab.Ledger
                                             profileDestination = null
                                         },
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(innerPadding)
+                                        modifier = Modifier.fillMaxSize().padding(innerPadding)
                                     )
                                 } else {
                                     when (targetRoute.tab) {
-                                    null -> HomeScreen(
-                                        modifier = Modifier.padding(innerPadding)
-                                    )
+                                        null -> HomeScreen(modifier = Modifier.padding(innerPadding))
+                                        AppTab.Review -> ReviewQueueScreen(
+                                            state = reviewState,
+                                            targetLedgerName = activeLedgerName,
+                                            categories = ledgerState.categories,
+                                            fundingAccounts = ledgerState.fundingAccounts,
+                                            onStateChange = ::persistReviewState,
+                                            modifier = Modifier.padding(innerPadding),
+                                            onCategorizationRuleRequested = { rule ->
+                                                persistCategorizationRules(categorizationRules.upsert(rule))
+                                            },
+                                            accountSession = accountSession,
+                                            aiSettings = if (accountRuntimeState.cloudWritesAllowed && accountDeletionState.cloudWritesAllowed) {
+                                                aiSettings
+                                            } else {
+                                                AiCategorizationSettings()
+                                            },
+                                            aiCategorizationGateway = DemoAiCategorizationGateway,
+                                            onOpenBillImport = { manualBillImportRequestId += 1 },
+                                            openPendingEntryId = pendingEntryNavigationId,
+                                            openPendingEntryRequestId = reviewNavigationRequest,
+                                            onNavigateHome = {
+                                                selectedTab = null
+                                                profileDestination = null
+                                            }
+                                        )
 
-                                    AppTab.Review -> ReviewQueueScreen(
-                                        state = reviewState,
-                                        targetLedgerName = activeLedgerName,
-                                        categories = ledgerState.categories,
-                                        fundingAccounts = ledgerState.fundingAccounts,
-                                        onStateChange = ::persistReviewState,
-                                        modifier = Modifier.padding(innerPadding),
-                                        onCategorizationRuleRequested = { rule ->
-                                            persistCategorizationRules(categorizationRules.upsert(rule))
-                                        },
-                                        accountSession = accountSession,
-                                        aiSettings = if (
-                                            accountRuntimeState.cloudWritesAllowed &&
-                                            accountDeletionState.cloudWritesAllowed
-                                        ) {
-                                            aiSettings
-                                        } else {
-                                            AiCategorizationSettings()
-                                        },
-                                        aiCategorizationGateway = DemoAiCategorizationGateway,
-                                        onOpenBillImport = { manualBillImportRequestId += 1 },
-                                        openPendingEntryId = pendingEntryNavigationId,
-                                        openPendingEntryRequestId = reviewNavigationRequest,
-                                        onNavigateHome = {
-                                            selectedTab = null
-                                            profileDestination = null
-                                        }
-                                    )
-
-                                    AppTab.Ledger -> LedgerScreen(
-                                        entries = ledgerEntries,
-                                        entryListState = ledgerEntryListState,
-                                        deletedEntries = deletedLedgerEntries,
-                                        categories = ledgerState.categories,
-                                        fundingAccounts = ledgerState.fundingAccounts,
-                                        ledgerBooks = ledgerBookUiModels,
-                                        activeLedgerName = activeLedgerName,
-                                        onUpdateEntry = { id, input ->
-                                            localLedgerRepository.updateLedgerEntry(id, input)
-                                        },
-                                        onDeleteEntry = { id ->
-                                            localLedgerRepository.moveLedgerEntryToDeleted(id)
-                                        },
-                                        onRestoreEntry = { id ->
-                                            localLedgerRepository.restoreDeletedLedgerEntry(id)
-                                        },
-                                        onPermanentlyDeleteEntry = { id ->
-                                            localLedgerRepository.permanentlyDeleteLedgerEntry(id)
-                                        },
-                                        onPurgeExpiredEntries = {
-                                            localLedgerRepository.purgeExpiredDeletedLedgerEntries()
-                                        },
-                                        onCreateLedger = { name ->
-                                            localLedgerRepository.createLedgerBook(name)
-                                        },
-                                        onSelectLedger = { id ->
-                                            localLedgerRepository.selectLedgerBook(id)
-                                        },
-                                        onDeleteLedger = { id ->
-                                            when (val result = localLedgerRepository.deleteLedgerBook(id)) {
-                                                DataLedgerBookDeleteResult.Deleted ->
-                                                    UiLedgerBookDeleteResult.Deleted
-
-                                                DataLedgerBookDeleteResult.LastLedgerBook ->
-                                                    UiLedgerBookDeleteResult.LastLedger
-
-                                                is DataLedgerBookDeleteResult.NotEmpty ->
-                                                    UiLedgerBookDeleteResult.NotEmpty(
+                                        AppTab.Ledger -> LedgerScreen(
+                                            entries = ledgerEntries,
+                                            entryListState = appState.ledgerEntryListState,
+                                            deletedEntries = deletedLedgerEntries,
+                                            categories = ledgerState.categories,
+                                            fundingAccounts = ledgerState.fundingAccounts,
+                                            ledgerBooks = ledgerBookUiModels,
+                                            activeLedgerName = activeLedgerName,
+                                            onUpdateEntry = { id, input -> localLedgerRepository.updateLedgerEntry(id, input) },
+                                            onDeleteEntry = { id -> localLedgerRepository.moveLedgerEntryToDeleted(id) },
+                                            onRestoreEntry = { id -> localLedgerRepository.restoreDeletedLedgerEntry(id) },
+                                            onPermanentlyDeleteEntry = { id -> localLedgerRepository.permanentlyDeleteLedgerEntry(id) },
+                                            onPurgeExpiredEntries = { localLedgerRepository.purgeExpiredDeletedLedgerEntries() },
+                                            onCreateLedger = { name -> localLedgerRepository.createLedgerBook(name) },
+                                            onSelectLedger = { id -> localLedgerRepository.selectLedgerBook(id) },
+                                            onDeleteLedger = { id ->
+                                                when (val result = localLedgerRepository.deleteLedgerBook(id)) {
+                                                    DataLedgerBookDeleteResult.Deleted -> UiLedgerBookDeleteResult.Deleted
+                                                    DataLedgerBookDeleteResult.LastLedgerBook -> UiLedgerBookDeleteResult.LastLedger
+                                                    is DataLedgerBookDeleteResult.NotEmpty -> UiLedgerBookDeleteResult.NotEmpty(
                                                         activeEntryCount = result.activeEntryCount,
                                                         deletedEntryCount = result.deletedEntryCount
                                                     )
-
-                                                DataLedgerBookDeleteResult.NotFound ->
-                                                    error("账本不存在")
-                                            }
-                                        },
-                                        onCreateFundingAccount = { label, paymentSource ->
-                                            localLedgerRepository.createFundingAccount(
-                                                label = label,
-                                                paymentSource = paymentSource
-                                            )
-                                        },
-                                        onUpdateFundingAccount = { id, label, paymentSource ->
-                                            localLedgerRepository.updateFundingAccount(
-                                                fundingAccountId = id,
-                                                label = label,
-                                                paymentSource = paymentSource
-                                            )
-                                        },
-                                        onDeleteFundingAccount = { id ->
-                                            when (
-                                                val result =
-                                                    localLedgerRepository.deleteFundingAccount(id)
-                                            ) {
-                                                DataFundingAccountDeleteResult.Deleted ->
-                                                    UiFundingAccountDeleteResult.Deleted
-
-                                                is DataFundingAccountDeleteResult.Referenced ->
-                                                    UiFundingAccountDeleteResult.Referenced(
-                                                        activeLedgerEntryCount =
-                                                            result.activeLedgerEntryCount,
-                                                        deletedLedgerEntryCount =
-                                                            result.deletedLedgerEntryCount,
-                                                        pendingEntryCount =
-                                                            result.pendingEntryCount,
-                                                        ignoredEntryCount =
-                                                            result.ignoredEntryCount
+                                                    DataLedgerBookDeleteResult.NotFound -> error("账本不存在")
+                                                }
+                                            },
+                                            onCreateFundingAccount = { label, paymentSource ->
+                                                localLedgerRepository.createFundingAccount(label = label, paymentSource = paymentSource)
+                                            },
+                                            onUpdateFundingAccount = { id, label, paymentSource ->
+                                                localLedgerRepository.updateFundingAccount(fundingAccountId = id, label = label, paymentSource = paymentSource)
+                                            },
+                                            onDeleteFundingAccount = { id ->
+                                                when (val result = localLedgerRepository.deleteFundingAccount(id)) {
+                                                    DataFundingAccountDeleteResult.Deleted -> UiFundingAccountDeleteResult.Deleted
+                                                    is DataFundingAccountDeleteResult.Referenced -> UiFundingAccountDeleteResult.Referenced(
+                                                        activeLedgerEntryCount = result.activeLedgerEntryCount,
+                                                        deletedLedgerEntryCount = result.deletedLedgerEntryCount,
+                                                        pendingEntryCount = result.pendingEntryCount,
+                                                        ignoredEntryCount = result.ignoredEntryCount
                                                     )
-
-                                                DataFundingAccountDeleteResult.NotFound ->
-                                                    error("资金账户不存在")
-                                            }
-                                        },
-                                        onNavigateHome = {
-                                            selectedTab = null
-                                            profileDestination = null
-                                        },
-                                        modifier = Modifier.padding(innerPadding)
-                                    )
-
-                                    AppTab.Reports -> ReportsScreen(
-                                        entries = ledgerEntries,
-                                        reportUiModel = reportUiModel,
-                                        categoryRankingListState = reportCategoryRankingListState,
-                                        onNavigateHome = {
-                                            selectedTab = null
-                                            profileDestination = null
-                                        },
-                                        modifier = Modifier.padding(innerPadding)
-                                    )
-
-                                    AppTab.Profile -> when (val destination = targetRoute.profileDestination) {
-                                        null -> ProfileOverviewScreen(
-                                            session = activeAccountSession,
-                                            onDestinationSelected = { profileDestination = it },
+                                                    DataFundingAccountDeleteResult.NotFound -> error("资金账户不存在")
+                                                }
+                                            },
                                             onNavigateHome = {
                                                 selectedTab = null
                                                 profileDestination = null
@@ -898,115 +645,128 @@ fun AutoAccountingApp(
                                             modifier = Modifier.padding(innerPadding)
                                         )
 
-                                        ProfileDestination.AccountManagement -> AccountManagementScreen(
-                                            session = activeAccountSession,
-                                            runtimeState = accountRuntimeState,
-                                            deletionState = accountDeletionState,
-                                            accountRepository = accountRepository,
-                                            onSignInOrRegister = {
-                                                accountEntryReturnSession = activeAccountSession
-                                                profileDestination = null
-                                                accountSession = null
-                                                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
-                                            },
-                                            onSessionVerified = ::applyVerifiedCredentials,
-                                            onInvalidSession = {
-                                                moveAccountToLocalMode()
+                                        AppTab.Reports -> ReportsScreen(
+                                            entries = ledgerEntries,
+                                            reportUiModel = reportUiModel,
+                                            categoryRankingListState = appState.reportCategoryRankingListState,
+                                            onNavigateHome = {
+                                                selectedTab = null
                                                 profileDestination = null
                                             },
-                                            clearPersistedSession = secureAccountSessionStore::clear,
-                                            onSignedOut = {
-                                                localModeSessionStore.confirmLocalMode()
-                                                accountSession = AccountSession.LocalMode
-                                                accountDeletionState = AccountDeletionUiState()
-                                                accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
-                                                profileDestination = null
-                                            },
-                                            onDeletionStateChange = { deletionState ->
-                                                accountDeletionState = deletionState
-                                                accountRuntimeState = AccountRuntimeState(
-                                                    if (deletionState.isPending) {
-                                                        AccountRuntimeStatus.DeletionCoolingOff
-                                                    } else {
-                                                        AccountRuntimeStatus.Verified
+                                            modifier = Modifier.padding(innerPadding)
+                                        )
+
+                                        AppTab.Profile -> when (targetRoute.profileDestination) {
+                                            null -> ProfileOverviewScreen(
+                                                session = activeAccountSession,
+                                                onDestinationSelected = { profileDestination = it },
+                                                onNavigateHome = {
+                                                    selectedTab = null
+                                                    profileDestination = null
+                                                },
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
+
+                                            ProfileDestination.AccountManagement -> AccountManagementScreen(
+                                                session = activeAccountSession,
+                                                runtimeState = accountRuntimeState,
+                                                deletionState = accountDeletionState,
+                                                accountRepository = accountRepository,
+                                                onSignInOrRegister = {
+                                                    accountEntryReturnSession = activeAccountSession
+                                                    profileDestination = null
+                                                    accountSession = null
+                                                    accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+                                                },
+                                                onSessionVerified = ::applyVerifiedCredentials,
+                                                onInvalidSession = {
+                                                    moveAccountToLocalMode()
+                                                    profileDestination = null
+                                                },
+                                                clearPersistedSession = secureAccountSessionStore::clear,
+                                                onSignedOut = {
+                                                    localModeSessionStore.confirmLocalMode()
+                                                    accountSession = AccountSession.LocalMode
+                                                    accountDeletionState = AccountDeletionUiState()
+                                                    accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+                                                    profileDestination = null
+                                                },
+                                                onDeletionStateChange = { deletionState ->
+                                                    accountDeletionState = deletionState
+                                                    accountRuntimeState = AccountRuntimeState(
+                                                        if (deletionState.isPending) AccountRuntimeStatus.DeletionCoolingOff else AccountRuntimeStatus.Verified
+                                                    )
+                                                },
+                                                onBack = { profileDestination = null },
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
+
+                                            ProfileDestination.AutomaticBookkeeping -> AutomaticBookkeepingScreen(
+                                                notificationListenerAccessGranted = notificationListenerAccessGranted,
+                                                onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
+                                                billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
+                                                onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
+                                                resultNotificationPermissionGranted = resultNotificationPermissionGranted,
+                                                onRequestResultNotificationPermission = onRequestResultNotificationPermission,
+                                                backgroundReliabilityState = backgroundReliabilityState,
+                                                onOpenBackgroundRunningSettings = onOpenBackgroundRunningSettings,
+                                                onOpenAutoStartSettings = onOpenAutoStartSettings,
+                                                onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
+                                                onOpenBatterySaverSettings = onOpenBatterySaverSettings,
+                                                continuousMonitoringState = continuousMonitoringState,
+                                                continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
+                                                onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
+                                                onBack = { profileDestination = null },
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
+
+                                            ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
+                                                rules = categorizationRules,
+                                                onRulesChange = ::persistCategorizationRules,
+                                                aiSettings = aiSettings,
+                                                onAiSettingsChange = ::persistAiSettings,
+                                                accountSession = activeAccountSession,
+                                                accountDeletionState = accountDeletionState,
+                                                accountRuntimeState = accountRuntimeState,
+                                                onBack = { profileDestination = null },
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
+
+                                            ProfileDestination.DataAndBackup -> DataAndBackupScreen(
+                                                ledgerEntries = ledgerEntries,
+                                                currentLedgerName = activeLedgerName,
+                                                onExportEncryptedBackup = { passphrase -> localDataBackupRepository.exportEncryptedBackup(passphrase) },
+                                                onValidateEncryptedBackup = { backup, passphrase -> localDataBackupRepository.validateEncryptedBackup(backup, passphrase) },
+                                                onImportEncryptedBackup = { backup, passphrase ->
+                                                    localDataBackupRepository.importEncryptedBackup(backup, passphrase)
+                                                    reviewState = ReviewQueueState()
+                                                },
+                                                onDeleteLocalData = {
+                                                    reviewState = ReviewQueueState()
+                                                    categorizationRules = emptyList()
+                                                    aiSettings = AiCategorizationSettings()
+                                                    continuousMonitoringState = ContinuousMonitoringState()
+                                                    ledgerState = LedgerRepositoryState()
+                                                    coroutineScope.launch {
+                                                        try {
+                                                            localLedgerRepository.clearLocalData()
+                                                        } finally {
+                                                            diagnosticLogs.clear(keepEnabledPreference = false)
+                                                        }
                                                     }
-                                                )
-                                            },
-                                            onBack = { profileDestination = null },
-                                            modifier = Modifier.padding(innerPadding)
-                                        )
+                                                },
+                                                onBack = { profileDestination = null },
+                                                snackbarHostState = appState.snackbarHostState,
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
 
-                                        ProfileDestination.AutomaticBookkeeping -> AutomaticBookkeepingScreen(
-                                            notificationListenerAccessGranted = notificationListenerAccessGranted,
-                                            onOpenNotificationListenerSettings = onOpenNotificationListenerSettings,
-                                            billSyncAccessibilityAccessGranted = billSyncAccessibilityAccessGranted,
-                                            onOpenBillSyncAccessibilitySettings = onOpenBillSyncAccessibilitySettings,
-                                            resultNotificationPermissionGranted = resultNotificationPermissionGranted,
-                                            onRequestResultNotificationPermission = onRequestResultNotificationPermission,
-                                            backgroundReliabilityState = backgroundReliabilityState,
-                                            onOpenBackgroundRunningSettings = onOpenBackgroundRunningSettings,
-                                            onOpenAutoStartSettings = onOpenAutoStartSettings,
-                                            onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
-                                            onOpenBatterySaverSettings = onOpenBatterySaverSettings,
-                                            continuousMonitoringState = continuousMonitoringState,
-                                            continuousMonitoringPermissionHealth = continuousMonitoringPermissionHealth,
-                                            onContinuousMonitoringStateChange = ::persistContinuousMonitoringState,
-                                            onBack = { profileDestination = null },
-                                            modifier = Modifier.padding(innerPadding)
-                                        )
-
-                                        ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
-                                            rules = categorizationRules,
-                                            onRulesChange = ::persistCategorizationRules,
-                                            aiSettings = aiSettings,
-                                            onAiSettingsChange = ::persistAiSettings,
-                                            accountSession = activeAccountSession,
-                                            accountDeletionState = accountDeletionState,
-                                            accountRuntimeState = accountRuntimeState,
-                                            onBack = { profileDestination = null },
-                                            modifier = Modifier.padding(innerPadding)
-                                        )
-
-                                        ProfileDestination.DataAndBackup -> DataAndBackupScreen(
-                                            ledgerEntries = ledgerEntries,
-                                            currentLedgerName = activeLedgerName,
-                                            onExportEncryptedBackup = { passphrase ->
-                                                localDataBackupRepository.exportEncryptedBackup(passphrase)
-                                            },
-                                            onValidateEncryptedBackup = { backup, passphrase ->
-                                                localDataBackupRepository.validateEncryptedBackup(backup, passphrase)
-                                            },
-                                            onImportEncryptedBackup = { backup, passphrase ->
-                                                localDataBackupRepository.importEncryptedBackup(backup, passphrase)
-                                                reviewState = ReviewQueueState()
-                                            },
-                                            onDeleteLocalData = {
-                                                reviewState = ReviewQueueState()
-                                                categorizationRules = emptyList()
-                                                aiSettings = AiCategorizationSettings()
-                                                continuousMonitoringState = ContinuousMonitoringState()
-                                                ledgerState = LedgerRepositoryState()
-                                                coroutineScope.launch {
-                                                    try {
-                                                        localLedgerRepository.clearLocalData()
-                                                    } finally {
-                                                        diagnosticLogs.clear(keepEnabledPreference = false)
-                                                    }
-                                                }
-                                            },
-                                            onBack = { profileDestination = null },
-                                            snackbarHostState = snackbarHostState,
-                                            modifier = Modifier.padding(innerPadding)
-                                        )
-
-                                        ProfileDestination.ComplianceAndPrivacy -> ComplianceAndPrivacyScreen(
-                                            isDebugBuild = BuildConfig.DEBUG,
-                                            onBack = { profileDestination = null },
-                                            modifier = Modifier.padding(innerPadding)
-                                        )
-
+                                            ProfileDestination.ComplianceAndPrivacy -> ComplianceAndPrivacyScreen(
+                                                isDebugBuild = BuildConfig.DEBUG,
+                                                onBack = { profileDestination = null },
+                                                modifier = Modifier.padding(innerPadding)
+                                            )
+                                        }
                                     }
-                                }
                                 }
                             }
                         }
@@ -1050,7 +810,7 @@ private object DemoAiCategorizationGateway : AiCategorizationGateway {
     }
 }
 
-private enum class AppTab(
+internal enum class AppTab(
     val label: String,
     val iconRes: Int,
     val backgroundRes: Int
