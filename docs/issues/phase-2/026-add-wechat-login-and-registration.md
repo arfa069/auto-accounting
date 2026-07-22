@@ -76,7 +76,7 @@
   - 新后端响应中的附加字段不影响旧手机号客户端。
 - **完成条件**：`:shared:api:test` 通过，所有新增契约有编码与解析对称测试。
 
-### 2. 统一后端迁移入口并建立内部账号 ID
+### 2. 已完成：统一后端迁移入口并建立内部账号 ID
 
 - **实施**：
   - 将目前分散在账号、云配置和 AI Store 中的 1–4 号迁移集中到统一迁移清单；各 JDBC Store 调用同一个幂等入口。
@@ -337,6 +337,7 @@
 - `2026-07-22`：仅写入计划与 Phase 2 索引，未修改业务代码、数据库、Android 配置或真机状态；微信开放平台尚未申请，真实端到端验收延期。
 - `2026-07-22`：提交全部既有文档改动为 `3bc7786` 后完成 Task 0；`:shared:api:test`、后端 `com.autoaccounting.backend.account.*` 和 Android `com.autoaccounting.feature.account.*` 均成功，工作树在测试后保持干净，未连接或迁移真实 PostgreSQL。
 - `2026-07-22`：完成 Task 1。`AccountContracts.kt` 中 `phone` 改为可空、新增 `wechatLinked`/`nickname`/`avatarUrl` 字段（默认值兼容旧客户端）；新增 9 个微信相关错误码、`TICKET_VALIDITY_MILLIS` 常量、`WechatAuthResultContract`（三种认证状态密封类）、`WechatExchangeResponseContract`、`PhoneLinkPrepareResponseContract`、`MergePreviewResponseContract` 及完整的 JSON 编解码方法。测试文件从 4 个扩展到 30 个用例，覆盖旧手机号 JSON 兼容、`phone=null` 微信账号、三种认证状态编解码对称、缺失必需字段明确失败、PhoneLinkPrepare 和 MergePreview 编解码对称、新增字段不影响旧客户端、全部新错误码和票据有效期常量。`:shared:api:test` 零警告零错误通过，Gradle Daemon 已停止。
+- `2026-07-22`：完成 Task 2。统一后端 1–5 号数据库迁移入口 `runBackendMigrations` 至 `JdbcMigrations.kt`，并建立事务性 5 号迁移 SQL：新增 `accounts`（自增 `account_id`）、`account_phone_credentials`、`account_wechat_identities`、`account_one_time_tickets`；将 `account_sessions`、`registered_devices`、`cloud_config` 和 `ai_categorization_logs` 的外键从 `phone` 迁移关联为 `account_id`；`account_sms_codes` 扩展 `purpose`（默认 'DEFAULT'）和 `context_key`。适配 `JdbcAccountStore`、`JdbcCloudConfigStore`、`JdbcAiCategorizationLogStore` 以兼容 v5 表结构。新增 `DatabaseMigrationTest.kt`，验证 v4->v5 数据平滑无损迁移、原 Token 哈希与凭据全量保留、重复启动幂等性、孤立外键检测及事务容错。全套 `:services:backend:test`（57 项测试）及 `:services:backend:detekt` 均 100% 成功通过，未连接或修改真实 PostgreSQL，测试后 Gradle Daemon 已停止。
 
 ## 依赖
 

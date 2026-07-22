@@ -137,7 +137,29 @@ class AiCategorizationPersistenceTest {
     }
 
     private fun setupAccountTables(databaseUrl: String) {
-        JdbcAccountStore(databaseUrl)
+        val store = JdbcAccountStore(databaseUrl)
+        store.createUser(
+            com.autoaccounting.backend.account.StoredUser(
+                phone = "13800138000",
+                passwordSalt = "salt",
+                passwordHash = "hash",
+                failedLoginCount = 0,
+                lockedUntilMillis = 0,
+                deletionRequestedAtMillis = null,
+                createdAtMillis = 1000
+            )
+        )
+        store.createUser(
+            com.autoaccounting.backend.account.StoredUser(
+                phone = "13900139000",
+                passwordSalt = "salt",
+                passwordHash = "hash",
+                failedLoginCount = 0,
+                lockedUntilMillis = 0,
+                deletionRequestedAtMillis = null,
+                createdAtMillis = 1000
+            )
+        )
     }
 
     private fun h2DatabaseUrl(): String {

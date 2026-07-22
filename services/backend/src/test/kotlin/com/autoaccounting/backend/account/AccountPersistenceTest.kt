@@ -94,7 +94,7 @@ class AccountPersistenceTest {
 
         DriverManager.getConnection(databaseUrl).use { connection ->
             val appliedMigrationCount = connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 1").use { rs ->
+                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 5").use { rs ->
                     rs.next()
                     rs.getInt(1)
                 }
@@ -105,8 +105,10 @@ class AccountPersistenceTest {
                     SELECT COUNT(*)
                     FROM information_schema.tables
                     WHERE table_name IN (
-                        'account_users',
-                        'account_password_credentials',
+                        'accounts',
+                        'account_phone_credentials',
+                        'account_wechat_identities',
+                        'account_one_time_tickets',
                         'account_sms_codes',
                         'account_sms_issues',
                         'account_sessions',
@@ -120,7 +122,7 @@ class AccountPersistenceTest {
             }
 
             assertEquals(1, appliedMigrationCount)
-            assertTrue(accountTableCount >= 6)
+            assertTrue(accountTableCount >= 8)
         }
     }
 
@@ -135,6 +137,27 @@ class AccountPersistenceTest {
                 statement.execute("INSERT INTO schema_migrations VALUES (1, 0)")
                 statement.execute(
                     """
+                    CREATE TABLE account_users (
+                        phone VARCHAR(32) PRIMARY KEY,
+                        failed_login_count INTEGER NOT NULL,
+                        locked_until_millis BIGINT NOT NULL,
+                        deletion_requested_at_millis BIGINT,
+                        created_at_millis BIGINT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    CREATE TABLE account_password_credentials (
+                        phone VARCHAR(32) PRIMARY KEY REFERENCES account_users(phone) ON DELETE CASCADE,
+                        password_salt TEXT NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        updated_at_millis BIGINT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
                     CREATE TABLE account_sms_codes (
                         phone VARCHAR(32) PRIMARY KEY,
                         code VARCHAR(16) NOT NULL,
@@ -147,7 +170,25 @@ class AccountPersistenceTest {
                     """.trimIndent()
                 )
                 statement.execute(
-                    "CREATE TABLE account_sessions (token TEXT PRIMARY KEY, phone VARCHAR(32) NOT NULL, device_id TEXT NOT NULL, issued_at_millis BIGINT NOT NULL)"
+                    "CREATE TABLE account_sessions (token TEXT PRIMARY KEY, phone VARCHAR(32) NOT NULL REFERENCES account_users(phone) ON DELETE CASCADE, device_id TEXT NOT NULL, issued_at_millis BIGINT NOT NULL)"
+                )
+                statement.execute(
+                    """
+                    CREATE TABLE registered_devices (
+                        phone VARCHAR(32) NOT NULL REFERENCES account_users(phone) ON DELETE CASCADE,
+                        device_id TEXT NOT NULL,
+                        first_seen_at_millis BIGINT NOT NULL,
+                        last_seen_at_millis BIGINT NOT NULL,
+                        ip_address TEXT NOT NULL,
+                        PRIMARY KEY (phone, device_id)
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    "INSERT INTO account_users VALUES ('13800138000', 0, 0, NULL, 0)"
+                )
+                statement.execute(
+                    "INSERT INTO account_password_credentials VALUES ('13800138000', 'salt', 'hash', 0)"
                 )
                 statement.execute(
                     "INSERT INTO account_sms_codes VALUES ('13800138000', '123456', 1000, 0, FALSE, 'device-a', '127.0.0.1')"

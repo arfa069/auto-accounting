@@ -1,16 +1,18 @@
 package com.autoaccounting.backend.ai
 
-import com.autoaccounting.backend.Migration
 import com.autoaccounting.backend.jdbcConnection
-import com.autoaccounting.backend.runMigrations
+import com.autoaccounting.backend.runBackendMigrations
 
 class JdbcAiCategorizationLogStore(
     private val jdbcUrl: String,
-    private val username: String = "",
-    private val password: String = ""
+    username: String = "",
+    password: String = ""
 ) : AiCategorizationLogStore {
+    private val storeUsername = username
+    private val storePassword = password
+
     init {
-        runMigrations(jdbcUrl, username, password, aiLogMigrations)
+        runBackendMigrations(jdbcUrl, username, password)
     }
 
     override fun insertLog(log: StoredAiCategorizationLog) {
@@ -18,18 +20,17 @@ class JdbcAiCategorizationLogStore(
             connection.prepareStatement(
                 """
                 INSERT INTO ai_categorization_logs (
-                    account_phone, merchant_title, source_label,
+                    account_id, merchant_title, source_label,
                     transaction_kind, amount_range_label,
                     suggested_category, confidence_label, explanation,
                     created_at_millis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    (SELECT account_id FROM account_phone_credentials WHERE phone = ?),
+                    ?, ?, ?, ?, ?, ?, ?, ?
+                )
                 """.trimIndent()
             ).use { statement ->
-                if (log.accountPhone == null) {
-                    statement.setNull(1, java.sql.Types.VARCHAR)
-                } else {
-                    statement.setString(1, log.accountPhone)
-                }
+                statement.setString(1, log.accountPhone)
                 statement.setString(2, log.merchantTitle)
                 statement.setString(3, log.sourceLabel)
                 statement.setString(4, log.transactionKind)
@@ -46,13 +47,14 @@ class JdbcAiCategorizationLogStore(
     override fun logsForAccount(phone: String): List<StoredAiCategorizationLog> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT id, account_phone, merchant_title, source_label,
-                   transaction_kind, amount_range_label,
-                   suggested_category, confidence_label, explanation,
-                   created_at_millis
-            FROM ai_categorization_logs
-            WHERE account_phone = ?
-            ORDER BY id
+            SELECT l.id, p.phone AS account_phone, l.merchant_title, l.source_label,
+                   l.transaction_kind, l.amount_range_label,
+                   l.suggested_category, l.confidence_label, l.explanation,
+                   l.created_at_millis
+            FROM ai_categorization_logs l
+            JOIN account_phone_credentials p ON p.account_id = l.account_id
+            WHERE p.phone = ?
+            ORDER BY l.id
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, phone)
@@ -67,12 +69,13 @@ class JdbcAiCategorizationLogStore(
     override fun allLogs(): List<StoredAiCategorizationLog> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT id, account_phone, merchant_title, source_label,
-                   transaction_kind, amount_range_label,
-                   suggested_category, confidence_label, explanation,
-                   created_at_millis
-            FROM ai_categorization_logs
-            ORDER BY id
+            SELECT l.id, p.phone AS account_phone, l.merchant_title, l.source_label,
+                   l.transaction_kind, l.amount_range_label,
+                   l.suggested_category, l.confidence_label, l.explanation,
+                   l.created_at_millis
+            FROM ai_categorization_logs l
+            LEFT JOIN account_phone_credentials p ON p.account_id = l.account_id
+            ORDER BY l.id
             """.trimIndent()
         ).use { statement ->
             statement.executeQuery().use { rs ->
@@ -86,7 +89,10 @@ class JdbcAiCategorizationLogStore(
     override fun deleteLogsForAccount(phone: String) {
         connection().use { connection ->
             connection.prepareStatement(
-                "DELETE FROM ai_categorization_logs WHERE account_phone = ?"
+                """
+                DELETE FROM ai_categorization_logs
+                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                """.trimIndent()
             ).use { statement ->
                 statement.setString(1, phone)
                 statement.executeUpdate()
@@ -94,7 +100,7 @@ class JdbcAiCategorizationLogStore(
         }
     }
 
-    private fun connection() = jdbcConnection(jdbcUrl, username, password)
+    private fun connection() = jdbcConnection(jdbcUrl, storeUsername, storePassword)
 }
 
 private fun java.sql.ResultSet.toStoredLog(): StoredAiCategorizationLog {
@@ -112,28 +118,3 @@ private fun java.sql.ResultSet.toStoredLog(): StoredAiCategorizationLog {
     )
 }
 
-private val aiLogMigrations = listOf(
-    Migration(
-        version = 3,
-        statements = listOf(
-            """
-            CREATE TABLE IF NOT EXISTS ai_categorization_logs (
-                id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-                account_phone VARCHAR(32),
-                merchant_title TEXT NOT NULL,
-                source_label TEXT NOT NULL,
-                transaction_kind TEXT NOT NULL,
-                amount_range_label TEXT NOT NULL,
-                suggested_category TEXT NOT NULL,
-                confidence_label TEXT NOT NULL,
-                explanation TEXT NOT NULL,
-                created_at_millis BIGINT NOT NULL
-            )
-            """.trimIndent(),
-            """
-            CREATE INDEX IF NOT EXISTS ai_categorization_logs_phone_idx
-            ON ai_categorization_logs(account_phone)
-            """.trimIndent()
-        )
-    )
-)

@@ -1,26 +1,31 @@
+@file:Suppress("NestedBlockDepth")
+
 package com.autoaccounting.backend.config
 
-import com.autoaccounting.backend.Migration
-import com.autoaccounting.backend.jdbcConnection
-import com.autoaccounting.backend.runMigrations
 import com.autoaccounting.api.ApiJsonContracts
+import com.autoaccounting.backend.jdbcConnection
+import com.autoaccounting.backend.runBackendMigrations
 
 class JdbcCloudConfigStore(
     private val jdbcUrl: String,
-    private val username: String = "",
-    private val password: String = ""
+    username: String = "",
+    password: String = ""
 ) : CloudConfigStore {
+    private val storeUsername = username
+    private val storePassword = password
+
     init {
-        runMigrations(jdbcUrl, username, password, cloudConfigMigrations)
+        runBackendMigrations(jdbcUrl, username, password)
     }
 
     override fun findConfig(phone: String): StoredCloudConfig? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT phone, ai_consent_granted, enhanced_context_granted,
-                   feature_flags, updated_at_millis
-            FROM cloud_config
-            WHERE phone = ?
+            SELECT p.phone, c.ai_consent_granted, c.enhanced_context_granted,
+                   c.feature_flags, c.updated_at_millis
+            FROM cloud_config c
+            JOIN account_phone_credentials p ON p.account_id = c.account_id
+            WHERE p.phone = ?
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, phone)
@@ -49,7 +54,7 @@ class JdbcCloudConfigStore(
                 UPDATE cloud_config
                 SET ai_consent_granted = ?, enhanced_context_granted = ?,
                     feature_flags = ?, updated_at_millis = ?
-                WHERE phone = ?
+                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
                 """.trimIndent()
             ).use { statement ->
                 statement.setBoolean(1, config.aiConsentGranted)
@@ -63,9 +68,12 @@ class JdbcCloudConfigStore(
                 connection.prepareStatement(
                     """
                     INSERT INTO cloud_config (
-                        phone, ai_consent_granted, enhanced_context_granted,
+                        account_id, ai_consent_granted, enhanced_context_granted,
                         feature_flags, updated_at_millis
-                    ) VALUES (?, ?, ?, ?, ?)
+                    ) VALUES (
+                        (SELECT account_id FROM account_phone_credentials WHERE phone = ?),
+                        ?, ?, ?, ?
+                    )
                     """.trimIndent()
                 ).use { statement ->
                     statement.setString(1, config.phone)
@@ -81,29 +89,18 @@ class JdbcCloudConfigStore(
 
     override fun deleteConfig(phone: String) {
         connection().use { connection ->
-            connection.prepareStatement("DELETE FROM cloud_config WHERE phone = ?").use { statement ->
+            connection.prepareStatement(
+                """
+                DELETE FROM cloud_config
+                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                """.trimIndent()
+            ).use { statement ->
                 statement.setString(1, phone)
                 statement.executeUpdate()
             }
         }
     }
 
-    private fun connection() = jdbcConnection(jdbcUrl, username, password)
+    private fun connection() = jdbcConnection(jdbcUrl, storeUsername, storePassword)
 }
 
-private val cloudConfigMigrations = listOf(
-    Migration(
-        version = 2,
-        statements = listOf(
-            """
-            CREATE TABLE IF NOT EXISTS cloud_config (
-                phone VARCHAR(32) PRIMARY KEY REFERENCES account_users(phone) ON DELETE CASCADE,
-                ai_consent_granted BOOLEAN NOT NULL DEFAULT FALSE,
-                enhanced_context_granted BOOLEAN NOT NULL DEFAULT FALSE,
-                feature_flags TEXT NOT NULL DEFAULT '{}',
-                updated_at_millis BIGINT NOT NULL
-            )
-            """.trimIndent()
-        )
-    )
-)
