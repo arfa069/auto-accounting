@@ -36,4 +36,4 @@
 | [023](./023-manage-local-ledgers-and-funding-accounts.md) | 管理本地账本与资金账户 | 已完成 | 003, 005, 017 | 多账本与资金账户独立管理 |
 | [024](./024-add-report-donut-and-seven-month-cash-flow.md) | 增加报表环形图与七个月现金流 | 已完成 | 003, 017, 023 | 报表手绘环形图与七个月现金流趋势 |
 | [025](./025-connect-android-account-core-loop.md) | 接通 Android 账号核心闭环 | 已完成 | 009, 018 | 真机/后端账号登录与 Session 恢复 |
-| [026](./026-add-wechat-login-and-registration.md) | 增加微信登录、注册与账号身份管理 | 待实施 | 009-011, 018, 022, 025 | 微信登录注册、身份绑定、账号合并与安全解绑 |
+| [026](./026-add-wechat-login-and-registration.md) | 增加微信登录、注册与账号身份管理 | 进行中 | 009-011, 018, 022, 025 | 微信登录注册、身份绑定、账号合并与安全解绑 |
