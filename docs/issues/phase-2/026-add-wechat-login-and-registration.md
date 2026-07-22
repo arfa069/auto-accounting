@@ -62,7 +62,7 @@
 - **完成条件**：已达到。基线可复现，且新后端首次连接真实 PostgreSQL 前禁止执行迁移；必须先制作并验证可恢复备份。
 - **停止条件**：若既有测试出现与本功能无关的新失败，先定位基线，不进入数据库改造。
 
-### 1. 扩展共享账号契约
+### 1. 已完成：扩展共享账号契约
 
 - **实施**：
   - 修改 `AccountContracts.kt`，让手机号可空，并加入微信资料、认证状态、票据期限和稳定错误码。
@@ -336,6 +336,7 @@
 - `2026-07-22`：完成代码、数据库、Android 账号界面及微信官方接入要求调研，形成前置阶段 0 加实施阶段 1–13 的严格计划；共享 API、后端账号专项和 Android 账号专项基线测试通过。
 - `2026-07-22`：仅写入计划与 Phase 2 索引，未修改业务代码、数据库、Android 配置或真机状态；微信开放平台尚未申请，真实端到端验收延期。
 - `2026-07-22`：提交全部既有文档改动为 `3bc7786` 后完成 Task 0；`:shared:api:test`、后端 `com.autoaccounting.backend.account.*` 和 Android `com.autoaccounting.feature.account.*` 均成功，工作树在测试后保持干净，未连接或迁移真实 PostgreSQL。
+- `2026-07-22`：完成 Task 1。`AccountContracts.kt` 中 `phone` 改为可空、新增 `wechatLinked`/`nickname`/`avatarUrl` 字段（默认值兼容旧客户端）；新增 9 个微信相关错误码、`TICKET_VALIDITY_MILLIS` 常量、`WechatAuthResultContract`（三种认证状态密封类）、`WechatExchangeResponseContract`、`PhoneLinkPrepareResponseContract`、`MergePreviewResponseContract` 及完整的 JSON 编解码方法。测试文件从 4 个扩展到 30 个用例，覆盖旧手机号 JSON 兼容、`phone=null` 微信账号、三种认证状态编解码对称、缺失必需字段明确失败、PhoneLinkPrepare 和 MergePreview 编解码对称、新增字段不影响旧客户端、全部新错误码和票据有效期常量。`:shared:api:test` 零警告零错误通过，Gradle Daemon 已停止。
 
 ## 依赖
 
