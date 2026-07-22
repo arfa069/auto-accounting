@@ -11,6 +11,8 @@ Android 模块：`apps/android`
 
 证据保留方式：自 2026-07-21 起，`docs/performance-audit/evidence/` 中的 Trace、JSON、SQL scratchpad 与截图仅保留在执行验证的本机，已由 Git 忽略；本报告保留复现命令、Trace 名称、SQL 结论和汇总数值。
 
+批次 20 的图片异步解码候选未完成基线/候选对照，且仅针对约 3–6 ms 的 `painterResource` 子项，不能解决 `PERF-A02` 的主线程 Compose→measure/draw 长尾或 `PERF-A08` 的首次 GPU shader cache 成本。该候选及其测试已撤回、未提交；本审计停止继续 Trace、安装重试或同类定位。
+
 ## 证据等级
 
 - 当前批次状态：批次 13 已提交为 `f1a9406`；批次 14 的隔离真机对照、报告和测试源更新已完成。批次 15 已完成 `animateOutgoingContent = false` 的根路由离场动画实验及 4/4 真机 Macrobenchmark：仅“第二次导航 None”改善，其余三组 P99 变差，因此实验已回退且不作为修复。批次 16 新增默认关闭的 `-PcomposeCompilerReports=true` 诊断开关；Debug 编译成功输出稳定性、可跳过性与模块指标，自动记账页的全部入口参数均为 stable。批次 17 在独立包运行 `automaticBookkeepingSecondNavigation` 10 次并开启 full tracing；批次 19 又以相同方式覆盖冷启动、账本滚动→详情、首次自动记账导航各 10 次。runtime tracing 具名记录了 `SlidePageTransition`、各路径首建页面、状态卡、账本表单和卡片组合；该 tracing 有额外开销，不能与批次 14–18 的未开启 tracing P99 横向比较。批次 15、17、18 与 19 的原始 Trace、JSON 和 scratchpad 均仅保留在本机 Git 忽略 evidence 目录；批次 16 报告位于 Git 忽略的 `apps/android/build/reports/compose-compiler/`。`PERF-A02` 已在隔离包补齐三条关键路径的逐 Composable 运行时耗时，真实生产包仍未以该 tracing 方式覆盖；`PERF-A08` 已确认是进程内首次进入关键路由的 GPU shader 首用成本，不是同一会话每次重复导航的持续成本。
@@ -18,6 +20,8 @@ Android 模块：`apps/android`
 - 批次 18：四组同进程导航矩阵均在 Xiaomi `2a9ea4bd` 的隔离 R8 benchmark 包完成，原始产物位于 Git 忽略的 `docs/performance-audit/evidence/device-results-20260721-batch18/`。基线/候选的首次 None CPU/overrun P99 为 `60.389/52.652 → 49.085/51.241 ms`，首次 Profile 为 `45.174/39.071 → 36.135/31.995 ms`，第二次 None 为 `52.042/48.223 → 47.705/46.543 ms`，第二次 Profile 为 `13.285/8.435 → 14.546/4.203 ms`。因最后一组 CPU P99 退化 `1.261 ms`，候选已完整回退。代表候选 Trace 的主线程长帧仍由组合、测量与 View 绘制构成，而非 RenderThread、Binder、I/O 或调度等待。
 
 - 批次 19：3/3 隔离 Macrobenchmark 用例通过，30 条开启 `androidx.benchmark.perfettoSdkTracing.enable=true` 的 Trace 位于 Git 忽略的 `docs/performance-audit/evidence/device-results-20260722-batch19/runtime-tracing/`。三个代表帧都把主因定位在主线程 Compose 组合及后续 measure/draw；首次路由另有独立 RenderThread shader cache miss。精确时间窗、线程状态、Binder、锁、GC、RSS、CPU frequency 与 power 轨道限制见 `PERF-A02`、`PERF-A08` 和第 11 节。
+
+- 批次 20：图片异步解码候选在完成前已取消并回退，未提交。它不构成 `PERF-A02` 或 `PERF-A08` 的修复，也不再安排真机安装、Macrobenchmark 或 Perfetto 复测。
 
 - A：已通过真机、Perfetto、ADB 或本轮构建命令确认。
 - B：静态代码中高度可信的风险；当前样本未覆盖触发条件或数据规模。
@@ -63,11 +67,10 @@ Android 模块：`apps/android`
 - 批次 18 进一步说明：即使同一候选在三组 P99 聚合结果改善，只要另一组的 CPU P99 退化，就不能把它当成稳定收益。当前应保留已回退的基线行为，不把单次或单指标改善作为生产优化结论。
 - 实测确认：部分修复已确认；冷启动、主页路由、账本路径和同进程第二次路由均已补测。批次 15 的根路由实验是已实测的否定结果，代码已回退；批次 16 的编译器 stability/skippability 报告也已生成；批次 17 与批次 19 已实测确认隔离包四种导航状态以及冷启动、账本详情、首次自动记账的逐 Composable 运行时耗时。runtime tracing 覆盖全部三条关键隔离路径，但会增加观测开销，不能作为批次 14–18 P99 的横向回归数据；GPU shader 长尾已从本项分离到 `PERF-A08`。
 - 批次 18 是第二次已实测的根路由候选否定结果；候选代码已回退，当前只保留其基线/候选矩阵、代表 Trace 和 SQL scratchpad，不能作为已修复项计入。
-- 修复建议：批次 7 已完成 scoped Flow、稳定报表模型和 Room 聚合/索引的低风险部分；批次 8 已排除 1k/10k 报表派生为当前主因；批次 14 已排除“重复导航仍反复 shader 编译”；批次 15 已排除“只关闭根路由离场动画”；批次 16 已排除“自动记账页入口参数不稳定”。批次 19 没有把长尾精确缩小到一个可低风险替换的 Kotlin 输入；下一批只能选择同时减少转场两侧页面组合、测量或 View 绘制的单一候选，并在无 runtime tracing 的同进程首次/第二次 None/Profile 对照中验证；不得以预组合整个页面、延迟导航、仅关闭离场动画或盲目标注稳定性掩盖成本。
-- 批次 18 已排除该次根路由最小候选：不应仅因三组 P99 改善而放宽第四组回归；后续候选仍必须用同一 4×10 矩阵先通过，再以 tracing 变体定位受影响子树。
+- 修复建议：批次 7 已完成 scoped Flow、稳定报表模型和 Room 聚合/索引的低风险部分；批次 8、14、15、16、18、19 已分别排除数据规模、重复 shader 编译、仅关闭根路由离场动画、入口参数不稳定和根路由最小候选等低风险解释。当前不存在能精确落到单一 Kotlin 输入、又不改变交互或视觉设计的安全生产代码候选。
+- 后续边界：`PERF-A02` 保留为待决的设计级问题。只有产品明确接受页面切换视觉、首建内容密度或布局方案的调整时，才另行立项；本审计不再进行同类 Trace 定位、安装重试或小候选试验。
 - 修复风险：中到高，涉及状态刷新、导航返回、转场视觉和列表滚动语义。
-- 验证方式：已完成 `coldStartup` 与 `automaticBookkeepingSettings` 各 10 次 None/Profile Macrobenchmark，并完成同进程首次/第二次导航各 10 次 None/Profile 对照；批次 15 又完成关闭离场动画的 4/4 对照并回退；批次 16 以 `-PcomposeCompilerReports=true` 成功生成 Debug 编译器报告；批次 17 完成 1/1 隔离 Macrobenchmark、10 条 tracing Trace；批次 19 完成冷启动、账本详情、首次自动记账 3/3 隔离 Macrobenchmark、30 条 tracing Trace。后续如修改 Route 状态订阅或转场布局，先以同进程首次/第二次 None/Profile 各 10 次比较 `measure`、`Compose:recompose`、`Record View#draw()`、frame CPU/overrun P99，再在 runtime-tracing 变体复核受影响的 Composable 子树，并在产品允许时补 `reportFullyDrawn()` 后比较 TTFD。
-- 批次 18 已按该 4×10 门槛完成一次候选矩阵并回退；后续不可把本轮候选的数据当作基线，而应从当前已回退代码重新建立同批对照。
+- 验证方式：本审计已完成冷启动、账本详情、首次/第二次自动记账导航的隔离 Macrobenchmark 与 tracing 对照，且两个低风险生产候选均已回退。若未来经产品决策开展 UI 重设计，应从当前已回退代码重新建立同批基线，再以同进程首次/第二次 None/Profile 对照验证视觉、状态语义和帧 P99；这不是当前审计的待执行工作。
 
 ### PERF-B05 — Medium — 组合阶段同步读取 SharedPreferences/Keystore（批次 9 已完成）
 
@@ -131,7 +134,7 @@ Android 模块：`apps/android`
 - 修复风险：中。自定义 indication 改变了 Material 默认 ripple 的视觉形式，但保留 clickable 语义和导航行为；后续主题、圆角或卡片容器变化时需要复查覆盖层颜色与裁剪。
 - 验证方式：已完成账本定向测试、整个 ledger 测试包、Android 全量单元测试、Benchmark/Release 构建、Release Lint、APK v2 签名验证、15 次 Trace SQL 和解锁后视觉/导航回归。后续回归检查自定义按压覆盖层、详情打开、返回和列表状态保持，不以全局 `CircleOp` 计数作为 ripple 回归判据。
 
-### PERF-A08 — High — 关键路由首次全屏绘制触发 GPU shader cache miss
+### PERF-A08 — High — 关键路由首次全屏绘制触发 GPU shader cache miss（已验证、已接受）
 
 - 证据等级：A（隔离 R8 Macrobenchmark、Frame Timeline、RenderThread thread-state 和 SQL）。
 - 类别：RenderThread、GPU、关键路由、帧卡顿。
@@ -141,10 +144,10 @@ Android 模块：`apps/android`
 - Trace/SQL：账本代表 Trace `703094593899927..703094621506125 ns` 中 RenderThread `utid=5328` 的 `DrawFrames 159843497` 为 27.606 ms，`Drawing 1080×2400` 为 27.161 ms，包含 14.933 + 8.133 ms 的 `shader_compile`、14.686 + 7.999 ms `ShaderCache::cache_miss`。自动记账批次 13 None/Profile 代表绘制分别包含 29.530/28.646 ms 与 29.257/28.581 ms 的 shader/cache-miss 链。批次 14 的同进程对照中，首次 None 代表 `DrawFrames 160690342` 的 `28.645 ms` 内有 `shader_compile 25.517 ms → cache_miss 25.044 ms → driver_link_program 13.549 ms`；首次 Profile 代表 `DrawFrames 160659462` 的 `31.934 ms` 内有 `29.068/28.401/13.556 ms`。首次 None/Profile 的 20 条 Trace 均有 `shader_compile`；cache miss 分别为 3/10 与 10/10。全部 20 条同进程第二次导航 Trace 均为 0 次 shader 编译和 cache miss，代表 RenderThread `DrawFrame` 为 3.247/2.116 ms。首次长尾 RenderThread 主要为 Running，无 D-state/I/O wait/blocked function；相关 Binder 事务最长 322.188 µs。
 - 批次 19 Trace/SQL：同一 runtime-tracing 采集明确显示该问题与 `PERF-A02` 的主线程组合长尾独立存在。冷启动代表 Trace 的首个 RenderThread `DrawFrames` 为 `28.485 ms`，含 7 个 `shader_compile/cache_miss`（各 `2.433–3.727 ms`）与一次 1080×2400 texture upload `3.296 ms`。首次自动记账的 `DrawFrames 188500900` 延后于 UI 帧启动 `61.467 ms`，其 `Drawing/shader_compile/cache_miss` 为 `34.963/32.240/31.738 ms`，`driver_compile_shader/driver_link_program` 为 `10.395/17.962 ms`。账本详情最慢 UI 帧后，独立 RenderThread 绘制含两组 `shader_compile/cache_miss` `14.176/13.893 ms`、`11.347/11.178 ms`，以及 `driver_link_program` `8.573/6.639 ms`。三条代表 Trace 的相应 UI 长帧均无同步 Binder、monitor contention 或重叠 GC，故不把 shader 编译、Binder、锁或 GC 混写为同一根因。
 - 实际影响：批次 14 两条代表 Trace 的 FrameTimeline 相邻帧间隔为约 `7.54–8.99 ms`，且测试后设备 active display mode 为 120 Hz；因此首次路由中 RenderThread 的约 25–35 ms 单段绘制相当于约 3–4 个 120 Hz 帧预算。批次 19 在冷启动、首次自动记账和账本详情也再次捕获 shader 首用链，但它与同帧/相邻 UI 的 Compose→measure/draw 长尾是独立成本。它不是用户在同一会话每次返回并重进该页都会承受的成本。自动记账首次导航的 frame CPU/overrun P99 为 None `43.789/52.072 ms`、Profile `40.828/36.985 ms`；第二次为 None `35.072/35.793 ms`、Profile `13.120/1.886 ms`。Baseline Profile 降低 UI 线程工作，但不预热 GPU shader cache。
-- 实测确认：已确认隔离 benchmark 包的进程内发生边界：同一进程首用存在 shader 长尾，第二次导航不复现。批次 19 将该观测扩展到冷启动、账本详情和首次自动记账；真实生产包、长期用户会话以及跨设备 GPU 驱动的发生频率仍未验证；Profile/None cache-miss 次数受测试执行顺序与驱动缓存状态影响，未作为两种 CompilationMode 的回归比较。
-- 修复建议：批次 14 未改生产视觉代码。Perfetto 仍不能把 Skia primitive 精确映射到单一 Kotlin 组件，因此当前没有低风险、可验证的视觉修复候选。不要通过启动时预组合整个页面、强制 `graphicsLayer` 或任意延迟导航来掩盖问题；若产品将“每进程第一次进入自动记账”设为严格帧预算，再单独以受控视觉批次减少独特 Skia primitive/阴影组合，并保留本对照作为验收。
-- 修复风险：中到高。视觉 primitive、Card 阴影、按压效果或路由预热可能改变主题、一致性、内存和首屏时序。
-- 验证方式：批次 14 已完成首次/第二次各 10 次 None/Profile 对照、40 条 Trace、全量 shader/cache-miss 统计和 4 条代表 Trace SQL 证据；批次 19 又完成冷启动、账本详情、首次自动记账 3/3 runtime-tracing Macrobenchmark、30 条 Trace。任何未来视觉候选仍需保留该对照，比较 shader cache miss、`DrawFrames`、frame CPU/overrun P99、UI recompose/measure、RSS/GPU memory 与视觉截图。
+- 实测确认：已确认隔离 benchmark 包的进程内发生边界：同一进程首用存在 shader 长尾，第二次导航不复现。批次 19 将该观测扩展到冷启动、账本详情和首次自动记账；此项已作为 GPU 驱动的每进程首用成本接受，不再列为待修复项。真实生产包、长期用户会话以及跨设备 GPU 驱动的发生频率仍未验证；Profile/None cache-miss 次数受测试执行顺序与驱动缓存状态影响，未作为两种 CompilationMode 的回归比较。
+- 修复建议：不再为该项进行生产代码优化或继续采集。Perfetto 不能把 Skia primitive 精确映射到单一 Kotlin 组件，且第二次导航 20/20 不复现；除非产品明确把“每进程第一次进入关键路由”设为严格帧预算，否则保留当前视觉设计。若未来提出该产品要求，另开视觉重设计任务并比较独特 Skia primitive/阴影组合。
+- 修复风险：当前无改动风险；未来视觉重设计风险中到高，可能改变主题、一致性、内存和首屏时序。
+- 验证方式：已完成批次 14 首次/第二次各 10 次 None/Profile 对照、40 条 Trace、全量 shader/cache-miss 统计和 4 条代表 Trace SQL 证据；批次 19 又完成冷启动、账本详情、首次自动记账 3/3 runtime-tracing Macrobenchmark、30 条 Trace。除非启动新的产品级视觉重设计任务，否则本项没有待执行验证。
 
 帧汇总：
 
@@ -405,12 +408,15 @@ Android 模块：`apps/android`
 - 修复风险：低（保持现状）；升级风险中，可能改变生成任务和变体命名。
 - 验证方式：执行 benchmark assemble、三项 device benchmark、profile generation、app Debug/Release 和 benchmark variant Lint；比较生成 profile 行数/有效性与启动前后数据。
 
-## 9. 当前待修复项
+## 9. 当前待决项与已接受项
 
-当前总有 2 个待修复项：
+当前总有 1 个待决项：
 
-1. [High][PERF-A02] 冷启动首屏稳定、账本详情与主页→首次自动记账仍有可测的主线程 Compose→measure/draw 长尾。批次 19 runtime tracing 的代表样本分别为：冷启动末尾 doFrame 的 `measure 145.880 ms`（它大部分发生在 first-frame 后，不把它全部计入 TtID）；首次自动记账 `Recomposer/measureAndLayout/Record View#draw()` `28.508/25.724/32.628 ms`、最慢帧 CPU/overrun `100.660/86.656 ms`；账本详情 `Recomposer/LedgerEntryForm/measureAndLayout/Record View#draw()` `59.435/41.323/32.587/42.000 ms`、最慢帧 `109.970/95.800 ms`。三者主线程都主要为 Running，缺少 Binder、锁、I/O wait 或调度饥饿主因。批次 18 的根路由最小候选虽改善三组 P99，但第二次 Profile CPU P99 `13.285 → 14.546 ms` 退化，已回退；当前没有通过 4×10 接纳门槛、且能精确落到单一 Kotlin 输入的低风险生产修复。
-2. [High][PERF-A08] 冷启动、账本详情与主页→首次自动记账的首次全屏绘制会发生 GPU shader cache miss；批次 19 代表 RenderThread 的 `shader_compile/cache_miss` 分别达到冷启动 `2.433–3.727 ms` 多段、首次自动记账 `32.240/31.738 ms`、账本详情 `14.176/13.893 ms` 与 `11.347/11.178 ms`。它与 `PERF-A02` 的主线程组合/测量/绘制是独立成本。批次 14 已在同进程第二次导航 20/20 Trace 未复现，批次 15 的两条第二次导航代表 Trace 也未复现；真实生产包与跨设备发生频率仍未验证。
+1. [High][PERF-A02] 冷启动首屏稳定、账本详情与主页→首次自动记账仍有可测的主线程 Compose→measure/draw 长尾。批次 19 runtime tracing 的代表样本分别为：冷启动末尾 doFrame 的 `measure 145.880 ms`（它大部分发生在 first-frame 后，不把它全部计入 TtID）；首次自动记账 `Recomposer/measureAndLayout/Record View#draw()` `28.508/25.724/32.628 ms`、最慢帧 CPU/overrun `100.660/86.656 ms`；账本详情 `Recomposer/LedgerEntryForm/measureAndLayout/Record View#draw()` `59.435/41.323/32.587/42.000 ms`、最慢帧 `109.970/95.800 ms`。三者主线程都主要为 Running，缺少 Binder、锁、I/O wait 或调度饥饿主因。批次 18 的根路由最小候选虽改善三组 P99，但第二次 Profile CPU P99 `13.285 → 14.546 ms` 退化，已回退；当前没有通过 4×10 接纳门槛、且能精确落到单一 Kotlin 输入的低风险生产修复。它是需要产品/UI 设计决策后才可继续的待决项，不再安排同类 Trace 定位或小候选试验。
+
+已验证、已接受项：
+
+- [High][PERF-A08] 冷启动、账本详情与主页→首次自动记账的首次全屏绘制会发生 GPU shader cache miss；批次 14 已在同进程第二次导航 20/20 Trace 未复现，批次 19 又在三条路径确认其为每进程首用成本。当前接受该平台成本，不再作为待修复项或继续优化目标；只有产品提出严格的首次进入帧预算时，才另开视觉重设计任务。
 
 ## 10. 建议修复批次
 
@@ -433,6 +439,8 @@ Android 模块：`apps/android`
 - 批次 17 [PERF-A02]：已完成运行时定位，未改生产运行时依赖。隔离 `benchmarkRelease` 的 Compose runtime tracing 通过 1/1 Macrobenchmark、10 条 Trace 具名确认转场两侧的 Profile/自动记账页面组合，以及自动记账帧的测量和 View 绘制长尾；排除了该代表帧的 Binder、锁、I/O、RenderThread 和 CPU 降频共同主因。
 - 批次 18 [PERF-A02]：已完成否定性验证，未保留生产代码改动。根路由最小候选完成同进程首次/第二次 None/Profile 四组各 10 次真机矩阵；三组聚合 P99 改善，但第二次 Profile CPU P99 `13.285 → 14.546 ms` 退化，未通过“四组均不退化”接纳标准，候选已完整回退。代表 Trace 仍以主线程组合、测量与 `Record View#draw()` 为主，未得到新的低风险单点根因。
 - 批次 19 [PERF-A02][PERF-A08]：已完成 runtime-tracing 验证，未改生产代码。冷启动、账本详情、首次自动记账 3/3 隔离 Macrobenchmark 通过，共 30 条 Trace；逐 Composable 证实三条路径的主线程 Compose→measure/draw 长尾，并把首次路线的独立 RenderThread shader cache miss 划归 `PERF-A08`。观测结果含 tracing 开销，不作为 P99 回归比较；未发现可安全落地的单点生产修复。
+- 批次 20：已取消。图片异步解码候选未完成基线/候选对照，且不解决 `PERF-A02`/`PERF-A08` 主因，已完整回退、未提交；不再进行真机安装、Macrobenchmark 或 Perfetto 重试。
+- 后续批次：当前无。`PERF-A02` 需先由产品/UI 决定可接受的页面切换视觉、首建内容密度或布局调整范围，才能定义新的修复批次。
 
 ## 11. 未验证部分与需要的帮助
 
@@ -468,7 +476,7 @@ Android 模块：`apps/android`
 10. 100k 数据和独立 Room 查询时长未验证。批次 8 已完成 1k/10k 报表路径；批次 9 已补 1k/10k 导出 RSS，但仍不能外推为 100k 数据容量证明。
     - 需要帮助：仅在产品需要 100k 级账本时，提供专用 benchmark 设备或授权补充进程内查询计时与 RSS 采样。
 
-当前已确认但尚未修复的性能问题为第 9 节列出的 2 项：PERF-A02、PERF-A08。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-B07、PERF-C01、BUILD-C02 已完成代码、回归和隔离环境动态验证，不再列为未完成项；批次 19 已完成三条隔离关键路径的 runtime tracing，真实生产包、真实支付事件与长期功耗仍按上文列为未验证边界。
+当前仅 `PERF-A02` 为已确认但待决的设计级问题；`PERF-A08` 已验证并接受为每进程首次 GPU shader cache 成本，不再列为待修复项。PERF-B01、PERF-B02、PERF-B05、PERF-B06、PERF-B07、PERF-C01、BUILD-C02 已完成代码、回归和隔离环境动态验证，不再列为未完成项；批次 19 已完成三条隔离关键路径的 runtime tracing，真实生产包、真实支付事件与长期功耗仍按上文列为未验证边界。
 
 本轮已检查且未发现明确异常：生产 Lazy 列表均有稳定 key；生产网络 transport 在 `Dispatchers.IO`；未使用 `allowMainThreadQueries`、`runBlocking`、`Thread.sleep`、`GlobalScope`、WakeLock、AlarmManager 或 WorkManager 高频任务；生命周期解绑和 Service scope cancel 路径存在；日志无 ANR/FATAL/OOM，所有已执行交互样本均无 >700 ms frozen frame；项目 ProGuard 文件没有过宽、重复或无效自定义 keep 规则。
 
