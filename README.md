@@ -15,6 +15,8 @@
 
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest
+.\gradlew.bat coverageReport
+.\gradlew.bat detekt
 .\gradlew.bat :apps:android:assembleDebug
 .\gradlew.bat :apps:android:assembleRelease
 .\gradlew.bat :services:backend:test

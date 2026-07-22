@@ -50,6 +50,18 @@ Recommended modules:
 
 Keep capture parsing and deduplication testable without Android UI.
 
+### Data Layer & State Decoupling Architecture (2026-07-22 Refactoring)
+- **Domain Repositories**: Data persistence is partitioned into strict domain interfaces:
+  - `LedgerBookRepository`: ledger book CRUD and active selection.
+  - `LedgerEntryRepository`: active and soft-deleted entry lifecycle and retention purging.
+  - `FundingAccountRepository`: cross-ledger shared funding account management.
+  - `LocalLedgerRepository`: implements all domain interfaces as a single Facade for UI and ViewModel compatibility.
+- **UI State & Service Coordinators**:
+  - `MonitoringStateCoordinator`: encapsulates Android Activity lifecycle callbacks, service heartbeat timers (`Handler`), and Settings intent launchers.
+  - `AutoAccountingAppState`: Compose State Holder managing navigation tab lists, list scroll states, and SnackbarHostState.
+- **Static Quality Enforcement**:
+  - Automated Detekt static analysis (`config/detekt/detekt.yml`) enforces maximum class length (600 lines), cyclomatic complexity limits, and empty-catch blocks across all Kotlin modules.
+
 ## 3. Local Data Model
 
 Core tables:

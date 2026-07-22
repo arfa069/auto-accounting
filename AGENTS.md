@@ -30,7 +30,7 @@
 ## 编码风格与命名
 
 遵循 Kotlin 官方代码风格（`kotlin.code.style=official`），使用四空格缩进。类、对象及 Compose 函数使用 `PascalCase`；普通函数和属性使用 `camelCase`；包名使用 `com.autoaccounting` 下的全小写名称。
-每个文件应聚焦一个主要职责。优先沿用现有 feature、repository 与 service 组织方式，不为简单问题引入新抽象。ADR 使用下一个四位编号，例如 `docs/adr/0048-describe-decision.md`。
+每个文件应聚焦一个主要职责。数据持久层使用领域细分接口（`LedgerBookRepository`、`LedgerEntryRepository`、`FundingAccountRepository`）解耦操作，并通过 `LocalLedgerRepository` Facade 对外透出。Activity 回调与系统监控服务由 `MonitoringStateCoordinator` 托管，组合导航状态由 `AutoAccountingAppState` (State Holder) 管理。优先沿用现有 feature、repository 与 service 组织方式，不为简单问题引入新抽象。ADR 使用下一个四位编号，例如 `docs/adr/0048-describe-decision.md`。
 
 ## 测试规范
 
