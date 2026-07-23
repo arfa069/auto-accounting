@@ -548,6 +548,128 @@ class AccountService(
         )
     }
 
+    fun prepareMergeWithPhonePassword(
+        bearerToken: String,
+        phone: String,
+        password: String
+    ): AccountResult<com.autoaccounting.api.MergePreviewResponseContract> {
+        val currentAccount = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val currentAccountId = currentAccount.accountId
+
+        if (!isValidPhone(phone) || !isValidPassword(password)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val sourceUser = store.findUser(phone)
+            ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
+
+        val now = clock.millis()
+        if (sourceUser.lockedUntilMillis > now) {
+            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+        }
+
+        if (!sourceUser.passwordHash().matches(password)) {
+            val updatedCount = sourceUser.failedLoginCount + 1
+            val lockUntil = if (updatedCount >= MAX_LOGIN_FAILURES) {
+                now + LOGIN_LOCK_MILLIS
+            } else {
+                0L
+            }
+            store.updateUser(sourceUser.copy(failedLoginCount = updatedCount, lockedUntilMillis = lockUntil))
+            return if (lockUntil > now) {
+                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+            } else {
+                AccountResult.Failure(AccountError.LOGIN_FAILED)
+            }
+        }
+
+        if (sourceUser.failedLoginCount > 0 || sourceUser.lockedUntilMillis > 0) {
+            store.updateUser(sourceUser.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+        }
+
+        val sourceAccountId = sourceUser.accountId
+        if (sourceAccountId == currentAccountId) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        val targetAccount = store.findAccount(currentAccountId)
+        val sourceAccount = store.findAccount(sourceAccountId)
+        if (targetAccount?.deletionRequestedAtMillis != null || sourceAccount?.deletionRequestedAtMillis != null) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+        }
+
+        val currentPhoneCred = phoneUserByAccountId(currentAccountId)
+        val currentWechat = store.findWechatIdentityByAccountId(currentAccountId)
+        val sourceWechat = store.findWechatIdentityByAccountId(sourceAccountId)
+
+        if (currentPhoneCred != null && sourceUser.phone.isNotBlank()) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+        if (currentWechat != null && sourceWechat != null) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        val mergeTicketPlain = secureToken()
+        val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
+        val payload = buildJsonObject {
+            put("targetAccountId", currentAccountId)
+            put("sourceAccountId", sourceAccountId)
+        }.toString()
+
+        store.createOneTimeTicket(
+            StoredOneTimeTicket(
+                ticketHash = hashToken(mergeTicketPlain),
+                ticketType = "ACCOUNT_MERGE",
+                accountId = currentAccountId,
+                payloadJson = payload,
+                expiresAtMillis = ticketExpiresAt
+            )
+        )
+
+        return AccountResult.Success(
+            com.autoaccounting.api.MergePreviewResponseContract(
+                mergeTicket = mergeTicketPlain,
+                ticketExpiresAtMillis = ticketExpiresAt,
+                currentPhone = currentPhoneCred?.phone?.takeIf { it.isNotBlank() },
+                currentWechatLinked = currentWechat != null,
+                currentNickname = currentWechat?.nickname,
+                sourcePhone = sourceUser.phone.takeIf { it.isNotBlank() },
+                sourceWechatLinked = sourceWechat != null,
+                sourceNickname = sourceWechat?.nickname
+            )
+        )
+    }
+
+    fun confirmMerge(
+        bearerToken: String,
+        mergeTicket: String,
+        confirmText: String,
+        deviceId: String = "",
+        ipAddress: String = ""
+    ): AccountResult<AccountToken> {
+        val currentAccount = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val currentAccountId = currentAccount.accountId
+
+        val validTexts = setOf("MERGE_ACCOUNT", "合并账号")
+        if (mergeTicket.isBlank() || confirmText.trim() !in validTexts) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val now = clock.millis()
+        val ticketHash = hashToken(mergeTicket)
+
+        return store.mergeAccounts(
+            ticketHash = ticketHash,
+            targetAccountId = currentAccountId,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            now = now,
+            tokenGenerator = tokenGenerator
+        )
+    }
+
 
 
     private fun mergeRequiredResult(

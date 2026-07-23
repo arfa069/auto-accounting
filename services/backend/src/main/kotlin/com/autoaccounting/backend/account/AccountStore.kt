@@ -3,6 +3,12 @@
 
 package com.autoaccounting.backend.account
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+
+
 /**
  * Core account record keyed by internal account_id.
  * Holds deletion state and creation timestamp.
@@ -163,6 +169,15 @@ interface AccountStore {
         phone: String,
         passwordSalt: String,
         passwordHash: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
+
+    fun mergeAccounts(
+        ticketHash: String,
+        targetAccountId: Long,
         deviceId: String,
         ipAddress: String,
         now: Long,
@@ -634,6 +649,136 @@ class InMemoryAccountStore : AccountStore {
                 wechatLinked = wechatIdentity != null,
                 nickname = wechatIdentity?.nickname,
                 avatarUrl = wechatIdentity?.avatarUrl
+            )
+        )
+    }
+
+    @Synchronized
+    @Suppress("CyclomaticComplexMethod", "ReturnCount", "LongMethod")
+    override fun mergeAccounts(
+        ticketHash: String,
+        targetAccountId: Long,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val ticket = oneTimeTickets[ticketHash]
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (ticket.ticketType != "ACCOUNT_MERGE" || ticket.expiresAtMillis < now) {
+            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        }
+        if (ticket.usedAtMillis != null) {
+            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+        }
+
+        val jsonObj = runCatching { Json.parseToJsonElement(ticket.payloadJson).jsonObject }.getOrNull()
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        val ticketTargetAccountId = jsonObj["targetAccountId"]?.jsonPrimitive?.longOrNull
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        val sourceAccountId = jsonObj["sourceAccountId"]?.jsonPrimitive?.longOrNull
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+
+        if (ticketTargetAccountId != targetAccountId || sourceAccountId == targetAccountId) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        val targetAccount = accounts[targetAccountId]
+            ?: return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        val sourceAccount = accounts[sourceAccountId]
+            ?: return AccountResult.Failure(AccountError.INVALID_REQUEST)
+
+        if (targetAccount.deletionRequestedAtMillis != null || sourceAccount.deletionRequestedAtMillis != null) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+        }
+
+        val targetPhoneCred = phoneCredentials[targetAccountId]
+        val sourcePhoneCred = phoneCredentials[sourceAccountId]
+        if (targetPhoneCred != null && sourcePhoneCred != null) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        val targetWechat = wechatIdentities[targetAccountId]
+        val sourceWechat = wechatIdentities[sourceAccountId]
+        if (targetWechat != null && sourceWechat != null) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        // Transfer credentials
+        if (sourcePhoneCred != null) {
+            phoneCredentials[targetAccountId] = sourcePhoneCred.copy(accountId = targetAccountId)
+            phoneCredentials.remove(sourceAccountId)
+            phoneIndex[sourcePhoneCred.phone] = targetAccountId
+        }
+
+        if (sourceWechat != null) {
+            wechatIdentities[targetAccountId] = sourceWechat.copy(accountId = targetAccountId)
+            wechatIdentities.remove(sourceAccountId)
+        }
+
+        // Merge devices
+        val targetDevs = devices.values.filter { it.accountId == targetAccountId }.associateBy { it.deviceId }
+        val sourceDevs = devices.values.filter { it.accountId == sourceAccountId }
+        for (sourceDev in sourceDevs) {
+            val targetDev = targetDevs[sourceDev.deviceId]
+            if (targetDev == null) {
+                devices[targetAccountId to sourceDev.deviceId] = sourceDev.copy(accountId = targetAccountId)
+            } else {
+                val mergedFirstSeen = minOf(targetDev.firstSeenAtMillis, sourceDev.firstSeenAtMillis)
+                val mergedLastSeen = maxOf(targetDev.lastSeenAtMillis, sourceDev.lastSeenAtMillis)
+                val mergedIp = if (targetDev.lastSeenAtMillis >= sourceDev.lastSeenAtMillis) targetDev.ipAddress else sourceDev.ipAddress
+                devices[targetAccountId to sourceDev.deviceId] = targetDev.copy(
+                    firstSeenAtMillis = mergedFirstSeen,
+                    lastSeenAtMillis = mergedLastSeen,
+                    ipAddress = mergedIp
+                )
+            }
+            devices.remove(sourceAccountId to sourceDev.deviceId)
+        }
+
+        if (deviceId.isNotBlank()) {
+            upsertRegisteredDevice(
+                StoredRegisteredDevice(
+                    accountId = targetAccountId,
+                    deviceId = deviceId,
+                    firstSeenAtMillis = now,
+                    lastSeenAtMillis = now,
+                    ipAddress = ipAddress
+                )
+            )
+        }
+
+        // Session rotation & cleanup
+        deleteSessionsForAccount(sourceAccountId)
+        deleteSessionsForAccount(targetAccountId)
+
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+        createSession(
+            StoredSession(
+                tokenHash = tokenHash,
+                accountId = targetAccountId,
+                deviceId = deviceId,
+                issuedAtMillis = now
+            )
+        )
+
+        // Mark ticket used & delete source account
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
+        oneTimeTickets.values.removeAll { it.accountId == sourceAccountId }
+        accounts.remove(sourceAccountId)
+
+        val finalPhoneCred = phoneCredentials[targetAccountId]
+        val finalWechat = wechatIdentities[targetAccountId]
+
+        return AccountResult.Success(
+            AccountToken(
+                accountId = targetAccountId,
+                phone = finalPhoneCred?.phone,
+                token = token,
+                wechatLinked = finalWechat != null,
+                nickname = finalWechat?.nickname,
+                avatarUrl = finalWechat?.avatarUrl
             )
         )
     }

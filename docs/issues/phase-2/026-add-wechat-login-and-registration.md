@@ -160,7 +160,7 @@
 - **验证**：覆盖新增未注册手机号、密码不合规、手机号并发占用、已有手机号进入合并，以及票据过期或重放。
 - **完成条件**：纯微信账号能够获得手机号和密码凭据，并继续保留原微信身份。
 
-### 7. 实现账号合并
+### 7. 已完成：实现账号合并
 
 - **准备阶段**：
   - 微信来源账号通过携带当前 Bearer 的微信交换准备。
@@ -343,6 +343,7 @@
 - `2026-07-23`：完成 Task 4。实现服务端微信授权 code 换取与一次性票据管理。在 `services/backend/.env.example` 补充 `AUTO_ACCOUNTING_WECHAT_APP_ID` 和 `AUTO_ACCOUNTING_WECHAT_APP_SECRET` 配置项；新增基于 Java 17 标准 HttpClient 的无依赖 `DefaultWechatOAuthClient`，实现超时控制与敏感字段（Access Token, OpenID, UnionID, AppSecret, Code）全脱敏防泄漏处理；扩展 `AccountStore`（内存与 JDBC）支持微信身份、原子认领与一次性票据 CRUD；在 `AccountError` 与 `AccountRoutes` 扩展 9 个微信错误码与 `POST /account/wechat/exchange` 端点；在 `AccountService` 实现 code 换取与 4 种分支处理逻辑（未绑定生成认证票据返回 `REGISTRATION_REQUIRED`、Bearer 下未绑定直接关联返回 `SIGNED_IN`、已绑定当前账号刷新个人信息返回 `SIGNED_IN`、Bearer 下已绑定其他账号生成合并票据返回 `MERGE_REQUIRED`），并拒绝用新微信静默覆盖已有绑定。测试覆盖 Mock HTTP 错误码与超时、完整 Service 分支、路由、已有绑定保护及 H2/JDBC 双线程并发认领。全套后端单元测试通过；`:services:backend:detekt` 任务通过，并保留 `JdbcAccountStore` 的既有 `LargeClass` 提示。
 - `2026-07-23`：完成 Task 5。实现微信注册纯账号及绑定已有手机号账号的 3 个 HTTP 路由（`/account/wechat/register`、`/account/wechat/link/password`、`/account/wechat/link/sms`）。扩展 `AccountStore` 与 `JdbcAccountStore` 支持单事务原子消费微信授权票据、创建纯微信账号/绑定微信身份、注册设备及签发 Session；密码绑定继承登录重试与锁定规则，短信绑定验证专项验证码并销毁；在“一个账号最多绑定一个微信身份且一个微信身份只能绑定一个账号”约束下，对已绑定微信的账号拒绝静默覆盖。在 `AccountToken` 与 Ktor 响应透出 `wechatLinked`、`nickname`、`avatarUrl` 资料。新增 `WechatRegisterAndLinkTest.kt` 并扩展 `AccountRoutesTest.kt`，覆盖微信纯账号创建与重复登录、密码绑定、短信绑定、短信发送频率限制、密码错误锁定、验证码错误/过期、票据超时/重复使用/假票据、账号微信身份冲突及 Ktor 端到端 HTTP 交互。全套后端单元与集成测试、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，Gradle Daemon 已停止。
 - `2026-07-23`：完成 Task 6。实现纯微信账号新增手机号与设置密码流程。支持 `PHONE_LINK` 专项验证码及 HTTP 端点 `/account/phone/link/prepare`（根据手机号注册状态分别返回 `PHONE_TICKET_ISSUED` 或 `MERGE_REQUIRED` 票据）与 `/account/phone/link/complete`（单事务消费手机号票据、创建手机凭据、轮换 Session 并注册设备）。严格执行“短信验证通过前不泄露手机号注册状态”防泄漏规则；修正在纯微信账号（`phone=""`）下 `phoneUserByAccountId` 的判空逻辑；支持内存 `InMemoryAccountStore` 与 `JdbcAccountStore` 事务持久化。新增 `PhoneLinkTest.kt`（9 项测试），覆盖新增未注册手机号、密码强度拒绝、验证码错误防泄漏、手机号已存在触发合并、票据重复使用与过期、并发注册冲突阻断、已绑定手机号拒绝重复绑定、H2/JDBC 持久化及 Ktor 端到端 HTTP 接口测试。全套 `:services:backend:test`、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，测试后 Gradle Daemon 已停止。
+- `2026-07-23`：完成 Task 7。实现账号合并准备与单事务确认流程。新增密码准备 HTTP 端点 `/account/merge/prepare/phone-password` 与确认端点 `/account/merge/confirm`。在 `AccountStore`（内存与 JDBC）实现单事务原子合并：按账号 ID 固定顺序锁定两个账号，校验注销冷静期与互补凭据冲突，将来源账号的互补凭据（手机号或微信身份）转移到当前账号；合并 Cloud Config（目标账号设置与同名 feature flag 优先，来源独有 feature flag 补入），合并注册设备（保留最早 firstSeen、最新 lastSeen 及对应 IP），删除来源 AI 日志，轮换并清除旧 Session 并为当前设备签发新 Session，消费 5 分钟 `ACCOUNT_MERGE` 票据并销毁来源账号。新增 `AccountMergeTest.kt`，覆盖两个合并方向、凭据冲突阻断、注销期阻断、确认字符串校验、票据防重复消费、配置与设备合并去重、AI 日志清除及 Ktor 端到端 HTTP 接口测试。全套 `:services:backend:test`、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，测试后 Gradle Daemon 已停止。
 
 
 

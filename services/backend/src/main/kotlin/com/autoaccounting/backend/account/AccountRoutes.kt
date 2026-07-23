@@ -166,6 +166,30 @@ fun Route.accountRoutes(accountService: AccountService) {
     }
 
 
+    post("/account/merge/prepare/phone-password") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.prepareMergeWithPhonePassword(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                phone = parameters["phone"].orEmpty(),
+                password = parameters["password"].orEmpty()
+            )
+        )
+    }
+
+    post("/account/merge/confirm") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.confirmMerge(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                mergeTicket = parameters["mergeTicket"].orEmpty().ifBlank { parameters["ticket"].orEmpty() },
+                confirmText = parameters["confirmText"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
     post("/account/delete/status") {
         when (val result = accountService.getAccountDeletionStatus(call.accountBearerToken().orEmpty())) {
             is AccountResult.Success -> call.respondJson(
@@ -207,6 +231,7 @@ private suspend fun ApplicationCall.respondAccountResult(
                 is AccountDeletionStatus -> AccountApiJsonContracts.encodeDeletionStatusResponse(value.toContract())
                 is com.autoaccounting.api.WechatExchangeResponseContract -> AccountApiJsonContracts.encodeWechatExchangeResponse(value)
                 is com.autoaccounting.api.PhoneLinkPrepareResponseContract -> AccountApiJsonContracts.encodePhoneLinkPrepareResponse(value)
+                is com.autoaccounting.api.MergePreviewResponseContract -> AccountApiJsonContracts.encodeMergePreviewResponse(value)
                 else -> AccountApiJsonContracts.encodeSuccessResponse()
             }
             respondJson(body, HttpStatusCode.OK)
