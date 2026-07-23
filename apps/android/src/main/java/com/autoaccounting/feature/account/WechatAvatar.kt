@@ -17,6 +17,8 @@ import coil3.compose.AsyncImage
 import coil3.disk.DiskCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.autoaccounting.R
+import java.security.MessageDigest
+import java.util.Base64
 import okio.Path.Companion.toOkioPath
 
 class WechatAvatarCache(
@@ -39,12 +41,21 @@ class WechatAvatarCache(
         }
         .build()
 
+    init {
+        if (preferences.contains(LEGACY_KEY_CURRENT_AVATAR_URL)) {
+            preferences.edit().remove(LEGACY_KEY_CURRENT_AVATAR_URL).apply()
+            clearCacheOnly()
+        }
+    }
+
     fun prepareUrl(avatarUrl: String?): String? {
         val safeUrl = avatarUrl?.takeIf { it.startsWith("https://", ignoreCase = true) }
-        val previousUrl = preferences.getString(KEY_CURRENT_AVATAR_URL, null)
-        if (previousUrl != null && previousUrl != safeUrl) clearCacheOnly()
+        val safeUrlHash = safeUrl?.stableHash()
+        val previousUrlHash = preferences.getString(KEY_CURRENT_AVATAR_URL_HASH, null)
+        if (previousUrlHash != null && previousUrlHash != safeUrlHash) clearCacheOnly()
         preferences.edit().apply {
-            if (safeUrl == null) remove(KEY_CURRENT_AVATAR_URL) else putString(KEY_CURRENT_AVATAR_URL, safeUrl)
+            remove(LEGACY_KEY_CURRENT_AVATAR_URL)
+            if (safeUrlHash == null) remove(KEY_CURRENT_AVATAR_URL_HASH) else putString(KEY_CURRENT_AVATAR_URL_HASH, safeUrlHash)
         }.apply()
         return safeUrl
     }
@@ -61,10 +72,16 @@ class WechatAvatarCache(
 
     internal companion object {
         const val AVATAR_PREFERENCES = "wechat_avatar_cache"
-        const val KEY_CURRENT_AVATAR_URL = "current_avatar_url"
+        const val KEY_CURRENT_AVATAR_URL_HASH = "current_avatar_url_hash"
+        const val LEGACY_KEY_CURRENT_AVATAR_URL = "current_avatar_url"
         const val AVATAR_CACHE_DIRECTORY = "wechat_avatars"
         const val AVATAR_CACHE_MAX_BYTES = 10L * 1024 * 1024
     }
+}
+
+private fun String.stableHash(): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
 }
 
 @Composable

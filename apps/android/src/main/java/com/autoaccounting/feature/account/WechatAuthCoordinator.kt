@@ -26,18 +26,36 @@ sealed interface WechatAuthLaunchResult {
 }
 
 sealed interface WechatAuthCallback {
+    val purpose: WechatAuthPurpose
+    val sessionFingerprint: String?
+
     data class Authorized(
         val code: String,
-        val purpose: WechatAuthPurpose
+        override val purpose: WechatAuthPurpose,
+        override val sessionFingerprint: String? = null
     ) : WechatAuthCallback
 
-    data class Cancelled(val purpose: WechatAuthPurpose) : WechatAuthCallback
-    data class Denied(val purpose: WechatAuthPurpose) : WechatAuthCallback
-    data class Failed(val purpose: WechatAuthPurpose) : WechatAuthCallback
+    data class Cancelled(
+        override val purpose: WechatAuthPurpose,
+        override val sessionFingerprint: String? = null
+    ) : WechatAuthCallback
+
+    data class Denied(
+        override val purpose: WechatAuthPurpose,
+        override val sessionFingerprint: String? = null
+    ) : WechatAuthCallback
+
+    data class Failed(
+        override val purpose: WechatAuthPurpose,
+        override val sessionFingerprint: String? = null
+    ) : WechatAuthCallback
 }
 
 interface WechatAuthGateway {
-    fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult
+    fun startAuthorization(
+        purpose: WechatAuthPurpose,
+        sessionFingerprint: String? = null
+    ): WechatAuthLaunchResult
 }
 
 class WechatAuthCoordinator(
@@ -45,10 +63,11 @@ class WechatAuthCoordinator(
 ) {
     fun startAuthorization(
         agreementAccepted: Boolean,
-        purpose: WechatAuthPurpose
+        purpose: WechatAuthPurpose,
+        sessionFingerprint: String? = null
     ): WechatAuthLaunchResult {
         if (!agreementAccepted) return WechatAuthLaunchResult.AgreementRequired
-        return gateway.startAuthorization(purpose)
+        return gateway.startAuthorization(purpose, sessionFingerprint)
     }
 }
 
@@ -59,7 +78,10 @@ class AndroidWechatAuthGateway(
 ) : WechatAuthGateway {
     private val applicationContext = context.applicationContext
 
-    override fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult {
+    override fun startAuthorization(
+        purpose: WechatAuthPurpose,
+        sessionFingerprint: String?
+    ): WechatAuthLaunchResult {
         if (appId.isBlank()) return WechatAuthLaunchResult.NotConfigured
 
         // OpenSDK is created and registered only for an explicit, agreement-approved request.
@@ -70,7 +92,7 @@ class AndroidWechatAuthGateway(
             return WechatAuthLaunchResult.VersionUnsupported
         }
 
-        val requestState = stateStore.begin(purpose)
+        val requestState = stateStore.begin(purpose, sessionFingerprint)
         val request = SendAuth.Req().apply {
             scope = WECHAT_AUTH_SCOPE
             state = requestState
@@ -90,21 +112,28 @@ class AndroidWechatAuthGateway(
 class WechatAuthStateStore(
     context: Context,
     private val clock: Clock = Clock.systemUTC(),
+    private val relayTokenGenerator: () -> String = ::secureWechatState,
     private val stateGenerator: () -> String = ::secureWechatState
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
-    fun begin(purpose: WechatAuthPurpose): String {
+    fun begin(
+        purpose: WechatAuthPurpose,
+        sessionFingerprint: String? = null
+    ): String {
         val state = stateGenerator()
+        val relayToken = relayTokenGenerator()
         preferences.edit()
             .putString(KEY_STATE, state)
             .putString(KEY_PURPOSE, purpose.name)
+            .putString(KEY_RELAY_TOKEN, relayToken)
+            .putString(KEY_SESSION_FINGERPRINT, sessionFingerprint)
             .putLong(KEY_EXPIRES_AT, clock.millis() + REQUEST_TTL_MILLIS)
             .apply()
         return state
     }
 
-    fun consume(responseState: String?): WechatAuthPurpose? {
+    internal fun consumeSdkResponse(responseState: String?): WechatAuthRequestContext? {
         val expectedState = preferences.getString(KEY_STATE, null) ?: return null
         val expiresAt = preferences.getLong(KEY_EXPIRES_AT, 0L)
         if (clock.millis() > expiresAt) {
@@ -117,25 +146,65 @@ class WechatAuthStateStore(
         }
         val purpose = preferences.getString(KEY_PURPOSE, null)
             ?.let { runCatching { WechatAuthPurpose.valueOf(it) }.getOrNull() }
-        clear(expectedState)
-        return purpose
+            ?: return null
+        val relayToken = preferences.getString(KEY_RELAY_TOKEN, null)
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val sessionFingerprint = preferences.getString(KEY_SESSION_FINGERPRINT, null)
+        preferences.edit().remove(KEY_STATE).apply()
+        return WechatAuthRequestContext(purpose, sessionFingerprint, relayToken)
+    }
+
+    internal fun consumeRelay(relayToken: String?): WechatAuthRequestContext? {
+        val expectedRelayToken = preferences.getString(KEY_RELAY_TOKEN, null) ?: return null
+        val expiresAt = preferences.getLong(KEY_EXPIRES_AT, 0L)
+        if (clock.millis() > expiresAt) {
+            clearAll()
+            return null
+        }
+        val suppliedRelayToken = relayToken?.takeIf(String::isNotBlank) ?: return null
+        if (!MessageDigest.isEqual(expectedRelayToken.toByteArray(), suppliedRelayToken.toByteArray())) {
+            return null
+        }
+        val purpose = preferences.getString(KEY_PURPOSE, null)
+            ?.let { runCatching { WechatAuthPurpose.valueOf(it) }.getOrNull() }
+            ?: return null
+        val context = WechatAuthRequestContext(
+            purpose = purpose,
+            sessionFingerprint = preferences.getString(KEY_SESSION_FINGERPRINT, null),
+            relayToken = expectedRelayToken
+        )
+        clearAll()
+        return context
     }
 
     fun clear(expectedState: String) {
         val storedState = preferences.getString(KEY_STATE, null) ?: return
         if (MessageDigest.isEqual(storedState.toByteArray(), expectedState.toByteArray())) {
-            preferences.edit().clear().apply()
+            clearAll()
         }
+    }
+
+    private fun clearAll() {
+        preferences.edit().clear().apply()
     }
 
     private companion object {
         const val PREFERENCES_NAME = "wechat_auth_request"
         const val KEY_STATE = "state"
         const val KEY_PURPOSE = "purpose"
+        const val KEY_RELAY_TOKEN = "relay_token"
+        const val KEY_SESSION_FINGERPRINT = "session_fingerprint"
         const val KEY_EXPIRES_AT = "expires_at"
         const val REQUEST_TTL_MILLIS = 5 * 60_000L
     }
 }
+
+internal data class WechatAuthRequestContext(
+    val purpose: WechatAuthPurpose,
+    val sessionFingerprint: String?,
+    val relayToken: String
+)
 
 internal enum class WechatSdkAuthError {
     None,
@@ -153,62 +222,85 @@ internal data class WechatSdkAuthResponse(
 internal class WechatAuthCallbackProcessor(
     private val stateStore: WechatAuthStateStore
 ) {
-    fun process(response: WechatSdkAuthResponse): WechatAuthCallback? {
-        val purpose = stateStore.consume(response.state) ?: return null
-        return when (response.error) {
+    fun process(response: WechatSdkAuthResponse): WechatAuthCallbackDelivery? {
+        val request = stateStore.consumeSdkResponse(response.state) ?: return null
+        val callback = when (response.error) {
             WechatSdkAuthError.None -> response.code
                 ?.takeIf(String::isNotBlank)
-                ?.let { WechatAuthCallback.Authorized(it, purpose) }
-                ?: WechatAuthCallback.Failed(purpose)
-            WechatSdkAuthError.Cancelled -> WechatAuthCallback.Cancelled(purpose)
-            WechatSdkAuthError.Denied -> WechatAuthCallback.Denied(purpose)
-            WechatSdkAuthError.Other -> WechatAuthCallback.Failed(purpose)
+                ?.let { WechatAuthCallback.Authorized(it, request.purpose, request.sessionFingerprint) }
+                ?: WechatAuthCallback.Failed(request.purpose, request.sessionFingerprint)
+            WechatSdkAuthError.Cancelled -> WechatAuthCallback.Cancelled(request.purpose, request.sessionFingerprint)
+            WechatSdkAuthError.Denied -> WechatAuthCallback.Denied(request.purpose, request.sessionFingerprint)
+            WechatSdkAuthError.Other -> WechatAuthCallback.Failed(request.purpose, request.sessionFingerprint)
         }
+        return WechatAuthCallbackDelivery(callback, request.relayToken)
     }
 }
+
+internal data class WechatAuthCallbackDelivery(
+    val callback: WechatAuthCallback,
+    val relayToken: String
+)
 
 object WechatAuthCallbackIntent {
     const val ACTION = "com.autoaccounting.action.WECHAT_AUTH_CALLBACK"
     private const val EXTRA_STATUS = "com.autoaccounting.extra.WECHAT_STATUS"
     private const val EXTRA_CODE = "com.autoaccounting.extra.WECHAT_CODE"
-    private const val EXTRA_PURPOSE = "com.autoaccounting.extra.WECHAT_PURPOSE"
+    private const val EXTRA_RELAY_TOKEN = "com.autoaccounting.extra.WECHAT_RELAY_TOKEN"
 
-    fun create(context: Context, callback: WechatAuthCallback): Intent {
-        val (status, purpose, code) = when (callback) {
-            is WechatAuthCallback.Authorized -> Triple("authorized", callback.purpose, callback.code)
-            is WechatAuthCallback.Cancelled -> Triple("cancelled", callback.purpose, null)
-            is WechatAuthCallback.Denied -> Triple("denied", callback.purpose, null)
-            is WechatAuthCallback.Failed -> Triple("failed", callback.purpose, null)
+    internal fun create(context: Context, delivery: WechatAuthCallbackDelivery): Intent {
+        val (status, code) = when (val callback = delivery.callback) {
+            is WechatAuthCallback.Authorized -> "authorized" to callback.code
+            is WechatAuthCallback.Cancelled -> "cancelled" to null
+            is WechatAuthCallback.Denied -> "denied" to null
+            is WechatAuthCallback.Failed -> "failed" to null
         }
         return Intent(context, MainActivity::class.java).apply {
             action = ACTION
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_STATUS, status)
-            putExtra(EXTRA_PURPOSE, purpose.name)
+            putExtra(EXTRA_RELAY_TOKEN, delivery.relayToken)
             code?.let { putExtra(EXTRA_CODE, it) }
         }
     }
 
-    fun consume(intent: Intent?): WechatAuthCallback? {
+    fun consume(context: Context, intent: Intent?): WechatAuthCallback? {
         if (intent?.action != ACTION) return null
-        val purpose = intent.getStringExtra(EXTRA_PURPOSE)
-            ?.let { runCatching { WechatAuthPurpose.valueOf(it) }.getOrNull() }
-            ?: return null
+        val request = WechatAuthStateStore(context.applicationContext)
+            .consumeRelay(intent.getStringExtra(EXTRA_RELAY_TOKEN))
+            ?: return intent.scrubWechatCallback().let { null }
         val callback = when (intent.getStringExtra(EXTRA_STATUS)) {
             "authorized" -> intent.getStringExtra(EXTRA_CODE)
                 ?.takeIf(String::isNotBlank)
-                ?.let { WechatAuthCallback.Authorized(it, purpose) }
-            "cancelled" -> WechatAuthCallback.Cancelled(purpose)
-            "denied" -> WechatAuthCallback.Denied(purpose)
-            "failed" -> WechatAuthCallback.Failed(purpose)
+                ?.let { WechatAuthCallback.Authorized(it, request.purpose, request.sessionFingerprint) }
+            "cancelled" -> WechatAuthCallback.Cancelled(request.purpose, request.sessionFingerprint)
+            "denied" -> WechatAuthCallback.Denied(request.purpose, request.sessionFingerprint)
+            "failed" -> WechatAuthCallback.Failed(request.purpose, request.sessionFingerprint)
             else -> null
         }
-        intent.removeExtra(EXTRA_CODE)
-        intent.removeExtra(EXTRA_STATUS)
-        intent.removeExtra(EXTRA_PURPOSE)
-        intent.action = null
+        intent.scrubWechatCallback()
         return callback
     }
+
+    private fun Intent.scrubWechatCallback(): Intent = apply {
+        removeExtra(EXTRA_CODE)
+        removeExtra(EXTRA_STATUS)
+        removeExtra(EXTRA_RELAY_TOKEN)
+        action = null
+    }
+}
+
+internal fun wechatSessionFingerprint(token: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+}
+
+internal fun WechatAuthCallback.matchesSession(token: String): Boolean {
+    val expected = sessionFingerprint ?: return false
+    return MessageDigest.isEqual(
+        expected.toByteArray(Charsets.UTF_8),
+        wechatSessionFingerprint(token).toByteArray(Charsets.UTF_8)
+    )
 }
 
 private fun secureWechatState(): String {

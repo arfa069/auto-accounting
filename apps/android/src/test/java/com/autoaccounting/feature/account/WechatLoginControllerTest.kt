@@ -150,7 +150,10 @@ class WechatLoginControllerTest {
         var calls = 0
         var lastPurpose: WechatAuthPurpose? = null
 
-        override fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult {
+        override fun startAuthorization(
+            purpose: WechatAuthPurpose,
+            sessionFingerprint: String?
+        ): WechatAuthLaunchResult {
             calls += 1
             lastPurpose = purpose
             return WechatAuthLaunchResult.Started

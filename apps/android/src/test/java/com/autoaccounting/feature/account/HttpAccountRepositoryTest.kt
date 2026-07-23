@@ -67,6 +67,13 @@ class HttpAccountRepositoryTest {
         ).verifySession(AccountCredentials("13800138000", "token")) as AccountRepositoryResult.Failure
         assertEquals(AccountFailureKind.InvalidSession, invalid.kind)
 
+        val wrongPassword = repository(
+            RecordingTransport(errorResponse(401, "LOGIN_FAILED", "手机号或密码不正确"))
+        ).unlinkWechatWithPassword("token", "wrong-password") as AccountRepositoryResult.Failure
+        assertEquals(AccountFailureKind.Service, wrongPassword.kind)
+        assertEquals("LOGIN_FAILED", wrongPassword.code)
+        assertEquals("手机号或密码不正确", wrongPassword.message)
+
         val limited = repository(
             RecordingTransport(errorResponse(429, "SMS_TOO_FREQUENT", "slow down"))
         ).requestSmsCode("13800138000") as AccountRepositoryResult.Failure

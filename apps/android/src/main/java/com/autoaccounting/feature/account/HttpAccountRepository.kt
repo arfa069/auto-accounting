@@ -420,7 +420,7 @@ internal class HttpAccountRepository(
             return invalidResponse()
         }
         return when {
-            statusCode == HttpURLConnection.HTTP_UNAUTHORIZED || error.error == "TOKEN_INVALID" ->
+            error.error == "TOKEN_INVALID" ->
                 AccountRepositoryResult.Failure(
                     kind = AccountFailureKind.InvalidSession,
                     code = error.error,

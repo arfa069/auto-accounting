@@ -91,6 +91,15 @@ fun WechatAccountManagementPanel(
         state = state.copy(operationInProgress = false, errorMessage = message)
     }
 
+    fun handleFailure(failure: AccountRepositoryResult.Failure) {
+        state = state.copy(operationInProgress = false)
+        if (failure.kind == AccountFailureKind.InvalidSession) {
+            onInvalidSession()
+        } else {
+            fail(failure.message)
+        }
+    }
+
     suspend fun commit(credentials: AccountCredentials, clearAvatar: Boolean = false) {
         val committed = persistAccountSessionOrRevoke(
             credentials = credentials,
@@ -112,7 +121,7 @@ fun WechatAccountManagementPanel(
     suspend fun handleCredentials(result: AccountRepositoryResult<AccountCredentials>, clearAvatar: Boolean = false) {
         when (result) {
             is AccountRepositoryResult.Success -> commit(result.value, clearAvatar)
-            is AccountRepositoryResult.Failure -> fail(result.message)
+            is AccountRepositoryResult.Failure -> handleFailure(result)
         }
     }
 
@@ -120,11 +129,15 @@ fun WechatAccountManagementPanel(
         val callback = wechatAuthCallback ?: return@LaunchedEffect
         if (callback.managementPurpose() != WechatAuthPurpose.LinkCurrentAccount) return@LaunchedEffect
         onWechatAuthCallbackConsumed()
+        if (!callback.matchesSession(session.token)) {
+            fail("登录状态已变化，请重新发起微信授权")
+            return@LaunchedEffect
+        }
         when (callback) {
             is WechatAuthCallback.Authorized -> {
                 state = state.copy(operationInProgress = true, errorMessage = null)
                 when (val result = accountRepository.exchangeWechatCode(callback.code, session.token)) {
-                    is AccountRepositoryResult.Failure -> fail(result.message)
+                    is AccountRepositoryResult.Failure -> handleFailure(result)
                     is AccountRepositoryResult.Success -> when (val auth = result.value) {
                         is AccountWechatAuthResult.SignedIn -> commit(auth.credentials)
                         is AccountWechatAuthResult.MergeRequired -> state = AccountIdentityUiState(
@@ -174,7 +187,8 @@ fun WechatAccountManagementPanel(
                         when (
                             authCoordinator.startAuthorization(
                                 agreementAccepted = true,
-                                purpose = WechatAuthPurpose.LinkCurrentAccount
+                                purpose = WechatAuthPurpose.LinkCurrentAccount,
+                                sessionFingerprint = wechatSessionFingerprint(session.token)
                             )
                         ) {
                             WechatAuthLaunchResult.Started -> state = state.copy(operationInProgress = true, errorMessage = null)
@@ -226,7 +240,7 @@ fun WechatAccountManagementPanel(
                         )
                     ) {
                         is AccountRepositoryResult.Success -> state = state.copy(operationInProgress = false)
-                        is AccountRepositoryResult.Failure -> fail(result.message)
+                        is AccountRepositoryResult.Failure -> handleFailure(result)
                     }
                 }
             },
@@ -243,11 +257,11 @@ fun WechatAccountManagementPanel(
                             )
                         ) {
                             is AccountRepositoryResult.Success -> state = result.value.toMergeState()
-                            is AccountRepositoryResult.Failure -> fail(result.message)
+                            is AccountRepositoryResult.Failure -> handleFailure(result)
                         }
                     } else {
                         when (val result = accountRepository.preparePhoneLink(session.token, state.phone, state.code)) {
-                            is AccountRepositoryResult.Failure -> fail(result.message)
+                            is AccountRepositoryResult.Failure -> handleFailure(result)
                             is AccountRepositoryResult.Success -> state = when (val prepared = result.value) {
                                 is PhoneLinkPrepareResponseContract.PhoneTicketIssued -> state.copy(
                                     page = AccountIdentityPage.SetPhonePassword,
@@ -310,7 +324,7 @@ fun WechatAccountManagementPanel(
                         )
                     ) {
                         is AccountRepositoryResult.Success -> state = state.copy(operationInProgress = false)
-                        is AccountRepositoryResult.Failure -> fail(result.message)
+                        is AccountRepositoryResult.Failure -> handleFailure(result)
                     }
                 }
             },

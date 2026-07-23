@@ -159,7 +159,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNavigationIntent(intent: Intent?) {
-        WechatAuthCallbackIntent.consume(intent)?.let { callback ->
+        WechatAuthCallbackIntent.consume(this, intent)?.let { callback ->
             pendingWechatAuthCallback.value = callback
         }
         if (intent?.getBooleanExtra(EXTRA_OPEN_REVIEW, false) == true) {

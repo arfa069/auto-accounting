@@ -228,10 +228,78 @@ class AccountWechatUiTest {
         composeRule.waitUntil { repository.unlinkWechatWithSmsCalls == 1 }
     }
 
+    @Test
+    fun linkCallbackFromAnotherSessionIsRejectedBeforeExchange() {
+        val repository = TestAccountRepository()
+        var consumed = 0
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn("13800138000", "session-b"),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                wechatAuthCallback = WechatAuthCallback.Authorized(
+                    code = "one-time-code",
+                    purpose = WechatAuthPurpose.LinkCurrentAccount,
+                    sessionFingerprint = wechatSessionFingerprint("session-a")
+                ),
+                onWechatAuthCallbackConsumed = { consumed += 1 },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(1, consumed)
+        assertEquals(0, repository.exchangeWechatCalls)
+        composeRule.onNodeWithText("登录状态已变化", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun protectedWechatFailureClearsInvalidSession() {
+        val repository = TestAccountRepository().apply {
+            unlinkWechatWithPasswordResult = AccountRepositoryResult.Failure(
+                kind = AccountFailureKind.InvalidSession,
+                message = "登录状态已失效"
+            )
+        }
+        var invalidSessionCalls = 0
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn("13800138000", "token", wechatLinked = true),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = { invalidSessionCalls += 1 },
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("unlink-wechat").performScrollTo().performClick()
+        composeRule.onNodeWithTag("unlink-password").performTextInput("Wrong123!")
+        composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
+        composeRule.waitUntil { invalidSessionCalls == 1 }
+
+        assertEquals(1, repository.unlinkWechatWithPasswordCalls)
+    }
+
     private class RecordingGateway : WechatAuthGateway {
         var calls = 0
 
-        override fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult {
+        override fun startAuthorization(
+            purpose: WechatAuthPurpose,
+            sessionFingerprint: String?
+        ): WechatAuthLaunchResult {
             calls += 1
             return WechatAuthLaunchResult.Started
         }

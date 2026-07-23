@@ -38,15 +38,15 @@ abstract class WechatCallbackActivity : Activity(), IWXAPIEventHandler {
             BaseResp.ErrCode.ERR_AUTH_DENIED -> WechatSdkAuthError.Denied
             else -> WechatSdkAuthError.Other
         }
-        val callback = WechatAuthCallbackProcessor(WechatAuthStateStore(applicationContext)).process(
+        val delivery = WechatAuthCallbackProcessor(WechatAuthStateStore(applicationContext)).process(
             WechatSdkAuthResponse(
                 code = response.code,
                 state = response.state,
                 error = error
             )
         )
-        if (callback != null) {
-            startActivity(WechatAuthCallbackIntent.create(this, callback))
+        if (delivery != null) {
+            startActivity(WechatAuthCallbackIntent.create(this, delivery))
         }
         finish()
     }

@@ -34,7 +34,10 @@ class WechatAuthCoordinatorTest {
     fun coordinatorDoesNotInvokeGatewayUntilAgreementIsAccepted() {
         var starts = 0
         val gateway = object : WechatAuthGateway {
-            override fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult {
+            override fun startAuthorization(
+                purpose: WechatAuthPurpose,
+                sessionFingerprint: String?
+            ): WechatAuthLaunchResult {
                 starts += 1
                 return WechatAuthLaunchResult.Started
             }
@@ -58,8 +61,11 @@ class WechatAuthCoordinatorTest {
         val state = "E".repeat(43)
         val stateStore = WechatAuthStateStore(context, stateGenerator = { state })
         val gateway = object : WechatAuthGateway {
-            override fun startAuthorization(purpose: WechatAuthPurpose): WechatAuthLaunchResult {
-                stateStore.begin(purpose)
+            override fun startAuthorization(
+                purpose: WechatAuthPurpose,
+                sessionFingerprint: String?
+            ): WechatAuthLaunchResult {
+                stateStore.begin(purpose, sessionFingerprint)
                 return WechatAuthLaunchResult.Started
             }
         }
@@ -69,11 +75,12 @@ class WechatAuthCoordinatorTest {
             WechatAuthLaunchResult.Started,
             coordinator.startAuthorization(true, WechatAuthPurpose.SignInOrRegister)
         )
-        val callback = WechatAuthCallbackProcessor(stateStore).process(
+        val delivery = WechatAuthCallbackProcessor(stateStore).process(
             WechatSdkAuthResponse("one-time-code", state, WechatSdkAuthError.None)
         )
         val delivered = WechatAuthCallbackIntent.consume(
-            WechatAuthCallbackIntent.create(context, requireNotNull(callback))
+            context,
+            WechatAuthCallbackIntent.create(context, requireNotNull(delivery))
         )
 
         assertEquals(
@@ -91,10 +98,15 @@ class WechatAuthCoordinatorTest {
             stateGenerator = { state }
         )
 
-        assertEquals(state, store.begin(WechatAuthPurpose.LinkCurrentAccount))
-        assertNull(store.consume("B".repeat(43)))
-        assertEquals(WechatAuthPurpose.LinkCurrentAccount, store.consume(state))
-        assertNull(store.consume(state))
+        val fingerprint = wechatSessionFingerprint("session-a")
+        assertEquals(state, store.begin(WechatAuthPurpose.LinkCurrentAccount, fingerprint))
+        assertNull(store.consumeSdkResponse("B".repeat(43)))
+        val sdkContext = requireNotNull(store.consumeSdkResponse(state))
+        assertEquals(WechatAuthPurpose.LinkCurrentAccount, sdkContext.purpose)
+        assertEquals(fingerprint, sdkContext.sessionFingerprint)
+        assertNull(store.consumeSdkResponse(state))
+        assertEquals(sdkContext, store.consumeRelay(sdkContext.relayToken))
+        assertNull(store.consumeRelay(sdkContext.relayToken))
     }
 
     @Test
@@ -106,7 +118,7 @@ class WechatAuthCoordinatorTest {
 
         clock.nowMillis += 5 * 60_000L + 1
 
-        assertNull(store.consume(state))
+        assertNull(store.consumeSdkResponse(state))
     }
 
     @Test
@@ -123,39 +135,74 @@ class WechatAuthCoordinatorTest {
         )
         assertEquals(
             WechatAuthCallback.Authorized("one-time-code", WechatAuthPurpose.SignInOrRegister),
-            processor.process(WechatSdkAuthResponse("one-time-code", state, WechatSdkAuthError.None))
+            processor.process(WechatSdkAuthResponse("one-time-code", state, WechatSdkAuthError.None))?.callback
         )
 
         store.begin(WechatAuthPurpose.LinkCurrentAccount)
         assertEquals(
             WechatAuthCallback.Cancelled(WechatAuthPurpose.LinkCurrentAccount),
-            processor.process(WechatSdkAuthResponse(null, state, WechatSdkAuthError.Cancelled))
+            processor.process(WechatSdkAuthResponse(null, state, WechatSdkAuthError.Cancelled))?.callback
         )
 
         store.begin(WechatAuthPurpose.LinkCurrentAccount)
         assertEquals(
             WechatAuthCallback.Denied(WechatAuthPurpose.LinkCurrentAccount),
-            processor.process(WechatSdkAuthResponse(null, state, WechatSdkAuthError.Denied))
+            processor.process(WechatSdkAuthResponse(null, state, WechatSdkAuthError.Denied))?.callback
         )
     }
 
     @Test
     fun callbackIntentTargetsMainActivityClearsSensitiveCodeAndSupportsBothDeliveryPaths() {
-        val callback = WechatAuthCallback.Authorized(
-            code = "one-time-code",
-            purpose = WechatAuthPurpose.SignInOrRegister
-        )
-        val coldStartIntent = WechatAuthCallbackIntent.create(context, callback)
+        val state = "F".repeat(43)
+        val stateStore = WechatAuthStateStore(context, stateGenerator = { state })
+        val processor = WechatAuthCallbackProcessor(stateStore)
+
+        fun delivery(): WechatAuthCallbackDelivery {
+            stateStore.begin(WechatAuthPurpose.SignInOrRegister)
+            return requireNotNull(
+                processor.process(WechatSdkAuthResponse("one-time-code", state, WechatSdkAuthError.None))
+            )
+        }
+
+        val expected = WechatAuthCallback.Authorized("one-time-code", WechatAuthPurpose.SignInOrRegister)
+        val coldStartIntent = WechatAuthCallbackIntent.create(context, delivery())
 
         assertEquals(ComponentName(context, MainActivity::class.java), coldStartIntent.component)
         assertTrue(coldStartIntent.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
         assertTrue(coldStartIntent.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
-        assertEquals(callback, WechatAuthCallbackIntent.consume(coldStartIntent))
+        assertEquals(expected, WechatAuthCallbackIntent.consume(context, coldStartIntent))
         assertFalse(coldStartIntent.hasExtra("com.autoaccounting.extra.WECHAT_CODE"))
 
-        val onNewIntent = WechatAuthCallbackIntent.create(context, callback)
-        assertEquals(callback, WechatAuthCallbackIntent.consume(onNewIntent))
-        assertNull(WechatAuthCallbackIntent.consume(onNewIntent))
+        val onNewIntent = WechatAuthCallbackIntent.create(context, delivery())
+        assertEquals(expected, WechatAuthCallbackIntent.consume(context, onNewIntent))
+        assertNull(WechatAuthCallbackIntent.consume(context, onNewIntent))
+    }
+
+    @Test
+    fun forgedMainActivityIntentCannotConsumePendingAuthorization() {
+        val state = "G".repeat(43)
+        val stateStore = WechatAuthStateStore(context, stateGenerator = { state })
+        stateStore.begin(WechatAuthPurpose.SignInOrRegister)
+        val forged = Intent(context, MainActivity::class.java).apply {
+            action = WechatAuthCallbackIntent.ACTION
+            putExtra("com.autoaccounting.extra.WECHAT_STATUS", "authorized")
+            putExtra("com.autoaccounting.extra.WECHAT_CODE", "forged-code")
+            putExtra("com.autoaccounting.extra.WECHAT_RELAY_TOKEN", "forged-relay")
+        }
+
+        assertNull(WechatAuthCallbackIntent.consume(context, forged))
+        val validDelivery = requireNotNull(
+            WechatAuthCallbackProcessor(stateStore).process(
+                WechatSdkAuthResponse("real-code", state, WechatSdkAuthError.None)
+            )
+        )
+        assertEquals(
+            WechatAuthCallback.Authorized("real-code", WechatAuthPurpose.SignInOrRegister),
+            WechatAuthCallbackIntent.consume(
+                context,
+                WechatAuthCallbackIntent.create(context, validDelivery)
+            )
+        )
     }
 
     @Test
