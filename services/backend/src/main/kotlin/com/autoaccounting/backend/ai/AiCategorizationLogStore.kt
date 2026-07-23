@@ -2,7 +2,7 @@ package com.autoaccounting.backend.ai
 
 data class StoredAiCategorizationLog(
     val id: Long = 0,
-    val accountPhone: String?,
+    val accountId: Long? = null,
     val merchantTitle: String,
     val sourceLabel: String,
     val transactionKind: String,
@@ -15,9 +15,9 @@ data class StoredAiCategorizationLog(
 
 interface AiCategorizationLogStore {
     fun insertLog(log: StoredAiCategorizationLog)
-    fun logsForAccount(phone: String): List<StoredAiCategorizationLog>
+    fun logsForAccount(accountId: Long): List<StoredAiCategorizationLog>
     fun allLogs(): List<StoredAiCategorizationLog>
-    fun deleteLogsForAccount(phone: String)
+    fun deleteLogsForAccount(accountId: Long)
 }
 
 class InMemoryAiCategorizationLogStore : AiCategorizationLogStore {
@@ -27,13 +27,13 @@ class InMemoryAiCategorizationLogStore : AiCategorizationLogStore {
         logs += log
     }
 
-    override fun logsForAccount(phone: String): List<StoredAiCategorizationLog> {
-        return logs.filter { it.accountPhone == phone }
+    override fun logsForAccount(accountId: Long): List<StoredAiCategorizationLog> {
+        return logs.filter { it.accountId == accountId }
     }
 
     override fun allLogs(): List<StoredAiCategorizationLog> = logs.toList()
 
-    override fun deleteLogsForAccount(phone: String) {
-        logs.removeAll { it.accountPhone == phone }
+    override fun deleteLogsForAccount(accountId: Long) {
+        logs.removeAll { it.accountId == accountId }
     }
 }

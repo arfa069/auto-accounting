@@ -1,8 +1,8 @@
 package com.autoaccounting.backend.config
 
 import com.autoaccounting.backend.AccountDeletionJob
-import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.AccountResult
+import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.AccountToken
 import com.autoaccounting.backend.account.JdbcAccountStore
 import com.autoaccounting.backend.account.MutableClock
@@ -19,12 +19,12 @@ class CloudConfigPersistenceTest {
         val clock = MutableClock(0)
         val accountService = accountService(databaseUrl, clock)
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        val reg = (accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
         val firstStore = JdbcCloudConfigStore(databaseUrl)
         firstStore.upsertConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = reg.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
                 featureFlags = mapOf("beta" to true),
@@ -33,7 +33,7 @@ class CloudConfigPersistenceTest {
         )
 
         val secondStore = JdbcCloudConfigStore(databaseUrl)
-        val config = secondStore.findConfig("13800138000")!!
+        val config = secondStore.findConfig(reg.accountId)!!
 
         assertTrue(config.aiConsentGranted)
         assertTrue(config.enhancedContextGranted)
@@ -78,13 +78,13 @@ class CloudConfigPersistenceTest {
         val clock = MutableClock(0)
         val accountService = accountService(databaseUrl, clock)
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val token = (accountService.register("13800138000", "123456", "Aa123456!")
-            as AccountResult.Success<AccountToken>).value.token
+        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value
 
         val configStore = JdbcCloudConfigStore(databaseUrl)
         configStore.upsertConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = tokenResult.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = false,
                 featureFlags = emptyMap(),
@@ -92,17 +92,17 @@ class CloudConfigPersistenceTest {
             )
         )
 
-        accountService.requestAccountDeletion(token)
+        accountService.requestAccountDeletion(tokenResult.token)
         clock.advanceBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
         val deletionJob = AccountDeletionJob(
             accountService = accountService,
             aiCategorizationService = AiCategorizationService(),
             cloudConfigService = CloudConfigService(configStore, accountService)
         )
-        assertEquals(listOf("13800138000"), deletionJob.runDueDeletion())
+        assertEquals(listOf(tokenResult.accountId), deletionJob.runDueDeletion())
         assertTrue(deletionJob.runDueDeletion().isEmpty())
 
-        assertEquals(null, configStore.findConfig("13800138000"))
+        assertEquals(null, configStore.findConfig(tokenResult.accountId))
     }
 
     private fun accountService(databaseUrl: String, clock: MutableClock): AccountService {

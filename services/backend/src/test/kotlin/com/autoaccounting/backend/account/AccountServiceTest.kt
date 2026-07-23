@@ -3,8 +3,8 @@ package com.autoaccounting.backend.account
 import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.ai.AiCategorizationService
 import com.autoaccounting.backend.ai.InMemoryAiCategorizationLogStore
-import com.autoaccounting.backend.config.CloudConfigStore
 import com.autoaccounting.backend.config.CloudConfigService
+import com.autoaccounting.backend.config.CloudConfigStore
 import com.autoaccounting.backend.config.InMemoryCloudConfigStore
 import com.autoaccounting.backend.config.StoredCloudConfig
 import org.junit.Assert.assertEquals
@@ -141,10 +141,10 @@ class AccountServiceTest {
         val registered = service.register("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>
 
-        assertEquals(
-            AccountResult.Success(AccountToken("13800138000", "token-1")),
-            service.verifyToken(registered.value.token)
-        )
+        val verified = service.verifyToken(registered.value.token) as AccountResult.Success<AccountToken>
+        assertEquals("13800138000", verified.value.phone)
+        assertEquals("token-1", verified.value.token)
+        assertTrue(verified.value.accountId > 0L)
         assertEquals(
             listOf("device-a"),
             service.registeredDevices("13800138000").map { it.deviceId }
@@ -210,16 +210,11 @@ class AccountServiceTest {
         val token = (service.register("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value.token
 
-        val requested = service.requestAccountDeletion(token)
+        val requested = service.requestAccountDeletion(token) as AccountResult.Success<AccountDeletionStatus>
 
-        assertEquals(
-            AccountDeletionStatus(
-                phone = "13800138000",
-                requestedAtMillis = 0,
-                finalDeletionAtMillis = 604_800_000
-            ),
-            (requested as AccountResult.Success<AccountDeletionStatus>).value
-        )
+        assertEquals("13800138000", requested.value.phone)
+        assertEquals(0L, requested.value.requestedAtMillis)
+        assertEquals(604_800_000L, requested.value.finalDeletionAtMillis)
         assertTrue(service.login("13800138000", "Aa123456!") is AccountResult.Success)
         assertEquals(
             AccountError.ACCOUNT_DELETION_PENDING,
@@ -234,8 +229,8 @@ class AccountServiceTest {
         assertTrue(service.accountsDueForDeletion().isEmpty())
 
         service.advanceTimeBy(1)
-        assertEquals(listOf("13800138000"), service.accountsDueForDeletion())
-        assertTrue(service.finalizeAccountDeletion("13800138000"))
+        val dueAccountId = service.accountsDueForDeletion().single()
+        assertTrue(service.finalizeAccountDeletion(dueAccountId))
         assertTrue(service.accountsDueForDeletion().isEmpty())
         assertEquals(AccountError.TOKEN_INVALID, service.requestAccountDeletion(token).error)
     }
@@ -249,10 +244,12 @@ class AccountServiceTest {
             accountService = accountService
         )
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val token = (accountService.register("13800138000", "123456", "Aa123456!")
-            as AccountResult.Success<AccountToken>).value.token
+        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value
+        val accountId = tokenResult.accountId
+
         aiService.suggest(
-            accountPhone = "13800138000",
+            accountId = accountId,
             merchantTitle = "午餐",
             sourceLabel = "微信",
             transactionKind = "支出",
@@ -264,7 +261,7 @@ class AccountServiceTest {
         )
         cloudConfigService.writeConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
                 featureFlags = mapOf("beta" to true),
@@ -272,14 +269,14 @@ class AccountServiceTest {
             )
         )
 
-        accountService.requestAccountDeletion(token)
+        accountService.requestAccountDeletion(tokenResult.token)
         accountService.advanceTimeBy(604_800_000)
         val deletionJob = AccountDeletionJob(accountService, aiService, cloudConfigService)
-        val deletedPhones = deletionJob.runDueDeletion()
+        val deletedAccountIds = deletionJob.runDueDeletion()
 
-        assertEquals(listOf("13800138000"), deletedPhones)
+        assertEquals(listOf(accountId), deletedAccountIds)
         assertTrue(aiService.logs.isEmpty())
-        assertEquals(emptyMap<String, Boolean>(), cloudConfigService.readConfig("13800138000").featureFlags)
+        assertEquals(emptyMap<String, Boolean>(), cloudConfigService.readConfig(accountId).featureFlags)
         assertTrue(deletionJob.runDueDeletion().isEmpty())
     }
 
@@ -291,10 +288,13 @@ class AccountServiceTest {
         val configStore = FailingOnceCloudConfigStore()
         val cloudConfigService = CloudConfigService(configStore, accountService)
         accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val token = (accountService.register("13800138000", "123456", "Aa123456!")
-            as AccountResult.Success<AccountToken>).value.token
+        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+            as AccountResult.Success<AccountToken>).value
+        val token = tokenResult.token
+        val accountId = tokenResult.accountId
+
         aiService.suggest(
-            accountPhone = "13800138000",
+            accountId = accountId,
             merchantTitle = "merchant",
             sourceLabel = "source",
             transactionKind = "expense",
@@ -305,7 +305,7 @@ class AccountServiceTest {
             enhancedContext = false
         )
         cloudConfigService.writeConfig(
-            StoredCloudConfig(phone = "13800138000", updatedAtMillis = 0)
+            StoredCloudConfig(accountId = accountId, updatedAtMillis = 0)
         )
         accountService.requestAccountDeletion(token)
         accountService.advanceTimeBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
@@ -315,7 +315,7 @@ class AccountServiceTest {
         assertTrue(accountService.verifyToken(token) is AccountResult.Success)
         assertTrue(aiStore.allLogs().isEmpty())
 
-        assertEquals(listOf("13800138000"), job.runDueDeletion())
+        assertEquals(listOf(accountId), job.runDueDeletion())
         assertEquals(AccountError.TOKEN_INVALID, accountService.verifyToken(token).error)
         assertTrue(job.runDueDeletion().isEmpty())
     }
@@ -364,16 +364,16 @@ class AccountServiceTest {
         private val delegate = InMemoryCloudConfigStore()
         private var failNextDelete = true
 
-        override fun findConfig(phone: String): StoredCloudConfig? = delegate.findConfig(phone)
+        override fun findConfig(accountId: Long): StoredCloudConfig? = delegate.findConfig(accountId)
 
         override fun upsertConfig(config: StoredCloudConfig) = delegate.upsertConfig(config)
 
-        override fun deleteConfig(phone: String) {
+        override fun deleteConfig(accountId: Long) {
             if (failNextDelete) {
                 failNextDelete = false
                 error("simulated cleanup failure")
             }
-            delegate.deleteConfig(phone)
+            delegate.deleteConfig(accountId)
         }
     }
 }

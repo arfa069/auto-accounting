@@ -1,13 +1,15 @@
+@file:Suppress("TooManyFunctions", "ComplexCondition")
+
 package com.autoaccounting.backend.account
 
-import java.security.SecureRandom
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.time.Clock
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 enum class AccountError(
     val message: String
@@ -36,13 +38,15 @@ val AccountResult<*>.error: AccountError?
     get() = (this as? AccountResult.Failure)?.error
 
 data class AccountToken(
-    val phone: String,
+    val accountId: Long = 0L,
+    val phone: String? = null,
     val token: String,
     val deletionStatus: AccountDeletionStatus? = null
 )
 
 data class AccountDeletionStatus(
-    val phone: String,
+    val accountId: Long = 0L,
+    val phone: String? = null,
     val requestedAtMillis: Long,
     val finalDeletionAtMillis: Long
 )
@@ -116,6 +120,7 @@ class AccountService(
         val passwordHash = PasswordHash.create(password)
         val created = store.createUser(
             StoredUser(
+                accountId = 0L,
                 phone = phone,
                 passwordSalt = passwordHash.salt,
                 passwordHash = passwordHash.hash,
@@ -125,9 +130,10 @@ class AccountService(
         if (!created) {
             return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
         }
+        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
         store.deleteSmsCode(phone)
-        registerDeviceFromSms(phone, smsCode, deviceId, ipAddress, now)
-        return issueSession(phone, deviceId.ifBlank { smsCode.deviceId }, now)
+        registerDeviceFromSms(user.accountId, smsCode, deviceId, ipAddress, now)
+        return issueSession(user.accountId, user.phone, deviceId.ifBlank { smsCode.deviceId }, now)
     }
 
     fun login(
@@ -166,8 +172,8 @@ class AccountService(
         }
 
         store.updateUser(user.copy(failedLoginCount = 0, lockedUntilMillis = 0))
-        registerDevice(phone, deviceId, ipAddress, now)
-        return issueSession(phone, deviceId, now)
+        registerDevice(user.accountId, deviceId, ipAddress, now)
+        return issueSession(user.accountId, user.phone, deviceId, now)
     }
 
     fun recoverPassword(
@@ -202,23 +208,27 @@ class AccountService(
             )
         )
         store.deleteSmsCode(phone)
-        store.deleteSessionsForPhone(phone)
+        store.deleteSessionsForAccount(user.accountId)
         val now = clock.millis()
-        registerDeviceFromSms(phone, smsCode, deviceId, ipAddress, now)
-        return issueSession(phone, deviceId.ifBlank { smsCode.deviceId }, now)
+        registerDeviceFromSms(user.accountId, smsCode, deviceId, ipAddress, now)
+        return issueSession(user.accountId, user.phone, deviceId.ifBlank { smsCode.deviceId }, now)
     }
 
     fun verifyToken(token: String): AccountResult<AccountToken> {
         if (token.isBlank()) return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val session = store.findSession(hashToken(token))
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = store.findUser(session.phone) ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val account = store.findAccount(session.accountId)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val user = phoneUserByAccountId(account.accountId)
+        val phone = user?.phone?.takeIf { it.isNotBlank() }
         return AccountResult.Success(
             AccountToken(
-                phone = user.phone,
+                accountId = account.accountId,
+                phone = phone,
                 token = token,
-                deletionStatus = user.deletionRequestedAtMillis?.let { requestedAt ->
-                    user.deletionStatus(requestedAt)
+                deletionStatus = account.deletionRequestedAtMillis?.let { requestedAt ->
+                    account.deletionStatus(phone, requestedAt)
                 }
             )
         )
@@ -231,29 +241,39 @@ class AccountService(
         return AccountResult.Success(Unit)
     }
 
+    fun registeredDevices(accountId: Long): List<StoredRegisteredDevice> {
+        return store.registeredDevices(accountId)
+    }
+
     fun registeredDevices(phone: String): List<StoredRegisteredDevice> {
-        return store.registeredDevices(phone)
+        val user = store.findUser(phone) ?: return emptyList()
+        return store.registeredDevices(user.accountId)
     }
 
     fun requestAccountDeletion(token: String): AccountResult<AccountDeletionStatus> {
         val verified = verifiedAccount(token)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = store.findUser(verified.phone)
+        val account = store.findAccount(verified.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val requestedAt = user.deletionRequestedAtMillis ?: clock.millis()
-        val updated = user.copy(deletionRequestedAtMillis = requestedAt)
-        store.updateUser(updated)
-        return AccountResult.Success(updated.deletionStatus(requestedAt))
+        val requestedAt = account.deletionRequestedAtMillis ?: clock.millis()
+        val user = phoneUserByAccountId(account.accountId)
+        if (user != null) {
+            store.updateUser(user.copy(deletionRequestedAtMillis = requestedAt))
+        }
+        val phone = user?.phone?.takeIf { it.isNotBlank() }
+        return AccountResult.Success(account.deletionStatus(phone, requestedAt))
     }
 
     fun getAccountDeletionStatus(token: String): AccountResult<AccountDeletionStatus?> {
         val verified = verifiedAccount(token)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = store.findUser(verified.phone)
+        val account = store.findAccount(verified.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val user = phoneUserByAccountId(account.accountId)
+        val phone = user?.phone?.takeIf { it.isNotBlank() }
         return AccountResult.Success(
-            user.deletionRequestedAtMillis?.let { requestedAt ->
-                user.deletionStatus(requestedAt)
+            account.deletionRequestedAtMillis?.let { requestedAt ->
+                account.deletionStatus(phone, requestedAt)
             }
         )
     }
@@ -261,48 +281,66 @@ class AccountService(
     fun cancelAccountDeletion(token: String): AccountResult<Unit> {
         val verified = verifiedAccount(token)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = store.findUser(verified.phone)
+        val account = store.findAccount(verified.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        if (user.deletionRequestedAtMillis == null) {
+        if (account.deletionRequestedAtMillis == null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
         }
-        store.updateUser(user.copy(deletionRequestedAtMillis = null))
+        val user = phoneUserByAccountId(account.accountId)
+        if (user != null) {
+            store.updateUser(user.copy(deletionRequestedAtMillis = null))
+        }
         return AccountResult.Success(Unit)
     }
 
-    fun writeCloudConfiguration(phone: String): AccountResult<Unit> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
-        if (user.deletionRequestedAtMillis != null) {
+    fun writeCloudConfiguration(accountId: Long): AccountResult<Unit> {
+        val account = store.findAccount(accountId)
+            ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
+        if (account.deletionRequestedAtMillis != null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
         }
         return AccountResult.Success(Unit)
     }
 
+    fun writeCloudConfiguration(phone: String): AccountResult<Unit> {
+        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
+        return writeCloudConfiguration(user.accountId)
+    }
+
+    fun canWriteCloudData(accountId: Long): Boolean {
+        val account = store.findAccount(accountId) ?: return false
+        return account.deletionRequestedAtMillis == null
+    }
+
     fun canWriteCloudData(phone: String): Boolean {
         val user = store.findUser(phone) ?: return false
-        return user.deletionRequestedAtMillis == null
+        return canWriteCloudData(user.accountId)
     }
 
-    fun accountsDueForDeletion(): List<String> {
+    fun accountsDueForDeletion(): List<Long> {
         val now = clock.millis()
-        return store.usersPendingDeletion()
-            .filter { user ->
-                val requestedAt = user.deletionRequestedAtMillis
+        return store.accountsPendingDeletion()
+            .filter { account ->
+                val requestedAt = account.deletionRequestedAtMillis
                 requestedAt != null && now >= requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS
             }
-            .map { it.phone }
+            .map { it.accountId }
     }
 
-    fun finalizeAccountDeletion(phone: String): Boolean {
-        val user = store.findUser(phone) ?: return false
-        val requestedAt = user.deletionRequestedAtMillis ?: return false
+    fun finalizeAccountDeletion(accountId: Long): Boolean {
+        val account = store.findAccount(accountId) ?: return false
+        val requestedAt = account.deletionRequestedAtMillis ?: return false
         if (clock.millis() < requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS) return false
-        store.deleteUser(phone)
+        store.deleteAccount(accountId)
         return true
     }
 
     fun advanceTimeBy(millis: Long) {
         clock.advanceBy(millis)
+    }
+
+    private fun phoneUserByAccountId(accountId: Long): StoredUser? {
+        return store.findUserByAccountId(accountId)
     }
 
     private fun verifySmsCode(
@@ -361,14 +399,14 @@ class AccountService(
     }
 
     private fun registerDeviceFromSms(
-        phone: String,
+        accountId: Long,
         smsCode: StoredSmsCode,
         requestedDeviceId: String,
         requestedIpAddress: String,
         now: Long
     ) {
         registerDevice(
-            phone = phone,
+            accountId = accountId,
             deviceId = requestedDeviceId.ifBlank { smsCode.deviceId },
             ipAddress = requestedIpAddress.ifBlank { smsCode.ipAddress },
             now = now
@@ -376,16 +414,16 @@ class AccountService(
     }
 
     private fun registerDevice(
-        phone: String,
+        accountId: Long,
         deviceId: String,
         ipAddress: String,
         now: Long
     ) {
         if (deviceId.isBlank()) return
-        if (!canWriteCloudData(phone)) return
+        if (!canWriteCloudData(accountId)) return
         store.upsertRegisteredDevice(
             StoredRegisteredDevice(
-                phone = phone,
+                accountId = accountId,
                 deviceId = deviceId,
                 firstSeenAtMillis = now,
                 lastSeenAtMillis = now,
@@ -395,7 +433,8 @@ class AccountService(
     }
 
     private fun issueSession(
-        phone: String,
+        accountId: Long,
+        phone: String?,
         deviceId: String,
         now: Long
     ): AccountResult<AccountToken> {
@@ -403,17 +442,18 @@ class AccountService(
         store.createSession(
             StoredSession(
                 tokenHash = hashToken(token),
-                phone = phone,
+                accountId = accountId,
                 deviceId = deviceId,
                 issuedAtMillis = now
             )
         )
-        val user = store.findUser(phone)
-        val deletionStatus = user
+        val account = store.findAccount(accountId)
+        val deletionStatus = account
             ?.deletionRequestedAtMillis
-            ?.let { requestedAt -> user.deletionStatus(requestedAt) }
+            ?.let { requestedAt -> account.deletionStatus(phone, requestedAt) }
         return AccountResult.Success(
             AccountToken(
+                accountId = accountId,
                 phone = phone,
                 token = token,
                 deletionStatus = deletionStatus
@@ -425,8 +465,9 @@ class AccountService(
         return (verifyToken(token) as? AccountResult.Success)?.value
     }
 
-    private fun StoredUser.deletionStatus(requestedAtMillis: Long): AccountDeletionStatus {
+    private fun StoredAccount.deletionStatus(phone: String?, requestedAtMillis: Long): AccountDeletionStatus {
         return AccountDeletionStatus(
+            accountId = accountId,
             phone = phone,
             requestedAtMillis = requestedAtMillis,
             finalDeletionAtMillis = requestedAtMillis + ACCOUNT_DELETION_COOLING_OFF_MILLIS

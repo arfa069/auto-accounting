@@ -1,6 +1,8 @@
 package com.autoaccounting.backend.config
 
+import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
+import com.autoaccounting.backend.account.AccountToken
 import com.autoaccounting.backend.account.MutableClock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,11 +14,11 @@ class CloudConfigServiceTest {
     fun readConfigReturnsDefaultsForNewUser() {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.accountService.register("13800138000", "123456", "Aa123456!")
+        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
-        val config = service.configService.readConfig("13800138000")
+        val config = service.configService.readConfig(reg.accountId)
 
-        assertEquals("13800138000", config.phone)
+        assertEquals(reg.accountId, config.accountId)
         assertFalse(config.aiConsentGranted)
         assertFalse(config.enhancedContextGranted)
         assertEquals(emptyMap<String, Boolean>(), config.featureFlags)
@@ -26,11 +28,11 @@ class CloudConfigServiceTest {
     fun writeConfigPersistsAndSurvivesRead() {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.accountService.register("13800138000", "123456", "Aa123456!")
+        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
         val result = service.configService.writeConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = reg.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
                 featureFlags = mapOf("beta_reports" to true),
@@ -39,7 +41,7 @@ class CloudConfigServiceTest {
         )
 
         assertEquals(CloudConfigResult.Written, result)
-        val config = service.configService.readConfig("13800138000")
+        val config = service.configService.readConfig(reg.accountId)
         assertTrue(config.aiConsentGranted)
         assertTrue(config.enhancedContextGranted)
         assertEquals(mapOf("beta_reports" to true), config.featureFlags)
@@ -49,12 +51,12 @@ class CloudConfigServiceTest {
     fun writeConfigBlockedDuringDeletionPending() {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.accountService.register("13800138000", "123456", "Aa123456!")
-        service.accountService.requestAccountDeletion("token-1")
+        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.requestAccountDeletion(reg.token)
 
         val result = service.configService.writeConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = reg.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = false,
                 featureFlags = emptyMap(),
@@ -69,10 +71,10 @@ class CloudConfigServiceTest {
     fun deleteConfigRemovesPersistedData() {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.accountService.register("13800138000", "123456", "Aa123456!")
+        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
         service.configService.writeConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = reg.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
                 featureFlags = emptyMap(),
@@ -80,9 +82,9 @@ class CloudConfigServiceTest {
             )
         )
 
-        service.configService.deleteConfig("13800138000")
+        service.configService.deleteConfig(reg.accountId)
 
-        val config = service.configService.readConfig("13800138000")
+        val config = service.configService.readConfig(reg.accountId)
         assertFalse(config.aiConsentGranted)
     }
 
@@ -90,10 +92,10 @@ class CloudConfigServiceTest {
     fun mergeAndWriteConfigDoesNotClearMissingFields() {
         val service = cloudConfigService()
         service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.accountService.register("13800138000", "123456", "Aa123456!")
+        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
         service.configService.writeConfig(
             StoredCloudConfig(
-                phone = "13800138000",
+                accountId = reg.accountId,
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
                 featureFlags = mapOf("beta_reports" to true),
@@ -102,13 +104,13 @@ class CloudConfigServiceTest {
         )
 
         val result = service.configService.mergeAndWriteConfig(
-            phone = "13800138000",
+            accountId = reg.accountId,
             update = CloudConfigUpdate(aiConsentGranted = false),
             now = 2000
         )
 
         assertEquals(CloudConfigResult.Written, result)
-        val config = service.configService.readConfig("13800138000")
+        val config = service.configService.readConfig(reg.accountId)
         assertFalse(config.aiConsentGranted)
         assertTrue(config.enhancedContextGranted)
         assertEquals(mapOf("beta_reports" to true), config.featureFlags)

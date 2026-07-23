@@ -47,10 +47,11 @@ class AccountPersistenceTest {
         clock.advanceBy(10_000)
         val restartedService = accountService(databaseUrl, clock, tokens)
 
-        assertEquals(
-            AccountResult.Success(AccountToken("13800138000", registered.value.token)),
-            restartedService.verifyToken(registered.value.token)
-        )
+        val verifiedRegistered = restartedService.verifyToken(registered.value.token) as AccountResult.Success<AccountToken>
+        assertEquals("13800138000", verifiedRegistered.value.phone)
+        assertEquals(registered.value.token, verifiedRegistered.value.token)
+        assertEquals(registered.value.accountId, verifiedRegistered.value.accountId)
+
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
             restartedService.issueSmsCode("13800138000", "device-b", "127.0.0.2").error
@@ -60,10 +61,11 @@ class AccountPersistenceTest {
         val login = restartedService.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
             as AccountResult.Success<AccountToken>
 
-        assertEquals(
-            AccountResult.Success(AccountToken("13800138000", login.value.token)),
-            restartedService.verifyToken(login.value.token)
-        )
+        val verifiedLogin = restartedService.verifyToken(login.value.token) as AccountResult.Success<AccountToken>
+        assertEquals("13800138000", verifiedLogin.value.phone)
+        assertEquals(login.value.token, verifiedLogin.value.token)
+        assertEquals(login.value.accountId, verifiedLogin.value.accountId)
+
         assertEquals(
             listOf("device-a", "device-b"),
             restartedService.registeredDevices("13800138000").map { it.deviceId }

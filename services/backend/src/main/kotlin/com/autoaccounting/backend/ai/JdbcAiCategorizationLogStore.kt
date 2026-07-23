@@ -24,13 +24,14 @@ class JdbcAiCategorizationLogStore(
                     transaction_kind, amount_range_label,
                     suggested_category, confidence_label, explanation,
                     created_at_millis
-                ) VALUES (
-                    (SELECT account_id FROM account_phone_credentials WHERE phone = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?
-                )
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, log.accountPhone)
+                if (log.accountId != null) {
+                    statement.setLong(1, log.accountId)
+                } else {
+                    statement.setNull(1, java.sql.Types.BIGINT)
+                }
                 statement.setString(2, log.merchantTitle)
                 statement.setString(3, log.sourceLabel)
                 statement.setString(4, log.transactionKind)
@@ -44,20 +45,19 @@ class JdbcAiCategorizationLogStore(
         }
     }
 
-    override fun logsForAccount(phone: String): List<StoredAiCategorizationLog> = connection().use { connection ->
+    override fun logsForAccount(accountId: Long): List<StoredAiCategorizationLog> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT l.id, p.phone AS account_phone, l.merchant_title, l.source_label,
-                   l.transaction_kind, l.amount_range_label,
-                   l.suggested_category, l.confidence_label, l.explanation,
-                   l.created_at_millis
-            FROM ai_categorization_logs l
-            JOIN account_phone_credentials p ON p.account_id = l.account_id
-            WHERE p.phone = ?
-            ORDER BY l.id
+            SELECT id, account_id, merchant_title, source_label,
+                   transaction_kind, amount_range_label,
+                   suggested_category, confidence_label, explanation,
+                   created_at_millis
+            FROM ai_categorization_logs
+            WHERE account_id = ?
+            ORDER BY id
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, phone)
+            statement.setLong(1, accountId)
             statement.executeQuery().use { rs ->
                 buildList {
                     while (rs.next()) add(rs.toStoredLog())
@@ -69,13 +69,12 @@ class JdbcAiCategorizationLogStore(
     override fun allLogs(): List<StoredAiCategorizationLog> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT l.id, p.phone AS account_phone, l.merchant_title, l.source_label,
-                   l.transaction_kind, l.amount_range_label,
-                   l.suggested_category, l.confidence_label, l.explanation,
-                   l.created_at_millis
-            FROM ai_categorization_logs l
-            LEFT JOIN account_phone_credentials p ON p.account_id = l.account_id
-            ORDER BY l.id
+            SELECT id, account_id, merchant_title, source_label,
+                   transaction_kind, amount_range_label,
+                   suggested_category, confidence_label, explanation,
+                   created_at_millis
+            FROM ai_categorization_logs
+            ORDER BY id
             """.trimIndent()
         ).use { statement ->
             statement.executeQuery().use { rs ->
@@ -86,15 +85,15 @@ class JdbcAiCategorizationLogStore(
         }
     }
 
-    override fun deleteLogsForAccount(phone: String) {
+    override fun deleteLogsForAccount(accountId: Long) {
         connection().use { connection ->
             connection.prepareStatement(
                 """
                 DELETE FROM ai_categorization_logs
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                WHERE account_id = ?
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, phone)
+                statement.setLong(1, accountId)
                 statement.executeUpdate()
             }
         }
@@ -104,9 +103,11 @@ class JdbcAiCategorizationLogStore(
 }
 
 private fun java.sql.ResultSet.toStoredLog(): StoredAiCategorizationLog {
+    val accountIdVal = getLong("account_id")
+    val accountId = if (wasNull()) null else accountIdVal
     return StoredAiCategorizationLog(
         id = getLong("id"),
-        accountPhone = getString("account_phone"),
+        accountId = accountId,
         merchantTitle = getString("merchant_title"),
         sourceLabel = getString("source_label"),
         transactionKind = getString("transaction_kind"),
@@ -117,4 +118,3 @@ private fun java.sql.ResultSet.toStoredLog(): StoredAiCategorizationLog {
         createdAtMillis = getLong("created_at_millis")
     )
 }
-

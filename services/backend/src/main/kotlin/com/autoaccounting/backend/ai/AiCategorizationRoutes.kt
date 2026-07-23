@@ -29,12 +29,12 @@ fun Route.aiCategorizationRoutes(
             }
         }
 
-        if (!accountService.canWriteCloudData(account.phone)) {
+        if (!accountService.canWriteCloudData(account.accountId)) {
             call.respondAccountFailure(AccountError.ACCOUNT_DELETION_PENDING)
             return@post
         }
         val suggestion = aiCategorizationService.suggest(
-            accountPhone = account.phone,
+            accountId = account.accountId,
             merchantTitle = parameters["merchantTitle"].orEmpty(),
             sourceLabel = parameters["sourceLabel"].orEmpty(),
             transactionKind = parameters["transactionKind"].orEmpty(),

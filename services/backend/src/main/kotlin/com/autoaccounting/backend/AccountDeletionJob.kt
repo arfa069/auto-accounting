@@ -9,12 +9,12 @@ class AccountDeletionJob(
     private val aiCategorizationService: AiCategorizationService,
     private val cloudConfigService: CloudConfigService
 ) {
-    fun runDueDeletion(): List<String> {
-        return accountService.accountsDueForDeletion().mapNotNull { phone ->
+    fun runDueDeletion(): List<Long> {
+        return accountService.accountsDueForDeletion().mapNotNull { accountId ->
             runCatching {
-                aiCategorizationService.deleteLogsForAccount(phone)
-                cloudConfigService.deleteConfig(phone)
-                phone.takeIf { accountService.finalizeAccountDeletion(phone) }
+                aiCategorizationService.deleteLogsForAccount(accountId)
+                cloudConfigService.deleteConfig(accountId)
+                accountId.takeIf { accountService.finalizeAccountDeletion(accountId) }
             }.getOrNull()
         }
     }

@@ -1,7 +1,7 @@
 package com.autoaccounting.backend.config
 
 data class StoredCloudConfig(
-    val phone: String,
+    val accountId: Long,
     val aiConsentGranted: Boolean = false,
     val enhancedContextGranted: Boolean = false,
     val featureFlags: Map<String, Boolean> = emptyMap(),
@@ -9,21 +9,21 @@ data class StoredCloudConfig(
 )
 
 interface CloudConfigStore {
-    fun findConfig(phone: String): StoredCloudConfig?
+    fun findConfig(accountId: Long): StoredCloudConfig?
     fun upsertConfig(config: StoredCloudConfig)
-    fun deleteConfig(phone: String)
+    fun deleteConfig(accountId: Long)
 }
 
 class InMemoryCloudConfigStore : CloudConfigStore {
-    private val configs = mutableMapOf<String, StoredCloudConfig>()
+    private val configs = mutableMapOf<Long, StoredCloudConfig>()
 
-    override fun findConfig(phone: String): StoredCloudConfig? = configs[phone]
+    override fun findConfig(accountId: Long): StoredCloudConfig? = configs[accountId]
 
     override fun upsertConfig(config: StoredCloudConfig) {
-        configs[config.phone] = config
+        configs[config.accountId] = config
     }
 
-    override fun deleteConfig(phone: String) {
-        configs.remove(phone)
+    override fun deleteConfig(accountId: Long) {
+        configs.remove(accountId)
     }
 }

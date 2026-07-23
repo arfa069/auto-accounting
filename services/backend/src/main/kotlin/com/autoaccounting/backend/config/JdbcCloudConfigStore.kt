@@ -18,21 +18,20 @@ class JdbcCloudConfigStore(
         runBackendMigrations(jdbcUrl, username, password)
     }
 
-    override fun findConfig(phone: String): StoredCloudConfig? = connection().use { connection ->
+    override fun findConfig(accountId: Long): StoredCloudConfig? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT p.phone, c.ai_consent_granted, c.enhanced_context_granted,
-                   c.feature_flags, c.updated_at_millis
-            FROM cloud_config c
-            JOIN account_phone_credentials p ON p.account_id = c.account_id
-            WHERE p.phone = ?
+            SELECT account_id, ai_consent_granted, enhanced_context_granted,
+                   feature_flags, updated_at_millis
+            FROM cloud_config
+            WHERE account_id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, phone)
+            statement.setLong(1, accountId)
             statement.executeQuery().use { rs ->
                 if (rs.next()) {
                     StoredCloudConfig(
-                        phone = rs.getString("phone"),
+                        accountId = rs.getLong("account_id"),
                         aiConsentGranted = rs.getBoolean("ai_consent_granted"),
                         enhancedContextGranted = rs.getBoolean("enhanced_context_granted"),
                         featureFlags = ApiJsonContracts.parseFeatureFlags(
@@ -54,14 +53,14 @@ class JdbcCloudConfigStore(
                 UPDATE cloud_config
                 SET ai_consent_granted = ?, enhanced_context_granted = ?,
                     feature_flags = ?, updated_at_millis = ?
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                WHERE account_id = ?
                 """.trimIndent()
             ).use { statement ->
                 statement.setBoolean(1, config.aiConsentGranted)
                 statement.setBoolean(2, config.enhancedContextGranted)
                 statement.setString(3, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
                 statement.setLong(4, config.updatedAtMillis)
-                statement.setString(5, config.phone)
+                statement.setLong(5, config.accountId)
                 statement.executeUpdate()
             }
             if (updated == 0) {
@@ -70,13 +69,10 @@ class JdbcCloudConfigStore(
                     INSERT INTO cloud_config (
                         account_id, ai_consent_granted, enhanced_context_granted,
                         feature_flags, updated_at_millis
-                    ) VALUES (
-                        (SELECT account_id FROM account_phone_credentials WHERE phone = ?),
-                        ?, ?, ?, ?
-                    )
+                    ) VALUES (?, ?, ?, ?, ?)
                     """.trimIndent()
                 ).use { statement ->
-                    statement.setString(1, config.phone)
+                    statement.setLong(1, config.accountId)
                     statement.setBoolean(2, config.aiConsentGranted)
                     statement.setBoolean(3, config.enhancedContextGranted)
                     statement.setString(4, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
@@ -87,15 +83,15 @@ class JdbcCloudConfigStore(
         }
     }
 
-    override fun deleteConfig(phone: String) {
+    override fun deleteConfig(accountId: Long) {
         connection().use { connection ->
             connection.prepareStatement(
                 """
                 DELETE FROM cloud_config
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                WHERE account_id = ?
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, phone)
+                statement.setLong(1, accountId)
                 statement.executeUpdate()
             }
         }
@@ -103,4 +99,3 @@ class JdbcCloudConfigStore(
 
     private fun connection() = jdbcConnection(jdbcUrl, storeUsername, storePassword)
 }
-

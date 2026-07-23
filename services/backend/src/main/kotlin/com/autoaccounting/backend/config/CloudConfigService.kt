@@ -7,19 +7,19 @@ class CloudConfigService(
     private val store: CloudConfigStore = InMemoryCloudConfigStore(),
     private val accountService: AccountService
 ) {
-    fun readConfig(phone: String): StoredCloudConfig {
-        return store.findConfig(phone) ?: StoredCloudConfig(
-            phone = phone,
+    fun readConfig(accountId: Long): StoredCloudConfig {
+        return store.findConfig(accountId) ?: StoredCloudConfig(
+            accountId = accountId,
             updatedAtMillis = 0
         )
     }
 
     fun mergeAndWriteConfig(
-        phone: String,
+        accountId: Long,
         update: CloudConfigUpdate,
         now: Long = System.currentTimeMillis()
     ): CloudConfigResult {
-        val current = readConfig(phone)
+        val current = readConfig(accountId)
         return writeConfig(
             current.copy(
                 aiConsentGranted = update.aiConsentGranted ?: current.aiConsentGranted,
@@ -31,15 +31,15 @@ class CloudConfigService(
     }
 
     fun writeConfig(config: StoredCloudConfig): CloudConfigResult {
-        if (!accountService.canWriteCloudData(config.phone)) {
+        if (!accountService.canWriteCloudData(config.accountId)) {
             return CloudConfigResult.DeletionPending
         }
         store.upsertConfig(config)
         return CloudConfigResult.Written
     }
 
-    fun deleteConfig(phone: String) {
-        store.deleteConfig(phone)
+    fun deleteConfig(accountId: Long) {
+        store.deleteConfig(accountId)
     }
 
     companion object {

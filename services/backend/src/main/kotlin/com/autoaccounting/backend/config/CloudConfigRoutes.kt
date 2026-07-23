@@ -26,7 +26,7 @@ fun Route.cloudConfigRoutes(
                 return@post
             }
         }
-        val config = cloudConfigService.readConfig(account.phone)
+        val config = cloudConfigService.readConfig(account.accountId)
         call.respondText(
             text = ApiJsonContracts.encodeCloudConfigResponse(
                 CloudConfigContract(
@@ -57,7 +57,7 @@ fun Route.cloudConfigRoutes(
             return@post
         }
         val result = cloudConfigService.mergeAndWriteConfig(
-            phone = account.phone,
+            accountId = account.accountId,
             update = update,
             now = System.currentTimeMillis()
         )

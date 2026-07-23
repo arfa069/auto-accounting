@@ -1,3 +1,5 @@
+@file:Suppress("LongParameterList")
+
 package com.autoaccounting.backend.ai
 
 import com.autoaccounting.backend.account.JdbcAccountStore
@@ -27,7 +29,7 @@ class AiCategorizationService(
         get() = logStore.allLogs()
 
     fun suggest(
-        accountPhone: String? = null,
+        accountId: Long? = null,
         merchantTitle: String,
         sourceLabel: String,
         transactionKind: String,
@@ -49,7 +51,7 @@ class AiCategorizationService(
         val suggestion = provider.suggest(payload)
         logStore.insertLog(
             StoredAiCategorizationLog(
-                accountPhone = accountPhone,
+                accountId = accountId,
                 merchantTitle = payload.merchantTitle,
                 sourceLabel = payload.sourceLabel,
                 transactionKind = payload.transactionKind,
@@ -63,8 +65,8 @@ class AiCategorizationService(
         return suggestion
     }
 
-    fun deleteLogsForAccount(phone: String) {
-        logStore.deleteLogsForAccount(phone)
+    fun deleteLogsForAccount(accountId: Long) {
+        logStore.deleteLogsForAccount(accountId)
     }
 
     private fun amountRangeLabel(amountMinor: Long): String {

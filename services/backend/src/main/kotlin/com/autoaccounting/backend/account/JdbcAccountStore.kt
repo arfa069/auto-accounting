@@ -19,7 +19,7 @@ class JdbcAccountStore(
     override fun findUser(phone: String): StoredUser? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT p.phone, p.password_salt, p.password_hash, p.failed_login_count,
+            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
                    p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
             FROM account_phone_credentials p
             JOIN accounts a ON a.account_id = p.account_id
@@ -29,6 +29,46 @@ class JdbcAccountStore(
             statement.setString(1, phone)
             statement.executeQuery().use { rs ->
                 if (rs.next()) rs.toStoredUser() else null
+            }
+        }
+    }
+
+    override fun findUserByAccountId(accountId: Long): StoredUser? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
+                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
+            FROM accounts a
+            LEFT JOIN account_phone_credentials p ON p.account_id = a.account_id
+            WHERE a.account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredUser() else null
+            }
+        }
+    }
+
+    override fun findAccount(accountId: Long): StoredAccount? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            FROM accounts
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredAccount(
+                        accountId = rs.getLong("account_id"),
+                        deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
+                        createdAtMillis = rs.getLong("created_at_millis")
+                    )
+                } else {
+                    null
+                }
             }
         }
     }
@@ -90,31 +130,33 @@ class JdbcAccountStore(
                     """
                     UPDATE accounts
                     SET deletion_requested_at_millis = ?
-                    WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
+                    WHERE account_id = ?
                     """.trimIndent()
                 ).use { statement ->
                     statement.setNullableLong(1, user.deletionRequestedAtMillis)
-                    statement.setString(2, user.phone)
+                    statement.setLong(2, user.accountId)
                     statement.executeUpdate()
                 }
-                connection.prepareStatement(
-                    """
-                    UPDATE account_phone_credentials
-                    SET failed_login_count = ?,
-                        locked_until_millis = ?,
-                        password_salt = ?,
-                        password_hash = ?,
-                        updated_at_millis = ?
-                    WHERE phone = ?
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setInt(1, user.failedLoginCount)
-                    statement.setLong(2, user.lockedUntilMillis)
-                    statement.setString(3, user.passwordSalt)
-                    statement.setString(4, user.passwordHash)
-                    statement.setLong(5, System.currentTimeMillis())
-                    statement.setString(6, user.phone)
-                    statement.executeUpdate()
+                if (user.phone.isNotBlank()) {
+                    connection.prepareStatement(
+                        """
+                        UPDATE account_phone_credentials
+                        SET failed_login_count = ?,
+                            locked_until_millis = ?,
+                            password_salt = ?,
+                            password_hash = ?,
+                            updated_at_millis = ?
+                        WHERE account_id = ?
+                        """.trimIndent()
+                    ).use { statement ->
+                        statement.setInt(1, user.failedLoginCount)
+                        statement.setLong(2, user.lockedUntilMillis)
+                        statement.setString(3, user.passwordSalt)
+                        statement.setString(4, user.passwordHash)
+                        statement.setLong(5, System.currentTimeMillis())
+                        statement.setLong(6, user.accountId)
+                        statement.executeUpdate()
+                    }
                 }
                 connection.commit()
             } catch (error: java.sql.SQLException) {
@@ -126,33 +168,36 @@ class JdbcAccountStore(
         }
     }
 
-    override fun usersPendingDeletion(): List<StoredUser> = connection().use { connection ->
+    override fun accountsPendingDeletion(): List<StoredAccount> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT p.phone, p.password_salt, p.password_hash, p.failed_login_count,
-                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
-            FROM accounts a
-            JOIN account_phone_credentials p ON p.account_id = a.account_id
-            WHERE a.deletion_requested_at_millis IS NOT NULL
+            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            FROM accounts
+            WHERE deletion_requested_at_millis IS NOT NULL
             """.trimIndent()
         ).use { statement ->
             statement.executeQuery().use { rs ->
                 buildList {
-                    while (rs.next()) add(rs.toStoredUser())
+                    while (rs.next()) {
+                        add(
+                            StoredAccount(
+                                accountId = rs.getLong("account_id"),
+                                deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
+                                createdAtMillis = rs.getLong("created_at_millis")
+                            )
+                        )
+                    }
                 }
             }
         }
     }
 
-    override fun deleteUser(phone: String) {
+    override fun deleteAccount(accountId: Long) {
         connection().use { connection ->
             connection.prepareStatement(
-                """
-                DELETE FROM accounts
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
-                """.trimIndent()
+                "DELETE FROM accounts WHERE account_id = ?"
             ).use { statement ->
-                statement.setString(1, phone)
+                statement.setLong(1, accountId)
                 statement.executeUpdate()
             }
         }
@@ -300,11 +345,11 @@ class JdbcAccountStore(
             connection.prepareStatement(
                 """
                 INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis)
-                VALUES (?, (SELECT account_id FROM account_phone_credentials WHERE phone = ?), ?, ?)
+                VALUES (?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, session.tokenHash)
-                statement.setString(2, session.phone)
+                statement.setLong(2, session.accountId)
                 statement.setString(3, session.deviceId)
                 statement.setLong(4, session.issuedAtMillis)
                 statement.executeUpdate()
@@ -315,10 +360,9 @@ class JdbcAccountStore(
     override fun findSession(tokenHash: String): StoredSession? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT s.token_hash, p.phone, s.device_id, s.issued_at_millis
-            FROM account_sessions s
-            JOIN account_phone_credentials p ON p.account_id = s.account_id
-            WHERE s.token_hash = ?
+            SELECT token_hash, account_id, device_id, issued_at_millis
+            FROM account_sessions
+            WHERE token_hash = ?
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, tokenHash)
@@ -326,7 +370,7 @@ class JdbcAccountStore(
                 if (rs.next()) {
                     StoredSession(
                         tokenHash = rs.getString("token_hash"),
-                        phone = rs.getString("phone"),
+                        accountId = rs.getLong("account_id"),
                         deviceId = rs.getString("device_id").orEmpty(),
                         issuedAtMillis = rs.getLong("issued_at_millis")
                     )
@@ -346,15 +390,12 @@ class JdbcAccountStore(
         }
     }
 
-    override fun deleteSessionsForPhone(phone: String) {
+    override fun deleteSessionsForAccount(accountId: Long) {
         connection().use { connection ->
             connection.prepareStatement(
-                """
-                DELETE FROM account_sessions
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?)
-                """.trimIndent()
+                "DELETE FROM account_sessions WHERE account_id = ?"
             ).use { statement ->
-                statement.setString(1, phone)
+                statement.setLong(1, accountId)
                 statement.executeUpdate()
             }
         }
@@ -366,12 +407,12 @@ class JdbcAccountStore(
                 """
                 UPDATE registered_devices
                 SET last_seen_at_millis = ?, ip_address = ?
-                WHERE account_id = (SELECT account_id FROM account_phone_credentials WHERE phone = ?) AND device_id = ?
+                WHERE account_id = ? AND device_id = ?
                 """.trimIndent()
             ).use { statement ->
                 statement.setLong(1, device.lastSeenAtMillis)
                 statement.setString(2, device.ipAddress)
-                statement.setString(3, device.phone)
+                statement.setLong(3, device.accountId)
                 statement.setString(4, device.deviceId)
                 statement.executeUpdate()
             }
@@ -381,10 +422,10 @@ class JdbcAccountStore(
                     INSERT INTO registered_devices (
                         account_id, device_id, first_seen_at_millis,
                         last_seen_at_millis, ip_address
-                    ) VALUES ((SELECT account_id FROM account_phone_credentials WHERE phone = ?), ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?)
                     """.trimIndent()
                 ).use { statement ->
-                    statement.setString(1, device.phone)
+                    statement.setLong(1, device.accountId)
                     statement.setString(2, device.deviceId)
                     statement.setLong(3, device.firstSeenAtMillis)
                     statement.setLong(4, device.lastSeenAtMillis)
@@ -395,23 +436,22 @@ class JdbcAccountStore(
         }
     }
 
-    override fun registeredDevices(phone: String): List<StoredRegisteredDevice> = connection().use { connection ->
+    override fun registeredDevices(accountId: Long): List<StoredRegisteredDevice> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT p.phone, d.device_id, d.first_seen_at_millis, d.last_seen_at_millis, d.ip_address
-            FROM registered_devices d
-            JOIN account_phone_credentials p ON p.account_id = d.account_id
-            WHERE p.phone = ?
-            ORDER BY d.device_id
+            SELECT account_id, device_id, first_seen_at_millis, last_seen_at_millis, ip_address
+            FROM registered_devices
+            WHERE account_id = ?
+            ORDER BY device_id
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, phone)
+            statement.setLong(1, accountId)
             statement.executeQuery().use { rs ->
                 buildList {
                     while (rs.next()) {
                         add(
                             StoredRegisteredDevice(
-                                phone = rs.getString("phone"),
+                                accountId = rs.getLong("account_id"),
                                 deviceId = rs.getString("device_id"),
                                 firstSeenAtMillis = rs.getLong("first_seen_at_millis"),
                                 lastSeenAtMillis = rs.getLong("last_seen_at_millis"),
@@ -449,9 +489,10 @@ private const val UNIQUE_VIOLATION_SQL_STATE = "23505"
 
 private fun ResultSet.toStoredUser(): StoredUser {
     return StoredUser(
-        phone = getString("phone"),
-        passwordSalt = getString("password_salt"),
-        passwordHash = getString("password_hash"),
+        accountId = getLong("account_id"),
+        phone = getString("phone").orEmpty(),
+        passwordSalt = getString("password_salt").orEmpty(),
+        passwordHash = getString("password_hash").orEmpty(),
         failedLoginCount = getInt("failed_login_count"),
         lockedUntilMillis = getLong("locked_until_millis"),
         deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
@@ -471,4 +512,3 @@ private fun ResultSet.getNullableLong(column: String): Long? {
     val value = getLong(column)
     return if (wasNull()) null else value
 }
-

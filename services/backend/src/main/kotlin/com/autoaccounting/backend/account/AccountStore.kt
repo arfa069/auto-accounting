@@ -1,6 +1,35 @@
+@file:Suppress("TooManyFunctions")
+
 package com.autoaccounting.backend.account
 
+/**
+ * Core account record keyed by internal account_id.
+ * Holds deletion state and creation timestamp.
+ */
+data class StoredAccount(
+    val accountId: Long,
+    val deletionRequestedAtMillis: Long? = null,
+    val createdAtMillis: Long
+)
+
+/**
+ * Phone credential linked to an account.
+ */
+data class StoredPhoneCredential(
+    val accountId: Long,
+    val phone: String,
+    val passwordSalt: String,
+    val passwordHash: String,
+    val failedLoginCount: Int = 0,
+    val lockedUntilMillis: Long = 0
+)
+
+/**
+ * Convenience composite for service-layer operations that need
+ * both account-level and phone-credential-level fields.
+ */
 data class StoredUser(
+    val accountId: Long,
     val phone: String,
     val passwordSalt: String,
     val passwordHash: String,
@@ -22,13 +51,13 @@ data class StoredSmsCode(
 
 data class StoredSession(
     val tokenHash: String,
-    val phone: String,
+    val accountId: Long,
     val deviceId: String = "",
     val issuedAtMillis: Long
 )
 
 data class StoredRegisteredDevice(
-    val phone: String,
+    val accountId: Long,
     val deviceId: String,
     val firstSeenAtMillis: Long,
     val lastSeenAtMillis: Long,
@@ -37,10 +66,12 @@ data class StoredRegisteredDevice(
 
 interface AccountStore {
     fun findUser(phone: String): StoredUser?
+    fun findUserByAccountId(accountId: Long): StoredUser?
+    fun findAccount(accountId: Long): StoredAccount?
     fun createUser(user: StoredUser): Boolean
     fun updateUser(user: StoredUser)
-    fun usersPendingDeletion(): List<StoredUser>
-    fun deleteUser(phone: String)
+    fun accountsPendingDeletion(): List<StoredAccount>
+    fun deleteAccount(accountId: Long)
 
     fun upsertSmsCode(record: StoredSmsCode)
     fun findSmsCode(phone: String): StoredSmsCode?
@@ -53,39 +84,94 @@ interface AccountStore {
     fun createSession(session: StoredSession)
     fun findSession(tokenHash: String): StoredSession?
     fun deleteSession(tokenHash: String)
-    fun deleteSessionsForPhone(phone: String)
+    fun deleteSessionsForAccount(accountId: Long)
 
     fun upsertRegisteredDevice(device: StoredRegisteredDevice)
-    fun registeredDevices(phone: String): List<StoredRegisteredDevice>
+    fun registeredDevices(accountId: Long): List<StoredRegisteredDevice>
 }
 
 class InMemoryAccountStore : AccountStore {
-    private val users = mutableMapOf<String, StoredUser>()
+    private var nextAccountId = 1L
+    private val accounts = mutableMapOf<Long, StoredAccount>()
+    private val phoneCredentials = mutableMapOf<Long, StoredPhoneCredential>()
+    private val phoneIndex = mutableMapOf<String, Long>() // phone -> accountId
     private val smsCodes = mutableMapOf<String, StoredSmsCode>()
     private val smsIssues = mutableListOf<SmsIssue>()
     private val sessions = mutableMapOf<String, StoredSession>()
-    private val devices = mutableMapOf<Pair<String, String>, StoredRegisteredDevice>()
+    private val devices = mutableMapOf<Pair<Long, String>, StoredRegisteredDevice>()
 
-    override fun findUser(phone: String): StoredUser? = users[phone]
+    override fun findUser(phone: String): StoredUser? {
+        val accountId = phoneIndex[phone] ?: return null
+        return findUserByAccountId(accountId)
+    }
+
+    override fun findUserByAccountId(accountId: Long): StoredUser? {
+        val account = accounts[accountId] ?: return null
+        val credential = phoneCredentials[accountId]
+        return StoredUser(
+            accountId = account.accountId,
+            phone = credential?.phone.orEmpty(),
+            passwordSalt = credential?.passwordSalt.orEmpty(),
+            passwordHash = credential?.passwordHash.orEmpty(),
+            failedLoginCount = credential?.failedLoginCount ?: 0,
+            lockedUntilMillis = credential?.lockedUntilMillis ?: 0,
+            deletionRequestedAtMillis = account.deletionRequestedAtMillis,
+            createdAtMillis = account.createdAtMillis
+        )
+    }
+
+    override fun findAccount(accountId: Long): StoredAccount? = accounts[accountId]
 
     override fun createUser(user: StoredUser): Boolean {
-        if (users.containsKey(user.phone)) return false
-        users[user.phone] = user
+        if (phoneIndex.containsKey(user.phone)) return false
+        val accountId = nextAccountId++
+        accounts[accountId] = StoredAccount(
+            accountId = accountId,
+            deletionRequestedAtMillis = user.deletionRequestedAtMillis,
+            createdAtMillis = user.createdAtMillis
+        )
+        phoneCredentials[accountId] = StoredPhoneCredential(
+            accountId = accountId,
+            phone = user.phone,
+            passwordSalt = user.passwordSalt,
+            passwordHash = user.passwordHash,
+            failedLoginCount = user.failedLoginCount,
+            lockedUntilMillis = user.lockedUntilMillis
+        )
+        phoneIndex[user.phone] = accountId
         return true
     }
 
     override fun updateUser(user: StoredUser) {
-        users[user.phone] = user
+        val accountId = user.accountId.takeIf { it > 0 } ?: phoneIndex[user.phone] ?: return
+        accounts[accountId] = StoredAccount(
+            accountId = accountId,
+            deletionRequestedAtMillis = user.deletionRequestedAtMillis,
+            createdAtMillis = user.createdAtMillis
+        )
+        if (user.phone.isNotBlank()) {
+            phoneCredentials[accountId] = StoredPhoneCredential(
+                accountId = accountId,
+                phone = user.phone,
+                passwordSalt = user.passwordSalt,
+                passwordHash = user.passwordHash,
+                failedLoginCount = user.failedLoginCount,
+                lockedUntilMillis = user.lockedUntilMillis
+            )
+            phoneIndex[user.phone] = accountId
+        }
     }
 
-    override fun usersPendingDeletion(): List<StoredUser> {
-        return users.values.filter { it.deletionRequestedAtMillis != null }
+    override fun accountsPendingDeletion(): List<StoredAccount> {
+        return accounts.values.filter { it.deletionRequestedAtMillis != null }
     }
 
-    override fun deleteUser(phone: String) {
-        users.remove(phone)
-        sessions.values.removeAll { it.phone == phone }
-        devices.keys.removeAll { it.first == phone }
+    override fun deleteAccount(accountId: Long) {
+        val credential = phoneCredentials.remove(accountId)
+        if (credential != null) phoneIndex.remove(credential.phone)
+        accounts.remove(accountId)
+        sessions.values.removeAll { it.accountId == accountId }
+        devices.keys.removeAll { it.first == accountId }
     }
 
     override fun upsertSmsCode(record: StoredSmsCode) {
@@ -130,12 +216,12 @@ class InMemoryAccountStore : AccountStore {
         sessions.remove(tokenHash)
     }
 
-    override fun deleteSessionsForPhone(phone: String) {
-        sessions.values.removeAll { it.phone == phone }
+    override fun deleteSessionsForAccount(accountId: Long) {
+        sessions.values.removeAll { it.accountId == accountId }
     }
 
     override fun upsertRegisteredDevice(device: StoredRegisteredDevice) {
-        val key = device.phone to device.deviceId
+        val key = device.accountId to device.deviceId
         val existing = devices[key]
         devices[key] = if (existing == null) {
             device
@@ -144,8 +230,8 @@ class InMemoryAccountStore : AccountStore {
         }
     }
 
-    override fun registeredDevices(phone: String): List<StoredRegisteredDevice> {
-        return devices.values.filter { it.phone == phone }.sortedBy { it.deviceId }
+    override fun registeredDevices(accountId: Long): List<StoredRegisteredDevice> {
+        return devices.values.filter { it.accountId == accountId }.sortedBy { it.deviceId }
     }
 
     private data class SmsIssue(

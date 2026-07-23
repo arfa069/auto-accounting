@@ -1,3 +1,5 @@
+@file:Suppress("LongMethod", "NestedBlockDepth")
+
 package com.autoaccounting.backend
 
 import java.sql.DriverManager

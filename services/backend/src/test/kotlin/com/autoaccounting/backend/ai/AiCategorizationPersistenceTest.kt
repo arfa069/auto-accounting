@@ -1,8 +1,6 @@
 package com.autoaccounting.backend.ai
 
-import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.JdbcAccountStore
-import com.autoaccounting.backend.account.MutableClock
 import java.sql.DriverManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -12,12 +10,12 @@ class AiCategorizationPersistenceTest {
     @Test
     fun jdbcLogStorePersistsLogsAcrossStoreInstances() {
         val databaseUrl = h2DatabaseUrl()
-        setupAccountTables(databaseUrl)
+        val accountId = setupAccountTables(databaseUrl)
 
         val firstStore = JdbcAiCategorizationLogStore(databaseUrl)
         firstStore.insertLog(
             StoredAiCategorizationLog(
-                accountPhone = "13800138000",
+                accountId = accountId,
                 merchantTitle = "午餐",
                 sourceLabel = "微信",
                 transactionKind = "支出",
@@ -34,7 +32,7 @@ class AiCategorizationPersistenceTest {
 
         assertEquals(1, logs.size)
         val log = logs.single()
-        assertEquals("13800138000", log.accountPhone)
+        assertEquals(accountId, log.accountId)
         assertEquals("午餐", log.merchantTitle)
         assertEquals("餐饮", log.suggestedCategory)
         assertEquals(1000L, log.createdAtMillis)
@@ -43,12 +41,15 @@ class AiCategorizationPersistenceTest {
     @Test
     fun logsDeletedForAccountOnAccountDeletion() {
         val databaseUrl = h2DatabaseUrl()
-        setupAccountTables(databaseUrl)
+        val accountId1 = setupAccountTables(databaseUrl)
+        val store = JdbcAccountStore(databaseUrl)
+        val user2 = store.findUser("13900139000")!!
+        val accountId2 = user2.accountId
 
         val logStore = JdbcAiCategorizationLogStore(databaseUrl)
         logStore.insertLog(
             StoredAiCategorizationLog(
-                accountPhone = "13800138000",
+                accountId = accountId1,
                 merchantTitle = "午餐",
                 sourceLabel = "微信",
                 transactionKind = "支出",
@@ -61,7 +62,7 @@ class AiCategorizationPersistenceTest {
         )
         logStore.insertLog(
             StoredAiCategorizationLog(
-                accountPhone = "13900139000",
+                accountId = accountId2,
                 merchantTitle = "地铁",
                 sourceLabel = "支付宝",
                 transactionKind = "支出",
@@ -73,10 +74,10 @@ class AiCategorizationPersistenceTest {
             )
         )
 
-        logStore.deleteLogsForAccount("13800138000")
+        logStore.deleteLogsForAccount(accountId1)
 
-        assertEquals(0, logStore.logsForAccount("13800138000").size)
-        assertEquals(1, logStore.logsForAccount("13900139000").size)
+        assertEquals(0, logStore.logsForAccount(accountId1).size)
+        assertEquals(1, logStore.logsForAccount(accountId2).size)
     }
 
     @Test
@@ -119,7 +120,7 @@ class AiCategorizationPersistenceTest {
         )
 
         service.suggest(
-            accountPhone = "13800138000",
+            accountId = 1L,
             merchantTitle = "午餐",
             sourceLabel = "微信",
             transactionKind = "支出",
@@ -133,13 +134,13 @@ class AiCategorizationPersistenceTest {
         val logs = logStore.allLogs()
         assertEquals(1, logs.size)
         assertEquals("餐饮", logs.single().suggestedCategory)
-        // Log does not contain note or rawEvidenceText — product boundary preserved
     }
 
-    private fun setupAccountTables(databaseUrl: String) {
+    private fun setupAccountTables(databaseUrl: String): Long {
         val store = JdbcAccountStore(databaseUrl)
         store.createUser(
             com.autoaccounting.backend.account.StoredUser(
+                accountId = 0L,
                 phone = "13800138000",
                 passwordSalt = "salt",
                 passwordHash = "hash",
@@ -151,6 +152,7 @@ class AiCategorizationPersistenceTest {
         )
         store.createUser(
             com.autoaccounting.backend.account.StoredUser(
+                accountId = 0L,
                 phone = "13900139000",
                 passwordSalt = "salt",
                 passwordHash = "hash",
@@ -160,6 +162,7 @@ class AiCategorizationPersistenceTest {
                 createdAtMillis = 1000
             )
         )
+        return store.findUser("13800138000")!!.accountId
     }
 
     private fun h2DatabaseUrl(): String {
