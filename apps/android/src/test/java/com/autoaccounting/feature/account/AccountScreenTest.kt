@@ -28,19 +28,24 @@ class AccountScreenTest {
         composeRule.setContent {
             AccountScreen(accountRepository = FakeAccountRepository())
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("登录").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("登录账号").assertIsDisplayed()
         pressSystemBack()
         composeRule.onNodeWithText("创建账号").assertIsDisplayed()
 
         composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("完成注册").performScrollTo().assertIsDisplayed()
         pressSystemBack()
         composeRule.onNodeWithText("继续使用本地模式").assertIsDisplayed()
 
         composeRule.onNodeWithText("登录").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("忘记密码").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("重置密码").performScrollTo().assertIsDisplayed()
         pressSystemBack()
         composeRule.onNodeWithText("登录账号").assertIsDisplayed()
@@ -48,12 +53,15 @@ class AccountScreenTest {
         composeRule.onNodeWithText("隐私与合规材料").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithText("隐私与合规材料").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("隐私政策").assertIsDisplayed()
         pressSystemBack()
         composeRule.onNodeWithText("继续使用本地模式").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("进入本地模式").assertIsDisplayed()
         pressSystemBack()
         composeRule.onNodeWithText("登录").assertIsDisplayed()
@@ -68,14 +76,19 @@ class AccountScreenTest {
                 onSessionChange = { session = it }
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.waitForIdle()
         composeRule.onAllNodesWithText("请先阅读并同意用户协议和隐私政策").assertCountEquals(1)
 
         composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("本地记账可用，但云端 AI、注册设备配置和未来同步不可用。").assertIsDisplayed()
         composeRule.onNodeWithText("进入本地模式").performClick()
+        composeRule.waitForIdle()
 
         assert(session == AccountSession.LocalMode)
     }
@@ -85,18 +98,26 @@ class AccountScreenTest {
         composeRule.setContent {
             AccountScreen(accountRepository = FakeAccountRepository())
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("account-phone").performTextInput("123")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("请输入 11 位手机号").assertIsDisplayed()
 
         composeRule.onNodeWithTag("account-phone").performTextClearance()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("60 秒后重试").assertIsDisplayed()
 
         composeRule.onNodeWithText("完成注册").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onAllNodesWithText("请先阅读并同意用户协议和隐私政策").assertCountEquals(1)
     }
 
@@ -109,14 +130,18 @@ class AccountScreenTest {
                 onSessionChange = { session = it }
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("登录").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("忘记密码").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onAllNodesWithText("找回密码").assertCountEquals(1)
         composeRule.onNodeWithTag("account-phone").performScrollTo().performTextInput("13800138000")
         composeRule.onNodeWithTag("account-code").performScrollTo().performTextInput("123456")
         composeRule.onNodeWithTag("account-password").performScrollTo().performTextInput("Aa123456!")
         composeRule.onNodeWithTag("account-confirm-password").performScrollTo().performTextInput("Aa123456!")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("重置密码").performScrollTo().performClick()
         composeRule.waitForIdle()
 
@@ -128,8 +153,10 @@ class AccountScreenTest {
         composeRule.setContent {
             AccountScreen(accountRepository = FakeAccountRepository())
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("隐私与合规材料").performScrollTo().performClick()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("隐私政策").assertIsDisplayed()
         composeRule.onNodeWithText("个人信息收集清单").performScrollTo().assertIsDisplayed()
@@ -146,12 +173,16 @@ class AccountScreenTest {
                 onSessionChange = { session = it }
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("登录").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
         composeRule.onNodeWithTag("account-password").performTextInput("Aa123456!")
         composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("登录").performScrollTo().performClick()
+        composeRule.waitForIdle()
 
         composeRule.waitUntil { repository.signOutCalls == 1 }
         composeRule.onNodeWithText("无法安全保存登录状态", substring = true).assertIsDisplayed()
@@ -167,10 +198,14 @@ class AccountScreenTest {
             )
         }
         composeRule.setContent { AccountScreen(accountRepository = repository) }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("网络连接失败", substring = true).assertIsDisplayed()
         composeRule.onAllNodesWithText("60 秒后重试").assertCountEquals(0)
@@ -180,5 +215,6 @@ class AccountScreenTest {
         composeRule.runOnIdle {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
+        composeRule.waitForIdle()
     }
 }

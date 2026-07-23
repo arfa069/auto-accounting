@@ -46,6 +46,7 @@ class ProfileScreenTest {
                 onDestinationSelected = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("profile-account-status-card").assertIsDisplayed()
         composeRule.onNodeWithTag("profile-entry-AccountManagement").assertDoesNotExist()
@@ -65,8 +66,10 @@ class ProfileScreenTest {
                 onDestinationSelected = { destination = it }
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("profile-account-status-card").performClick()
+        composeRule.waitForIdle()
 
         assertEquals(ProfileDestination.AccountManagement, destination)
     }
@@ -86,6 +89,7 @@ class ProfileScreenTest {
                 )
             }
         }
+        composeRule.waitForIdle()
 
         listOf(
             TestConfiguration(DpSize(400.dp, 500.dp)),
@@ -97,6 +101,7 @@ class ProfileScreenTest {
                 forcedSize = configuration.size
                 fontScale = configuration.fontScale
             }
+            composeRule.waitForIdle()
             composeRule.onNodeWithTag("profile-account-status-card")
                 .performScrollTo()
                 .assertIsDisplayed()
@@ -124,8 +129,10 @@ class ProfileScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("退出登录").performClick()
+        composeRule.waitForIdle()
 
         composeRule.waitUntil { signedOut }
         assertTrue(signedOut)

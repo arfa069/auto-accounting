@@ -45,8 +45,10 @@ class AccountManagementScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("account-sign-out").performClick()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("网络连接失败", substring = true)
             .performScrollTo()
@@ -75,11 +77,14 @@ class AccountManagementScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("request-account-deletion").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("七天冷静期", substring = true).assertIsDisplayed()
         assertTrue(repository.requestDeletionCalls == 0)
         composeRule.onNodeWithTag("confirm-account-deletion").performClick()
+        composeRule.waitForIdle()
 
         composeRule.waitUntil { repository.requestDeletionCalls == 1 }
         assertTrue(deletionState.isPending)

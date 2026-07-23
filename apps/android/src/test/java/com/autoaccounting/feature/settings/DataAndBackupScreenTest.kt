@@ -53,6 +53,7 @@ class DataAndBackupScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("CSV 仅导出当前账本「家庭账本」", substring = true)
             .assertIsDisplayed()
@@ -79,12 +80,17 @@ class DataAndBackupScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("导出加密备份").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("12345678")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认导出").assertIsNotEnabled()
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("9")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认导出").assertIsEnabled().performClick()
+        composeRule.waitForIdle()
 
         composeRule.waitUntil(timeoutMillis = 5_000) { exportedPassphrase != null }
         assertEquals("123456789", exportedPassphrase)
@@ -112,21 +118,27 @@ class DataAndBackupScreenTest {
         }
 
         composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("backup-password-dialog-input")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("wrong-password")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("密码错误，或备份文件已损坏，请重试")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextClearance()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("correct-password")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("确认替换并恢复")
                 .fetchSemanticsNodes()
@@ -138,6 +150,7 @@ class DataAndBackupScreenTest {
         assertEquals(null, importedPassphrase)
         composeRule.onNodeWithText("将替换本机现有数据", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("确认替换并恢复").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) { importedPassphrase != null }
         assertEquals("correct-password", importedPassphrase)
     }
@@ -159,6 +172,7 @@ class DataAndBackupScreenTest {
         }
 
         composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             snackbarHostState.currentSnackbarData != null
         }
@@ -187,19 +201,23 @@ class DataAndBackupScreenTest {
         }
 
         composeRule.onNodeWithText("导入加密备份").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("backup-password-dialog-input")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
         composeRule.onNodeWithTag("backup-password-dialog-input").performTextInput("secret")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认").performClick()
+        composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("确认替换并恢复")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
         composeRule.onNodeWithText("取消").performClick()
+        composeRule.waitForIdle()
 
         assertFalse(imported)
         composeRule.onAllNodesWithText("确认替换并恢复").assertCountEquals(0)
@@ -218,13 +236,18 @@ class DataAndBackupScreenTest {
                 onBack = {}
             )
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("危险区").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("删除本机数据").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认删除").assertIsNotEnabled()
         composeRule.onNodeWithText("我已了解并完成需要的备份").performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("输入 删除本机数据").performTextInput("删除本机数据")
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("确认删除").performClick()
+        composeRule.waitForIdle()
 
         assertTrue(deleted)
     }
@@ -255,5 +278,6 @@ class DataAndBackupScreenTest {
                 screen()
             }
         }
+        composeRule.waitForIdle()
     }
 }
