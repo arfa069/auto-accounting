@@ -159,6 +159,9 @@ jacoco {
 }
 
 tasks.withType<Test>().configureEach {
+    maxHeapSize = "1g"
+    forkEvery = 5
+
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
