@@ -1,4 +1,5 @@
-@file:Suppress("TooManyFunctions")
+@file:Suppress("TooManyFunctions", "LongParameterList", "LongMethod")
+
 
 package com.autoaccounting.backend.account
 
@@ -46,7 +47,9 @@ data class StoredSmsCode(
     val failedAttempts: Int = 0,
     val invalidated: Boolean = false,
     val deviceId: String = "",
-    val ipAddress: String = ""
+    val ipAddress: String = "",
+    val purpose: String = "DEFAULT",
+    val contextKey: String? = null
 )
 
 data class StoredSession(
@@ -124,6 +127,47 @@ interface AccountStore {
     fun createOneTimeTicket(ticket: StoredOneTimeTicket)
     fun findOneTimeTicket(ticketHash: String): StoredOneTimeTicket?
     fun markOneTimeTicketUsed(ticketHash: String, usedAtMillis: Long): Boolean
+
+    fun registerWechatAccount(
+        ticketHash: String,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
+
+    fun linkWechatIdentity(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String?,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
+
+    fun completePhoneLink(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String,
+        passwordSalt: String,
+        passwordHash: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
 }
 
 
@@ -324,10 +368,288 @@ class InMemoryAccountStore : AccountStore {
         return true
     }
 
+    @Synchronized
+    override fun registerWechatAccount(
+        ticketHash: String,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val ticket = oneTimeTickets[ticketHash]
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (ticket.ticketType != "WECHAT_AUTH" || ticket.expiresAtMillis < now) {
+            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        }
+        if (ticket.usedAtMillis != null) {
+            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+        }
+
+        val existingIdentity = (unionid?.let(::findWechatIdentityByUnionid))
+            ?: findWechatIdentityByOpenid(appId, openid)
+        if (existingIdentity != null) {
+            return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+        }
+
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
+
+        val accountId = nextAccountId++
+        accounts[accountId] = StoredAccount(
+            accountId = accountId,
+            createdAtMillis = now
+        )
+
+        val identity = StoredWechatIdentity(
+            accountId = accountId,
+            appId = appId,
+            openid = openid,
+            unionid = unionid,
+            nickname = nickname,
+            avatarUrl = avatarUrl,
+            createdAtMillis = now,
+            updatedAtMillis = now
+        )
+        wechatIdentities[accountId] = identity
+
+        if (deviceId.isNotBlank()) {
+            upsertRegisteredDevice(
+                StoredRegisteredDevice(
+                    accountId = accountId,
+                    deviceId = deviceId,
+                    firstSeenAtMillis = now,
+                    lastSeenAtMillis = now,
+                    ipAddress = ipAddress
+                )
+            )
+        }
+
+        createSession(
+            StoredSession(
+                tokenHash = tokenHash,
+                accountId = accountId,
+                deviceId = deviceId,
+                issuedAtMillis = now
+            )
+        )
+
+        return AccountResult.Success(
+            AccountToken(
+                accountId = accountId,
+                phone = null,
+                token = token,
+                wechatLinked = true,
+                nickname = nickname,
+                avatarUrl = avatarUrl
+            )
+        )
+    }
+
+    @Synchronized
+    override fun linkWechatIdentity(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String?,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val ticket = oneTimeTickets[ticketHash]
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (ticket.ticketType != "WECHAT_AUTH" || ticket.expiresAtMillis < now) {
+            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        }
+        if (ticket.usedAtMillis != null) {
+            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+        }
+
+        val existingTargetIdentity = wechatIdentities[targetAccountId]
+        if (existingTargetIdentity != null) {
+            return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+        }
+
+        val existingIdentity = (unionid?.let(::findWechatIdentityByUnionid))
+            ?: findWechatIdentityByOpenid(appId, openid)
+        if (existingIdentity != null && existingIdentity.accountId != targetAccountId) {
+            return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+        }
+
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
+
+        val identity = StoredWechatIdentity(
+            accountId = targetAccountId,
+            appId = appId,
+            openid = openid,
+            unionid = unionid,
+            nickname = nickname,
+            avatarUrl = avatarUrl,
+            createdAtMillis = now,
+            updatedAtMillis = now
+        )
+        wechatIdentities[targetAccountId] = identity
+
+        if (deviceId.isNotBlank()) {
+            upsertRegisteredDevice(
+                StoredRegisteredDevice(
+                    accountId = targetAccountId,
+                    deviceId = deviceId,
+                    firstSeenAtMillis = now,
+                    lastSeenAtMillis = now,
+                    ipAddress = ipAddress
+                )
+            )
+        }
+
+        createSession(
+            StoredSession(
+                tokenHash = tokenHash,
+                accountId = targetAccountId,
+                deviceId = deviceId,
+                issuedAtMillis = now
+            )
+        )
+        smsCodePhoneToDelete?.let(smsCodes::remove)
+
+        val account = accounts[targetAccountId]
+        val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
+            AccountDeletionStatus(
+                accountId = targetAccountId,
+                phone = phone,
+                requestedAtMillis = requestedAt,
+                finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
+            )
+        }
+
+        return AccountResult.Success(
+            AccountToken(
+                accountId = targetAccountId,
+                phone = phone,
+                token = token,
+                deletionStatus = deletionStatus,
+                wechatLinked = true,
+                nickname = nickname,
+                avatarUrl = avatarUrl
+            )
+        )
+    }
+
+    @Synchronized
+    override fun completePhoneLink(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String,
+        passwordSalt: String,
+        passwordHash: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val ticket = oneTimeTickets[ticketHash]
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (ticket.ticketType != "PHONE_LINK" || ticket.expiresAtMillis < now || ticket.accountId != targetAccountId) {
+            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        }
+        if (ticket.usedAtMillis != null) {
+            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+        }
+        if (phoneCredentials.containsKey(targetAccountId)) {
+            return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
+        }
+        if (phoneIndex.containsKey(phone)) {
+            return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
+        }
+
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
+        phoneCredentials[targetAccountId] = StoredPhoneCredential(
+            accountId = targetAccountId,
+            phone = phone,
+            passwordSalt = passwordSalt,
+            passwordHash = passwordHash,
+            failedLoginCount = 0,
+            lockedUntilMillis = 0
+        )
+        phoneIndex[phone] = targetAccountId
+
+        deleteSessionsForAccount(targetAccountId)
+
+        if (deviceId.isNotBlank()) {
+            upsertRegisteredDevice(
+                StoredRegisteredDevice(
+                    accountId = targetAccountId,
+                    deviceId = deviceId,
+                    firstSeenAtMillis = now,
+                    lastSeenAtMillis = now,
+                    ipAddress = ipAddress
+                )
+            )
+        }
+
+        createSession(
+            StoredSession(
+                tokenHash = tokenHash,
+                accountId = targetAccountId,
+                deviceId = deviceId,
+                issuedAtMillis = now
+            )
+        )
+
+        val account = accounts[targetAccountId]
+        val wechatIdentity = wechatIdentities[targetAccountId]
+        val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
+            AccountDeletionStatus(
+                accountId = targetAccountId,
+                phone = phone,
+                requestedAtMillis = requestedAt,
+                finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
+            )
+        }
+
+        return AccountResult.Success(
+            AccountToken(
+                accountId = targetAccountId,
+                phone = phone,
+                token = token,
+                deletionStatus = deletionStatus,
+                wechatLinked = wechatIdentity != null,
+                nickname = wechatIdentity?.nickname,
+                avatarUrl = wechatIdentity?.avatarUrl
+            )
+        )
+    }
+
+
+
 
     private data class SmsIssue(
         val scopeType: String,
         val scopeValue: String,
         val issuedAtMillis: Long
     )
+
+    private fun hashStoredToken(token: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray(Charsets.UTF_8))
+        return java.util.Base64.getEncoder().encodeToString(digest)
+    }
 }

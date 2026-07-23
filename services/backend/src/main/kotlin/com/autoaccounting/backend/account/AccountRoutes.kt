@@ -1,4 +1,7 @@
+@file:Suppress("LongMethod")
+
 package com.autoaccounting.backend.account
+
 
 import com.autoaccounting.api.AccountApiJsonContracts
 import com.autoaccounting.api.AccountDeletionStatusContract
@@ -21,7 +24,9 @@ fun Route.accountRoutes(accountService: AccountService) {
             accountService.issueSmsCode(
                 phone = parameters["phone"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.local.remoteHost,
+                purpose = parameters["purpose"].orEmpty(),
+                contextKey = parameters["contextKey"]
             )
         )
     }
@@ -99,6 +104,68 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
+    post("/account/wechat/register") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.registerWithWechat(
+                wechatTicket = parameters["wechatTicket"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/wechat/link/password") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.linkWechatWithPassword(
+                wechatTicket = parameters["wechatTicket"].orEmpty(),
+                phone = parameters["phone"].orEmpty(),
+                password = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/wechat/link/sms") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.linkWechatWithSms(
+                wechatTicket = parameters["wechatTicket"].orEmpty(),
+                phone = parameters["phone"].orEmpty(),
+                code = parameters["code"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/phone/link/prepare") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.preparePhoneLink(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                phone = parameters["phone"].orEmpty(),
+                code = parameters["code"].orEmpty()
+            )
+        )
+    }
+
+    post("/account/phone/link/complete") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.completePhoneLink(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                phoneTicket = parameters["phoneTicket"].orEmpty(),
+                password = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+
     post("/account/delete/status") {
         when (val result = accountService.getAccountDeletionStatus(call.accountBearerToken().orEmpty())) {
             is AccountResult.Success -> call.respondJson(
@@ -139,6 +206,7 @@ private suspend fun ApplicationCall.respondAccountResult(
                 )
                 is AccountDeletionStatus -> AccountApiJsonContracts.encodeDeletionStatusResponse(value.toContract())
                 is com.autoaccounting.api.WechatExchangeResponseContract -> AccountApiJsonContracts.encodeWechatExchangeResponse(value)
+                is com.autoaccounting.api.PhoneLinkPrepareResponseContract -> AccountApiJsonContracts.encodePhoneLinkPrepareResponse(value)
                 else -> AccountApiJsonContracts.encodeSuccessResponse()
             }
             respondJson(body, HttpStatusCode.OK)
@@ -159,9 +227,13 @@ private fun AccountToken.toContract(includeToken: Boolean): AccountSessionRespon
     return AccountSessionResponseContract(
         phone = phone,
         token = token.takeIf { includeToken },
+        wechatLinked = wechatLinked,
+        nickname = nickname,
+        avatarUrl = avatarUrl,
         deletionStatus = deletionStatus?.toContract() ?: AccountDeletionStatusContract()
     )
 }
+
 
 private fun AccountDeletionStatus.toContract(): AccountDeletionStatusContract {
     return AccountDeletionStatusContract(

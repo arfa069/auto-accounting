@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -292,6 +293,93 @@ class AccountPersistenceTest {
             start.countDown()
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun jdbcWechatRegistrationCanRetryAfterTokenGenerationFailure() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val failingService = AccountService(
+            store = store,
+            tokenGenerator = { error("token generation failed") },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        val exchange = failingService.exchangeWechatCode("good_code") as AccountResult.Success
+        val ticket = (exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired).wechatTicket
+
+        assertThrows(IllegalStateException::class.java) {
+            failingService.registerWithWechat(ticket)
+        }
+
+        val retryService = AccountService(
+            store = JdbcAccountStore(databaseUrl),
+            tokenGenerator = { "retry-token" },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        val retry = retryService.registerWithWechat(ticket)
+        assertTrue(retry is AccountResult.Success)
+        assertTrue(retryService.verifyToken((retry as AccountResult.Success).value.token) is AccountResult.Success)
+    }
+
+    @Test
+    fun jdbcWechatLinkCanRetryAfterTokenGenerationFailure() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val setupService = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "setup-token" },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        setupService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        setupService.register("13800138000", "123456", "Aa123456!")
+        val exchange = setupService.exchangeWechatCode("good_code") as AccountResult.Success
+        val ticket = (exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired).wechatTicket
+        val failingService = AccountService(
+            store = store,
+            tokenGenerator = { error("token generation failed") },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+
+        assertThrows(IllegalStateException::class.java) {
+            failingService.linkWechatWithPassword(ticket, "13800138000", "Aa123456!")
+        }
+
+        val retryService = AccountService(
+            store = JdbcAccountStore(databaseUrl),
+            tokenGenerator = { "retry-token" },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        val retry = retryService.linkWechatWithPassword(ticket, "13800138000", "Aa123456!")
+        assertTrue(retry is AccountResult.Success)
+        assertNotNull(JdbcAccountStore(databaseUrl).findWechatIdentityByAccountId((retry as AccountResult.Success).value.accountId))
+    }
+
+    @Test
+    fun jdbcStorePersistsWechatLinkSmsContextAsTicketHash() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "654321" },
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        val exchange = service.exchangeWechatCode("good_code") as AccountResult.Success
+        val ticket = (exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired).wechatTicket
+
+        val issued = service.issueSmsCode(
+            phone = "13800138000",
+            deviceId = "device-a",
+            ipAddress = "127.0.0.1",
+            purpose = "WECHAT_LINK",
+            contextKey = ticket
+        )
+
+        assertTrue(issued is AccountResult.Success)
+        val persisted = JdbcAccountStore(databaseUrl).findSmsCode("13800138000")!!
+        assertEquals("WECHAT_LINK", persisted.purpose)
+        assertNotNull(persisted.contextKey)
+        assertNotEquals(ticket, persisted.contextKey)
     }
 
     private fun submitWechatClaim(

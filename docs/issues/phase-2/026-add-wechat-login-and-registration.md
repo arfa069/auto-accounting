@@ -129,7 +129,8 @@
 - **验证**：假微信客户端覆盖成功、无 UnionID、无资料、无效 code、微信错误码、超时、配置缺失和原始响应脱敏。
 - **完成条件**：后端在没有微信配置时正常启动，只有微信接口返回稳定的“未配置”错误。
 
-### 5. 实现微信注册和绑定已有手机号账号
+### 5. 已完成：实现微信注册和绑定已有手机号账号
+
 
 - **实施**：
   - `/account/wechat/register` 消费微信票据，创建纯微信账号、注册设备和 Session。
@@ -144,7 +145,7 @@
 - **验证**：覆盖首次注册、重复微信登录、密码绑定、短信绑定、账号锁定、验证码错误或过期、并发消费及事务回滚。
 - **完成条件**：微信注册和两种绑定方式均可通过纯后端集成测试形成可校验 Session。
 
-### 6. 实现纯微信账号新增手机号
+### 6. 已完成：实现纯微信账号新增手机号
 
 - **实施**：
   - 当前微信账号申请 `PHONE_LINK` 专项验证码。
@@ -340,6 +341,9 @@
 - `2026-07-22`：完成 Task 2。统一后端 1–5 号数据库迁移入口 `runBackendMigrations` 至 `JdbcMigrations.kt`，并建立事务性 5 号迁移 SQL：新增 `accounts`（自增 `account_id`）、`account_phone_credentials`、`account_wechat_identities`、`account_one_time_tickets`；将 `account_sessions`、`registered_devices`、`cloud_config` 和 `ai_categorization_logs` 的外键从 `phone` 迁移关联为 `account_id`；`account_sms_codes` 扩展 `purpose`（默认 'DEFAULT'）和 `context_key`。适配 `JdbcAccountStore`、`JdbcCloudConfigStore`、`JdbcAiCategorizationLogStore` 以兼容 v5 表结构。新增 `DatabaseMigrationTest.kt`，验证 v4->v5 数据平滑无损迁移、原 Token 哈希与凭据全量保留、重复启动幂等性、孤立外键检测及事务容错。全套 `:services:backend:test`（57 项测试）及 `:services:backend:detekt` 均 100% 成功通过，未连接或修改真实 PostgreSQL，测试后 Gradle Daemon 已停止。
 - `2026-07-23`：完成 Task 3。将现有后端账号 Service、Store、Session、设备、Cloud Config、AI 日志及注销定时任务的全链路主标识从手机号迁移为内部 `accountId`。拆分 `StoredUser` 为 `StoredAccount` 与 `StoredPhoneCredential`，重构 `InMemoryAccountStore` 与 `JdbcAccountStore`，直接按 `accountId` 执行持久化与级联删除。CloudConfigStore/Service 与 AiCategorizationLogStore/Service 全量重构为 `accountId` 驱动。保持 HTTP 请求与响应 JSON 完全兼容，旧手机号客户端无需变更。全套单元与集成测试（`AccountServiceTest`, `AccountPersistenceTest`, `CloudConfig*`, `AiCategorization*`）及 `detekt` 静态检查均 100% 成功通过。
 - `2026-07-23`：完成 Task 4。实现服务端微信授权 code 换取与一次性票据管理。在 `services/backend/.env.example` 补充 `AUTO_ACCOUNTING_WECHAT_APP_ID` 和 `AUTO_ACCOUNTING_WECHAT_APP_SECRET` 配置项；新增基于 Java 17 标准 HttpClient 的无依赖 `DefaultWechatOAuthClient`，实现超时控制与敏感字段（Access Token, OpenID, UnionID, AppSecret, Code）全脱敏防泄漏处理；扩展 `AccountStore`（内存与 JDBC）支持微信身份、原子认领与一次性票据 CRUD；在 `AccountError` 与 `AccountRoutes` 扩展 9 个微信错误码与 `POST /account/wechat/exchange` 端点；在 `AccountService` 实现 code 换取与 4 种分支处理逻辑（未绑定生成认证票据返回 `REGISTRATION_REQUIRED`、Bearer 下未绑定直接关联返回 `SIGNED_IN`、已绑定当前账号刷新个人信息返回 `SIGNED_IN`、Bearer 下已绑定其他账号生成合并票据返回 `MERGE_REQUIRED`），并拒绝用新微信静默覆盖已有绑定。测试覆盖 Mock HTTP 错误码与超时、完整 Service 分支、路由、已有绑定保护及 H2/JDBC 双线程并发认领。全套后端单元测试通过；`:services:backend:detekt` 任务通过，并保留 `JdbcAccountStore` 的既有 `LargeClass` 提示。
+- `2026-07-23`：完成 Task 5。实现微信注册纯账号及绑定已有手机号账号的 3 个 HTTP 路由（`/account/wechat/register`、`/account/wechat/link/password`、`/account/wechat/link/sms`）。扩展 `AccountStore` 与 `JdbcAccountStore` 支持单事务原子消费微信授权票据、创建纯微信账号/绑定微信身份、注册设备及签发 Session；密码绑定继承登录重试与锁定规则，短信绑定验证专项验证码并销毁；在“一个账号最多绑定一个微信身份且一个微信身份只能绑定一个账号”约束下，对已绑定微信的账号拒绝静默覆盖。在 `AccountToken` 与 Ktor 响应透出 `wechatLinked`、`nickname`、`avatarUrl` 资料。新增 `WechatRegisterAndLinkTest.kt` 并扩展 `AccountRoutesTest.kt`，覆盖微信纯账号创建与重复登录、密码绑定、短信绑定、短信发送频率限制、密码错误锁定、验证码错误/过期、票据超时/重复使用/假票据、账号微信身份冲突及 Ktor 端到端 HTTP 交互。全套后端单元与集成测试、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，Gradle Daemon 已停止。
+- `2026-07-23`：完成 Task 6。实现纯微信账号新增手机号与设置密码流程。支持 `PHONE_LINK` 专项验证码及 HTTP 端点 `/account/phone/link/prepare`（根据手机号注册状态分别返回 `PHONE_TICKET_ISSUED` 或 `MERGE_REQUIRED` 票据）与 `/account/phone/link/complete`（单事务消费手机号票据、创建手机凭据、轮换 Session 并注册设备）。严格执行“短信验证通过前不泄露手机号注册状态”防泄漏规则；修正在纯微信账号（`phone=""`）下 `phoneUserByAccountId` 的判空逻辑；支持内存 `InMemoryAccountStore` 与 `JdbcAccountStore` 事务持久化。新增 `PhoneLinkTest.kt`（9 项测试），覆盖新增未注册手机号、密码强度拒绝、验证码错误防泄漏、手机号已存在触发合并、票据重复使用与过期、并发注册冲突阻断、已绑定手机号拒绝重复绑定、H2/JDBC 持久化及 Ktor 端到端 HTTP 接口测试。全套 `:services:backend:test`、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，测试后 Gradle Daemon 已停止。
+
 
 
 

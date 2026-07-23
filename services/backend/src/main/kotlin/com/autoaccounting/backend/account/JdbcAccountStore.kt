@@ -1,12 +1,16 @@
-@file:Suppress("NestedBlockDepth", "TooManyFunctions")
+@file:Suppress("NestedBlockDepth", "TooManyFunctions", "LargeClass", "LongMethod", "CyclomaticComplexMethod", "LongParameterList")
+
 
 package com.autoaccounting.backend.account
 
 import com.autoaccounting.backend.jdbcConnection
 import com.autoaccounting.backend.runBackendMigrations
+import java.security.MessageDigest
+import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
+import java.util.Base64
 
 class JdbcAccountStore(
     private val jdbcUrl: String,
@@ -210,7 +214,7 @@ class JdbcAccountStore(
                 """
                 UPDATE account_sms_codes
                 SET code_hash = ?, expires_at_millis = ?, failed_attempts = ?,
-                    invalidated = ?, device_id = ?, ip_address = ?
+                    invalidated = ?, device_id = ?, ip_address = ?, purpose = ?, context_key = ?
                 WHERE phone = ?
                 """.trimIndent()
             ).use { statement ->
@@ -220,7 +224,9 @@ class JdbcAccountStore(
                 statement.setBoolean(4, record.invalidated)
                 statement.setString(5, record.deviceId)
                 statement.setString(6, record.ipAddress)
-                statement.setString(7, record.phone)
+                statement.setString(7, record.purpose)
+                statement.setString(8, record.contextKey)
+                statement.setString(9, record.phone)
                 statement.executeUpdate()
             }
             if (updated == 0) {
@@ -228,8 +234,8 @@ class JdbcAccountStore(
                     """
                     INSERT INTO account_sms_codes (
                         phone, code_hash, expires_at_millis, failed_attempts,
-                        invalidated, device_id, ip_address
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        invalidated, device_id, ip_address, purpose, context_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """.trimIndent()
                 ).use { statement ->
                     statement.setString(1, record.phone)
@@ -239,6 +245,8 @@ class JdbcAccountStore(
                     statement.setBoolean(5, record.invalidated)
                     statement.setString(6, record.deviceId)
                     statement.setString(7, record.ipAddress)
+                    statement.setString(8, record.purpose)
+                    statement.setString(9, record.contextKey)
                     statement.executeUpdate()
                 }
             }
@@ -249,7 +257,7 @@ class JdbcAccountStore(
         connection.prepareStatement(
             """
             SELECT phone, code_hash, expires_at_millis, failed_attempts,
-                   invalidated, device_id, ip_address
+                   invalidated, device_id, ip_address, purpose, context_key
             FROM account_sms_codes
             WHERE phone = ?
             """.trimIndent()
@@ -264,7 +272,9 @@ class JdbcAccountStore(
                         failedAttempts = rs.getInt("failed_attempts"),
                         invalidated = rs.getBoolean("invalidated"),
                         deviceId = rs.getString("device_id").orEmpty(),
-                        ipAddress = rs.getString("ip_address").orEmpty()
+                        ipAddress = rs.getString("ip_address").orEmpty(),
+                        purpose = rs.getString("purpose").orEmpty(),
+                        contextKey = rs.getString("context_key")
                     )
                 } else {
                     null
@@ -631,7 +641,477 @@ class JdbcAccountStore(
     }
 
     override fun markOneTimeTicketUsed(ticketHash: String, usedAtMillis: Long): Boolean = connection().use { connection ->
+        markOneTimeTicketUsed(connection, ticketHash, usedAtMillis) > 0
+    }
+
+    override fun registerWechatAccount(
+        ticketHash: String,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            val ticket = queryOneTimeTicket(connection, ticketHash)
+                ?: run {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+                }
+            if (ticket.ticketType != "WECHAT_AUTH" || ticket.expiresAtMillis < now) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+            }
+            if (ticket.usedAtMillis != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val token = tokenGenerator()
+
+            val rowsUpdated = markOneTimeTicketUsed(connection, ticketHash, now)
+            if (rowsUpdated == 0) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val existingIdentity = queryWechatIdentityByUnionid(connection, unionid)
+                ?: queryWechatIdentityByOpenid(connection, appId, openid)
+            if (existingIdentity != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+            }
+
+            var accountId: Long = -1
+            connection.prepareStatement(
+                """
+                INSERT INTO accounts (deletion_requested_at_millis, created_at_millis)
+                VALUES (?, ?)
+                """.trimIndent(),
+                Statement.RETURN_GENERATED_KEYS
+            ).use { statement ->
+                statement.setNullableLong(1, null)
+                statement.setLong(2, now)
+                statement.executeUpdate()
+                statement.generatedKeys.use { keys ->
+                    if (keys.next()) accountId = keys.getLong(1)
+                }
+            }
+            if (accountId == -1L) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.INVALID_REQUEST)
+            }
+
+            insertWechatIdentity(
+                connection,
+                StoredWechatIdentity(
+                    accountId = accountId,
+                    appId = appId,
+                    openid = openid,
+                    unionid = unionid,
+                    nickname = nickname,
+                    avatarUrl = avatarUrl,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(
+                        accountId = accountId,
+                        deviceId = deviceId,
+                        firstSeenAtMillis = now,
+                        lastSeenAtMillis = now,
+                        ipAddress = ipAddress
+                    )
+                )
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+            val tokenHash = Base64.getEncoder().encodeToString(digest)
+            insertSession(
+                connection,
+                StoredSession(
+                    tokenHash = tokenHash,
+                    accountId = accountId,
+                    deviceId = deviceId,
+                    issuedAtMillis = now
+                )
+            )
+
+            connection.commit()
+            AccountResult.Success(
+                AccountToken(
+                    accountId = accountId,
+                    phone = null,
+                    token = token,
+                    wechatLinked = true,
+                    nickname = nickname,
+                    avatarUrl = avatarUrl
+                )
+            )
+        } catch (error: SQLException) {
+            connection.rollback()
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
+                AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+            } else {
+                throw error
+            }
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun linkWechatIdentity(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String?,
+        appId: String,
+        openid: String,
+        unionid: String?,
+        nickname: String?,
+        avatarUrl: String?,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            val ticket = queryOneTimeTicket(connection, ticketHash)
+                ?: run {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+                }
+            if (ticket.ticketType != "WECHAT_AUTH" || ticket.expiresAtMillis < now) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+            }
+            if (ticket.usedAtMillis != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val token = tokenGenerator()
+
+            val rowsUpdated = markOneTimeTicketUsed(connection, ticketHash, now)
+            if (rowsUpdated == 0) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val targetExisting = queryWechatIdentityByAccountId(connection, targetAccountId)
+            if (targetExisting != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+            }
+
+            val existingIdentity = queryWechatIdentityByUnionid(connection, unionid)
+                ?: queryWechatIdentityByOpenid(connection, appId, openid)
+            if (existingIdentity != null && existingIdentity.accountId != targetAccountId) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+            }
+
+            insertWechatIdentity(
+                connection,
+                StoredWechatIdentity(
+                    accountId = targetAccountId,
+                    appId = appId,
+                    openid = openid,
+                    unionid = unionid,
+                    nickname = nickname,
+                    avatarUrl = avatarUrl,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(
+                        accountId = targetAccountId,
+                        deviceId = deviceId,
+                        firstSeenAtMillis = now,
+                        lastSeenAtMillis = now,
+                        ipAddress = ipAddress
+                    )
+                )
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+            val tokenHash = Base64.getEncoder().encodeToString(digest)
+            insertSession(
+                connection,
+                StoredSession(
+                    tokenHash = tokenHash,
+                    accountId = targetAccountId,
+                    deviceId = deviceId,
+                    issuedAtMillis = now
+                )
+            )
+            smsCodePhoneToDelete?.let { deleteSmsCode(connection, it) }
+
+            val account = queryAccount(connection, targetAccountId)
+            val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
+                AccountDeletionStatus(
+                    accountId = targetAccountId,
+                    phone = phone,
+                    requestedAtMillis = requestedAt,
+                    finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
+                )
+            }
+
+            connection.commit()
+            AccountResult.Success(
+                AccountToken(
+                    accountId = targetAccountId,
+                    phone = phone,
+                    token = token,
+                    deletionStatus = deletionStatus,
+                    wechatLinked = true,
+                    nickname = nickname,
+                    avatarUrl = avatarUrl
+                )
+            )
+        } catch (error: SQLException) {
+            connection.rollback()
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
+                AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+            } else {
+                throw error
+            }
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun completePhoneLink(
+        ticketHash: String,
+        targetAccountId: Long,
+        phone: String,
+        passwordSalt: String,
+        passwordHash: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            val ticket = queryOneTimeTicket(connection, ticketHash)
+                ?: run {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+                }
+            if (ticket.ticketType != "PHONE_LINK" || ticket.expiresAtMillis < now || ticket.accountId != targetAccountId) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+            }
+            if (ticket.usedAtMillis != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val token = tokenGenerator()
+
+            val rowsUpdated = markOneTimeTicketUsed(connection, ticketHash, now)
+            if (rowsUpdated == 0) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+            }
+
+            val existingCredential = queryPhoneCredentialByAccountId(connection, targetAccountId)
+            if (existingCredential != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
+            }
+
+            val phoneUser = queryUserByPhone(connection, phone)
+            if (phoneUser != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
+            }
+
+            insertPhoneCredential(
+                connection,
+                targetAccountId,
+                phone,
+                passwordSalt,
+                passwordHash,
+                now
+            )
+
+            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
+                statement.setLong(1, targetAccountId)
+                statement.executeUpdate()
+            }
+
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(
+                        accountId = targetAccountId,
+                        deviceId = deviceId,
+                        firstSeenAtMillis = now,
+                        lastSeenAtMillis = now,
+                        ipAddress = ipAddress
+                    )
+                )
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+            val tokenHash = Base64.getEncoder().encodeToString(digest)
+            insertSession(
+                connection,
+                StoredSession(
+                    tokenHash = tokenHash,
+                    accountId = targetAccountId,
+                    deviceId = deviceId,
+                    issuedAtMillis = now
+                )
+            )
+
+            val account = queryAccount(connection, targetAccountId)
+            val wechatIdentity = queryWechatIdentityByAccountId(connection, targetAccountId)
+            val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
+                AccountDeletionStatus(
+                    accountId = targetAccountId,
+                    phone = phone,
+                    requestedAtMillis = requestedAt,
+                    finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
+                )
+            }
+
+            connection.commit()
+            AccountResult.Success(
+                AccountToken(
+                    accountId = targetAccountId,
+                    phone = phone,
+                    token = token,
+                    deletionStatus = deletionStatus,
+                    wechatLinked = wechatIdentity != null,
+                    nickname = wechatIdentity?.nickname,
+                    avatarUrl = wechatIdentity?.avatarUrl
+                )
+            )
+        } catch (error: SQLException) {
+            connection.rollback()
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
+                AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
+            } else {
+                throw error
+            }
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    private fun queryPhoneCredentialByAccountId(connection: Connection, accountId: Long): StoredPhoneCredential? {
+        return connection.prepareStatement(
+            """
+            SELECT account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis
+            FROM account_phone_credentials
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredPhoneCredential(
+                        accountId = rs.getLong("account_id"),
+                        phone = rs.getString("phone"),
+                        passwordSalt = rs.getString("password_salt"),
+                        passwordHash = rs.getString("password_hash"),
+                        failedLoginCount = rs.getInt("failed_login_count"),
+                        lockedUntilMillis = rs.getLong("locked_until_millis")
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    private fun queryUserByPhone(connection: Connection, phone: String): StoredUser? {
+        return connection.prepareStatement(
+            """
+            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
+                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
+            FROM account_phone_credentials p
+            JOIN accounts a ON a.account_id = p.account_id
+            WHERE p.phone = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, phone)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredUser() else null
+            }
+        }
+    }
+
+    private fun insertPhoneCredential(
+        connection: Connection,
+        accountId: Long,
+        phone: String,
+        passwordSalt: String,
+        passwordHash: String,
+        now: Long
+    ) {
         connection.prepareStatement(
+            """
+            INSERT INTO account_phone_credentials (
+                account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis, updated_at_millis
+            ) VALUES (?, ?, ?, ?, 0, 0, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.setString(2, phone)
+            statement.setString(3, passwordSalt)
+            statement.setString(4, passwordHash)
+            statement.setLong(5, now)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun queryOneTimeTicket(connection: Connection, ticketHash: String): StoredOneTimeTicket? {
+        return connection.prepareStatement(
+            """
+            SELECT ticket_hash, ticket_type, account_id, payload_json, expires_at_millis, used_at_millis
+            FROM account_one_time_tickets
+            WHERE ticket_hash = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, ticketHash)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredOneTimeTicket() else null
+            }
+        }
+    }
+
+    private fun markOneTimeTicketUsed(connection: Connection, ticketHash: String, usedAtMillis: Long): Int {
+        return connection.prepareStatement(
             """
             UPDATE account_one_time_tickets
             SET used_at_millis = ?
@@ -641,13 +1121,148 @@ class JdbcAccountStore(
             statement.setLong(1, usedAtMillis)
             statement.setString(2, ticketHash)
             statement.setLong(3, usedAtMillis)
-            val rows = statement.executeUpdate()
-            rows > 0
+            statement.executeUpdate()
+        }
+    }
+
+    private fun queryWechatIdentityByOpenid(connection: Connection, appId: String, openid: String): StoredWechatIdentity? {
+        return connection.prepareStatement(
+            """
+            SELECT account_id, app_id, openid, unionid, nickname, avatar_url, created_at_millis, updated_at_millis
+            FROM account_wechat_identities
+            WHERE app_id = ? AND openid = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, appId)
+            statement.setString(2, openid)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredWechatIdentity() else null
+            }
+        }
+    }
+
+    private fun queryWechatIdentityByUnionid(connection: Connection, unionid: String?): StoredWechatIdentity? {
+        if (unionid.isNullOrBlank()) return null
+        return connection.prepareStatement(
+            """
+            SELECT account_id, app_id, openid, unionid, nickname, avatar_url, created_at_millis, updated_at_millis
+            FROM account_wechat_identities
+            WHERE unionid = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, unionid)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredWechatIdentity() else null
+            }
+        }
+    }
+
+    private fun queryWechatIdentityByAccountId(connection: Connection, accountId: Long): StoredWechatIdentity? {
+        return connection.prepareStatement(
+            """
+            SELECT account_id, app_id, openid, unionid, nickname, avatar_url, created_at_millis, updated_at_millis
+            FROM account_wechat_identities
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredWechatIdentity() else null
+            }
+        }
+    }
+
+    private fun insertWechatIdentity(connection: Connection, identity: StoredWechatIdentity) {
+        connection.prepareStatement(
+            """
+            INSERT INTO account_wechat_identities (
+                account_id, app_id, openid, unionid, nickname, avatar_url, created_at_millis, updated_at_millis
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, identity.accountId)
+            statement.setString(2, identity.appId)
+            statement.setString(3, identity.openid)
+            statement.setString(4, identity.unionid)
+            statement.setString(5, identity.nickname)
+            statement.setString(6, identity.avatarUrl)
+            statement.setLong(7, identity.createdAtMillis)
+            statement.setLong(8, identity.updatedAtMillis)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun insertSession(connection: Connection, session: StoredSession) {
+        connection.prepareStatement(
+            """
+            INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis)
+            VALUES (?, ?, ?, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, session.tokenHash)
+            statement.setLong(2, session.accountId)
+            statement.setString(3, session.deviceId)
+            statement.setLong(4, session.issuedAtMillis)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun deleteSmsCode(connection: Connection, phone: String) {
+        connection.prepareStatement("DELETE FROM account_sms_codes WHERE phone = ?").use { statement ->
+            statement.setString(1, phone)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun upsertRegisteredDevice(connection: Connection, device: StoredRegisteredDevice) {
+        val updated = connection.prepareStatement(
+            """
+            UPDATE registered_devices
+            SET last_seen_at_millis = ?, ip_address = ?
+            WHERE account_id = ? AND device_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, device.lastSeenAtMillis)
+            statement.setString(2, device.ipAddress)
+            statement.setLong(3, device.accountId)
+            statement.setString(4, device.deviceId)
+            statement.executeUpdate()
+        }
+        if (updated == 0) {
+            connection.prepareStatement(
+                """
+                INSERT INTO registered_devices (account_id, device_id, first_seen_at_millis, last_seen_at_millis, ip_address)
+                VALUES (?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setLong(1, device.accountId)
+                statement.setString(2, device.deviceId)
+                statement.setLong(3, device.firstSeenAtMillis)
+                statement.setLong(4, device.lastSeenAtMillis)
+                statement.setString(5, device.ipAddress)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun queryAccount(connection: Connection, accountId: Long): StoredAccount? {
+        return connection.prepareStatement(
+            """
+            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            FROM accounts
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.toStoredAccount() else null
+            }
         }
     }
 
 
     private fun connection() = jdbcConnection(jdbcUrl, username, password)
+
 
     data class Config(
         val jdbcUrl: String,
@@ -670,7 +1285,16 @@ class JdbcAccountStore(
 
 private const val UNIQUE_VIOLATION_SQL_STATE = "23505"
 
+private fun ResultSet.toStoredAccount(): StoredAccount {
+    return StoredAccount(
+        accountId = getLong("account_id"),
+        deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
+        createdAtMillis = getLong("created_at_millis")
+    )
+}
+
 private fun ResultSet.toStoredUser(): StoredUser {
+
     return StoredUser(
         accountId = getLong("account_id"),
         phone = getString("phone").orEmpty(),
