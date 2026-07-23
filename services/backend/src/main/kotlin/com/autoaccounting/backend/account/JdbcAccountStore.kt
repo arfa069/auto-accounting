@@ -1032,6 +1032,95 @@ class JdbcAccountStore(
         }
     }
 
+    override fun unlinkWechatIdentity(
+        accountId: Long,
+        phone: String,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            val account = lockAccountsForUpdateInternal(connection, accountId, accountId).singleOrNull()
+                ?: run {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.TOKEN_INVALID)
+                }
+            val phoneCredential = queryPhoneCredentialByAccountId(connection, accountId)
+                ?: run {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+                }
+            if (phoneCredential.phone != phone) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TOKEN_INVALID)
+            }
+            if (account.deletionRequestedAtMillis != null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+            }
+            if (queryWechatIdentityByAccountId(connection, accountId) == null) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.INVALID_REQUEST)
+            }
+
+            val token = tokenGenerator()
+            val tokenHash = hashTokenString(token)
+
+            connection.prepareStatement(
+                "DELETE FROM account_wechat_identities WHERE account_id = ?"
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "DELETE FROM account_sessions WHERE account_id = ?"
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.executeUpdate()
+            }
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(
+                        accountId = accountId,
+                        deviceId = deviceId,
+                        firstSeenAtMillis = now,
+                        lastSeenAtMillis = now,
+                        ipAddress = ipAddress
+                    )
+                )
+            }
+            insertSession(
+                connection,
+                StoredSession(
+                    tokenHash = tokenHash,
+                    accountId = accountId,
+                    deviceId = deviceId,
+                    issuedAtMillis = now
+                )
+            )
+            smsCodePhoneToDelete?.let { deleteSmsCode(connection, it) }
+
+            connection.commit()
+            AccountResult.Success(
+                AccountToken(
+                    accountId = accountId,
+                    phone = phone,
+                    token = token,
+                    wechatLinked = false
+                )
+            )
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
     private fun queryPhoneCredentialByAccountId(connection: Connection, accountId: Long): StoredPhoneCredential? {
         return connection.prepareStatement(
             """

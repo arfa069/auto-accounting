@@ -17,7 +17,8 @@ data class PersonalInformationItem(
     val name: String,
     val purpose: String,
     val requiredState: String,
-    val processingMethod: String
+    val processingMethod: String,
+    val retentionAndDeletion: String = ""
 )
 
 data class ThirdPartyService(
@@ -74,7 +75,22 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             name = "手机号",
             purpose = "账号注册、登录、找回密码和注销校验",
             requiredState = "账号模式必需，本地模式不需要",
-            processingMethod = "提交到后端账号服务"
+            processingMethod = "提交到后端账号服务",
+            retentionAndDeletion = "账号存在期间保存；解绑手机号不在当前版本范围，账号注销完成后删除"
+        ),
+        PersonalInformationItem(
+            name = "微信账号标识与资料",
+            purpose = "微信登录、注册、绑定、合并及展示昵称和头像",
+            requiredState = "仅用户主动使用微信账号功能时处理",
+            processingMethod = "后端保存 OpenID、可用时的 UnionID、昵称和 HTTPS 头像 URL；Android Session 不保存 OpenID 或 UnionID，也不包含微信 Token",
+            retentionAndDeletion = "每次成功授权时刷新；解绑微信或账号注销完成后删除，退出或本机数据删除会清理设备头像缓存"
+        ),
+        PersonalInformationItem(
+            name = "随机安装 UUID",
+            purpose = "短信限流、设备去重、安全防护和配置分发",
+            requiredState = "账号功能与短信风控使用；不读取硬件标识符",
+            processingMethod = "Android 随机生成并提交后端，不用于广告追踪",
+            retentionAndDeletion = "设备端保留至本机数据删除或卸载；后端设备记录在账号注销完成后删除"
         ),
         PersonalInformationItem(
             name = "微信/支付宝支付通知内容",
@@ -109,6 +125,13 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
     ),
     thirdPartyServices = listOf(
         ThirdPartyService(
+            name = "腾讯微信开放平台与微信 OpenSDK",
+            purpose = "提供微信授权登录、注册和账号绑定",
+            personalInformationCategory = "微信授权 code、OpenID、可用时的 UnionID、昵称、HTTPS 头像 URL",
+            processingMethod = "Android 仅通过 OpenSDK 发起用户授权，后端向微信服务端换票并获取资料；不向微信发送账本、交易、备份或诊断日志，AppSecret 和微信 Token 不进入 APK",
+            declarationTokens = setOf("wechat-sdk", "opensdk", "com.tencent.mm")
+        ),
+        ThirdPartyService(
             name = "SMS provider",
             purpose = "发送账号注册和找回密码验证码",
             personalInformationCategory = "手机号、设备/IP 风控信息",
@@ -128,6 +151,13 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             personalInformationCategory = "应用分发统计信息",
             processingMethod = "由目标应用商店提供",
             declarationTokens = setOf("analytics", "distribution")
+        ),
+        ThirdPartyService(
+            name = "Coil / OkHttp 开源头像加载组件",
+            purpose = "加载账号管理中的 HTTPS 微信头像",
+            personalInformationCategory = "HTTPS 头像 URL 与图片响应字节",
+            processingMethod = "仅向头像 URL 指向的服务端发起请求；组件本身不提供遥测或云端存储。图片使用独立的本机 wechat_avatars 缓存，最多 10 MB，并在 URL 更新、退出、解绑、Session 失效或本机数据删除时清理",
+            declarationTokens = setOf("okhttp")
         ),
         ThirdPartyService(
             name = "Google ML Kit Chinese Text Recognition（捆绑模型）",

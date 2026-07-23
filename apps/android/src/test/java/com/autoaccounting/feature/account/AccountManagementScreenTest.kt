@@ -47,7 +47,7 @@ class AccountManagementScreenTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("account-sign-out").performClick()
+        composeRule.onNodeWithTag("account-sign-out").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("网络连接失败", substring = true)

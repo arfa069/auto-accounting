@@ -21,6 +21,8 @@ h2 = "2.2.224"
 kotlinxSerializationJson = "1.9.0"
 mlKitTextRecognitionChinese = "16.0.1"
 androidxTracingPerfetto = "1.0.0"
+wechatOpenSdk = "6.8.40"
+coil = "3.4.0"
 
 detekt = "1.23.8"
 
@@ -68,3 +70,6 @@ postgresql = { module = "org.postgresql:postgresql", version.ref = "postgres" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlKitTextRecognitionChinese" }
+wechat-sdk-android = { module = "com.tencent.mm.opensdk:wechat-sdk-android", version.ref = "wechatOpenSdk" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }

@@ -182,7 +182,7 @@
 - **验证**：覆盖两个合并方向、配置冲突、设备去重、AI 日志删除、凭据冲突、注销阻断、双击确认、并发合并和任意步骤故障回滚。
 - **完成条件**：失败时两个账号完全不变；成功时来源账号不可登录，目标新 Session 有效。
 
-### 8. 实现微信安全解绑
+### 8. 已完成：实现微信安全解绑
 
 - **实施**：
   - 仅同时拥有手机号凭据的账号显示解绑入口。
@@ -195,7 +195,7 @@
 - **验证**：覆盖密码解绑、短信解绑、无手机号拒绝、错误凭据、注销期阻断、Session 轮换和新 Session 持久化失败。
 - **完成条件**：解绑后微信不能再登录原账号，手机号仍可正常登录。
 
-### 9. 接入 Android 微信 SDK 与安全回调
+### 9. 已完成：接入 Android 微信 SDK 与安全回调
 
 - **依赖与配置**：
   - 在版本目录固定 `com.tencent.mm.opensdk:wechat-sdk-android:6.8.40`。
@@ -215,7 +215,7 @@
 - **验证**：使用 SDK 包装层假实现覆盖未安装、版本过低、取消、拒绝、错误回调、state 不符、冷启动和 `onNewIntent`。
 - **完成条件**：默认无 AppID 构建正常；注入假 Gateway 时能够完整驱动账号流程。
 
-### 10. 升级 Android Repository 与加密 Session
+### 10. 已完成：升级 Android Repository 与加密 Session
 
 - **实施**：
   - 扩展 `AccountRepository` 和 `HttpAccountRepository`，实现微信交换、注册、两种绑定、手机号新增、合并及解绑。
@@ -229,7 +229,7 @@
 - **验证**：HTTP 表单和响应测试、v1→v2 恢复、空手机号微信账号、持久化密文不含昵称、头像或 Token 明文、损坏密文安全降级。
 - **完成条件**：手机号与微信 Session 均可跨重启恢复并执行后台校验。
 
-### 11. 完成登录页、账号管理及头像 UI
+### 11. 已完成：完成登录页、账号管理及头像 UI
 
 - **登录与注册页**：
   - 登录落地页把“微信登录/注册”放在手机号登录和创建账号之前。
@@ -251,7 +251,7 @@
 - **验证**：Compose 测试覆盖所有分支、返回层级、加载或错误状态、头像占位和本地账本隔离。
 - **完成条件**：手机号、本地模式和既有系统返回行为不发生回归。
 
-### 12. 合规、诊断与文档同步
+### 12. 已完成：合规、诊断与文档同步
 
 - **实施**：
   - 扩展诊断脱敏规则，覆盖 `wechat_code`、`wechat_ticket`、OpenID、UnionID、access token 和 refresh token；账号流程仅记录稳定结果码，不记录资料正文。
@@ -262,7 +262,7 @@
 - **验证**：运行诊断测试、`SecretScannerTest`、文档链接检查、中文编码检查和 `git diff --check -- docs/`。
 - **完成条件**：代码、UI、架构与合规材料对微信数据处理和账号生命周期描述一致。
 
-### 13. 分层验证、发布与真实验收
+### 13. 已完成（计划停止边界内）：分层验证、发布准备与真实验收
 
 - **定向验证顺序**：
   1. `.\gradlew.bat :shared:api:test`
@@ -284,19 +284,22 @@
   - 登记 Release 包名 `com.autoaccounting` 和实际发布证书签名；Debug 若需真实验证必须单独登记其包名和签名。
   - AppSecret 仅写入后端 `.env`，AppID 写入 Android 本地构建配置。
 - **最终停止边界**：开放平台未审核前，只能声明自动化和假 Provider 验证通过，不得声明真实微信端到端完成；全程不清除设备数据、不卸载应用、不修改系统敏感授权。
+- **本轮结果**：共享 API、后端、Android、静态检查、完整构建、Debug/Release APK 与 Release 签名验证均通过；发布数据库和真实微信验收按上述停止边界保留为外部后续工作。
 
 ## 验收标准
 
-- [ ] 旧手机号账号和原 Bearer Session 经 v5 迁移后继续有效，注销期限、设备、云配置和 AI 日志无损保留。
-- [ ] 手机号注册、登录、找回、退出、注销和本地模式行为与现有版本兼容。
-- [ ] 已绑定微信可直接登录；未绑定微信可创建账号，或通过密码和短信绑定已有手机号账号。
-- [ ] 纯微信账号可绑定未注册手机号并设置密码，且微信身份继续有效。
-- [ ] 账号合并只允许互补凭据，始终保留当前账号，并严格执行配置、设备、AI 日志和 Session 规则。
-- [ ] 仅有微信一种凭据时不能解绑；具备手机号凭据并二次验证后可以解绑且获得新 Session。
-- [ ] 微信昵称、HTTPS 头像 URL 在每次成功授权后刷新，头像失败时使用默认占位。
-- [ ] AppSecret、微信 Token、code、OpenID、UnionID 和原始 Provider 响应不进入 APK、客户端 Session、日志或诊断导出。
-- [ ] Android 无 AppID 时隐藏微信入口；后端无微信配置时仅微信接口返回稳定错误，手机号和本地模式保持可用。
-- [ ] 登录、绑定、合并、解绑、注销及退出前后，本机 Room 账本与备份格式完全不变。
+以下标准已在 H2/JDBC、假 OAuth Provider、假微信 SDK 和 Android 自动化范围内通过；真实 PostgreSQL 发布与真实微信真机验收尚未执行。
+
+- [x] 旧手机号账号和原 Bearer Session 经 v5 迁移后继续有效，注销期限、设备、云配置和 AI 日志无损保留。
+- [x] 手机号注册、登录、找回、退出、注销和本地模式行为与现有版本兼容。
+- [x] 已绑定微信可直接登录；未绑定微信可创建账号，或通过密码和短信绑定已有手机号账号。
+- [x] 纯微信账号可绑定未注册手机号并设置密码，且微信身份继续有效。
+- [x] 账号合并只允许互补凭据，始终保留当前账号，并严格执行配置、设备、AI 日志和 Session 规则。
+- [x] 仅有微信一种凭据时不能解绑；具备手机号凭据并二次验证后可以解绑且获得新 Session。
+- [x] 微信昵称、HTTPS 头像 URL 在每次成功授权后刷新，头像失败时使用默认占位。
+- [x] AppSecret、微信 Token、code、OpenID、UnionID 和原始 Provider 响应不进入 APK、客户端 Session、日志或诊断导出。
+- [x] Android 无 AppID 时隐藏微信入口；后端无微信配置时仅微信接口返回稳定错误，手机号和本地模式保持可用。
+- [x] 登录、绑定、合并、解绑、注销及退出前后，本机 Room 账本与备份格式完全不变。
 
 ## 验收测试
 
@@ -344,9 +347,15 @@
 - `2026-07-23`：完成 Task 5。实现微信注册纯账号及绑定已有手机号账号的 3 个 HTTP 路由（`/account/wechat/register`、`/account/wechat/link/password`、`/account/wechat/link/sms`）。扩展 `AccountStore` 与 `JdbcAccountStore` 支持单事务原子消费微信授权票据、创建纯微信账号/绑定微信身份、注册设备及签发 Session；密码绑定继承登录重试与锁定规则，短信绑定验证专项验证码并销毁；在“一个账号最多绑定一个微信身份且一个微信身份只能绑定一个账号”约束下，对已绑定微信的账号拒绝静默覆盖。在 `AccountToken` 与 Ktor 响应透出 `wechatLinked`、`nickname`、`avatarUrl` 资料。新增 `WechatRegisterAndLinkTest.kt` 并扩展 `AccountRoutesTest.kt`，覆盖微信纯账号创建与重复登录、密码绑定、短信绑定、短信发送频率限制、密码错误锁定、验证码错误/过期、票据超时/重复使用/假票据、账号微信身份冲突及 Ktor 端到端 HTTP 交互。全套后端单元与集成测试、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，Gradle Daemon 已停止。
 - `2026-07-23`：完成 Task 6。实现纯微信账号新增手机号与设置密码流程。支持 `PHONE_LINK` 专项验证码及 HTTP 端点 `/account/phone/link/prepare`（根据手机号注册状态分别返回 `PHONE_TICKET_ISSUED` 或 `MERGE_REQUIRED` 票据）与 `/account/phone/link/complete`（单事务消费手机号票据、创建手机凭据、轮换 Session 并注册设备）。严格执行“短信验证通过前不泄露手机号注册状态”防泄漏规则；修正在纯微信账号（`phone=""`）下 `phoneUserByAccountId` 的判空逻辑；支持内存 `InMemoryAccountStore` 与 `JdbcAccountStore` 事务持久化。新增 `PhoneLinkTest.kt`（9 项测试），覆盖新增未注册手机号、密码强度拒绝、验证码错误防泄漏、手机号已存在触发合并、票据重复使用与过期、并发注册冲突阻断、已绑定手机号拒绝重复绑定、H2/JDBC 持久化及 Ktor 端到端 HTTP 接口测试。全套 `:services:backend:test`、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，测试后 Gradle Daemon 已停止。
 - `2026-07-23`：完成 Task 7。实现账号合并准备与单事务确认流程。新增密码准备 HTTP 端点 `/account/merge/prepare/phone-password` 与确认端点 `/account/merge/confirm`。在 `AccountStore`（内存与 JDBC）实现单事务原子合并：按账号 ID 固定顺序锁定两个账号，校验注销冷静期与互补凭据冲突，将来源账号的互补凭据（手机号或微信身份）转移到当前账号；合并 Cloud Config（目标账号设置与同名 feature flag 优先，来源独有 feature flag 补入），合并注册设备（保留最早 firstSeen、最新 lastSeen 及对应 IP），删除来源 AI 日志，轮换并清除旧 Session 并为当前设备签发新 Session，消费 5 分钟 `ACCOUNT_MERGE` 票据并销毁来源账号。新增 `AccountMergeTest.kt`，覆盖两个合并方向、凭据冲突阻断、注销期阻断、确认字符串校验、票据防重复消费、配置与设备合并去重、AI 日志清除及 Ktor 端到端 HTTP 接口测试。全套 `:services:backend:test`、`:shared:api:test` 及 `:services:backend:detekt` 均 100% 成功通过，测试后 Gradle Daemon 已停止。
+- `2026-07-23`：完成 Task 8。新增 `/account/wechat/unlink/password` 与 `/account/wechat/unlink/sms`，密码方式复用现有失败计数和锁定规则，短信方式使用绑定当前账号的 `WECHAT_UNLINK` 专项目的。内存与 JDBC Store 原子删除微信身份和资料、撤销旧 Session、保留手机号凭据、设备、云配置与 AI 日志，并签发手机号新 Session；JDBC 在新 Token 生成或 Session 写入失败时整体回滚。新增 `WechatUnlinkTest.kt`，覆盖密码解绑、短信解绑、纯微信账号拒绝、错误密码、注销冷静期阻断、全部旧 Session 撤销、新 Session 有效、微信重新授权不再命中原账号、手机号继续登录、短信消费、HTTP 路由和 JDBC 故障回滚。定向测试、完整 `com.autoaccounting.backend.account.*` 测试及 `:services:backend:detekt` 均成功通过；未连接或修改真实 PostgreSQL。
+- `2026-07-23`：完成 Task 9。版本目录固定微信 OpenSDK `6.8.40`，Android BuildConfig 从 `local.properties` 或环境变量读取可公开 AppID，缺省为空；加入 OpenSDK R8 keep 规则。Manifest 通过实际 applicationId 注册导出的 `singleTask` 回调 Activity，Release 使用 `com.autoaccounting.wxapi.WXEntryActivity`，Debug 使用 `com.autoaccounting.debug.wxapi.WXEntryActivity`，不含 intent-filter，并以显式 `CLEAR_TOP | SINGLE_TOP` Intent 返回 `MainActivity`。新增延迟创建 SDK 的 Gateway、协议门控 Coordinator、32 字节 URL-safe 随机 state、私有存储的目的和 5 分钟期限、单次消费校验及冷启动/`onNewIntent` 共用回调载体；不匹配、过期和重复 state 均丢弃，授权 code 读取后立即从 Intent 移除。`WechatAuthCoordinatorTest` 覆盖协议未同意、假 Gateway 全链路、state 绑定/过期/重放、取消/拒绝/错误、显式 Intent 与 Debug Manifest。账号 feature 测试、Debug APK、Release R8/资源压缩 APK 和 Android detekt 均成功；OpenSDK jar 在 D8/R8 输出重复的第三方 stack-map 警告，但未导致编译、混淆或打包失败。未配置真实 AppID，未执行真实微信验收。
+- `2026-07-23`：完成 Task 10。扩展 `AccountRepository` 与 `HttpAccountRepository`，接入微信交换/注册、密码和短信绑定、手机号新增、两种合并准备来源、合并确认、密码和短信解绑及专项短信请求；所有会签发新 Session 的请求均携带安装 ID，需鉴权的请求使用 Bearer。`AccountCredentials` 与 `AccountSession.SignedIn` 支持可空手机号并携带微信绑定状态、昵称和 HTTPS 头像 URL。`SecureAccountSessionStore` 新增加密格式 v2，继续读取 v1 手机号和 Token，并在下一次保存时升级；纯微信 Session 可跨重启恢复，持久化内容不出现手机号、Token、昵称或头像 URL 明文，损坏密文仍清除并安全降级。新增统一 Session 提交补偿：新 Token 安全保存失败时清除本机账号 Session，并调用退出接口尝试撤销新 Token；网络失败保留现有离线 Session，只有明确无效 Session 才清除。扩展 HTTP、Session 与补偿测试，账号、Profile、MainActivity 定向回归和 Android detekt 均成功通过。
+- `2026-07-23`：完成 Task 11。登录落地页在手机号入口前加入受协议门控的“微信登录/注册”，手机号登录和注册页底部复用同一入口；未绑定微信授权后展示资料预览，并支持创建纯微信账号、密码或专项短信绑定已有账号。账户管理展示 HTTPS 头像、昵称、脱敏手机号及登录方式，按凭据状态提供绑定微信、绑定手机号、密码或短信合并及密码或短信解绑；合并确认明确展示当前账号保留、来源云账号删除、配置优先级、来源 AI 日志删除、本机账本不变及不可自动撤销，并要求输入“合并账号”。Coil `3.4.0` 使用独立 `wechat_avatars` 10 MB 缓存，仅接受 HTTPS URL，URL 更新、退出、解绑、Session 失效和本机数据删除会清理缓存，加载失败使用默认头像。新增控制器、Compose 和头像测试，覆盖无 AppID 隐藏、入口顺序、协议门控、重复提交、资料预览、创建和两种绑定、手机号新增、合并确认、两种解绑、返回层级及占位图；账号、Profile、MainActivity 定向回归共 82 项全部通过，`:apps:android:detekt` 成功（保留复杂度类非阻断提示），`git diff --check -- apps/android gradle/libs.versions.toml` 无错误。未配置真实 AppID，未执行真实微信真机验收。
+- `2026-07-23`：完成 Task 12。`DiagnosticSanitizer` 新增微信 code、微信票据、OpenID 和 UnionID 的键值与 JSON 形式脱敏，继续覆盖 access/refresh token；账号流程不写入资料正文。应用内个人信息清单新增微信身份资料和随机安装 UUID 的用途、处理方式、留存及删除规则，第三方清单新增腾讯微信开放平台/OpenSDK 与 Coil/OkHttp 头像加载组件，明确不向微信发送账本、交易、备份或诊断日志。新增 ADR 0057，并同步 PRD、Architecture、UI Design、Compliance、诊断日志手册及后端 `.env.example`；Phase 2 索引继续保持 Issue 026“进行中”，等待开放平台审核、发布数据库及真实微信验收。诊断与合规测试 36 项全部通过，后端 `SecretScannerTest` 通过；目标文档均以严格 UTF-8 回读，相对 Markdown 链接、ADR 0057 编号、`TODO|TBD|待补充` 扫描及 `git diff --check` 均无错误。未写入真实 AppID、AppSecret 或其他凭据。
+- `2026-07-23`：完成 Task 13 的计划停止边界。`:shared:api:test`、后端账号专项、后端 config/AI/环境/密钥扫描、Android 账号专项、Profile/MainActivity/诊断/合规/备份/本机数据删除定向测试、完整 `:services:backend:test` 和完整 `:apps:android:testDebugUnitTest` 均成功；Android 完整单元测试耗时 6 分 21 秒。根 `detekt` 成功，保留既有复杂度和命名类非阻断提示。禁用配置缓存后根 `build` 以 286 个任务在 13 分 19 秒内成功，单独 Debug/Release 构建以 96 个任务在 3 分 28 秒内成功；`android-release.apk` 经 Android SDK 37.0.0 `apksigner verify --verbose` 验证为 v2 签名有效且仅有 1 个签名者。OpenSDK `6.8.40` 在 D8/R8 中仍输出第三方 stack-map 警告，但未阻断编译、混淆、资源优化、签名或打包。验收标准已在 H2/JDBC、假 Provider/SDK 和自动化范围内通过；未连接或迁移真实 PostgreSQL，未配置真实微信凭据，未安装或操作真机，未声明真实微信端到端完成。
 
-
-
+## 未完成
+未连接真实 PostgreSQL、未配置真实微信凭据、未操作真机；因此 Issue 仍保持“进行中”，等待开放平台审核和真实端到端验收。
 
 ## 依赖
 

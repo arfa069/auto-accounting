@@ -11,6 +11,10 @@ private val secretPatterns = listOf(
     Regex("(?i)(\\bbearer\\s+)[A-Za-z0-9._~+/-]+=*"),
     Regex("(?i)((?:password|passwd|passphrase|backup[_-]?passphrase)\\s*[:=]\\s*)[^\\r\\n,，;；]+"),
     Regex("(?i)((?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[\\s_-]?key|client[_-]?secret)\\s*[:=]\\s*)[^\\s,;]+"),
+    Regex(
+        "(?i)([\\\"']?(?:wechat[_-]?code|wechat[_-]?ticket|open[_-]?id|union[_-]?id)[\\\"']?" +
+            "\\s*[:=]\\s*[\\\"']?)[^\\\"'\\s,;，；}\\]]+"
+    ),
     Regex("((?:密码|口令|备份口令)\\s*[:：=]\\s*)[^\\r\\n，,；;]+"),
     Regex("(令牌\\s*[:：=]\\s*)[^\\s，,；;]+"),
     Regex("(?i)((?:验证码|校验码|动态码|otp)\\s*[:：=]?\\s*)\\d{4,8}"),

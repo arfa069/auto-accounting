@@ -183,6 +183,16 @@ interface AccountStore {
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken>
+
+    fun unlinkWechatIdentity(
+        accountId: Long,
+        phone: String,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
 }
 
 
@@ -779,6 +789,66 @@ class InMemoryAccountStore : AccountStore {
                 wechatLinked = finalWechat != null,
                 nickname = finalWechat?.nickname,
                 avatarUrl = finalWechat?.avatarUrl
+            )
+        )
+    }
+
+    @Synchronized
+    override fun unlinkWechatIdentity(
+        accountId: Long,
+        phone: String,
+        deviceId: String,
+        ipAddress: String,
+        smsCodePhoneToDelete: String?,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val account = accounts[accountId]
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val phoneCredential = phoneCredentials[accountId]
+            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        if (phoneCredential.phone != phone) {
+            return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        }
+        if (account.deletionRequestedAtMillis != null) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+        }
+        if (wechatIdentities[accountId] == null) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+
+        wechatIdentities.remove(accountId)
+        deleteSessionsForAccount(accountId)
+        if (deviceId.isNotBlank()) {
+            upsertRegisteredDevice(
+                StoredRegisteredDevice(
+                    accountId = accountId,
+                    deviceId = deviceId,
+                    firstSeenAtMillis = now,
+                    lastSeenAtMillis = now,
+                    ipAddress = ipAddress
+                )
+            )
+        }
+        createSession(
+            StoredSession(
+                tokenHash = tokenHash,
+                accountId = accountId,
+                deviceId = deviceId,
+                issuedAtMillis = now
+            )
+        )
+        smsCodePhoneToDelete?.let(smsCodes::remove)
+
+        return AccountResult.Success(
+            AccountToken(
+                accountId = accountId,
+                phone = phone,
+                token = token,
+                wechatLinked = false
             )
         )
     }

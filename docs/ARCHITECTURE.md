@@ -23,6 +23,8 @@ flowchart LR
   Books["所有账本 + 共享本地数据"] --> Backup["加密备份"]
   Ledger -. "属于" .-> Books
   App["Android 应用"] --> Backend["Ktor 后端"]
+  App --> WechatSdk["微信 OpenSDK"]
+  Backend --> WechatOauth["微信开放平台 OAuth"]
   Backend --> PG["PostgreSQL"]
   Backend --> SMS["短信服务商"]
   Backend --> AI["云端 AI 服务商"]
@@ -43,7 +45,7 @@ flowchart LR
 - `feature:capture-accessibility`: 支付结果自动捕获与手动账单导入。
 - `feature:billsync`: 共享的 `ManualBillImportHost`、导入会话状态、来源启动、受支持页面解析及无障碍捕获接管。
 - `feature:categorization`: 本地分类规则及 AI 分类客户端。
-- `feature:account`: 登录、注册、找回密码、本地模式及账号注销。
+- `feature:account`: 手机号/微信登录注册、身份绑定与合并、Session、本地模式及账号注销。
 - `feature:monitoring`: 自动记账状态、紧凑权限与后台稳定性设置、服务健康度及支付页面观察决策。
 - `feature:settings`: 数据与备份及相关设置。
 - `feature:diagnostics`: 敏感事件契约、密钥脱敏、加密本地分段、诊断 UI、清除及口令导出。
@@ -154,7 +156,7 @@ flowchart LR
 ## 7. 后端服务 (Backend Services)
 
 Ktor 服务构成：
-- **认证服务 (Auth Service)**：手机号/密码登录、注册、密码找回、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
+- **认证服务 (Auth Service)**：内部账号 ID、手机号/密码、微信 OAuth、身份绑定与合并、安全解绑、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
 - **短信验证服务 (SMS Service)**：发送、校验、过期及限流短信验证码。
 - **设备服务 (Device Service)**：已注册设备及设备状态管理。
 - **云端配置服务 (Cloud Config Service)**：同意状态、功能开关、AI 设置及注销冷静期状态。
@@ -163,8 +165,10 @@ Ktor 服务构成：
 - **合规服务 (Compliance Service)**：提供隐私政策、收集清单、第三方清单及权限说明。
 
 PostgreSQL 数据表：
-- `account_users`
-- `account_password_credentials`
+- `accounts`
+- `account_phone_credentials`
+- `account_wechat_identities`
+- `account_one_time_tickets`
 - `account_sms_codes`
 - `account_sms_issues`
 - `account_sessions`
@@ -184,8 +188,16 @@ Session 与传输边界：
 - Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、短信、退出登录及注销操作不会自动重试。
 - 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的手机号或表单 Token 绝不用于选取受保护账号。
 - 短信验证码作为以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥的 HMAC-SHA-256 值存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
-- Android 在专用偏好设置中使用 Android Keystore AES-GCM 将手机号和 Token 加密存储在一起。它们排除在 Room、账本备份、诊断、日志和渲染 UI 之外。随机持久化的安装 UUID 取代硬件标识符。
+- Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v2：业务 Token、可空手机号、微信绑定状态、昵称和 HTTPS 头像 URL；继续读取旧 v1 手机号 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
 - 启动时在后台校验前先恢复加密凭据。网络/配置故障保留离线未校验 Session 和本地账本访问权；仅当显式收到无效 Session 时才清除密文并返回持久化本地模式。
+- 微信 OpenSDK 仅使用可公开 AppID。AppSecret、微信 access/refresh token、OpenID、UnionID 和 Provider 原始响应不进入 APK、Android Session、日志或诊断导出；授权 code 只发送自有后端并立即从回调 Intent 移除。
+- 微信授权、手机号新增及账号合并票据有效期均为 5 分钟、只能消费一次，数据库只保存 SHA-256 哈希。绑定、合并和解绑轮换业务 Session；Android 保存新 Session 失败时尝试撤销新 Token 并回到本地模式。
+
+身份与合并边界：
+- 账号内部以 `accountId` 关联 Session、设备、云配置和 AI 日志；手机号与微信都是可选且唯一的凭据。
+- 微信身份优先用 UnionID 识别，缺失时使用唯一 `(appId, openid)`；每次成功授权刷新昵称和 HTTPS 头像 URL。
+- 合并仅允许互补凭据并始终保留当前账号；当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除、双方旧 Session 撤销并删除来源账号。
+- 解绑微信要求账号仍有手机号凭据并完成密码或专项短信二次验证。所有身份操作不读取、删除或重新分配 Android Room 账本。
 
 登录失败处理：
 - 连续 5 次密码错误后，临时锁定登录并建议使用短信找回。

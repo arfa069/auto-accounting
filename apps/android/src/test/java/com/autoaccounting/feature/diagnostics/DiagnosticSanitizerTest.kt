@@ -44,6 +44,34 @@ class DiagnosticSanitizerTest {
     }
 
     @Test
+    fun wechatOAuthSecretsAndIdentityIdentifiersAreRedacted() {
+        val event = diagnosticEvent(
+            mapOf(
+                DiagnosticSensitiveField.ExceptionDetails to
+                    "wechat_code=wx-code-secret wechat-ticket: ticket-secret " +
+                        "OpenID=openid-secret Union_ID=unionid-secret " +
+                        "access_token=access-secret refresh-token=refresh-secret\n" +
+                        "{\"wechat_code\":\"json-code-secret\",\"openid\":\"json-openid-secret\"}"
+            )
+        )
+
+        val sanitized = sanitizeDiagnosticEvent(event)
+            .sensitivePayload.fields.getValue(DiagnosticSensitiveField.ExceptionDetails)
+
+        listOf(
+            "wx-code-secret",
+            "ticket-secret",
+            "openid-secret",
+            "unionid-secret",
+            "access-secret",
+            "refresh-secret",
+            "json-code-secret",
+            "json-openid-secret"
+        ).forEach { secret -> assertFalse(sanitized.contains(secret)) }
+        assertTrue(sanitized.contains("[REDACTED]"))
+    }
+
+    @Test
     fun oversizedEventTruncatesLargestFieldsAndMarksThem() {
         val event = diagnosticEvent(
             mapOf(DiagnosticSensitiveField.OcrText to "商户与订单".repeat(60_000))

@@ -30,12 +30,16 @@ internal class SecureAccountSessionStore(
         Context.MODE_PRIVATE
     )
 
-    fun save(credentials: AccountCredentials): Boolean = runCatching {
-        val encrypted = cipher.encrypt(credentials.encode())
-        preferences.edit()
-            .putString(ENCRYPTED_SESSION_KEY, encrypted.toBase64())
-            .commit()
-    }.getOrDefault(false)
+    fun save(credentials: AccountCredentials): Boolean {
+        val saved = runCatching {
+            val encrypted = cipher.encrypt(credentials.encode())
+            preferences.edit()
+                .putString(ENCRYPTED_SESSION_KEY, encrypted.toBase64())
+                .commit()
+        }.getOrDefault(false)
+        if (!saved) preferences.edit().remove(ENCRYPTED_SESSION_KEY).commit()
+        return saved
+    }
 
     fun restore(): AccountSessionRestoreResult {
         val encoded = preferences.getString(ENCRYPTED_SESSION_KEY, null)
@@ -55,25 +59,55 @@ internal class SecureAccountSessionStore(
     fun clear(): Boolean = preferences.edit().remove(ENCRYPTED_SESSION_KEY).commit()
 
     private fun AccountCredentials.encode(): ByteArray {
-        val phoneBytes = phone.toByteArray(Charsets.UTF_8)
+        val phoneBytes = phone?.toByteArray(Charsets.UTF_8)
         val tokenBytes = token.toByteArray(Charsets.UTF_8)
-        require(phoneBytes.isNotEmpty() && tokenBytes.isNotEmpty())
-        return ByteBuffer.allocate(1 + Int.SIZE_BYTES + phoneBytes.size + Int.SIZE_BYTES + tokenBytes.size)
-            .put(SESSION_FORMAT_VERSION)
-            .putInt(phoneBytes.size)
-            .put(phoneBytes)
-            .putInt(tokenBytes.size)
-            .put(tokenBytes)
+        val nicknameBytes = nickname?.toByteArray(Charsets.UTF_8)
+        val avatarUrlBytes = avatarUrl?.toByteArray(Charsets.UTF_8)
+        require(tokenBytes.isNotEmpty() && (phoneBytes?.isNotEmpty() == true || wechatLinked))
+        return ByteBuffer.allocate(
+            1 + phoneBytes.encodedSize() + tokenBytes.encodedSize() + 1 +
+                nicknameBytes.encodedSize() + avatarUrlBytes.encodedSize()
+        )
+            .put(SESSION_FORMAT_VERSION_V2)
+            .putNullableUtf8(phoneBytes)
+            .putSizedUtf8(tokenBytes)
+            .put(if (wechatLinked) 1.toByte() else 0.toByte())
+            .putNullableUtf8(nicknameBytes)
+            .putNullableUtf8(avatarUrlBytes)
             .array()
     }
 
     private fun ByteArray.decodeCredentials(): AccountCredentials {
         val buffer = ByteBuffer.wrap(this)
-        require(buffer.get() == SESSION_FORMAT_VERSION)
-        val phone = buffer.readSizedUtf8()
-        val token = buffer.readSizedUtf8()
-        require(!buffer.hasRemaining() && phone.isNotBlank() && token.isNotBlank())
+        return when (buffer.get()) {
+            SESSION_FORMAT_VERSION_V1 -> buffer.decodeVersionOne()
+            SESSION_FORMAT_VERSION_V2 -> buffer.decodeVersionTwo()
+            else -> error("Unsupported account session format")
+        }
+    }
+
+    private fun ByteBuffer.decodeVersionOne(): AccountCredentials {
+        val phone = readSizedUtf8()
+        val token = readSizedUtf8()
+        require(!hasRemaining() && phone.isNotBlank() && token.isNotBlank())
         return AccountCredentials(phone = phone, token = token)
+    }
+
+    private fun ByteBuffer.decodeVersionTwo(): AccountCredentials {
+        val phone = readNullableSizedUtf8()
+        val token = readSizedUtf8()
+        val wechatLinked = get().toInt() != 0
+        val nickname = readNullableSizedUtf8()
+        val avatarUrl = readNullableSizedUtf8()
+        require(!hasRemaining() && token.isNotBlank())
+        require(phone?.isNotBlank() == true || wechatLinked)
+        return AccountCredentials(
+            phone = phone,
+            token = token,
+            wechatLinked = wechatLinked,
+            nickname = nickname,
+            avatarUrl = avatarUrl
+        )
     }
 
     private fun ByteBuffer.readSizedUtf8(): String {
@@ -82,12 +116,29 @@ internal class SecureAccountSessionStore(
         return ByteArray(size).also(::get).toString(Charsets.UTF_8)
     }
 
+    private fun ByteBuffer.readNullableSizedUtf8(): String? {
+        val size = int
+        if (size == NULL_FIELD_SIZE) return null
+        require(size in 0..remaining())
+        return ByteArray(size).also(::get).toString(Charsets.UTF_8)
+    }
+
+    private fun ByteBuffer.putSizedUtf8(value: ByteArray): ByteBuffer = putInt(value.size).put(value)
+
+    private fun ByteBuffer.putNullableUtf8(value: ByteArray?): ByteBuffer {
+        return if (value == null) putInt(NULL_FIELD_SIZE) else putSizedUtf8(value)
+    }
+
     private companion object {
         const val SECURE_SESSION_PREFERENCES = "account_session_secure"
         const val ENCRYPTED_SESSION_KEY = "encrypted_session"
-        const val SESSION_FORMAT_VERSION: Byte = 1
+        const val SESSION_FORMAT_VERSION_V1: Byte = 1
+        const val SESSION_FORMAT_VERSION_V2: Byte = 2
+        const val NULL_FIELD_SIZE = -1
     }
 }
+
+private fun ByteArray?.encodedSize(): Int = Int.SIZE_BYTES + (this?.size ?: 0)
 
 internal class AndroidKeystoreAccountSessionCipher : AccountSessionCipher {
     override fun encrypt(plainText: ByteArray): ByteArray {

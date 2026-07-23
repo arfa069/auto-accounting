@@ -414,6 +414,97 @@ class AccountService(
         )
     }
 
+    fun unlinkWechatWithPassword(
+        bearerToken: String,
+        password: String,
+        deviceId: String = "",
+        ipAddress: String = ""
+    ): AccountResult<AccountToken> {
+        if (password.isBlank() || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val current = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val phone = current.phone
+            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        if (!current.wechatLinked) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        if (current.deletionStatus != null) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+        }
+
+        val now = clock.millis()
+        val user = phoneUserByAccountId(current.accountId)
+            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        if (user.lockedUntilMillis > now) {
+            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+        }
+        if (!user.passwordHash().matches(password)) {
+            val failedCount = user.failedLoginCount + 1
+            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else user.lockedUntilMillis
+            store.updateUser(user.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
+            return if (failedCount >= MAX_LOGIN_FAILURES) {
+                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+            } else {
+                AccountResult.Failure(AccountError.LOGIN_FAILED)
+            }
+        }
+        store.updateUser(user.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+
+        return store.unlinkWechatIdentity(
+            accountId = current.accountId,
+            phone = phone,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            smsCodePhoneToDelete = null,
+            now = now,
+            tokenGenerator = tokenGenerator
+        )
+    }
+
+    fun unlinkWechatWithSms(
+        bearerToken: String,
+        code: String,
+        deviceId: String = "",
+        ipAddress: String = ""
+    ): AccountResult<AccountToken> {
+        if (!isValidVerificationCode(code) || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val current = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val phone = current.phone
+            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        if (!current.wechatLinked) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        if (current.deletionStatus != null) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+        }
+        when (
+            val verification = verifySmsCode(
+                phone = phone,
+                code = code,
+                expectedPurpose = SMS_PURPOSE_WECHAT_UNLINK,
+                expectedContextKey = current.accountId.toString()
+            )
+        ) {
+            is AccountResult.Failure -> return verification
+            is AccountResult.Success -> Unit
+        }
+
+        return store.unlinkWechatIdentity(
+            accountId = current.accountId,
+            phone = phone,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            smsCodePhoneToDelete = phone,
+            now = clock.millis(),
+            tokenGenerator = tokenGenerator
+        )
+    }
+
     fun preparePhoneLink(
         bearerToken: String,
         phone: String,
@@ -714,7 +805,8 @@ class AccountService(
         deviceId: String,
         ipAddress: String,
         purpose: String = SMS_PURPOSE_DEFAULT,
-        contextKey: String? = null
+        contextKey: String? = null,
+        bearerToken: String? = null
     ): AccountResult<Unit> {
         if (!isValidPhone(phone) || !isValidDeviceId(deviceId)) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
@@ -733,6 +825,17 @@ class AccountService(
                     is AccountResult.Success -> ticketResult.value.ticketHash
                     is AccountResult.Failure -> return ticketResult
                 }
+            }
+            SMS_PURPOSE_WECHAT_UNLINK -> {
+                if (!contextKey.isNullOrBlank()) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                val current = verifiedAccount(bearerToken.orEmpty())
+                    ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+                if (current.phone != phone) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                if (!current.wechatLinked) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                if (current.deletionStatus != null) {
+                    return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+                }
+                current.accountId.toString()
             }
             else -> return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
@@ -1215,6 +1318,7 @@ class AccountService(
         private const val SMS_PURPOSE_DEFAULT = "DEFAULT"
         private const val SMS_PURPOSE_WECHAT_LINK = "WECHAT_LINK"
         private const val SMS_PURPOSE_PHONE_LINK = "PHONE_LINK"
+        private const val SMS_PURPOSE_WECHAT_UNLINK = "WECHAT_UNLINK"
         private const val LOGIN_LOCK_MILLIS = 15 * 60_000L
         const val ACCOUNT_DELETION_COOLING_OFF_MILLIS = 7 * 24 * 60 * 60 * 1_000L
 

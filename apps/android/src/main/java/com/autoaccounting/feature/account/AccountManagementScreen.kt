@@ -40,7 +40,12 @@ fun AccountManagementScreen(
     onSignInOrRegister: () -> Unit,
     onSessionVerified: (AccountCredentials) -> Unit,
     onInvalidSession: () -> Unit,
+    persistSession: (AccountCredentials) -> Boolean = { true },
     clearPersistedSession: () -> Boolean,
+    wechatAuthGateway: WechatAuthGateway? = null,
+    wechatAuthCallback: WechatAuthCallback? = null,
+    onWechatAuthCallbackConsumed: () -> Unit = {},
+    avatarCacheOverride: WechatAvatarCache? = null,
     onSignedOut: () -> Unit,
     onDeletionStateChange: (AccountDeletionUiState) -> Unit,
     onBack: () -> Unit,
@@ -50,6 +55,7 @@ fun AccountManagementScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showDeletionConfirmation by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val avatarCache = avatarCacheOverride ?: rememberWechatAvatarCache()
 
     fun handleFailure(failure: AccountRepositoryResult.Failure) {
         operationInProgress = false
@@ -107,6 +113,18 @@ fun AccountManagementScreen(
                         }
                     },
                     retryEnabled = !operationInProgress
+                )
+                WechatAccountManagementPanel(
+                    session = session,
+                    accountRepository = accountRepository,
+                    wechatAuthGateway = wechatAuthGateway,
+                    wechatAuthCallback = wechatAuthCallback,
+                    onWechatAuthCallbackConsumed = onWechatAuthCallbackConsumed,
+                    persistSession = persistSession,
+                    clearPersistedSession = clearPersistedSession,
+                    avatarCache = avatarCache,
+                    onSessionVerified = onSessionVerified,
+                    onInvalidSession = onInvalidSession
                 )
                 OutlinedButton(
                     onClick = {
@@ -208,7 +226,7 @@ fun AccountManagementScreen(
 
 @Composable
 private fun AccountConnectionCard(
-    phone: String,
+    phone: String?,
     runtimeState: AccountRuntimeState,
     onRetry: () -> Unit,
     retryEnabled: Boolean
@@ -223,7 +241,10 @@ private fun AccountConnectionCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("已登录：${phone.maskPhone()}", fontWeight = FontWeight.SemiBold)
+            Text(
+                phone?.let { "已登录：${it.maskPhone()}" } ?: "已登录：微信账号",
+                fontWeight = FontWeight.SemiBold
+            )
             Text(runtimeState.status.connectionLabel(), modifier = Modifier.testTag("account-connection-status"))
             if (runtimeState.status == AccountRuntimeStatus.OfflineUnverified) {
                 OutlinedButton(onClick = onRetry, enabled = retryEnabled) {

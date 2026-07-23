@@ -209,13 +209,23 @@ Account model:
 - Users can skip login and use local mode.
 - Cloud-linked capabilities require a backend-verified Session; a restored but offline-unverified Session keeps local bookkeeping available and pauses cloud writes and account deletion.
 - Android uses a random persisted installation UUID and does not read hardware identifiers.
+- The backend uses an internal account ID. Phone credentials and one WeChat identity are optional login methods attached to that account; local Room ledger books never change ownership or sync to the account.
 
 Login method:
 - Phone number + password.
+- WeChat OpenSDK OAuth, when a public AppID is configured; the entry is hidden otherwise.
 - SMS verification for account recovery.
 
 Registration:
 - Phone number -> SMS verification code -> set password -> complete.
+- An unbound WeChat authorization can create a WeChat-only account, or bind an existing phone account by password or dedicated SMS verification.
+
+Identity management:
+- A WeChat-only account can add an unregistered phone number and password. If the phone belongs to another account, the user must review and explicitly confirm an account merge.
+- Merging always keeps the current account, accepts only complementary credentials, keeps current cloud configuration values, deduplicates devices, deletes source AI logs and source account Sessions, and never changes the local ledger.
+- A WeChat identity can be unlinked only when a phone login remains and password or dedicated SMS re-verification succeeds. Binding, merging and unlinking rotate Sessions.
+- WeChat nickname and HTTPS avatar URL refresh after successful authorization; an unavailable or unsafe avatar uses the local placeholder.
+- The client never stores AppSecret, WeChat tokens, OpenID, UnionID or raw provider responses. Android Session v2 is Keystore-encrypted and contains only the business Session plus display fields.
 
 Password:
 - 8-32 characters.
@@ -292,7 +302,7 @@ Compact copy:
 
 - “合规与隐私”在 Debug 和 Release 都提供独立的“诊断日志”入口。Debug 默认开启；Release 默认关闭，并在首次开启前说明记录字段、排障用途、10 MB 上限、长期保留、设备内加密、关闭/清空方式和导出风险。
 - 允许记录支付相关通知、已判定支付结果/支付记录页、当前补录会话的页面/OCR 文字、解析字段、采集证据和完整异常。普通通知、聊天、无关页面和不支持包名只记录拒绝元数据，不保存可见正文。
-- 截图永不保存。密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥等认证秘密始终在写入前脱敏。
+- 截图永不保存。密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 等认证秘密或身份标识始终在写入前脱敏；账号流程不写入昵称、头像 URL 或 Provider 正文。
 - 日志仅在设备内加密保存，不上传、不进入账本备份或系统备份。每条事件最多 256 KB，每段最多 1 MB，总密文最多 10 MB；超过上限才轮转最旧分段。
 - 列表默认只显示元数据并加载最新 1000 条；敏感内容经二次确认后仅在本次页面会话显示，离页或进入后台立即重新遮罩，显示期间窗口启用 `FLAG_SECURE`。
 - 关闭只停止新记录并保留历史。清空需二次确认并删除密文和设备密钥；本机数据删除还清除 Release 开启偏好，但已导出到 Downloads 的文件由用户自行管理。

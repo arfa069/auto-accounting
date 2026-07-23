@@ -24,6 +24,10 @@ val releaseBackendUrl = configuredBackendUrl
     ?.trim()
     ?.takeIf { it.startsWith("https://", ignoreCase = true) }
     .orEmpty()
+val wechatAppId = (localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID")
+    ?: System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID"))
+    ?.trim()
+    .orEmpty()
 val composeCompilerReportsEnabled =
     providers.gradleProperty("composeCompilerReports").orNull == "true"
 
@@ -45,6 +49,11 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "AUTO_ACCOUNTING_WECHAT_APP_ID",
+            wechatAppId.asBuildConfigString()
+        )
     }
 
     signingConfigs {
@@ -225,6 +234,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.text.recognition.chinese)
+    implementation(libs.wechat.sdk.android)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 
     kapt(libs.androidx.room.compiler)
 

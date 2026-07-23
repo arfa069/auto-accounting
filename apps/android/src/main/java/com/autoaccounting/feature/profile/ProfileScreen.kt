@@ -145,7 +145,9 @@ private fun ProfileDestination.summary(session: AccountSession): String = when (
 
 private fun AccountSession.accountSummary(): String = when (this) {
     AccountSession.LocalMode -> "本地模式 · 账本仅保存在本机"
-    is AccountSession.SignedIn -> "已登录 · ${phone.maskPhone()}"
+    is AccountSession.SignedIn -> phone
+        ?.let { "已登录 · ${it.maskPhone()}" }
+        ?: "已登录 · ${nickname ?: "微信账号"}"
 }
 
 private fun String.maskPhone(): String =

@@ -44,6 +44,11 @@ import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.account.AccountSessionRestoreResult
 import com.autoaccounting.feature.account.AccountSessionVerificationDecision
 import com.autoaccounting.feature.account.HttpAccountRepository
+import com.autoaccounting.feature.account.AndroidWechatAuthGateway
+import com.autoaccounting.feature.account.WechatAuthCallback
+import com.autoaccounting.feature.account.WechatAuthCallbackIntent
+import com.autoaccounting.feature.account.WechatAuthGateway
+import com.autoaccounting.feature.account.rememberWechatAvatarCache
 import com.autoaccounting.feature.account.InstallationIdStore
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.SecureAccountSessionStore
@@ -101,6 +106,7 @@ class MainActivity : ComponentActivity() {
     private val coordinator by lazy { MonitoringStateCoordinator(this) }
     private val reviewNavigationRequest = mutableStateOf(0L)
     private val pendingEntryNavigationId = mutableStateOf<String?>(null)
+    private val pendingWechatAuthCallback = mutableStateOf<WechatAuthCallback?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,7 +129,9 @@ class MainActivity : ComponentActivity() {
                 onLaunchBillSyncSource = coordinator::launchBillSyncSource,
                 permissionStateLoaded = coordinator.permissionStateLoaded.value,
                 reviewNavigationRequest = reviewNavigationRequest.value,
-                pendingEntryNavigationId = pendingEntryNavigationId.value
+                pendingEntryNavigationId = pendingEntryNavigationId.value,
+                wechatAuthCallback = pendingWechatAuthCallback.value,
+                onWechatAuthCallbackConsumed = { pendingWechatAuthCallback.value = null }
             )
         }
         requestHighRefreshRate()
@@ -131,8 +139,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         handleNavigationIntent(intent)
+        setIntent(intent)
     }
 
     override fun onResume() {
@@ -151,6 +159,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNavigationIntent(intent: Intent?) {
+        WechatAuthCallbackIntent.consume(intent)?.let { callback ->
+            pendingWechatAuthCallback.value = callback
+        }
         if (intent?.getBooleanExtra(EXTRA_OPEN_REVIEW, false) == true) {
             pendingEntryNavigationId.value = intent.getStringExtra(EXTRA_PENDING_ENTRY_ID)
             reviewNavigationRequest.value += 1
@@ -182,7 +193,10 @@ fun AutoAccountingApp(
     reviewNavigationRequest: Long = 0,
     pendingEntryNavigationId: String? = null,
     accountRepositoryOverride: AccountRepository? = null,
-    persistAccountSessionOverride: ((AccountCredentials) -> Boolean)? = null
+    persistAccountSessionOverride: ((AccountCredentials) -> Boolean)? = null,
+    wechatAuthGatewayOverride: WechatAuthGateway? = null,
+    wechatAuthCallback: WechatAuthCallback? = null,
+    onWechatAuthCallbackConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val database = remember { AutoAccountingDatabaseProvider.get(context) }
@@ -199,6 +213,13 @@ fun AutoAccountingApp(
         )
     }
     val accountRepository = accountRepositoryOverride ?: productionAccountRepository
+    val productionWechatAuthGateway = remember(context.applicationContext) {
+        BuildConfig.AUTO_ACCOUNTING_WECHAT_APP_ID
+            .takeIf(String::isNotBlank)
+            ?.let { appId -> AndroidWechatAuthGateway(context.applicationContext, appId) }
+    }
+    val wechatAuthGateway = wechatAuthGatewayOverride ?: productionWechatAuthGateway
+    val wechatAvatarCache = rememberWechatAvatarCache()
     val diagnosticLogs = remember(context.applicationContext) { DiagnosticLogs.get(context.applicationContext) }
     val reviewQueuePersistence = remember(localLedgerRepository) { ReviewQueuePersistence(localLedgerRepository) }
     val coroutineScope = rememberCoroutineScope()
@@ -251,6 +272,7 @@ fun AutoAccountingApp(
 
     fun moveAccountToLocalMode() {
         secureAccountSessionStore.clear()
+        wechatAvatarCache.clear()
         localModeSessionStore.confirmLocalMode()
         accountSession = AccountSession.LocalMode
         accountDeletionState = AccountDeletionUiState()
@@ -258,7 +280,14 @@ fun AutoAccountingApp(
     }
 
     fun applyVerifiedCredentials(credentials: AccountCredentials) {
-        accountSession = AccountSession.SignedIn(credentials.phone, credentials.token)
+        wechatAvatarCache.prepareUrl(credentials.avatarUrl)
+        accountSession = AccountSession.SignedIn(
+            phone = credentials.phone,
+            token = credentials.token,
+            wechatLinked = credentials.wechatLinked,
+            nickname = credentials.nickname,
+            avatarUrl = credentials.avatarUrl
+        )
         accountDeletionState = credentials.deletionState
         accountRuntimeState = AccountRuntimeState(
             if (credentials.deletionState.isPending) {
@@ -274,7 +303,10 @@ fun AutoAccountingApp(
             is AccountSessionRestoreResult.Restored -> {
                 accountSession = AccountSession.SignedIn(
                     phone = restored.credentials.phone,
-                    token = restored.credentials.token
+                    token = restored.credentials.token,
+                    wechatLinked = restored.credentials.wechatLinked,
+                    nickname = restored.credentials.nickname,
+                    avatarUrl = restored.credentials.avatarUrl
                 )
                 accountDeletionState = restored.credentials.deletionState
                 accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Validating)
@@ -298,7 +330,13 @@ fun AutoAccountingApp(
         when (
             val decision = resolveAccountSessionVerification(
                 accountRepository.verifySession(
-                    AccountCredentials(phone = signedIn.phone, token = signedIn.token)
+                    AccountCredentials(
+                        phone = signedIn.phone,
+                        token = signedIn.token,
+                        wechatLinked = signedIn.wechatLinked,
+                        nickname = signedIn.nickname,
+                        avatarUrl = signedIn.avatarUrl
+                    )
                 )
             )
         ) {
@@ -473,6 +511,11 @@ fun AutoAccountingApp(
                             if (saved) applyVerifiedCredentials(credentials)
                             saved
                         },
+                        clearPersistedSession = secureAccountSessionStore::clear,
+                        wechatAuthGateway = wechatAuthGateway,
+                        wechatAuthCallback = wechatAuthCallback,
+                        onWechatAuthCallbackConsumed = onWechatAuthCallbackConsumed,
+                        avatarCacheOverride = wechatAvatarCache,
                         onSessionChange = { session ->
                             if (session == AccountSession.LocalMode) {
                                 localModeSessionStore.confirmLocalMode()
@@ -688,12 +731,18 @@ fun AutoAccountingApp(
                                                     moveAccountToLocalMode()
                                                     profileDestination = null
                                                 },
+                                                persistSession = { credentials ->
+                                                    val saved = secureAccountSessionStore.save(credentials)
+                                                    if (saved) applyVerifiedCredentials(credentials)
+                                                    saved
+                                                },
                                                 clearPersistedSession = secureAccountSessionStore::clear,
+                                                wechatAuthGateway = wechatAuthGateway,
+                                                wechatAuthCallback = wechatAuthCallback,
+                                                onWechatAuthCallbackConsumed = onWechatAuthCallbackConsumed,
+                                                avatarCacheOverride = wechatAvatarCache,
                                                 onSignedOut = {
-                                                    localModeSessionStore.confirmLocalMode()
-                                                    accountSession = AccountSession.LocalMode
-                                                    accountDeletionState = AccountDeletionUiState()
-                                                    accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+                                                    moveAccountToLocalMode()
                                                     profileDestination = null
                                                 },
                                                 onDeletionStateChange = { deletionState ->
@@ -747,6 +796,7 @@ fun AutoAccountingApp(
                                                     reviewState = ReviewQueueState()
                                                 },
                                                 onDeleteLocalData = {
+                                                    wechatAvatarCache.clear()
                                                     reviewState = ReviewQueueState()
                                                     categorizationRules = emptyList()
                                                     aiSettings = AiCategorizationSettings()

@@ -147,7 +147,11 @@ private fun ComplianceMaterialDetailScreen(
                 MaterialCard(it.title, it.body)
             }
             ComplianceMaterialPage.PersonalInformation -> materials.personalInformationItems.forEach {
-                MaterialCard(it.name, "${it.purpose}；${it.requiredState}；${it.processingMethod}")
+                val retention = it.retentionAndDeletion
+                    .takeIf(String::isNotBlank)
+                    ?.let { value -> "；保存与删除：$value" }
+                    .orEmpty()
+                MaterialCard(it.name, "${it.purpose}；${it.requiredState}；${it.processingMethod}$retention")
             }
             ComplianceMaterialPage.ThirdPartyServices -> materials.thirdPartyServices.forEach {
                 MaterialCard(

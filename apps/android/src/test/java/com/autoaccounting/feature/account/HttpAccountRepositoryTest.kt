@@ -107,6 +107,108 @@ class HttpAccountRepositoryTest {
     }
 
     @Test
+    fun wechatPhoneLinkMergeAndUnlinkUseExpectedFormsAndParseNullablePhoneSessions() = runBlocking {
+        val transport = QueueTransport(
+            listOf(
+                AccountHttpResponse(
+                    200,
+                    """{"ok":true,"status":"REGISTRATION_REQUIRED","wechatTicket":"wx-ticket","nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","ticketExpiresAtMillis":300000}"""
+                ),
+                AccountHttpResponse(200, wechatSessionJson()),
+                AccountHttpResponse(200, phoneWechatSessionJson()),
+                AccountHttpResponse(200, phoneWechatSessionJson()),
+                okResponse(),
+                AccountHttpResponse(
+                    200,
+                    """{"ok":true,"status":"PHONE_TICKET_ISSUED","phoneTicket":"phone-ticket","ticketExpiresAtMillis":300000}"""
+                ),
+                AccountHttpResponse(200, phoneWechatSessionJson()),
+                AccountHttpResponse(
+                    200,
+                    """{"ok":true,"mergeTicket":"merge-ticket","ticketExpiresAtMillis":300000,"currentPhone":null,"currentWechatLinked":true,"currentNickname":"微信用户","sourcePhone":"13800138000","sourceWechatLinked":false,"sourceNickname":null}"""
+                ),
+                AccountHttpResponse(200, phoneWechatSessionJson()),
+                AccountHttpResponse(200, phoneOnlySessionJson()),
+                AccountHttpResponse(200, phoneOnlySessionJson())
+            )
+        )
+        val repository = repository(transport)
+
+        val exchange = repository.exchangeWechatCode("one-time-code") as AccountRepositoryResult.Success
+        assertTrue(exchange.value is AccountWechatAuthResult.RegistrationRequired)
+        assertRequest(transport.requests.last(), "/account/wechat/exchange", "code" to "one-time-code")
+
+        val registered = repository.registerWithWechat("wx-ticket") as AccountRepositoryResult.Success
+        assertNull(registered.value.phone)
+        assertTrue(registered.value.wechatLinked)
+        assertEquals("微信用户", registered.value.nickname)
+        assertRequest(transport.requests.last(), "/account/wechat/register", "wechatTicket" to "wx-ticket")
+
+        repository.linkWechatWithPassword("wx-ticket", "13800138000", "Aa123456!")
+        assertRequest(transport.requests.last(), "/account/wechat/link/password", "password" to "Aa123456!")
+
+        repository.linkWechatWithSms("wx-ticket", "13800138000", "123456")
+        assertRequest(transport.requests.last(), "/account/wechat/link/sms", "code" to "123456")
+
+        repository.requestSmsCode(
+            phone = "13800138000",
+            purpose = AccountSmsPurpose.WechatUnlink,
+            bearerToken = "current-token"
+        )
+        assertRequest(transport.requests.last(), "/account/sms", "purpose" to "WECHAT_UNLINK", "current-token")
+
+        repository.preparePhoneLink("current-token", "13800138000", "123456")
+        assertRequest(transport.requests.last(), "/account/phone/link/prepare", "code" to "123456", "current-token")
+
+        repository.completePhoneLink("current-token", "phone-ticket", "Aa123456!")
+        assertRequest(transport.requests.last(), "/account/phone/link/complete", "phoneTicket" to "phone-ticket", "current-token")
+
+        val preview = repository.prepareMergeWithPhonePassword(
+            "current-token",
+            "13800138000",
+            "Aa123456!"
+        ) as AccountRepositoryResult.Success
+        assertEquals("merge-ticket", preview.value.mergeTicket)
+        assertRequest(transport.requests.last(), "/account/merge/prepare/phone-password", "phone" to "13800138000", "current-token")
+
+        repository.confirmMerge("current-token", "merge-ticket", "合并账号")
+        assertRequest(transport.requests.last(), "/account/merge/confirm", "confirmText" to "合并账号", "current-token")
+
+        val passwordUnlink = repository.unlinkWechatWithPassword(
+            "current-token",
+            "Aa123456!"
+        ) as AccountRepositoryResult.Success
+        assertTrue(!passwordUnlink.value.wechatLinked)
+        assertRequest(transport.requests.last(), "/account/wechat/unlink/password", "password" to "Aa123456!", "current-token")
+
+        repository.unlinkWechatWithSms("current-token", "123456")
+        assertRequest(transport.requests.last(), "/account/wechat/unlink/sms", "code" to "123456", "current-token")
+    }
+
+    @Test
+    fun exchangeMapsSignedInAndMergeRequiredStates() = runBlocking {
+        val transport = QueueTransport(
+            listOf(
+                AccountHttpResponse(200, phoneWechatExchangeJson()),
+                AccountHttpResponse(
+                    200,
+                    """{"ok":true,"status":"MERGE_REQUIRED","mergeTicket":"merge-ticket","sourceNickname":"来源微信","sourcePhone":null,"ticketExpiresAtMillis":300000}"""
+                )
+            )
+        )
+        val repository = repository(transport)
+
+        val signedIn = repository.exchangeWechatCode("code", "current-token") as AccountRepositoryResult.Success
+        val signedCredentials = (signedIn.value as AccountWechatAuthResult.SignedIn).credentials
+        assertEquals("13800138000", signedCredentials.phone)
+        assertTrue(signedCredentials.wechatLinked)
+        assertEquals("current-token", transport.requests.first().bearerToken)
+
+        val merge = repository.exchangeWechatCode("code", "current-token") as AccountRepositoryResult.Success
+        assertEquals("merge-ticket", (merge.value as AccountWechatAuthResult.MergeRequired).mergeTicket)
+    }
+
+    @Test
     fun cancellationPropagatesInsteadOfBecomingNetworkFailure() {
         var cancellationPropagated = false
 
@@ -143,6 +245,52 @@ class HttpAccountRepositoryTest {
             status,
             """{"ok":false,"error":"$code","message":"$message"}"""
         )
+
+    private fun wechatSessionJson(): String =
+        """{"ok":true,"phone":null,"token":"wechat-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+
+    private fun phoneWechatSessionJson(): String =
+        """{"ok":true,"phone":"13800138000","token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+
+    private fun phoneOnlySessionJson(): String =
+        """{"ok":true,"phone":"13800138000","token":"new-token","wechatLinked":false,"nickname":null,"avatarUrl":null,"deletionPending":false}"""
+
+    private fun phoneWechatExchangeJson(): String =
+        """{"ok":true,"status":"SIGNED_IN","phone":"13800138000","token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+
+    private fun assertRequest(
+        request: RecordedRequest,
+        path: String,
+        formEntry: Pair<String, String>,
+        bearerToken: String? = null
+    ) {
+        assertEquals(path, request.url.removePrefix("https://example.test"))
+        assertEquals(formEntry.second, request.form[formEntry.first])
+        assertEquals(bearerToken, request.bearerToken)
+        assertEquals("install-id", request.form["deviceId"] ?: "install-id")
+    }
+
+    private data class RecordedRequest(
+        val url: String,
+        val form: Map<String, String>,
+        val bearerToken: String?
+    )
+
+    private class QueueTransport(
+        responses: List<AccountHttpResponse>
+    ) : AccountHttpTransport {
+        private val remaining = ArrayDeque(responses)
+        val requests = mutableListOf<RecordedRequest>()
+
+        override suspend fun post(
+            url: String,
+            form: Map<String, String>,
+            bearerToken: String?
+        ): AccountHttpResponse {
+            requests += RecordedRequest(url, form, bearerToken)
+            return remaining.removeFirst()
+        }
+    }
 
     private class RecordingTransport : AccountHttpTransport {
         private val response: AccountHttpResponse?

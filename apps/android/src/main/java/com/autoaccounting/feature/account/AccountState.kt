@@ -11,8 +11,11 @@ enum class AccountFlow {
 sealed interface AccountSession {
     data object LocalMode : AccountSession
     data class SignedIn(
-        val phone: String,
-        val token: String = ""
+        val phone: String?,
+        val token: String = "",
+        val wechatLinked: Boolean = false,
+        val nickname: String? = null,
+        val avatarUrl: String? = null
     ) : AccountSession
 }
 

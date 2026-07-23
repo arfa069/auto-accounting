@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.nio.ByteBuffer
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -37,12 +38,70 @@ class SecureAccountSessionStoreTest {
 
         assertTrue(store.save(credentials))
         val persistedText = preferences.all.values.joinToString()
-        assertFalse(persistedText.contains(credentials.phone))
+        assertFalse(persistedText.contains(requireNotNull(credentials.phone)))
         assertFalse(persistedText.contains(credentials.token))
 
         assertEquals(
             AccountSessionRestoreResult.Restored(credentials),
             SecureAccountSessionStore(context, ReversibleTestCipher()).restore()
+        )
+    }
+
+    @Test
+    fun versionTwoRestoresWechatOnlyProfileWithoutPlaintextFields() {
+        val credentials = AccountCredentials(
+            phone = null,
+            token = "wechat-sensitive-token",
+            wechatLinked = true,
+            nickname = "微信小张",
+            avatarUrl = "https://example.com/avatar.jpg"
+        )
+        val store = SecureAccountSessionStore(context, ReversibleTestCipher())
+
+        assertTrue(store.save(credentials))
+        val persistedText = preferences.all.values.joinToString()
+        assertFalse(persistedText.contains(credentials.token))
+        assertFalse(persistedText.contains(requireNotNull(credentials.nickname)))
+        assertFalse(persistedText.contains(requireNotNull(credentials.avatarUrl)))
+        assertEquals(
+            AccountSessionRestoreResult.Restored(credentials),
+            SecureAccountSessionStore(context, ReversibleTestCipher()).restore()
+        )
+    }
+
+    @Test
+    fun legacyVersionOnePhoneSessionRestoresAndNextSaveUpgradesIt() {
+        val legacyPhone = "13800138000".toByteArray()
+        val legacyToken = "legacy-token".toByteArray()
+        val legacyPlaintext = ByteBuffer.allocate(
+            1 + Int.SIZE_BYTES + legacyPhone.size + Int.SIZE_BYTES + legacyToken.size
+        )
+            .put(1.toByte())
+            .putInt(legacyPhone.size)
+            .put(legacyPhone)
+            .putInt(legacyToken.size)
+            .put(legacyToken)
+            .array()
+        val encrypted = ReversibleTestCipher().encrypt(legacyPlaintext)
+        preferences.edit()
+            .putString(
+                "encrypted_session",
+                android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)
+            )
+            .commit()
+        val store = SecureAccountSessionStore(context, ReversibleTestCipher())
+
+        val restored = store.restore() as AccountSessionRestoreResult.Restored
+        assertEquals(AccountCredentials("13800138000", "legacy-token"), restored.credentials)
+        assertTrue(store.save(restored.credentials.copy(nickname = "ignored-without-wechat")))
+        val upgradedCiphertext = android.util.Base64.decode(
+            preferences.getString("encrypted_session", null),
+            android.util.Base64.NO_WRAP
+        )
+        assertEquals(2.toByte(), ReversibleTestCipher().decrypt(upgradedCiphertext).first())
+        assertEquals(
+            restored.credentials.copy(nickname = "ignored-without-wechat"),
+            (store.restore() as AccountSessionRestoreResult.Restored).credentials
         )
     }
 
@@ -57,6 +116,8 @@ class SecureAccountSessionStoreTest {
 
     @Test
     fun encryptionFailureDoesNotPersistSession() {
+        val workingStore = SecureAccountSessionStore(context, ReversibleTestCipher())
+        assertTrue(workingStore.save(AccountCredentials("13800138000", "old-token")))
         val store = SecureAccountSessionStore(context, FailingCipher())
 
         assertFalse(store.save(AccountCredentials("13800138000", "token")))

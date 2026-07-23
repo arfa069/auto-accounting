@@ -7,7 +7,7 @@
 - Debug 默认开启；Release 默认关闭，用户必须在“我的 → 合规与隐私 → 诊断日志”阅读说明并主动开启。
 - 只有支付相关通知、已判定的支付结果/支付记录页和当前补录会话可保存正文。普通通知、聊天、无关页面和不支持包名只保存拒绝元数据。
 - 截图永不保存或上传；OCR 文字只在上述边界内进入诊断日志，不进入账本数据库。
-- 密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥等认证秘密始终在写入前脱敏。
+- 密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 始终在写入前脱敏。账号流程只允许稳定结果码，不记录昵称、头像 URL 或 Provider 正文。
 - 日志不上传后端，也不进入账本备份或 Android 系统备份。
 
 完整决策见 [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md)，合规口径见 [COMPLIANCE.md](./COMPLIANCE.md)。

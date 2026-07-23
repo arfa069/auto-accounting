@@ -136,7 +136,7 @@ class ProfileScreenTest {
 
         composeRule.waitUntil { signedOut }
         assertTrue(signedOut)
-        composeRule.onNodeWithText("申请注销账号").assertIsDisplayed()
+        composeRule.onNodeWithText("申请注销账号").performScrollTo().assertIsDisplayed()
     }
 
     private data class TestConfiguration(

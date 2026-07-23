@@ -2,6 +2,10 @@ package com.autoaccounting.feature.account
 
 import com.autoaccounting.api.AccountApiJsonContracts
 import com.autoaccounting.api.AccountDeletionStatusContract
+import com.autoaccounting.api.AccountSessionResponseContract
+import com.autoaccounting.api.MergePreviewResponseContract
+import com.autoaccounting.api.PhoneLinkPrepareResponseContract
+import com.autoaccounting.api.WechatAuthResultContract
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -107,10 +111,21 @@ internal class HttpAccountRepository(
 ) : AccountRepository {
     private val baseUrl = backendUrl.trim().trimEnd('/')
 
-    override suspend fun requestSmsCode(phone: String): AccountRepositoryResult<Unit> {
+    override suspend fun requestSmsCode(
+        phone: String,
+        purpose: AccountSmsPurpose,
+        contextKey: String?,
+        bearerToken: String?
+    ): AccountRepositoryResult<Unit> {
         return execute(
             path = "/account/sms",
-            form = mapOf("phone" to phone, "deviceId" to installationId())
+            form = buildMap {
+                put("phone", phone)
+                put("deviceId", installationId())
+                if (purpose != AccountSmsPurpose.Default) put("purpose", purpose.wireValue)
+                contextKey?.let { put("contextKey", it) }
+            },
+            bearerToken = bearerToken
         ) { body ->
             AccountApiJsonContracts.parseSuccessResponse(body)
             Unit
@@ -167,7 +182,10 @@ internal class HttpAccountRepository(
             val response = AccountApiJsonContracts.parseSessionResponse(body)
             credentials.copy(
                 phone = response.phone ?: credentials.phone,
-                deletionState = response.deletionStatus.toUiState()
+                deletionState = response.deletionStatus.toUiState(),
+                wechatLinked = response.wechatLinked,
+                nickname = response.nickname,
+                avatarUrl = response.avatarUrl
             )
         }
     }
@@ -200,6 +218,139 @@ internal class HttpAccountRepository(
         }
     }
 
+    override suspend fun exchangeWechatCode(
+        code: String,
+        bearerToken: String?
+    ): AccountRepositoryResult<AccountWechatAuthResult> {
+        return execute(
+            path = "/account/wechat/exchange",
+            form = mapOf("code" to code, "deviceId" to installationId()),
+            bearerToken = bearerToken
+        ) { body ->
+            when (val result = AccountApiJsonContracts.parseWechatExchangeResponse(body).result) {
+                is WechatAuthResultContract.SignedIn -> AccountWechatAuthResult.SignedIn(
+                    result.session.toCredentials()
+                )
+                is WechatAuthResultContract.RegistrationRequired ->
+                    AccountWechatAuthResult.RegistrationRequired(
+                        wechatTicket = result.wechatTicket,
+                        nickname = result.nickname,
+                        avatarUrl = result.avatarUrl,
+                        ticketExpiresAtMillis = result.ticketExpiresAtMillis
+                    )
+                is WechatAuthResultContract.MergeRequired -> AccountWechatAuthResult.MergeRequired(
+                    mergeTicket = result.mergeTicket,
+                    sourceNickname = result.sourceNickname,
+                    sourcePhone = result.sourcePhone,
+                    ticketExpiresAtMillis = result.ticketExpiresAtMillis
+                )
+            }
+        }
+    }
+
+    override suspend fun registerWithWechat(
+        wechatTicket: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/wechat/register",
+        form = mapOf("wechatTicket" to wechatTicket, "deviceId" to installationId())
+    )
+
+    override suspend fun linkWechatWithPassword(
+        wechatTicket: String,
+        phone: String,
+        password: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/wechat/link/password",
+        form = mapOf(
+            "wechatTicket" to wechatTicket,
+            "phone" to phone,
+            "password" to password,
+            "deviceId" to installationId()
+        )
+    )
+
+    override suspend fun linkWechatWithSms(
+        wechatTicket: String,
+        phone: String,
+        code: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/wechat/link/sms",
+        form = mapOf(
+            "wechatTicket" to wechatTicket,
+            "phone" to phone,
+            "code" to code,
+            "deviceId" to installationId()
+        )
+    )
+
+    override suspend fun preparePhoneLink(
+        token: String,
+        phone: String,
+        code: String
+    ): AccountRepositoryResult<PhoneLinkPrepareResponseContract> = execute(
+        path = "/account/phone/link/prepare",
+        form = mapOf("phone" to phone, "code" to code),
+        bearerToken = token,
+        parse = AccountApiJsonContracts::parsePhoneLinkPrepareResponse
+    )
+
+    override suspend fun completePhoneLink(
+        token: String,
+        phoneTicket: String,
+        password: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/phone/link/complete",
+        form = mapOf(
+            "phoneTicket" to phoneTicket,
+            "password" to password,
+            "deviceId" to installationId()
+        ),
+        bearerToken = token
+    )
+
+    override suspend fun prepareMergeWithPhonePassword(
+        token: String,
+        phone: String,
+        password: String
+    ): AccountRepositoryResult<MergePreviewResponseContract> = execute(
+        path = "/account/merge/prepare/phone-password",
+        form = mapOf("phone" to phone, "password" to password),
+        bearerToken = token,
+        parse = AccountApiJsonContracts::parseMergePreviewResponse
+    )
+
+    override suspend fun confirmMerge(
+        token: String,
+        mergeTicket: String,
+        confirmText: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/merge/confirm",
+        form = mapOf(
+            "mergeTicket" to mergeTicket,
+            "confirmText" to confirmText,
+            "deviceId" to installationId()
+        ),
+        bearerToken = token
+    )
+
+    override suspend fun unlinkWechatWithPassword(
+        token: String,
+        password: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/wechat/unlink/password",
+        form = mapOf("password" to password, "deviceId" to installationId()),
+        bearerToken = token
+    )
+
+    override suspend fun unlinkWechatWithSms(
+        token: String,
+        code: String
+    ): AccountRepositoryResult<AccountCredentials> = authenticateWechat(
+        path = "/account/wechat/unlink/sms",
+        form = mapOf("code" to code, "deviceId" to installationId()),
+        bearerToken = token
+    )
+
     private suspend fun authenticate(
         path: String,
         form: Map<String, String>
@@ -208,11 +359,17 @@ internal class HttpAccountRepository(
             val response = AccountApiJsonContracts.parseSessionResponse(body)
             val token = requireNotNull(response.token) { "Account response did not include a token." }
             val phone = requireNotNull(response.phone) { "Account response did not include a phone." }
-            AccountCredentials(
-                phone = phone,
-                token = token,
-                deletionState = response.deletionStatus.toUiState()
-            )
+            response.toCredentials().copy(phone = phone, token = token)
+        }
+    }
+
+    private suspend fun authenticateWechat(
+        path: String,
+        form: Map<String, String>,
+        bearerToken: String? = null
+    ): AccountRepositoryResult<AccountCredentials> {
+        return execute(path = path, form = form, bearerToken = bearerToken) { body ->
+            AccountApiJsonContracts.parseSessionResponse(body).toCredentials()
         }
     }
 
@@ -301,5 +458,17 @@ private fun AccountDeletionStatusContract.toUiState(): AccountDeletionUiState =
         requestedAtEpochMillis = requestedAtMillis,
         finalDeletionAtEpochMillis = finalDeletionAtMillis
     )
+
+private fun AccountSessionResponseContract.toCredentials(): AccountCredentials {
+    val sessionToken = requireNotNull(token) { "Account response did not include a token." }
+    return AccountCredentials(
+        phone = phone,
+        token = sessionToken,
+        deletionState = deletionStatus.toUiState(),
+        wechatLinked = wechatLinked,
+        nickname = nickname,
+        avatarUrl = avatarUrl
+    )
+}
 
 private fun String.formEncode(): String = URLEncoder.encode(this, Charsets.UTF_8.name())

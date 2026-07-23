@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
@@ -42,5 +43,33 @@ class ComplianceMaterialsScreenTest {
         composeRule.onNodeWithText("返回").performClick()
 
         assert(backed)
+    }
+
+    @Test
+    fun wechatIdentityAndProviderDisclosuresAreVisible() {
+        composeRule.setContent {
+            ComplianceMaterialsScreen()
+        }
+
+        composeRule.onNodeWithTag("compliance-entry-PersonalInformation")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("微信账号标识与资料")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("OpenID", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("返回").performClick()
+
+        composeRule.onNodeWithTag("compliance-entry-ThirdPartyServices")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("腾讯微信开放平台与微信 OpenSDK")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("不向微信发送账本", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 }

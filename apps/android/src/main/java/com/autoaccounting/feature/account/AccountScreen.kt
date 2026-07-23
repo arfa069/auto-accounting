@@ -53,6 +53,11 @@ fun AccountScreen(
     initialState: AccountUiState = AccountUiState(),
     accountRepository: AccountRepository,
     persistSession: (AccountCredentials) -> Boolean = { true },
+    clearPersistedSession: () -> Boolean = { true },
+    wechatAuthGateway: WechatAuthGateway? = null,
+    wechatAuthCallback: WechatAuthCallback? = null,
+    onWechatAuthCallbackConsumed: () -> Unit = {},
+    avatarCacheOverride: WechatAvatarCache? = null,
     onSessionChange: (AccountSession) -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
@@ -61,6 +66,18 @@ fun AccountScreen(
     val scrollState = rememberScrollState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val avatarCache = avatarCacheOverride ?: rememberWechatAvatarCache()
+    val wechatController = remember(accountRepository, wechatAuthGateway) {
+        wechatAuthGateway?.let { gateway ->
+            WechatLoginController(
+                accountRepository = accountRepository,
+                authCoordinator = WechatAuthCoordinator(gateway),
+                persistSession = persistSession,
+                clearPersistedSession = clearPersistedSession,
+                onSignedIn = onSessionChange
+            )
+        }
+    }
 
     fun dispatch(action: AccountAction) {
         val validated = reduceAccountState(state, action)
@@ -82,9 +99,21 @@ fun AccountScreen(
         coroutineScope.launch {
             val completed = when (action) {
                 AccountAction.RequestSmsCode -> validated.submitSmsCodeRequest(accountRepository)
-                AccountAction.SubmitLogin -> validated.submitLogin(accountRepository, persistSession)
-                AccountAction.SubmitRegister -> validated.submitRegister(accountRepository, persistSession)
-                AccountAction.SubmitRecovery -> validated.submitRecovery(accountRepository, persistSession)
+                AccountAction.SubmitLogin -> validated.submitLogin(
+                    accountRepository,
+                    persistSession,
+                    clearPersistedSession
+                )
+                AccountAction.SubmitRegister -> validated.submitRegister(
+                    accountRepository,
+                    persistSession,
+                    clearPersistedSession
+                )
+                AccountAction.SubmitRecovery -> validated.submitRecovery(
+                    accountRepository,
+                    persistSession,
+                    clearPersistedSession
+                )
             }.copy(operationInProgress = false)
             state = completed
             completed.session?.let(onSessionChange)
@@ -92,10 +121,14 @@ fun AccountScreen(
     }
 
     BackHandler(
-        enabled = showComplianceMaterials || state.flow != AccountFlow.Landing || onBack != null
+        enabled = showComplianceMaterials ||
+            wechatController?.state?.page?.let { it != WechatLoginPage.Idle } == true ||
+            state.flow != AccountFlow.Landing ||
+            onBack != null
     ) {
         when {
             showComplianceMaterials -> showComplianceMaterials = false
+            wechatController?.state?.page?.let { it != WechatLoginPage.Idle } == true -> wechatController.back()
             state.flow == AccountFlow.Recovery -> dispatch(AccountAction.ShowLogin)
             state.flow != AccountFlow.Landing -> dispatch(AccountAction.BackToLanding)
             else -> onBack?.invoke()
@@ -110,6 +143,17 @@ fun AccountScreen(
         state.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
 
+    LaunchedEffect(wechatAuthCallback, wechatController) {
+        if (wechatAuthCallback != null && wechatController != null) {
+            wechatController.handleCallback(wechatAuthCallback)
+            onWechatAuthCallbackConsumed()
+        }
+    }
+
+    LaunchedEffect(wechatController?.state?.errorMessage) {
+        wechatController?.state?.errorMessage?.let { snackbarHostState.showSnackbar(it) }
+    }
+
     LaunchedEffect(state.smsCountdownSeconds) {
         if (state.smsCountdownSeconds > 0) {
             delay(1_000)
@@ -119,6 +163,8 @@ fun AccountScreen(
 
     val page = if (showComplianceMaterials) {
         AccountPage.Compliance
+    } else if (wechatController?.state?.page?.let { it != WechatLoginPage.Idle } == true) {
+        AccountPage.Wechat
     } else {
         AccountPage.Flow(state.flow)
     }
@@ -131,6 +177,22 @@ fun AccountScreen(
             AccountPage.Compliance -> ComplianceMaterialsScreen(
                 onBack = { showComplianceMaterials = false }
             )
+
+            AccountPage.Wechat -> Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
+                snackbarHost = { SnackbarHost(snackbarHostState) }
+            ) { innerPadding ->
+                WechatLoginFlowContent(
+                    controller = requireNotNull(wechatController),
+                    avatarCache = avatarCache,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .padding(innerPadding)
+                        .padding(24.dp)
+                )
+            }
 
             is AccountPage.Flow -> Scaffold(
                 modifier = Modifier.fillMaxSize(),
@@ -156,15 +218,21 @@ fun AccountScreen(
                             AccountFlow.Landing -> LandingContent(
                                 state = state,
                                 onAction = ::dispatch,
+                                wechatEnabled = wechatController != null,
+                                onWechatClick = { wechatController?.start(state.agreementAccepted) },
                                 onComplianceClick = { showComplianceMaterials = true }
                             )
                             AccountFlow.Login -> LoginContent(
                                 state = state,
-                                onAction = ::dispatch
+                                onAction = ::dispatch,
+                                wechatEnabled = wechatController != null,
+                                onWechatClick = { wechatController?.start(state.agreementAccepted) }
                             )
                             AccountFlow.Register -> RegisterContent(
                                 state = state,
-                                onAction = ::dispatch
+                                onAction = ::dispatch,
+                                wechatEnabled = wechatController != null,
+                                onWechatClick = { wechatController?.start(state.agreementAccepted) }
                             )
                             AccountFlow.Recovery -> RecoveryContent(
                                 state = state,
@@ -185,6 +253,7 @@ private sealed interface AccountPage {
     data class Flow(val flow: AccountFlow) : AccountPage
 
     data object Compliance : AccountPage
+    data object Wechat : AccountPage
 }
 
 private fun AccountUiState.isReadyFor(action: AccountAction): Boolean = when (action) {
@@ -209,52 +278,68 @@ private suspend fun AccountUiState.submitSmsCodeRequest(
 
 private suspend fun AccountUiState.submitLogin(
     accountRepository: AccountRepository,
-    persistSession: (AccountCredentials) -> Boolean
+    persistSession: (AccountCredentials) -> Boolean,
+    clearPersistedSession: () -> Boolean
 ): AccountUiState {
     return completeAuthentication(
         result = accountRepository.login(phone, password),
         accountRepository = accountRepository,
-        persistSession = persistSession
+        persistSession = persistSession,
+        clearPersistedSession = clearPersistedSession
     )
 }
 
 private suspend fun AccountUiState.submitRegister(
     accountRepository: AccountRepository,
-    persistSession: (AccountCredentials) -> Boolean
+    persistSession: (AccountCredentials) -> Boolean,
+    clearPersistedSession: () -> Boolean
 ): AccountUiState {
     return completeAuthentication(
         result = accountRepository.register(phone, verificationCode, password),
         accountRepository = accountRepository,
-        persistSession = persistSession
+        persistSession = persistSession,
+        clearPersistedSession = clearPersistedSession
     )
 }
 
 private suspend fun AccountUiState.submitRecovery(
     accountRepository: AccountRepository,
-    persistSession: (AccountCredentials) -> Boolean
+    persistSession: (AccountCredentials) -> Boolean,
+    clearPersistedSession: () -> Boolean
 ): AccountUiState {
     return completeAuthentication(
         result = accountRepository.recoverPassword(phone, verificationCode, password),
         accountRepository = accountRepository,
-        persistSession = persistSession
+        persistSession = persistSession,
+        clearPersistedSession = clearPersistedSession
     )
 }
 
 private suspend fun AccountUiState.completeAuthentication(
     result: AccountRepositoryResult<AccountCredentials>,
     accountRepository: AccountRepository,
-    persistSession: (AccountCredentials) -> Boolean
+    persistSession: (AccountCredentials) -> Boolean,
+    clearPersistedSession: () -> Boolean
 ): AccountUiState = when (result) {
     is AccountRepositoryResult.Success -> {
-        if (persistSession(result.value)) {
+        if (
+            persistAccountSessionOrRevoke(
+                credentials = result.value,
+                accountRepository = accountRepository,
+                persistSession = persistSession,
+                clearPersistedSession = clearPersistedSession
+            )
+        ) {
             copy(
             session = AccountSession.SignedIn(
                 phone = result.value.phone,
-                token = result.value.token
+                token = result.value.token,
+                wechatLinked = result.value.wechatLinked,
+                nickname = result.value.nickname,
+                avatarUrl = result.value.avatarUrl
             )
             )
         } else {
-            accountRepository.signOut(result.value.token)
             copy(errorMessage = "无法安全保存登录状态，已尝试撤销新会话，请重试")
         }
     }
@@ -280,6 +365,8 @@ private fun AccountHeader() {
 private fun LandingContent(
     state: AccountUiState,
     onAction: (AccountAction) -> Unit,
+    wechatEnabled: Boolean,
+    onWechatClick: () -> Unit,
     onComplianceClick: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -288,6 +375,12 @@ private fun LandingContent(
             accepted = state.agreementAccepted,
             onAcceptedChange = { onAction(AccountAction.SetAgreementAccepted(it)) }
         )
+        if (wechatEnabled) {
+            WechatLoginEntryButton(
+                onClick = onWechatClick,
+                enabled = !state.operationInProgress
+            )
+        }
         Button(
             onClick = { onAction(AccountAction.ShowLogin) },
             modifier = Modifier.fillMaxWidth()
@@ -318,7 +411,9 @@ private fun LandingContent(
 @Composable
 private fun LoginContent(
     state: AccountUiState,
-    onAction: (AccountAction) -> Unit
+    onAction: (AccountAction) -> Unit,
+    wechatEnabled: Boolean,
+    onWechatClick: () -> Unit
 ) {
     AccountFormFrame(title = "登录账号", onBack = { onAction(AccountAction.BackToLanding) }) {
         PhoneField(state, onAction)
@@ -345,13 +440,21 @@ private fun LoginContent(
         ) {
             Text("忘记密码")
         }
+        if (wechatEnabled) {
+            WechatLoginEntryButton(
+                onClick = onWechatClick,
+                enabled = !state.operationInProgress
+            )
+        }
     }
 }
 
 @Composable
 private fun RegisterContent(
     state: AccountUiState,
-    onAction: (AccountAction) -> Unit
+    onAction: (AccountAction) -> Unit,
+    wechatEnabled: Boolean,
+    onWechatClick: () -> Unit
 ) {
     AccountFormFrame(title = "创建账号", onBack = { onAction(AccountAction.BackToLanding) }) {
         PhoneField(state, onAction)
@@ -367,6 +470,12 @@ private fun RegisterContent(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (state.operationInProgress) "注册中…" else "完成注册")
+        }
+        if (wechatEnabled) {
+            WechatLoginEntryButton(
+                onClick = onWechatClick,
+                enabled = !state.operationInProgress
+            )
         }
     }
 }

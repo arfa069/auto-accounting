@@ -53,6 +53,32 @@ class ComplianceMaterialsTest {
                 service.name.contains("ML Kit") && service.processingMethod.contains("不保存、不上传")
             }
         )
+        assertTrue(
+            AUTO_ACCOUNTING_COMPLIANCE.thirdPartyServices.any { service ->
+                service.name.contains("微信开放平台") &&
+                    service.processingMethod.contains("不向微信发送账本") &&
+                    "wechat-sdk" in service.declarationTokens
+            }
+        )
+        assertTrue(
+            AUTO_ACCOUNTING_COMPLIANCE.thirdPartyServices.any { service ->
+                service.name.contains("Coil / OkHttp") &&
+                    service.processingMethod.contains("最多 10 MB") &&
+                    "okhttp" in service.declarationTokens
+            }
+        )
+        assertTrue(
+            AUTO_ACCOUNTING_COMPLIANCE.personalInformationItems.any { item ->
+                item.name == "微信账号标识与资料" &&
+                    item.processingMethod.contains("OpenID") &&
+                    item.retentionAndDeletion.contains("解绑微信")
+            }
+        )
+        assertTrue(
+            AUTO_ACCOUNTING_COMPLIANCE.personalInformationItems.any { item ->
+                item.name == "随机安装 UUID" && item.retentionAndDeletion.contains("本机数据删除")
+            }
+        )
     }
 
     @Test
@@ -79,6 +105,14 @@ class ComplianceMaterialsTest {
         )
 
         assertTrue(findings.isEmpty())
+        val versionCatalog = root.resolve("gradle/libs.versions.toml").readText()
+        if (versionCatalog.contains("com.tencent.mm.opensdk")) {
+            assertTrue(
+                AUTO_ACCOUNTING_COMPLIANCE.thirdPartyServices.any { service ->
+                    "wechat-sdk" in service.declarationTokens
+                }
+            )
+        }
     }
 
     private fun projectRoot(): File {

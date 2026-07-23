@@ -26,7 +26,8 @@ fun Route.accountRoutes(accountService: AccountService) {
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost,
                 purpose = parameters["purpose"].orEmpty(),
-                contextKey = parameters["contextKey"]
+                contextKey = parameters["contextKey"],
+                bearerToken = call.accountBearerToken()
             )
         )
     }
@@ -134,6 +135,30 @@ fun Route.accountRoutes(accountService: AccountService) {
             accountService.linkWechatWithSms(
                 wechatTicket = parameters["wechatTicket"].orEmpty(),
                 phone = parameters["phone"].orEmpty(),
+                code = parameters["code"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/wechat/unlink/password") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.unlinkWechatWithPassword(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                password = parameters["password"].orEmpty(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/wechat/unlink/sms") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.unlinkWechatWithSms(
+                bearerToken = call.accountBearerToken().orEmpty(),
                 code = parameters["code"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
