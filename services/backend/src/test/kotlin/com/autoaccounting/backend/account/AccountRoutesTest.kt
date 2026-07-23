@@ -218,4 +218,24 @@ class AccountRoutesTest {
         ) { header(HttpHeaders.Authorization, "Bearer token-1") }
         assertEquals(AccountDeletionStatusContract(), AccountApiJsonContracts.parseDeletionStatusResponse(status.bodyAsText()))
     }
+
+    @Test
+    fun wechatExchangeUnconfiguredReturnsServiceUnavailable() = testApplication {
+        application {
+            module(
+                accountService = AccountService(
+                    wechatOAuthClient = DefaultWechatOAuthClient(appId = "", appSecret = "")
+                )
+            )
+        }
+
+        val response = client.submitForm(
+            url = "/account/wechat/exchange",
+            formParameters = Parameters.build {
+                append("code", "some_code")
+            }
+        )
+        assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+        assertTrue(response.bodyAsText().contains("WECHAT_NOT_CONFIGURED"))
+    }
 }

@@ -1,6 +1,11 @@
 package com.autoaccounting.backend.account
 
 import java.sql.DriverManager
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -258,6 +263,71 @@ class AccountPersistenceTest {
         }
     }
 
+    @Test
+    fun jdbcStoreAtomicallyClaimsWechatIdentity() {
+        val databaseUrl = h2DatabaseUrl()
+        val firstStore = JdbcAccountStore(databaseUrl)
+        val secondStore = JdbcAccountStore(databaseUrl)
+        firstStore.createUser(storedUser("13800138001"))
+        secondStore.createUser(storedUser("13800138002"))
+        val firstAccountId = firstStore.findUser("13800138001")!!.accountId
+        val secondAccountId = secondStore.findUser("13800138002")!!.accountId
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            val results = listOf(
+                submitWechatClaim(executor, ready, start, firstStore, firstAccountId),
+                submitWechatClaim(executor, ready, start, secondStore, secondAccountId)
+            )
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            val claimResults = results.map { it.get(5, TimeUnit.SECONDS) }
+
+            assertEquals(1, claimResults.count { it is WechatIdentityClaimResult.Claimed })
+            assertEquals(1, claimResults.count { it is WechatIdentityClaimResult.Conflict })
+            assertEquals(1, wechatIdentityCount(databaseUrl))
+        } finally {
+            start.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    private fun submitWechatClaim(
+        executor: ExecutorService,
+        ready: CountDownLatch,
+        start: CountDownLatch,
+        store: AccountStore,
+        accountId: Long
+    ): Future<WechatIdentityClaimResult> {
+        return executor.submit<WechatIdentityClaimResult> {
+            ready.countDown()
+            start.await()
+            store.claimWechatIdentity(
+                StoredWechatIdentity(
+                    accountId = accountId,
+                    appId = "wx_app",
+                    openid = "shared_openid",
+                    unionid = "shared_unionid",
+                    createdAtMillis = 1000L,
+                    updatedAtMillis = 1000L
+                )
+            )
+        }
+    }
+
+    private fun wechatIdentityCount(databaseUrl: String): Int {
+        return DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT COUNT(*) FROM account_wechat_identities").use { result ->
+                    result.next()
+                    result.getInt(1)
+                }
+            }
+        }
+    }
+
     private fun accountService(
         databaseUrl: String,
         clock: MutableClock,
@@ -274,5 +344,15 @@ class AccountPersistenceTest {
 
     private fun h2DatabaseUrl(): String {
         return "jdbc:h2:mem:${System.nanoTime()};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
+    }
+
+    private fun storedUser(phone: String): StoredUser {
+        return StoredUser(
+            accountId = 0L,
+            phone = phone,
+            passwordSalt = "salt",
+            passwordHash = "hash",
+            createdAtMillis = 1000L
+        )
     }
 }

@@ -64,6 +64,31 @@ data class StoredRegisteredDevice(
     val ipAddress: String = ""
 )
 
+data class StoredWechatIdentity(
+    val accountId: Long,
+    val appId: String,
+    val openid: String,
+    val unionid: String? = null,
+    val nickname: String? = null,
+    val avatarUrl: String? = null,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long
+)
+
+sealed interface WechatIdentityClaimResult {
+    data object Claimed : WechatIdentityClaimResult
+    data class Conflict(val existingIdentity: StoredWechatIdentity) : WechatIdentityClaimResult
+}
+
+data class StoredOneTimeTicket(
+    val ticketHash: String,
+    val ticketType: String,
+    val accountId: Long? = null,
+    val payloadJson: String,
+    val expiresAtMillis: Long,
+    val usedAtMillis: Long? = null
+)
+
 interface AccountStore {
     fun findUser(phone: String): StoredUser?
     fun findUserByAccountId(accountId: Long): StoredUser?
@@ -88,7 +113,19 @@ interface AccountStore {
 
     fun upsertRegisteredDevice(device: StoredRegisteredDevice)
     fun registeredDevices(accountId: Long): List<StoredRegisteredDevice>
+
+    fun findWechatIdentityByOpenid(appId: String, openid: String): StoredWechatIdentity?
+    fun findWechatIdentityByUnionid(unionid: String): StoredWechatIdentity?
+    fun findWechatIdentityByAccountId(accountId: Long): StoredWechatIdentity?
+    fun claimWechatIdentity(identity: StoredWechatIdentity): WechatIdentityClaimResult
+    fun upsertWechatIdentity(identity: StoredWechatIdentity)
+    fun deleteWechatIdentity(accountId: Long)
+
+    fun createOneTimeTicket(ticket: StoredOneTimeTicket)
+    fun findOneTimeTicket(ticketHash: String): StoredOneTimeTicket?
+    fun markOneTimeTicketUsed(ticketHash: String, usedAtMillis: Long): Boolean
 }
+
 
 class InMemoryAccountStore : AccountStore {
     private var nextAccountId = 1L
@@ -99,8 +136,11 @@ class InMemoryAccountStore : AccountStore {
     private val smsIssues = mutableListOf<SmsIssue>()
     private val sessions = mutableMapOf<String, StoredSession>()
     private val devices = mutableMapOf<Pair<Long, String>, StoredRegisteredDevice>()
+    private val wechatIdentities = mutableMapOf<Long, StoredWechatIdentity>()
+    private val oneTimeTickets = mutableMapOf<String, StoredOneTimeTicket>()
 
     override fun findUser(phone: String): StoredUser? {
+
         val accountId = phoneIndex[phone] ?: return null
         return findUserByAccountId(accountId)
     }
@@ -172,7 +212,9 @@ class InMemoryAccountStore : AccountStore {
         accounts.remove(accountId)
         sessions.values.removeAll { it.accountId == accountId }
         devices.keys.removeAll { it.first == accountId }
+        wechatIdentities.remove(accountId)
     }
+
 
     override fun upsertSmsCode(record: StoredSmsCode) {
         smsCodes[record.phone] = record
@@ -233,6 +275,55 @@ class InMemoryAccountStore : AccountStore {
     override fun registeredDevices(accountId: Long): List<StoredRegisteredDevice> {
         return devices.values.filter { it.accountId == accountId }.sortedBy { it.deviceId }
     }
+
+    override fun findWechatIdentityByOpenid(appId: String, openid: String): StoredWechatIdentity? {
+        return wechatIdentities.values.find { it.appId == appId && it.openid == openid }
+    }
+
+    override fun findWechatIdentityByUnionid(unionid: String): StoredWechatIdentity? {
+        if (unionid.isBlank()) return null
+        return wechatIdentities.values.find { it.unionid == unionid }
+    }
+
+    override fun findWechatIdentityByAccountId(accountId: Long): StoredWechatIdentity? {
+        return wechatIdentities[accountId]
+    }
+
+    @Synchronized
+    override fun claimWechatIdentity(identity: StoredWechatIdentity): WechatIdentityClaimResult {
+        val existingIdentity = wechatIdentities[identity.accountId]
+            ?: findWechatIdentityByOpenid(identity.appId, identity.openid)
+            ?: identity.unionid?.let(::findWechatIdentityByUnionid)
+        if (existingIdentity != null) {
+            return WechatIdentityClaimResult.Conflict(existingIdentity)
+        }
+        wechatIdentities[identity.accountId] = identity
+        return WechatIdentityClaimResult.Claimed
+    }
+
+    override fun upsertWechatIdentity(identity: StoredWechatIdentity) {
+        wechatIdentities[identity.accountId] = identity
+    }
+
+    override fun deleteWechatIdentity(accountId: Long) {
+        wechatIdentities.remove(accountId)
+    }
+
+    override fun createOneTimeTicket(ticket: StoredOneTimeTicket) {
+        oneTimeTickets[ticket.ticketHash] = ticket
+    }
+
+    override fun findOneTimeTicket(ticketHash: String): StoredOneTimeTicket? {
+        return oneTimeTickets[ticketHash]
+    }
+
+    override fun markOneTimeTicketUsed(ticketHash: String, usedAtMillis: Long): Boolean {
+        val ticket = oneTimeTickets[ticketHash] ?: return false
+        if (ticket.usedAtMillis != null || ticket.expiresAtMillis < usedAtMillis) return false
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = usedAtMillis)
+        return true
+    }
+
 
     private data class SmsIssue(
         val scopeType: String,

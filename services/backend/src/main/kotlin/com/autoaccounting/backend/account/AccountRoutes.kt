@@ -87,6 +87,18 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
+    post("/account/wechat/exchange") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.exchangeWechatCode(
+                code = parameters["code"].orEmpty(),
+                bearerToken = call.accountBearerToken(),
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
     post("/account/delete/status") {
         when (val result = accountService.getAccountDeletionStatus(call.accountBearerToken().orEmpty())) {
             is AccountResult.Success -> call.respondJson(
@@ -99,7 +111,6 @@ fun Route.accountRoutes(accountService: AccountService) {
         }
     }
 }
-
 internal fun ApplicationCall.accountBearerToken(): String? {
     val header = request.headers[HttpHeaders.Authorization] ?: return null
     val prefix = "Bearer "
@@ -127,6 +138,7 @@ private suspend fun ApplicationCall.respondAccountResult(
                     value.toContract(includeToken)
                 )
                 is AccountDeletionStatus -> AccountApiJsonContracts.encodeDeletionStatusResponse(value.toContract())
+                is com.autoaccounting.api.WechatExchangeResponseContract -> AccountApiJsonContracts.encodeWechatExchangeResponse(value)
                 else -> AccountApiJsonContracts.encodeSuccessResponse()
             }
             respondJson(body, HttpStatusCode.OK)
@@ -165,12 +177,21 @@ private fun AccountError.statusCode(): HttpStatusCode = when (this) {
     AccountError.ACCOUNT_LOCKED,
     AccountError.SMS_TOO_FREQUENT -> HttpStatusCode.TooManyRequests
     AccountError.SMS_PROVIDER_UNCONFIGURED,
-    AccountError.SMS_SEND_FAILED -> HttpStatusCode.ServiceUnavailable
-    AccountError.PHONE_ALREADY_REGISTERED -> HttpStatusCode.Conflict
+    AccountError.SMS_SEND_FAILED,
+    AccountError.WECHAT_NOT_CONFIGURED,
+    AccountError.WECHAT_SERVICE_UNAVAILABLE -> HttpStatusCode.ServiceUnavailable
+    AccountError.PHONE_ALREADY_REGISTERED,
+    AccountError.WECHAT_ALREADY_LINKED,
+    AccountError.PHONE_ALREADY_LINKED,
+    AccountError.MERGE_BLOCKED,
+    AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK -> HttpStatusCode.Conflict
     AccountError.PHONE_NOT_REGISTERED -> HttpStatusCode.NotFound
     AccountError.ACCOUNT_DELETION_PENDING,
     AccountError.ACCOUNT_DELETION_NOT_PENDING -> HttpStatusCode.Conflict
     AccountError.INVALID_REQUEST,
     AccountError.VERIFICATION_CODE_WRONG,
-    AccountError.VERIFICATION_CODE_EXPIRED -> HttpStatusCode.BadRequest
+    AccountError.VERIFICATION_CODE_EXPIRED,
+    AccountError.WECHAT_AUTH_FAILED,
+    AccountError.TICKET_EXPIRED,
+    AccountError.TICKET_ALREADY_USED -> HttpStatusCode.BadRequest
 }

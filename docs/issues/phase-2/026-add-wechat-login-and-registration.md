@@ -99,7 +99,7 @@
 - **完成条件**：H2 新库、v4 升级库和重复启动测试全部通过，且无孤立外键。
 - **停止条件**：任何账号、Session、注销状态或云配置数量不一致时，不继续后端业务改造。
 
-### 3. 将现有后端账号链路改为 `accountId`
+### 3. 已完成：将现有后端账号链路改为 `accountId`
 
 - **实施**：
   - 拆分 `StoredAccount`、`StoredPhoneCredential`、`StoredSession` 和账号资料模型。
@@ -339,6 +339,8 @@
 - `2026-07-22`：完成 Task 1。`AccountContracts.kt` 中 `phone` 改为可空、新增 `wechatLinked`/`nickname`/`avatarUrl` 字段（默认值兼容旧客户端）；新增 9 个微信相关错误码、`TICKET_VALIDITY_MILLIS` 常量、`WechatAuthResultContract`（三种认证状态密封类）、`WechatExchangeResponseContract`、`PhoneLinkPrepareResponseContract`、`MergePreviewResponseContract` 及完整的 JSON 编解码方法。测试文件从 4 个扩展到 30 个用例，覆盖旧手机号 JSON 兼容、`phone=null` 微信账号、三种认证状态编解码对称、缺失必需字段明确失败、PhoneLinkPrepare 和 MergePreview 编解码对称、新增字段不影响旧客户端、全部新错误码和票据有效期常量。`:shared:api:test` 零警告零错误通过，Gradle Daemon 已停止。
 - `2026-07-22`：完成 Task 2。统一后端 1–5 号数据库迁移入口 `runBackendMigrations` 至 `JdbcMigrations.kt`，并建立事务性 5 号迁移 SQL：新增 `accounts`（自增 `account_id`）、`account_phone_credentials`、`account_wechat_identities`、`account_one_time_tickets`；将 `account_sessions`、`registered_devices`、`cloud_config` 和 `ai_categorization_logs` 的外键从 `phone` 迁移关联为 `account_id`；`account_sms_codes` 扩展 `purpose`（默认 'DEFAULT'）和 `context_key`。适配 `JdbcAccountStore`、`JdbcCloudConfigStore`、`JdbcAiCategorizationLogStore` 以兼容 v5 表结构。新增 `DatabaseMigrationTest.kt`，验证 v4->v5 数据平滑无损迁移、原 Token 哈希与凭据全量保留、重复启动幂等性、孤立外键检测及事务容错。全套 `:services:backend:test`（57 项测试）及 `:services:backend:detekt` 均 100% 成功通过，未连接或修改真实 PostgreSQL，测试后 Gradle Daemon 已停止。
 - `2026-07-23`：完成 Task 3。将现有后端账号 Service、Store、Session、设备、Cloud Config、AI 日志及注销定时任务的全链路主标识从手机号迁移为内部 `accountId`。拆分 `StoredUser` 为 `StoredAccount` 与 `StoredPhoneCredential`，重构 `InMemoryAccountStore` 与 `JdbcAccountStore`，直接按 `accountId` 执行持久化与级联删除。CloudConfigStore/Service 与 AiCategorizationLogStore/Service 全量重构为 `accountId` 驱动。保持 HTTP 请求与响应 JSON 完全兼容，旧手机号客户端无需变更。全套单元与集成测试（`AccountServiceTest`, `AccountPersistenceTest`, `CloudConfig*`, `AiCategorization*`）及 `detekt` 静态检查均 100% 成功通过。
+- `2026-07-23`：完成 Task 4。实现服务端微信授权 code 换取与一次性票据管理。在 `services/backend/.env.example` 补充 `AUTO_ACCOUNTING_WECHAT_APP_ID` 和 `AUTO_ACCOUNTING_WECHAT_APP_SECRET` 配置项；新增基于 Java 17 标准 HttpClient 的无依赖 `DefaultWechatOAuthClient`，实现超时控制与敏感字段（Access Token, OpenID, UnionID, AppSecret, Code）全脱敏防泄漏处理；扩展 `AccountStore`（内存与 JDBC）支持微信身份、原子认领与一次性票据 CRUD；在 `AccountError` 与 `AccountRoutes` 扩展 9 个微信错误码与 `POST /account/wechat/exchange` 端点；在 `AccountService` 实现 code 换取与 4 种分支处理逻辑（未绑定生成认证票据返回 `REGISTRATION_REQUIRED`、Bearer 下未绑定直接关联返回 `SIGNED_IN`、已绑定当前账号刷新个人信息返回 `SIGNED_IN`、Bearer 下已绑定其他账号生成合并票据返回 `MERGE_REQUIRED`），并拒绝用新微信静默覆盖已有绑定。测试覆盖 Mock HTTP 错误码与超时、完整 Service 分支、路由、已有绑定保护及 H2/JDBC 双线程并发认领。全套后端单元测试通过；`:services:backend:detekt` 任务通过，并保留 `JdbcAccountStore` 的既有 `LargeClass` 提示。
+
 
 
 ## 依赖
