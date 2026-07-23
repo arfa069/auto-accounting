@@ -4,11 +4,19 @@ package com.autoaccounting.backend
 
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 data class Migration(
     val version: Int,
     val statements: List<String>
 )
+
+private const val H2_DATABASE_PRODUCT = "H2"
+private const val POSTGRESQL_DATABASE_PRODUCT = "PostgreSQL"
+private const val POSTGRESQL_MIGRATION_LOCK_ID = 0x4155544F41434354L
+private val migrationProcessLock = ReentrantLock()
 
 fun runMigrations(
     jdbcUrl: String,
@@ -16,46 +24,106 @@ fun runMigrations(
     password: String = "",
     migrations: List<Migration>
 ) {
-    jdbcConnection(jdbcUrl, username, password).use { connection ->
-        connection.createStatement().use { statement ->
-            statement.execute(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at_millis BIGINT NOT NULL
+    migrationProcessLock.withLock {
+        jdbcConnection(jdbcUrl, username, password).use { connection ->
+            val databaseProduct = connection.metaData.databaseProductName
+            acquireDatabaseMigrationLock(connection, databaseProduct)
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        applied_at_millis BIGINT NOT NULL
+                    )
+                    """.trimIndent()
                 )
-                """.trimIndent()
-            )
-        }
-        val applied = connection.createStatement().use { statement ->
-            statement.executeQuery("SELECT version FROM schema_migrations").use { rs ->
-                buildSet {
-                    while (rs.next()) add(rs.getInt("version"))
+            }
+            val applied = connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT version FROM schema_migrations").use { rs ->
+                    buildSet {
+                        while (rs.next()) add(rs.getInt("version"))
+                    }
                 }
             }
-        }
-        migrations.filter { it.version !in applied }.forEach { migration ->
-            connection.autoCommit = false
-            try {
-                connection.createStatement().use { statement ->
-                    migration.statements.forEach(statement::execute)
+            migrations.filter { it.version !in applied }.forEach { migration ->
+                val h2Snapshot = if (databaseProduct == H2_DATABASE_PRODUCT) {
+                    captureH2Snapshot(connection)
+                } else {
+                    null
                 }
-                connection.prepareStatement(
-                    "INSERT INTO schema_migrations (version, applied_at_millis) VALUES (?, ?)"
-                ).use { statement ->
-                    statement.setInt(1, migration.version)
-                    statement.setLong(2, System.currentTimeMillis())
-                    statement.executeUpdate()
+                connection.autoCommit = false
+                try {
+                    connection.createStatement().use { statement ->
+                        migration.statements.forEach(statement::execute)
+                    }
+                    connection.prepareStatement(
+                        "INSERT INTO schema_migrations (version, applied_at_millis) VALUES (?, ?)"
+                    ).use { statement ->
+                        statement.setInt(1, migration.version)
+                        statement.setLong(2, System.currentTimeMillis())
+                        statement.executeUpdate()
+                    }
+                    connection.commit()
+                } catch (error: SQLException) {
+                    rollbackPreservingError(connection, error)
+                    h2Snapshot?.let { restoreH2Snapshot(connection, it, error) }
+                    throw error
+                } finally {
+                    connection.autoCommit = true
                 }
-                connection.commit()
-            } catch (error: java.sql.SQLException) {
-                connection.rollback()
-                throw error
-            } finally {
-                connection.autoCommit = true
             }
         }
     }
+}
+
+private fun acquireDatabaseMigrationLock(connection: Connection, databaseProduct: String) {
+    if (databaseProduct != POSTGRESQL_DATABASE_PRODUCT) return
+    connection.prepareStatement("SELECT pg_advisory_lock(?)").use { statement ->
+        statement.setLong(1, POSTGRESQL_MIGRATION_LOCK_ID)
+        statement.executeQuery().use { result ->
+            if (!result.next()) throw SQLException("PostgreSQL migration lock returned no result.")
+        }
+    }
+}
+
+private fun captureH2Snapshot(connection: Connection): List<String> {
+    return connection.createStatement().use { statement ->
+        statement.executeQuery("SCRIPT").use { result ->
+            buildList {
+                while (result.next()) add(result.getString(1))
+            }
+        }
+    }
+}
+
+private fun rollbackPreservingError(connection: Connection, migrationError: SQLException) {
+    try {
+        connection.rollback()
+    } catch (rollbackError: SQLException) {
+        migrationError.addSuppressed(rollbackError.sanitized("Migration rollback"))
+    }
+}
+
+private fun restoreH2Snapshot(
+    connection: Connection,
+    snapshot: List<String>,
+    migrationError: SQLException
+) {
+    try {
+        connection.createStatement().use { statement ->
+            statement.execute("DROP ALL OBJECTS")
+            snapshot.filter(String::isNotBlank).forEach(statement::execute)
+        }
+        connection.commit()
+    } catch (restoreError: SQLException) {
+        migrationError.addSuppressed(restoreError.sanitized("H2 migration snapshot restoration"))
+    }
+}
+
+private fun SQLException.sanitized(operation: String): SQLException {
+    return SQLException(
+        "$operation failed (SQLState=${sqlState ?: "unknown"}, errorCode=$errorCode)"
+    )
 }
 
 fun jdbcConnection(
@@ -313,13 +381,14 @@ val allBackendMigrations = listOf(
             """.trimIndent(),
             """
             INSERT INTO ai_categorization_logs_v5 (
-                id, account_id, merchant_title, source_label, transaction_kind,
+                account_id, merchant_title, source_label, transaction_kind,
                 amount_range_label, suggested_category, confidence_label, explanation, created_at_millis
             )
-            SELECT l.id, a.account_id, l.merchant_title, l.source_label, l.transaction_kind,
+            SELECT a.account_id, l.merchant_title, l.source_label, l.transaction_kind,
                    l.amount_range_label, l.suggested_category, l.confidence_label, l.explanation, l.created_at_millis
             FROM ai_categorization_logs l
             LEFT JOIN accounts a ON a.legacy_phone = l.account_phone
+            ORDER BY l.id
             """.trimIndent(),
             "DROP TABLE IF EXISTS account_sessions",
             "DROP TABLE IF EXISTS registered_devices",

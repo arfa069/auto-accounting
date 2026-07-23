@@ -2,9 +2,16 @@
 
 package com.autoaccounting.backend
 
+import com.autoaccounting.backend.ai.JdbcAiCategorizationLogStore
+import com.autoaccounting.backend.ai.StoredAiCategorizationLog
 import java.sql.DriverManager
+import java.sql.SQLException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class DatabaseMigrationTest {
@@ -29,6 +36,112 @@ class DatabaseMigrationTest {
         val secondMigrationTime = getMigrationTime(databaseUrl, 5)
 
         assertEquals(firstMigrationTime, secondMigrationTime)
+    }
+
+    @Test
+    fun migratedAiLogDoesNotCollideWithNextGeneratedIdentity() {
+        val databaseUrl = h2DatabaseUrl()
+        setupV4Database(databaseUrl)
+        runBackendMigrations(databaseUrl)
+        val accountId = DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT account_id FROM account_phone_credentials").use { result ->
+                    result.next()
+                    result.getLong("account_id")
+                }
+            }
+        }
+
+        val store = JdbcAiCategorizationLogStore(databaseUrl)
+        store.insertLog(
+            StoredAiCategorizationLog(
+                accountId = accountId,
+                merchantTitle = "After Migration",
+                sourceLabel = "APP",
+                transactionKind = "EXPENSE",
+                amountRangeLabel = "0-50",
+                suggestedCategory = "Food",
+                confidenceLabel = "HIGH",
+                explanation = "New log",
+                createdAtMillis = 500_000
+            )
+        )
+
+        val logs = store.allLogs()
+        assertEquals(listOf(1L, 2L), logs.map { it.id })
+        assertEquals(listOf("Test Shop", "After Migration"), logs.map { it.merchantTitle })
+    }
+
+    @Test
+    fun failedVersion5RestoresVersion4SchemaAndData() {
+        val databaseUrl = h2DatabaseUrl()
+        setupV4Database(databaseUrl)
+        val version5 = allBackendMigrations.single { it.version == 5 }
+        val failingVersion5 = version5.copy(
+            statements = version5.statements + "THIS IS NOT VALID SQL"
+        )
+
+        assertThrows(SQLException::class.java) {
+            runMigrations(databaseUrl, migrations = listOf(failingVersion5))
+        }
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            val tables = tableNames(connection)
+            assertTrue("account_users" in tables)
+            assertTrue("account_password_credentials" in tables)
+            assertTrue("accounts" !in tables)
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT token_hash FROM account_sessions").use { result ->
+                    assertTrue(result.next())
+                    assertEquals("token-hash-xyz", result.getString("token_hash"))
+                }
+                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 5").use { result ->
+                    result.next()
+                    assertEquals(0, result.getInt(1))
+                }
+            }
+        }
+
+        runBackendMigrations(databaseUrl)
+        verifyV5Database(databaseUrl)
+    }
+
+    @Test
+    fun concurrentCallsApplyMigrationExactlyOnce() {
+        val databaseUrl = h2DatabaseUrl()
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val migration = Migration(
+            version = 42,
+            statements = listOf(
+                "CREATE ALIAS IF NOT EXISTS SLEEP FOR 'java.lang.Thread.sleep'",
+                "CALL SLEEP(200)",
+                "CREATE TABLE concurrent_migration_probe (id INTEGER PRIMARY KEY)"
+            )
+        )
+
+        try {
+            val futures = List(2) {
+                executor.submit<Unit> {
+                    start.await()
+                    runMigrations(databaseUrl, migrations = listOf(migration))
+                }
+            }
+            start.countDown()
+            futures.forEach { it.get(10, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+            executor.awaitTermination(5, TimeUnit.SECONDS)
+        }
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 42").use { result ->
+                    result.next()
+                    assertEquals(1, result.getInt(1))
+                }
+            }
+        }
     }
 
     private fun setupV4Database(databaseUrl: String) {
@@ -223,17 +336,21 @@ class DatabaseMigrationTest {
     }
 
     private fun verifyTablesExistAndDropped(connection: java.sql.Connection) {
-        val tables = connection.metaData.getTables(null, null, null, arrayOf("TABLE")).use { rs ->
-            buildSet {
-                while (rs.next()) add(rs.getString("TABLE_NAME").lowercase())
-            }
-        }
+        val tables = tableNames(connection)
         assertTrue("accounts" in tables)
         assertTrue("account_phone_credentials" in tables)
         assertTrue("account_wechat_identities" in tables)
         assertTrue("account_one_time_tickets" in tables)
         assertTrue("account_users" !in tables)
         assertTrue("account_password_credentials" !in tables)
+    }
+
+    private fun tableNames(connection: java.sql.Connection): Set<String> {
+        return connection.metaData.getTables(null, null, null, arrayOf("TABLE")).use { result ->
+            buildSet {
+                while (result.next()) add(result.getString("TABLE_NAME").lowercase())
+            }
+        }
     }
 
     private fun getMigrationTime(databaseUrl: String, version: Int): Long? {

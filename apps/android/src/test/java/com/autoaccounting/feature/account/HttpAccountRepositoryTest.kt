@@ -91,6 +91,22 @@ class HttpAccountRepositoryTest {
     }
 
     @Test
+    fun phoneAuthenticationWithoutPhoneIsInvalidResponse() = runBlocking {
+        val transport = RecordingTransport(
+            AccountHttpResponse(
+                200,
+                """{"ok":true,"token":"token-1","deletionPending":false}"""
+            )
+        )
+
+        val result = repository(transport).login("13800138000", "Aa123456!")
+            as AccountRepositoryResult.Failure
+
+        assertEquals(AccountFailureKind.InvalidResponse, result.kind)
+        assertEquals(1, transport.callCount)
+    }
+
+    @Test
     fun cancellationPropagatesInsteadOfBecomingNetworkFailure() {
         var cancellationPropagated = false
 

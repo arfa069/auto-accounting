@@ -207,8 +207,9 @@ internal class HttpAccountRepository(
         return execute(path = path, form = form) { body ->
             val response = AccountApiJsonContracts.parseSessionResponse(body)
             val token = requireNotNull(response.token) { "Account response did not include a token." }
+            val phone = requireNotNull(response.phone) { "Account response did not include a phone." }
             AccountCredentials(
-                phone = response.phone.orEmpty(),
+                phone = phone,
                 token = token,
                 deletionState = response.deletionStatus.toUiState()
             )
