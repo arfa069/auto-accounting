@@ -95,7 +95,7 @@ class AccountWechatUiTest {
     }
 
     @Test
-    fun identityPanelShowsMaskedLoginMethodsAndAvailableActions() {
+    fun identityPanelShowsSingleDisplayNameAndAvailableActions() {
         composeRule.setContent {
             AccountManagementScreen(
                 session = AccountSession.SignedIn(
@@ -118,9 +118,9 @@ class AccountWechatUiTest {
         }
 
         composeRule.onNodeWithText("微信小张").assertIsDisplayed()
-        composeRule.onNodeWithText("手机号：138****8000").assertIsDisplayed()
-        composeRule.onNodeWithText("手机号登录").assertIsDisplayed()
-        composeRule.onNodeWithText("微信登录").assertIsDisplayed()
+        composeRule.onNodeWithText("手机号：138****8000").assertDoesNotExist()
+        composeRule.onNodeWithText("手机号登录").assertDoesNotExist()
+        composeRule.onNodeWithText("微信登录").assertDoesNotExist()
         composeRule.onNodeWithTag("unlink-wechat").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("bind-phone").assertIsDisplayed()
     }

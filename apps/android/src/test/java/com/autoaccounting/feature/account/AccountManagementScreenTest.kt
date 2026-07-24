@@ -1,11 +1,15 @@
 package com.autoaccounting.feature.account
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import com.autoaccounting.api.AccountIdentifierContract
+import com.autoaccounting.api.AccountIdentifierTypeContract
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -56,6 +60,39 @@ class AccountManagementScreenTest {
         assertFalse(cleared)
         assertFalse(signedOut)
         composeRule.onNodeWithTag("account-sign-out").assertIsDisplayed()
+        composeRule.onNodeWithText("重新验证").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun verifiedUsernameAccountShowsUsernameOnceWithoutConnectionCard() {
+        val username = AccountIdentifierContract(
+            type = AccountIdentifierTypeContract.USERNAME,
+            value = "admin069"
+        )
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(
+                    primaryIdentifier = username,
+                    identifiers = listOf(username),
+                    token = "token-1"
+                ),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = TestAccountRepository(),
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onAllNodesWithText("admin069", substring = true).assertCountEquals(1)
+        composeRule.onNodeWithText("用户名登录").assertDoesNotExist()
+        composeRule.onNodeWithTag("account-connection-status").assertDoesNotExist()
+        composeRule.onNodeWithTag("bind-phone").assertIsDisplayed()
     }
 
     @Test

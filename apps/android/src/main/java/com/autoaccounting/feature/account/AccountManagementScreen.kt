@@ -91,29 +91,29 @@ fun AccountManagementScreen(
             }
 
             is AccountSession.SignedIn -> {
-                AccountConnectionCard(
-                    phone = session.phone,
-                    runtimeState = runtimeState,
-                    onRetry = {
-                        if (operationInProgress) return@AccountConnectionCard
-                        operationInProgress = true
-                        errorMessage = null
-                        coroutineScope.launch {
-                            when (
-                                val result = accountRepository.verifySession(
-                                    AccountCredentials(session.phone, session.token)
-                                )
-                            ) {
-                                is AccountRepositoryResult.Success -> {
-                                    operationInProgress = false
-                                    onSessionVerified(result.value)
+                if (runtimeState.status == AccountRuntimeStatus.OfflineUnverified) {
+                    OfflineAccountConnectionCard(
+                        onRetry = {
+                            if (operationInProgress) return@OfflineAccountConnectionCard
+                            operationInProgress = true
+                            errorMessage = null
+                            coroutineScope.launch {
+                                when (
+                                    val result = accountRepository.verifySession(
+                                        AccountCredentials(session.phone, session.token)
+                                    )
+                                ) {
+                                    is AccountRepositoryResult.Success -> {
+                                        operationInProgress = false
+                                        onSessionVerified(result.value)
+                                    }
+                                    is AccountRepositoryResult.Failure -> handleFailure(result)
                                 }
-                                is AccountRepositoryResult.Failure -> handleFailure(result)
                             }
-                        }
-                    },
-                    retryEnabled = !operationInProgress
-                )
+                        },
+                        retryEnabled = !operationInProgress
+                    )
+                }
                 WechatAccountManagementPanel(
                     session = session,
                     accountRepository = accountRepository,
@@ -225,9 +225,7 @@ fun AccountManagementScreen(
 }
 
 @Composable
-private fun AccountConnectionCard(
-    phone: String?,
-    runtimeState: AccountRuntimeState,
+private fun OfflineAccountConnectionCard(
     onRetry: () -> Unit,
     retryEnabled: Boolean
 ) {
@@ -242,14 +240,11 @@ private fun AccountConnectionCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                phone?.let { "已登录：${it.maskPhone()}" } ?: "已登录：微信账号",
-                fontWeight = FontWeight.SemiBold
+                AccountRuntimeStatus.OfflineUnverified.connectionLabel(),
+                modifier = Modifier.testTag("account-connection-status")
             )
-            Text(runtimeState.status.connectionLabel(), modifier = Modifier.testTag("account-connection-status"))
-            if (runtimeState.status == AccountRuntimeStatus.OfflineUnverified) {
-                OutlinedButton(onClick = onRetry, enabled = retryEnabled) {
-                    Text("重新验证")
-                }
+            OutlinedButton(onClick = onRetry, enabled = retryEnabled) {
+                Text("重新验证")
             }
         }
     }
@@ -306,9 +301,6 @@ internal fun AccountRuntimeStatus.connectionLabel(): String = when (this) {
     AccountRuntimeStatus.OfflineUnverified -> "离线使用 · 账号尚未验证"
     AccountRuntimeStatus.DeletionCoolingOff -> "账号服务已连接 · 注销冷静期"
 }
-
-internal fun String.maskPhone(): String =
-    if (length == 11) replaceRange(3, 7, "****") else "已登录"
 
 private fun Long.formatDateTime(): String = DateFormat.getDateTimeInstance(
     DateFormat.MEDIUM,

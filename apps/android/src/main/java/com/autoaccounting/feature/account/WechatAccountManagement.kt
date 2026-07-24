@@ -172,18 +172,14 @@ fun WechatAccountManagementPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 WechatAvatar(session.avatarUrl, avatarCache)
-                Column {
-                    Text(session.nickname ?: session.phone?.maskPhoneForIdentity() ?: session.email?.maskEmailForIdentity() ?: session.username ?: "微信用户", fontWeight = FontWeight.SemiBold)
-                    session.phone?.let { Text("手机号：${it.maskPhoneForIdentity()}") }
-                    session.email?.let { Text("邮箱：${it.maskEmailForIdentity()}") }
-                    session.username?.let { Text("用户名：$it") }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (session.phone != null) Text("手机号登录")
-                if (session.email != null) Text("邮箱登录")
-                if (session.username != null) Text("用户名登录")
-                if (session.wechatLinked) Text("微信登录")
+                Text(
+                    session.username
+                        ?: session.nickname
+                        ?: session.phone?.maskPhoneForIdentity()
+                        ?: session.email?.maskEmailForIdentity()
+                        ?: "微信用户",
+                    fontWeight = FontWeight.SemiBold
+                )
             }
             if (!session.wechatLinked && authCoordinator != null) {
                 OutlinedButton(
