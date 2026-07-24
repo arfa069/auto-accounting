@@ -9,3 +9,5 @@ Android 在 Android Keystore AES-GCM 下将手机号和 Bearer Token 加密存�
 重启后，恢复的 Session 在后台进行校验。网络或配置故障使用户保持在离线未校验模式，且本地账本可用；仅显式的无效 Session 响应会清除加密 Session 并返回持久化本地模式。云端写入和账号注销操作保持暂停，直到校验成功。仅在加密持久化成功后登录状态才变为活动状态，且仅在后端撤销当前 Session 后退出登录才清除本地密文。
 
 服务端是账号注销挂起状态和截止时间的唯一真实源。最终注销首先执行幂等的 AI 日志和云端配置清理，随后删除账号、设备及 Session。清理失败将保留挂起账号以便稍后重试。本地账本删除保持为单独的操作，绝对不清除或重新分配账号 Session。
+
+后端 URL 与明文流量边界已由 [ADR 0058](./0058-allow-explicit-http-backends-for-android-builds.md) 替代；本 ADR 的 Session 持久化与账号安全边界继续有效。

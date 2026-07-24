@@ -104,7 +104,7 @@
 - 忘记密码流程。
 - 表单错误文案。
 - 短信倒计时 UI。
-- 构建期后端 URL 与仅 Debug 允许明文流量的边界。
+- 构建期后端 URL，以及 Debug 与 Release 在受控测试网络中使用明文 HTTP 的边界。
 - Keystore 加密的 Session 持久化，支持离线未校验及无效 Session 恢复状态。
 
 验证方式：

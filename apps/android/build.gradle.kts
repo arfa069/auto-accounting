@@ -22,7 +22,6 @@ val debugBackendUrl = configuredBackendUrl?.takeIf { it.isNotBlank() }
     ?: "http://10.0.2.2:8080"
 val releaseBackendUrl = configuredBackendUrl
     ?.trim()
-    ?.takeIf { it.startsWith("https://", ignoreCase = true) }
     .orEmpty()
 val wechatAppId = (localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID")
     ?: System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID"))
