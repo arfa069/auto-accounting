@@ -134,6 +134,7 @@ class BillSyncCaptureProcessor(
             pageText = pageText,
             existingPendingEntries = previousState.pendingEntries,
             existingLedgerEntries = existingLedgerEntries,
+            existingIgnoredEntries = previousState.ignoredEntries.map { it.entry },
             capturedAtEpochMillis = clock(),
             captureReasonLabel = captureReasonLabel,
             retainRawEvidence = retainRawEvidence,

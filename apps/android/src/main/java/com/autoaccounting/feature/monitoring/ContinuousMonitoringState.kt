@@ -165,6 +165,12 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
     if (!isContinuousMonitoringPackageAllowed(packageName)) return false
 
     val text = screenText.lowercase()
+    if (
+        packageName == ALIPAY_PACKAGE_NAME &&
+        hasAlipayTransactionListPageSignature(text)
+    ) {
+        return false
+    }
     if (PAYMENT_INITIATION_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }) return false
     val hasChatOrGenericMessage =
         CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }
@@ -209,10 +215,22 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
 internal fun hasAlipayPaymentResultPageSignature(screenText: String): Boolean =
     ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS.any { keyword -> screenText.contains(keyword) }
 
+internal fun hasAlipayTransactionListPageSignature(screenText: String): Boolean {
+    val text = screenText.lowercase()
+    return text.contains("搜索交易记录") ||
+        (
+            text.contains("收支分析") &&
+                text.contains("筛选") &&
+                text.contains("全部")
+            )
+}
+
 private val PAYMENT_SOURCE_PACKAGES = setOf(
     "com.tencent.mm",
-    "com.eg.android.AlipayGphone"
+    ALIPAY_PACKAGE_NAME
 )
+
+private const val ALIPAY_PACKAGE_NAME = "com.eg.android.AlipayGphone"
 
 private val PAYMENT_HISTORY_KEYWORDS = listOf(
     "账单",

@@ -339,6 +339,24 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
+    fun monitoringIgnoresAlipayTransactionListOverview() {
+        val decision = decide(
+            ContinuousMonitoringState(enabled = true),
+            "com.eg.android.AlipayGphone",
+            """
+                搜索交易记录 搜索
+                全部 支出 转账 退款 订单 筛选
+                7月 支出 ¥2,445.37 收入 ¥0.00
+                本月已省0.27元 收支分析
+                2026-07-24 12:42:48 搭乘广州地铁 -3.00
+                肯德基 -8.50
+            """.trimIndent()
+        )
+
+        assertEquals(ContinuousMonitoringObservation.Ignored, decision.observation)
+    }
+
+    @Test
     fun monitoringRejectsOtherPackagesAndMissingAccessibility() {
         val eventText = "支付成功 ¥12.34"
         val otherPackage = decide(

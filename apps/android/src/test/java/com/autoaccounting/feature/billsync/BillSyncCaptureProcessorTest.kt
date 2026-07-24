@@ -10,8 +10,10 @@ import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.ReviewQueueState
+import com.autoaccounting.feature.review.reduceReviewQueue
 import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
 import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
 import java.time.ZoneId
@@ -157,6 +159,33 @@ class BillSyncCaptureProcessorTest {
         assertEquals(CaptureReason.ACCESSIBILITY_AUTO, entry.captureReason)
         assertEquals("food", entry.suggestedCategoryId)
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
+    }
+
+    @Test
+    fun ignoredAutomaticCaptureIsNotCreatedAgain() = runBlocking {
+        val pageText = "支付成功\n收款方：餐饮\n¥20.00"
+        val first = processor.processAutomatic(
+            source = BillSyncSource.Alipay,
+            pageText = pageText
+        )
+        val pendingState = persistence.observeState().first()
+        val ignoredState = reduceReviewQueue(
+            pendingState,
+            ReviewQueueAction.Ignore(first.createdEntries.single().id)
+        )
+        persistence.persistTransition(pendingState, ignoredState)
+
+        val repeated = processor.processAutomatic(
+            source = BillSyncSource.Alipay,
+            pageText = pageText
+        )
+        val persistedState = persistence.observeState().first()
+
+        assertTrue(repeated.createdEntries.isEmpty())
+        assertTrue(repeated.mergedEntries.isEmpty())
+        assertEquals(1, repeated.duplicateSkippedCount)
+        assertTrue(persistedState.pendingEntries.isEmpty())
+        assertEquals(1, persistedState.ignoredEntries.size)
     }
 
     @Test

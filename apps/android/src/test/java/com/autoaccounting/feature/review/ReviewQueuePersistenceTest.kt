@@ -147,6 +147,28 @@ class ReviewQueuePersistenceTest {
     }
 
     @Test
+    fun ignoringPendingEntryDeletesItWhenMatchingIgnoredEntryAlreadyExists() = runBlocking {
+        repository.upsertPending(samplePending())
+        val initial = persistence.observeState().first()
+        val firstIgnore = reduceReviewQueue(
+            initial,
+            ReviewQueueAction.Ignore("pending-lunch")
+        )
+        persistence.persistTransition(initial, firstIgnore)
+        repository.upsertPending(samplePending())
+        val overlappingState = persistence.observeState().first()
+
+        val repeatedIgnore = reduceReviewQueue(
+            overlappingState,
+            ReviewQueueAction.Ignore("pending-lunch")
+        )
+        persistence.persistTransition(overlappingState, repeatedIgnore)
+
+        assertNull(database.pendingEntryDao().getById("pending-lunch"))
+        assertEquals(1, database.ignoredEntryDao().listRecoverable(NOW).size)
+    }
+
+    @Test
     fun persistTransitionConfirmsThroughRepositoryAndUndoRestoresPending() = runBlocking {
         repository.seedSystemCategories()
         val fundingAccount =

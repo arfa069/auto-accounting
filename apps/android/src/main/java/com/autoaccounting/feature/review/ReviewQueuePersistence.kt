@@ -54,7 +54,6 @@ class ReviewQueuePersistence(
         val nextConfirmedOriginIds = next.confirmedEntries.map { it.originPendingId }.toSet()
         val previousIgnoredById = previous.ignoredEntries.associateBy { it.id }
         val nextIgnoredById = next.ignoredEntries.associateBy { it.id }
-        val nextIgnoredOriginalIds = next.ignoredEntries.map { it.originalPendingId }.toSet()
 
         next.confirmedEntries
             .filterNot { it.originPendingId in previousConfirmedOriginIds }
@@ -66,7 +65,6 @@ class ReviewQueuePersistence(
             .filterNot { it.id in previousIgnoredById }
             .forEach { ignored ->
                 repository.upsertIgnored(ignored.toEntity(zoneId))
-                repository.deletePending(ignored.originalPendingId)
             }
 
         next.pendingEntries
@@ -94,7 +92,6 @@ class ReviewQueuePersistence(
         previousPendingIds
             .filterNot { it in nextPendingIds }
             .filterNot { it in nextConfirmedOriginIds }
-            .filterNot { it in nextIgnoredOriginalIds }
             .forEach { pendingEntryId ->
                 repository.deletePending(pendingEntryId)
             }

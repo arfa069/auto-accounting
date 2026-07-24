@@ -58,6 +58,7 @@ class BillSyncPipeline(
         pageText: String,
         existingPendingEntries: List<ReviewQueueEntry>,
         existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
+        existingIgnoredEntries: List<ReviewQueueEntry> = emptyList(),
         capturedAtEpochMillis: Long,
         captureReasonLabel: String = "补录账单",
         retainRawEvidence: Boolean = true,
@@ -110,6 +111,7 @@ class BillSyncPipeline(
         val mergedEntries = mutableListOf<ReviewQueueEntry>()
         var pendingEntries = existingPendingEntries
         var ledgerDuplicateCount = 0
+        var ignoredDuplicateCount = 0
         var persistentRedPacketDuplicateCount = 0
         val hasWechatRedPacketSuccessSignature =
             hasWechatSentRedPacketSuccessSignature(pageText) ||
@@ -156,6 +158,14 @@ class BillSyncPipeline(
                 )
             }
             .forEach { candidate ->
+                val ignoredDedupeResult = DedupeEngine().addCandidate(
+                    existingIgnoredEntries,
+                    candidate
+                )
+                if (ignoredDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
+                    ignoredDuplicateCount += 1
+                    return@forEach
+                }
                 if (
                     isWechatRedPacketAutomaticCapture &&
                     !isNotificationVerifiedRedPacket &&
@@ -227,7 +237,8 @@ class BillSyncPipeline(
                 }
             }
         val duplicateSkippedCount =
-            mergedEntries.size + ledgerDuplicateCount + persistentRedPacketDuplicateCount
+            mergedEntries.size + ledgerDuplicateCount + ignoredDuplicateCount +
+                persistentRedPacketDuplicateCount
 
         return BillSyncResult(
             steps = successSteps,
