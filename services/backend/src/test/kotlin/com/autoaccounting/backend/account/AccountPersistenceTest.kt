@@ -1,6 +1,8 @@
 package com.autoaccounting.backend.account
 
 import java.sql.DriverManager
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -46,8 +48,14 @@ class AccountPersistenceTest {
         val tokens = { "token-${++tokenIndex}" }
         val firstService = accountService(databaseUrl, clock, tokens)
 
-        firstService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val registered = firstService.register("13800138000", "123456", "Aa123456!")
+        firstService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val registered = firstService.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!",
+            "device-a",
+            "127.0.0.1"
+        )
             as AccountResult.Success<AccountToken>
 
         clock.advanceBy(10_000)
@@ -60,11 +68,11 @@ class AccountPersistenceTest {
 
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            restartedService.issueSmsCode("13800138000", "device-b", "127.0.0.2").error
+            restartedService.issueVerificationCode("13800138000", "device-b", "127.0.0.2").error
         )
 
         clock.advanceBy(61_000)
-        val login = restartedService.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
+        val login = restartedService.loginIdentifier("13800138000", "Aa123456!", "device-b", "127.0.0.2")
             as AccountResult.Success<AccountToken>
 
         val verifiedLogin = restartedService.verifyToken(login.value.token) as AccountResult.Success<AccountToken>
@@ -74,7 +82,7 @@ class AccountPersistenceTest {
 
         assertEquals(
             listOf("device-a", "device-b"),
-            restartedService.registeredDevices("13800138000").map { it.deviceId }
+            restartedService.registeredDevices(login.value.accountId).map { it.deviceId }
         )
     }
 
@@ -83,16 +91,16 @@ class AccountPersistenceTest {
         val databaseUrl = h2DatabaseUrl()
         val clock = MutableClock(0)
         val firstService = accountService(databaseUrl, clock)
-        firstService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        firstService.register("13800138000", "123456", "Aa123456!")
+        firstService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        firstService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         repeat(4) {
-            assertEquals(AccountError.LOGIN_FAILED, firstService.login("13800138000", "wrong").error)
+            assertEquals(AccountError.LOGIN_FAILED, firstService.loginIdentifier("13800138000", "wrong").error)
         }
 
         val restartedService = accountService(databaseUrl, clock)
-        assertEquals(AccountError.ACCOUNT_LOCKED, restartedService.login("13800138000", "wrong").error)
-        assertEquals(AccountError.ACCOUNT_LOCKED, restartedService.login("13800138000", "Aa123456!").error)
+        assertEquals(AccountError.ACCOUNT_LOCKED, restartedService.loginIdentifier("13800138000", "wrong").error)
+        assertEquals(AccountError.ACCOUNT_LOCKED, restartedService.loginIdentifier("13800138000", "Aa123456!").error)
     }
 
     @Test
@@ -102,25 +110,26 @@ class AccountPersistenceTest {
 
         DriverManager.getConnection(databaseUrl).use { connection ->
             val appliedMigrationCount = connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 5").use { rs ->
+                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations").use { rs ->
                     rs.next()
                     rs.getInt(1)
                 }
             }
+
             val accountTableCount = connection.createStatement().use { statement ->
                 statement.executeQuery(
                     """
-                    SELECT COUNT(*)
-                    FROM information_schema.tables
+                    SELECT COUNT(*) FROM information_schema.tables
                     WHERE table_name IN (
                         'accounts',
-                        'account_phone_credentials',
-                        'account_wechat_identities',
-                        'account_one_time_tickets',
-                        'account_sms_codes',
-                        'account_sms_issues',
+                        'account_password_credentials',
+                        'account_identifiers',
+                        'verification_codes',
+                        'verification_code_send_logs',
                         'account_sessions',
-                        'registered_devices'
+                        'registered_devices',
+                        'account_wechat_identities',
+                        'account_one_time_tickets'
                     )
                     """.trimIndent()
                 ).use { rs ->
@@ -129,7 +138,7 @@ class AccountPersistenceTest {
                 }
             }
 
-            assertEquals(1, appliedMigrationCount)
+            assertEquals(6, appliedMigrationCount)
             assertTrue(accountTableCount >= 8)
         }
     }
@@ -211,7 +220,7 @@ class AccountPersistenceTest {
 
         DriverManager.getConnection(databaseUrl).use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT COUNT(*) FROM account_sms_codes").use { result ->
+                statement.executeQuery("SELECT COUNT(*) FROM verification_codes").use { result ->
                     result.next()
                     assertEquals(0, result.getInt(1))
                 }
@@ -224,16 +233,14 @@ class AccountPersistenceTest {
                 buildSet {
                     while (result.next()) {
                         val table = result.getString("TABLE_NAME").lowercase()
-                        if (table == "account_sms_codes" || table == "account_sessions") {
+                        if (table == "verification_codes" || table == "account_sessions") {
                             add(table to result.getString("COLUMN_NAME").lowercase())
                         }
                     }
                 }
             }
-            assertTrue("account_sms_codes" to "code_hash" in columns)
+            assertTrue("verification_codes" to "code_hash" in columns)
             assertTrue("account_sessions" to "token_hash" in columns)
-            assertFalse("account_sms_codes" to "code" in columns)
-            assertFalse("account_sessions" to "token" in columns)
         }
     }
 
@@ -241,18 +248,18 @@ class AccountPersistenceTest {
     fun newVerificationCodesAndSessionsPersistOnlyHashes() {
         val databaseUrl = h2DatabaseUrl()
         val service = accountService(databaseUrl, MutableClock(0))
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
 
         DriverManager.getConnection(databaseUrl).use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT code_hash FROM account_sms_codes").use { result ->
+                statement.executeQuery("SELECT code_hash FROM verification_codes").use { result ->
                     result.next()
                     assertNotEquals("123456", result.getString(1))
                 }
             }
         }
 
-        service.register("13800138000", "123456", "Aa123456!")
+        service.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         DriverManager.getConnection(databaseUrl).use { connection ->
             connection.createStatement().use { statement ->
@@ -269,10 +276,8 @@ class AccountPersistenceTest {
         val databaseUrl = h2DatabaseUrl()
         val firstStore = JdbcAccountStore(databaseUrl)
         val secondStore = JdbcAccountStore(databaseUrl)
-        firstStore.createUser(storedUser("13800138001"))
-        secondStore.createUser(storedUser("13800138002"))
-        val firstAccountId = firstStore.findUser("13800138001")!!.accountId
-        val secondAccountId = secondStore.findUser("13800138002")!!.accountId
+        val firstAccountId = createPhoneAccount(firstStore, "13800138001").accountId
+        val secondAccountId = createPhoneAccount(secondStore, "13800138002").accountId
         val ready = CountDownLatch(2)
         val start = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(2)
@@ -331,8 +336,8 @@ class AccountPersistenceTest {
             tokenGenerator = { "setup-token" },
             wechatOAuthClient = FakeWechatOAuthClient(configured = true)
         )
-        setupService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        setupService.register("13800138000", "123456", "Aa123456!")
+        setupService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        setupService.registerIdentifier("13800138000", "123456", "Aa123456!")
         val exchange = setupService.exchangeWechatCode("good_code") as AccountResult.Success
         val ticket = (exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired).wechatTicket
         val failingService = AccountService(
@@ -367,8 +372,8 @@ class AccountPersistenceTest {
         val exchange = service.exchangeWechatCode("good_code") as AccountResult.Success
         val ticket = (exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired).wechatTicket
 
-        val issued = service.issueSmsCode(
-            phone = "13800138000",
+        val issued = service.issueVerificationCode(
+            identifier = "13800138000",
             deviceId = "device-a",
             ipAddress = "127.0.0.1",
             purpose = "WECHAT_LINK",
@@ -376,10 +381,129 @@ class AccountPersistenceTest {
         )
 
         assertTrue(issued is AccountResult.Success)
-        val persisted = JdbcAccountStore(databaseUrl).findSmsCode("13800138000")!!
+        val persisted = JdbcAccountStore(databaseUrl)
+            .findVerificationCode("PHONE", "13800138000", "WECHAT_LINK")!!
         assertEquals("WECHAT_LINK", persisted.purpose)
         assertNotNull(persisted.contextKey)
         assertNotEquals(ticket, persisted.contextKey)
+    }
+
+    @Test
+    fun jdbcPureWechatFirstIdentifierLinkRollsBackAllChangesWhenSessionCreationFails() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val clock = MutableClock(0)
+        val hasher = VerificationCodeHasher.fromSecret("test-verification-secret")
+        var tokenIndex = 0
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-${++tokenIndex}" },
+            verificationCodeHasher = hasher,
+            clock = clock,
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+        val exchange = service.exchangeWechatCode("good_code") as AccountResult.Success
+        val registration = exchange.value.result as com.autoaccounting.api.WechatAuthResultContract.RegistrationRequired
+        val wechatSession = service.registerWithWechat(registration.wechatTicket, "device-1") as AccountResult.Success
+        val accountId = wechatSession.value.accountId
+        val prepared = service.prepareIdentifierLink(
+            wechatSession.value.token,
+            "13800138000",
+            "device-1"
+        ) as AccountResult.Success
+        val linkTicket = (
+            prepared.value as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        ).linkTicket
+        val failingService = AccountService(
+            store = store,
+            tokenGenerator = { error("forced session creation failure") },
+            verificationCodeHasher = hasher,
+            clock = clock
+        )
+
+        assertThrows(IllegalStateException::class.java) {
+            failingService.confirmIdentifierLink(
+                wechatSession.value.token,
+                linkTicket,
+                "123456",
+                "device-1",
+                password = "Password123!"
+            )
+        }
+
+        assertEquals(null, store.findPasswordCredentialByAccountId(accountId))
+        assertTrue(store.findIdentifiersByAccountId(accountId).isEmpty())
+        assertTrue(service.verifyToken(wechatSession.value.token) is AccountResult.Success)
+        assertNotNull(store.findVerificationCode("PHONE", "13800138000", "IDENTIFIER_LINK"))
+
+        val retried = service.confirmIdentifierLink(
+            wechatSession.value.token,
+            linkTicket,
+            "123456",
+            "device-1",
+            password = "Password123!"
+        )
+        assertTrue(retried is AccountResult.Success)
+    }
+
+    @Test
+    fun jdbcIdentifierLinkTicketCanOnlyBeConsumedOnceConcurrently() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val clock = MutableClock(0)
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            clock = clock
+        )
+        val registered = service.registerIdentifier("user_primary", null, "Password123!") as AccountResult.Success
+        val prepared = service.prepareIdentifierLink(
+            registered.value.token,
+            "13800138000",
+            "device-1"
+        ) as AccountResult.Success
+        val linkTicket = (
+            prepared.value as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        ).linkTicket
+        val ticketHash = Base64.getEncoder().encodeToString(
+            MessageDigest.getInstance("SHA-256").digest(linkTicket.toByteArray(Charsets.UTF_8))
+        )
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        val attempts = (1..2).map { index ->
+            executor.submit<AccountResult<AccountToken>> {
+                ready.countDown()
+                assertTrue(start.await(5, TimeUnit.SECONDS))
+                JdbcAccountStore(databaseUrl).completeIdentifierLink(
+                    ticketHash = ticketHash,
+                    accountId = registered.value.accountId,
+                    identifierType = "PHONE",
+                    rawValue = "13800138000",
+                    normalizedValue = "13800138000",
+                    newPasswordSalt = null,
+                    newPasswordHash = null,
+                    deviceId = "device-$index",
+                    ipAddress = "127.0.0.$index",
+                    now = clock.millis(),
+                    tokenGenerator = { "concurrent-token-$index" }
+                )
+            }
+        }
+        assertTrue(ready.await(5, TimeUnit.SECONDS))
+        start.countDown()
+        val results = attempts.map { it.get(10, TimeUnit.SECONDS) }
+        executor.shutdownNow()
+
+        assertEquals(1, results.count { it is AccountResult.Success })
+        assertEquals(
+            1,
+            store.findIdentifiersByAccountId(registered.value.accountId).count { it.identifierType == "PHONE" }
+        )
+        assertNotNull(store.findOneTimeTicket(ticketHash)?.usedAtMillis)
+        assertEquals(null, store.findVerificationCode("PHONE", "13800138000", "IDENTIFIER_LINK"))
     }
 
     private fun submitWechatClaim(
@@ -434,13 +558,17 @@ class AccountPersistenceTest {
         return "jdbc:h2:mem:${System.nanoTime()};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
     }
 
-    private fun storedUser(phone: String): StoredUser {
-        return StoredUser(
-            accountId = 0L,
-            phone = phone,
-            passwordSalt = "salt",
-            passwordHash = "hash",
-            createdAtMillis = 1000L
+    private fun createPhoneAccount(store: AccountStore, phone: String): StoredAccount {
+        return requireNotNull(
+            store.createAccountWithIdentifier(
+                primaryIdentifierType = "PHONE",
+                rawValue = phone,
+                normalizedValue = phone,
+                passwordSalt = "salt",
+                passwordHash = "hash",
+                verified = true,
+                now = 1000L
+            )
         )
     }
 }

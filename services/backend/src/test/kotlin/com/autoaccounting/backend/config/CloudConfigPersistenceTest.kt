@@ -18,8 +18,8 @@ class CloudConfigPersistenceTest {
         val databaseUrl = h2DatabaseUrl()
         val clock = MutableClock(0)
         val accountService = accountService(databaseUrl, clock)
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
         val firstStore = JdbcCloudConfigStore(databaseUrl)
         firstStore.upsertConfig(
@@ -77,8 +77,8 @@ class CloudConfigPersistenceTest {
         val databaseUrl = h2DatabaseUrl()
         val clock = MutableClock(0)
         val accountService = accountService(databaseUrl, clock)
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val tokenResult = (accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value
 
         val configStore = JdbcCloudConfigStore(databaseUrl)

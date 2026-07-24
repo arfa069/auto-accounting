@@ -1,7 +1,7 @@
 package com.autoaccounting.feature.account
 
 import com.autoaccounting.api.MergePreviewResponseContract
-import com.autoaccounting.api.PhoneLinkPrepareResponseContract
+import com.autoaccounting.api.IdentifierLinkPrepareResponseContract
 
 internal class TestAccountRepository : AccountRepository {
     var smsResult: AccountRepositoryResult<Unit> = AccountRepositoryResult.Success(Unit)
@@ -17,54 +17,58 @@ internal class TestAccountRepository : AccountRepository {
     var wechatExchangeResult: AccountRepositoryResult<AccountWechatAuthResult>? = null
     var registerWithWechatResult: AccountRepositoryResult<AccountCredentials>? = null
     var linkWechatWithPasswordResult: AccountRepositoryResult<AccountCredentials>? = null
-    var linkWechatWithSmsResult: AccountRepositoryResult<AccountCredentials>? = null
-    var phoneLinkPrepareResult: AccountRepositoryResult<PhoneLinkPrepareResponseContract>? = null
+    var linkWechatWithCodeResult: AccountRepositoryResult<AccountCredentials>? = null
+    var phoneLinkPrepareResult: AccountRepositoryResult<IdentifierLinkPrepareResponseContract>? = null
     var phoneLinkCompleteResult: AccountRepositoryResult<AccountCredentials>? = null
     var mergePrepareResult: AccountRepositoryResult<MergePreviewResponseContract>? = null
     var mergeConfirmResult: AccountRepositoryResult<AccountCredentials>? = null
     var unlinkWechatWithPasswordResult: AccountRepositoryResult<AccountCredentials>? = null
-    var unlinkWechatWithSmsResult: AccountRepositoryResult<AccountCredentials>? = null
+    var unlinkWechatWithCodeResult: AccountRepositoryResult<AccountCredentials>? = null
     var smsCalls = 0
-    var lastSmsPurpose: AccountSmsPurpose? = null
+    var lastSmsIdentifier: String? = null
+    var lastSmsPurpose: AccountVerificationPurpose? = null
     var lastSmsContextKey: String? = null
     var exchangeWechatCalls = 0
     var registerWithWechatCalls = 0
     var linkWechatWithPasswordCalls = 0
-    var linkWechatWithSmsCalls = 0
-    var preparePhoneLinkCalls = 0
-    var completePhoneLinkCalls = 0
+    var linkWechatWithCodeCalls = 0
+    var prepareIdentifierLinkCalls = 0
+    var completeIdentifierLinkCalls = 0
+    var lastCompleteIdentifierPassword: String? = null
     var prepareMergeCalls = 0
     var confirmMergeCalls = 0
     var unlinkWechatWithPasswordCalls = 0
-    var unlinkWechatWithSmsCalls = 0
+    var unlinkWechatWithCodeCalls = 0
+    var lastUnlinkWechatIdentifier: String? = null
     var signOutCalls = 0
     var requestDeletionCalls = 0
 
-    override suspend fun requestSmsCode(
-        phone: String,
-        purpose: AccountSmsPurpose,
+    override suspend fun requestVerificationCode(
+        identifier: String,
+        purpose: AccountVerificationPurpose,
         contextKey: String?,
         bearerToken: String?
     ): AccountRepositoryResult<Unit> {
         smsCalls += 1
+        lastSmsIdentifier = identifier
         lastSmsPurpose = purpose
         lastSmsContextKey = contextKey
         return smsResult
     }
 
     override suspend fun register(
-        phone: String,
+        identifier: String,
         code: String,
         password: String
     ): AccountRepositoryResult<AccountCredentials> = authenticationResult
 
     override suspend fun login(
-        phone: String,
+        identifier: String,
         password: String
     ): AccountRepositoryResult<AccountCredentials> = authenticationResult
 
     override suspend fun recoverPassword(
-        phone: String,
+        identifier: String,
         code: String,
         password: String
     ): AccountRepositoryResult<AccountCredentials> = authenticationResult
@@ -111,50 +115,61 @@ internal class TestAccountRepository : AccountRepository {
 
     override suspend fun linkWechatWithPassword(
         wechatTicket: String,
-        phone: String,
+        identifier: String,
         password: String
     ): AccountRepositoryResult<AccountCredentials> {
         linkWechatWithPasswordCalls += 1
         return linkWechatWithPasswordResult ?: authenticationResult
     }
 
-    override suspend fun linkWechatWithSms(
+    override suspend fun linkWechatWithCode(
         wechatTicket: String,
-        phone: String,
+        identifier: String,
         code: String
     ): AccountRepositoryResult<AccountCredentials> {
-        linkWechatWithSmsCalls += 1
-        return linkWechatWithSmsResult ?: authenticationResult
+        linkWechatWithCodeCalls += 1
+        return linkWechatWithCodeResult ?: authenticationResult
     }
 
-    override suspend fun preparePhoneLink(
+    override suspend fun prepareIdentifierLink(
         token: String,
-        phone: String,
-        code: String
-    ): AccountRepositoryResult<PhoneLinkPrepareResponseContract> {
-        preparePhoneLinkCalls += 1
+        identifier: String
+    ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract> {
+        prepareIdentifierLinkCalls += 1
         return phoneLinkPrepareResult ?: AccountRepositoryResult.Success(
-            PhoneLinkPrepareResponseContract.PhoneTicketIssued("phone-ticket", 300_000L)
+            IdentifierLinkPrepareResponseContract.LinkTicketIssued("link-ticket", 300_000L)
         )
     }
 
-    override suspend fun completePhoneLink(
+    override suspend fun completeIdentifierLink(
         token: String,
-        phoneTicket: String,
-        password: String
+        linkTicket: String,
+        code: String,
+        password: String?
     ): AccountRepositoryResult<AccountCredentials> {
-        completePhoneLinkCalls += 1
+        completeIdentifierLinkCalls += 1
+        lastCompleteIdentifierPassword = password
         return phoneLinkCompleteResult ?: authenticationResult
     }
 
-    override suspend fun prepareMergeWithPhonePassword(
+    override suspend fun prepareMergeWithIdentifierPassword(
         token: String,
-        phone: String,
+        identifier: String,
         password: String
     ): AccountRepositoryResult<MergePreviewResponseContract> {
         prepareMergeCalls += 1
         return mergePrepareResult ?: AccountRepositoryResult.Success(
-            MergePreviewResponseContract("merge-ticket", 300_000L, null, true, null, phone, false, null)
+            MergePreviewResponseContract(
+                mergeTicket = "merge-ticket",
+                ticketExpiresAtMillis = 300_000L,
+                currentWechatLinked = true,
+                currentNickname = null,
+                sourceIdentifiers = listOf(
+                    com.autoaccounting.api.AccountIdentifierParser.parse(identifier).toContract()
+                ),
+                sourceWechatLinked = false,
+                sourceNickname = null
+            )
         )
     }
 
@@ -175,11 +190,13 @@ internal class TestAccountRepository : AccountRepository {
         return unlinkWechatWithPasswordResult ?: authenticationResult
     }
 
-    override suspend fun unlinkWechatWithSms(
+    override suspend fun unlinkWechatWithCode(
         token: String,
+        identifier: String,
         code: String
     ): AccountRepositoryResult<AccountCredentials> {
-        unlinkWechatWithSmsCalls += 1
-        return unlinkWechatWithSmsResult ?: authenticationResult
+        unlinkWechatWithCodeCalls += 1
+        lastUnlinkWechatIdentifier = identifier
+        return unlinkWechatWithCodeResult ?: authenticationResult
     }
 }

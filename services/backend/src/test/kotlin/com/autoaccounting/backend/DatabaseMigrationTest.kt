@@ -23,17 +23,17 @@ class DatabaseMigrationTest {
 
         runBackendMigrations(databaseUrl)
 
-        verifyV5Database(databaseUrl)
+        verifyV6Database(databaseUrl)
     }
 
     @Test
     fun rerunMigrationsIsIdempotent() {
         val databaseUrl = h2DatabaseUrl()
         runBackendMigrations(databaseUrl)
-        val firstMigrationTime = getMigrationTime(databaseUrl, 5)
+        val firstMigrationTime = getMigrationTime(databaseUrl, 6)
 
         runBackendMigrations(databaseUrl)
-        val secondMigrationTime = getMigrationTime(databaseUrl, 5)
+        val secondMigrationTime = getMigrationTime(databaseUrl, 6)
 
         assertEquals(firstMigrationTime, secondMigrationTime)
     }
@@ -45,7 +45,7 @@ class DatabaseMigrationTest {
         runBackendMigrations(databaseUrl)
         val accountId = DriverManager.getConnection(databaseUrl).use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT account_id FROM account_phone_credentials").use { result ->
+                statement.executeQuery("SELECT account_id FROM account_identifiers WHERE identifier_type = 'PHONE'").use { result ->
                     result.next()
                     result.getLong("account_id")
                 }
@@ -103,7 +103,53 @@ class DatabaseMigrationTest {
         }
 
         runBackendMigrations(databaseUrl)
-        verifyV5Database(databaseUrl)
+        verifyV6Database(databaseUrl)
+    }
+
+    @Test
+    fun failedVersion6RestoresVersion5SchemaAndAllAccountRelations() {
+        val databaseUrl = h2DatabaseUrl()
+        setupV4Database(databaseUrl)
+        val version5 = allBackendMigrations.single { it.version == 5 }
+        runMigrations(databaseUrl, migrations = listOf(version5))
+        val version6 = allBackendMigrations.single { it.version == 6 }
+        val failingVersion6 = version6.copy(
+            statements = version6.statements + "THIS IS NOT VALID SQL"
+        )
+
+        assertThrows(SQLException::class.java) {
+            runMigrations(databaseUrl, migrations = listOf(failingVersion6))
+        }
+
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            val tables = tableNames(connection)
+            assertTrue("accounts" in tables)
+            assertTrue("account_phone_credentials" in tables)
+            assertTrue("account_identifiers" !in tables)
+            assertTrue("verification_codes" !in tables)
+            connection.createStatement().use { statement ->
+                statement.executeQuery(
+                    "SELECT phone, password_salt, password_hash FROM account_phone_credentials"
+                ).use { result ->
+                    assertTrue(result.next())
+                    assertEquals("13800138000", result.getString("phone"))
+                    assertEquals("salt123", result.getString("password_salt"))
+                    assertEquals("hash456", result.getString("password_hash"))
+                }
+                statement.executeQuery("SELECT token_hash, device_id FROM account_sessions").use { result ->
+                    assertTrue(result.next())
+                    assertEquals("token-hash-xyz", result.getString("token_hash"))
+                    assertEquals("device-a", result.getString("device_id"))
+                }
+                statement.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 6").use { result ->
+                    result.next()
+                    assertEquals(0, result.getInt(1))
+                }
+            }
+        }
+
+        runMigrations(databaseUrl, migrations = listOf(version6))
+        verifyV6Database(databaseUrl)
     }
 
     @Test
@@ -247,7 +293,7 @@ class DatabaseMigrationTest {
         }
     }
 
-    private fun verifyV5Database(databaseUrl: String) {
+    private fun verifyV6Database(databaseUrl: String) {
         DriverManager.getConnection(databaseUrl).use { connection ->
             val accountId = verifyAccountsAndCredentials(connection)
             verifySessionsAndDevices(connection, accountId)
@@ -258,7 +304,7 @@ class DatabaseMigrationTest {
 
     private fun verifyAccountsAndCredentials(connection: java.sql.Connection): Long {
         connection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 5").use { rs ->
+            stmt.executeQuery("SELECT COUNT(*) FROM schema_migrations WHERE version = 6").use { rs ->
                 rs.next()
                 assertEquals(1, rs.getInt(1))
             }
@@ -266,24 +312,35 @@ class DatabaseMigrationTest {
 
         var accountId: Long = -1
         connection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT account_id, deletion_requested_at_millis, created_at_millis FROM accounts").use { rs ->
+            stmt.executeQuery("SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis FROM accounts").use { rs ->
                 assertTrue(rs.next())
                 accountId = rs.getLong("account_id")
                 assertTrue(accountId > 0)
+                assertEquals("PHONE", rs.getString("primary_identifier_type"))
                 assertEquals(500000L, rs.getLong("deletion_requested_at_millis"))
                 assertEquals(123456789L, rs.getLong("created_at_millis"))
             }
         }
 
         connection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis FROM account_phone_credentials").use { rs ->
+            stmt.executeQuery("SELECT account_id, password_salt, password_hash, failed_login_count, locked_until_millis FROM account_password_credentials").use { rs ->
                 assertTrue(rs.next())
                 assertEquals(accountId, rs.getLong("account_id"))
-                assertEquals("13800138000", rs.getString("phone"))
                 assertEquals("salt123", rs.getString("password_salt"))
                 assertEquals("hash456", rs.getString("password_hash"))
                 assertEquals(1, rs.getInt("failed_login_count"))
                 assertEquals(100000L, rs.getLong("locked_until_millis"))
+            }
+        }
+
+        connection.createStatement().use { stmt ->
+            stmt.executeQuery("SELECT account_id, identifier_type, raw_value, normalized_value, verified FROM account_identifiers").use { rs ->
+                assertTrue(rs.next())
+                assertEquals(accountId, rs.getLong("account_id"))
+                assertEquals("PHONE", rs.getString("identifier_type"))
+                assertEquals("13800138000", rs.getString("raw_value"))
+                assertEquals("13800138000", rs.getString("normalized_value"))
+                assertTrue(rs.getBoolean("verified"))
             }
         }
         return accountId
@@ -327,8 +384,10 @@ class DatabaseMigrationTest {
         }
 
         connection.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT purpose, code_hash FROM account_sms_codes").use { rs ->
+            stmt.executeQuery("SELECT identifier_type, normalized_identifier, purpose, code_hash FROM verification_codes").use { rs ->
                 assertTrue(rs.next())
+                assertEquals("PHONE", rs.getString("identifier_type"))
+                assertEquals("13800138000", rs.getString("normalized_identifier"))
                 assertEquals("DEFAULT", rs.getString("purpose"))
                 assertEquals("code-hash-abc", rs.getString("code_hash"))
             }
@@ -338,11 +397,15 @@ class DatabaseMigrationTest {
     private fun verifyTablesExistAndDropped(connection: java.sql.Connection) {
         val tables = tableNames(connection)
         assertTrue("accounts" in tables)
-        assertTrue("account_phone_credentials" in tables)
+        assertTrue("account_password_credentials" in tables)
+        assertTrue("account_identifiers" in tables)
+        assertTrue("verification_codes" in tables)
         assertTrue("account_wechat_identities" in tables)
         assertTrue("account_one_time_tickets" in tables)
         assertTrue("account_users" !in tables)
-        assertTrue("account_password_credentials" !in tables)
+        assertTrue("account_phone_credentials" !in tables)
+        assertTrue("account_sms_codes" !in tables)
+        assertTrue("account_sms_issues" !in tables)
     }
 
     private fun tableNames(connection: java.sql.Connection): Set<String> {

@@ -86,7 +86,7 @@ class AccountWechatUiTest {
         composeRule.onNodeWithText("微信用户").assertIsDisplayed()
         composeRule.onNodeWithText("创建微信账号").assertIsDisplayed()
         composeRule.onNodeWithText("绑定已有账号").performClick()
-        composeRule.onNodeWithText("绑定已有手机号账号").assertIsDisplayed()
+        composeRule.onNodeWithText("绑定已有账号").assertIsDisplayed()
 
         composeRule.onNodeWithText("返回").performClick()
         composeRule.onNodeWithText("确认微信资料").assertIsDisplayed()
@@ -122,7 +122,7 @@ class AccountWechatUiTest {
         composeRule.onNodeWithText("手机号登录").assertIsDisplayed()
         composeRule.onNodeWithText("微信登录").assertIsDisplayed()
         composeRule.onNodeWithTag("unlink-wechat").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("bind-phone").assertDoesNotExist()
+        composeRule.onNodeWithTag("bind-phone").assertIsDisplayed()
     }
 
     @Test
@@ -147,16 +147,18 @@ class AccountWechatUiTest {
 
         composeRule.onNodeWithTag("bind-phone").performScrollTo().performClick()
         composeRule.onNodeWithTag("identity-phone").performTextInput("13800138000")
+        composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitUntil { repository.prepareIdentifierLinkCalls == 1 }
         composeRule.onNodeWithTag("identity-code").performTextInput("123456")
         composeRule.onNodeWithText("继续").performClick()
-        composeRule.waitUntil { repository.preparePhoneLinkCalls == 1 }
-        composeRule.onNodeWithText("设置手机号登录密码").assertIsDisplayed()
+        composeRule.onNodeWithText("设置登录密码").assertIsDisplayed()
         composeRule.onNodeWithTag("phone-link-password").performTextInput("Aa123456!")
         composeRule.onNodeWithText("完成绑定").performClick()
-        composeRule.waitUntil { repository.completePhoneLinkCalls == 1 }
+        composeRule.waitUntil { repository.completeIdentifierLinkCalls == 1 }
 
         assertEquals("token-1", verified?.token)
-        composeRule.onNodeWithTag("unlink-wechat").assertDoesNotExist()
+        assertEquals("Aa123456!", repository.lastCompleteIdentifierPassword)
+        composeRule.onNodeWithTag("unlink-wechat").assertIsDisplayed()
     }
 
     @Test
@@ -179,7 +181,7 @@ class AccountWechatUiTest {
         }
 
         composeRule.onNodeWithTag("bind-phone").performScrollTo().performClick()
-        composeRule.onNodeWithText("密码合并").performClick()
+        composeRule.onNodeWithText("绑定已有账号").performClick()
         composeRule.onNodeWithTag("identity-phone").performTextInput("13800138000")
         composeRule.onNodeWithTag("identity-password").performTextInput("Aa123456!")
         composeRule.onNodeWithText("继续").performClick()
@@ -213,19 +215,64 @@ class AccountWechatUiTest {
         }
 
         composeRule.onNodeWithTag("unlink-wechat").performScrollTo().performClick()
-        composeRule.onNodeWithText("仍可使用当前手机号登录", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("仍可使用已绑定账号登录", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag("unlink-password").performTextInput("Aa123456!")
         composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
         composeRule.waitUntil { repository.unlinkWechatWithPasswordCalls == 1 }
 
         composeRule.onNodeWithTag("unlink-wechat").performScrollTo().performClick()
-        composeRule.onNodeWithText("短信验证").performClick()
+        composeRule.onNodeWithText("验证码验证").performClick()
         composeRule.onNodeWithText("获取验证码").performClick()
         composeRule.waitUntil { repository.smsCalls == 1 }
-        assertEquals(AccountSmsPurpose.WechatUnlink, repository.lastSmsPurpose)
+        assertEquals(AccountVerificationPurpose.WechatUnlink, repository.lastSmsPurpose)
         composeRule.onNodeWithTag("unlink-code").performTextInput("123456")
         composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
-        composeRule.waitUntil { repository.unlinkWechatWithSmsCalls == 1 }
+        composeRule.waitUntil { repository.unlinkWechatWithCodeCalls == 1 }
+        assertEquals("13800138000", repository.lastUnlinkWechatIdentifier)
+    }
+
+    @Test
+    fun unlinkCodeCanSelectEmailWhenPhoneAndEmailAreBound() {
+        val repository = TestAccountRepository()
+        val phone = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
+            "13800138000"
+        )
+        val email = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL,
+            "user@example.com"
+        )
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(
+                    primaryIdentifier = phone,
+                    identifiers = listOf(phone, email),
+                    token = "token",
+                    wechatLinked = true
+                ),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("unlink-wechat").performScrollTo().performClick()
+        composeRule.onNodeWithText("验证码验证").performClick()
+        composeRule.onNodeWithText("邮箱验证码").performClick()
+        composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitUntil { repository.smsCalls == 1 }
+        assertEquals("user@example.com", repository.lastSmsIdentifier)
+        composeRule.onNodeWithTag("unlink-code").performTextInput("123456")
+        composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
+        composeRule.waitUntil { repository.unlinkWechatWithCodeCalls == 1 }
+        assertEquals("user@example.com", repository.lastUnlinkWechatIdentifier)
     }
 
     @Test

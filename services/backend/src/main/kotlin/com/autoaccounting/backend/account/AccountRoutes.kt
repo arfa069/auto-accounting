@@ -18,11 +18,12 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
 
 fun Route.accountRoutes(accountService: AccountService) {
-    post("/account/sms") {
+    post("/account/verification-code") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
-            accountService.issueSmsCode(
-                phone = parameters["phone"].orEmpty(),
+            accountService.issueVerificationCode(
+                identifier = identifier,
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost,
                 purpose = parameters["purpose"].orEmpty(),
@@ -34,9 +35,10 @@ fun Route.accountRoutes(accountService: AccountService) {
 
     post("/account/register") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
-            accountService.register(
-                phone = parameters["phone"].orEmpty(),
+            accountService.registerIdentifier(
+                identifier = identifier,
                 code = parameters["code"].orEmpty(),
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
@@ -47,9 +49,10 @@ fun Route.accountRoutes(accountService: AccountService) {
 
     post("/account/login") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
-            accountService.login(
-                phone = parameters["phone"].orEmpty(),
+            accountService.loginIdentifier(
+                identifier = identifier,
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
@@ -59,11 +62,13 @@ fun Route.accountRoutes(accountService: AccountService) {
 
     post("/account/recover") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
+        val password = parameters["password"].orEmpty()
         call.respondAccountResult(
-            accountService.recoverPassword(
-                phone = parameters["phone"].orEmpty(),
+            accountService.recoverPasswordByIdentifier(
+                identifier = identifier,
                 code = parameters["code"].orEmpty(),
-                newPassword = parameters["password"].orEmpty(),
+                newPassword = password,
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
             )
@@ -118,10 +123,11 @@ fun Route.accountRoutes(accountService: AccountService) {
 
     post("/account/wechat/link/password") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
             accountService.linkWechatWithPassword(
                 wechatTicket = parameters["wechatTicket"].orEmpty(),
-                phone = parameters["phone"].orEmpty(),
+                identifier = identifier,
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
@@ -129,12 +135,13 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
-    post("/account/wechat/link/sms") {
+    post("/account/wechat/link/code") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
-            accountService.linkWechatWithSms(
+            accountService.linkWechatWithCode(
                 wechatTicket = parameters["wechatTicket"].orEmpty(),
-                phone = parameters["phone"].orEmpty(),
+                identifier = identifier,
                 code = parameters["code"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
@@ -154,11 +161,12 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
-    post("/account/wechat/unlink/sms") {
+    post("/account/wechat/unlink/code") {
         val parameters = call.receiveParameters()
         call.respondAccountResult(
-            accountService.unlinkWechatWithSms(
+            accountService.unlinkWechatWithCode(
                 bearerToken = call.accountBearerToken().orEmpty(),
+                identifier = parameters["identifier"].orEmpty(),
                 code = parameters["code"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
@@ -166,37 +174,41 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
-    post("/account/phone/link/prepare") {
+    post("/account/identifier/link/prepare") {
         val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
         call.respondAccountResult(
-            accountService.preparePhoneLink(
+            accountService.prepareIdentifierLink(
                 bearerToken = call.accountBearerToken().orEmpty(),
-                phone = parameters["phone"].orEmpty(),
-                code = parameters["code"].orEmpty()
-            )
-        )
-    }
-
-    post("/account/phone/link/complete") {
-        val parameters = call.receiveParameters()
-        call.respondAccountResult(
-            accountService.completePhoneLink(
-                bearerToken = call.accountBearerToken().orEmpty(),
-                phoneTicket = parameters["phoneTicket"].orEmpty(),
-                password = parameters["password"].orEmpty(),
+                identifier = identifier,
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
             )
         )
     }
 
-
-    post("/account/merge/prepare/phone-password") {
+    post("/account/identifier/link/complete") {
         val parameters = call.receiveParameters()
+        val linkTicket = parameters["linkTicket"].orEmpty()
         call.respondAccountResult(
-            accountService.prepareMergeWithPhonePassword(
+            accountService.confirmIdentifierLink(
                 bearerToken = call.accountBearerToken().orEmpty(),
-                phone = parameters["phone"].orEmpty(),
+                linkTicket = linkTicket,
+                code = parameters["code"].orEmpty(),
+                password = parameters["password"],
+                deviceId = parameters["deviceId"].orEmpty(),
+                ipAddress = call.request.local.remoteHost
+            )
+        )
+    }
+
+    post("/account/merge/prepare/identifier-password") {
+        val parameters = call.receiveParameters()
+        val identifier = parameters["identifier"].orEmpty()
+        call.respondAccountResult(
+            accountService.prepareMergeWithIdentifierPassword(
+                bearerToken = call.accountBearerToken().orEmpty(),
+                identifier = identifier,
                 password = parameters["password"].orEmpty()
             )
         )
@@ -207,7 +219,7 @@ fun Route.accountRoutes(accountService: AccountService) {
         call.respondAccountResult(
             accountService.confirmMerge(
                 bearerToken = call.accountBearerToken().orEmpty(),
-                mergeTicket = parameters["mergeTicket"].orEmpty().ifBlank { parameters["ticket"].orEmpty() },
+                mergeTicket = parameters["mergeTicket"].orEmpty(),
                 confirmText = parameters["confirmText"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
                 ipAddress = call.request.local.remoteHost
@@ -255,7 +267,7 @@ private suspend fun ApplicationCall.respondAccountResult(
                 )
                 is AccountDeletionStatus -> AccountApiJsonContracts.encodeDeletionStatusResponse(value.toContract())
                 is com.autoaccounting.api.WechatExchangeResponseContract -> AccountApiJsonContracts.encodeWechatExchangeResponse(value)
-                is com.autoaccounting.api.PhoneLinkPrepareResponseContract -> AccountApiJsonContracts.encodePhoneLinkPrepareResponse(value)
+                is com.autoaccounting.api.IdentifierLinkPrepareResponseContract -> AccountApiJsonContracts.encodeIdentifierLinkPrepareResponse(value)
                 is com.autoaccounting.api.MergePreviewResponseContract -> AccountApiJsonContracts.encodeMergePreviewResponse(value)
                 else -> AccountApiJsonContracts.encodeSuccessResponse()
             }
@@ -275,7 +287,8 @@ private suspend fun ApplicationCall.respondJson(body: String, status: HttpStatus
 
 private fun AccountToken.toContract(includeToken: Boolean): AccountSessionResponseContract {
     return AccountSessionResponseContract(
-        phone = phone,
+        primaryIdentifier = primaryIdentifier,
+        identifiers = identifiers,
         token = token.takeIf { includeToken },
         wechatLinked = wechatLinked,
         nickname = nickname,
@@ -297,17 +310,24 @@ private fun AccountError.statusCode(): HttpStatusCode = when (this) {
     AccountError.TOKEN_INVALID,
     AccountError.LOGIN_FAILED -> HttpStatusCode.Unauthorized
     AccountError.ACCOUNT_LOCKED,
+    AccountError.CODE_SEND_TOO_FREQUENT,
     AccountError.SMS_TOO_FREQUENT -> HttpStatusCode.TooManyRequests
     AccountError.SMS_PROVIDER_UNCONFIGURED,
     AccountError.SMS_SEND_FAILED,
+    AccountError.EMAIL_PROVIDER_UNCONFIGURED,
+    AccountError.EMAIL_SEND_FAILED,
     AccountError.WECHAT_NOT_CONFIGURED,
     AccountError.WECHAT_SERVICE_UNAVAILABLE -> HttpStatusCode.ServiceUnavailable
     AccountError.PHONE_ALREADY_REGISTERED,
+    AccountError.IDENTIFIER_ALREADY_REGISTERED,
+    AccountError.IDENTIFIER_ALREADY_LINKED,
+    AccountError.IDENTIFIER_CONFLICT,
     AccountError.WECHAT_ALREADY_LINKED,
     AccountError.PHONE_ALREADY_LINKED,
     AccountError.MERGE_BLOCKED,
     AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK -> HttpStatusCode.Conflict
-    AccountError.PHONE_NOT_REGISTERED -> HttpStatusCode.NotFound
+    AccountError.PHONE_NOT_REGISTERED,
+    AccountError.IDENTIFIER_NOT_REGISTERED -> HttpStatusCode.NotFound
     AccountError.ACCOUNT_DELETION_PENDING,
     AccountError.ACCOUNT_DELETION_NOT_PENDING -> HttpStatusCode.Conflict
     AccountError.INVALID_REQUEST,

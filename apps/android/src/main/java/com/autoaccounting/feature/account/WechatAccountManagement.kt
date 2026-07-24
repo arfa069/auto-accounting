@@ -25,7 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.api.MergePreviewResponseContract
-import com.autoaccounting.api.PhoneLinkPrepareResponseContract
+import com.autoaccounting.api.IdentifierLinkPrepareResponseContract
 import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
@@ -47,7 +47,7 @@ private enum class PhoneAttachMethod {
 
 private enum class UnlinkMethod {
     Password,
-    Sms
+    Code
 }
 
 private data class AccountIdentityUiState(
@@ -59,9 +59,10 @@ private data class AccountIdentityUiState(
     val password: String = "",
     val phoneTicket: String? = null,
     val mergeTicket: String? = null,
-    val sourcePhone: String? = null,
+    val sourceIdentifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
     val sourceNickname: String? = null,
     val sourceWechatLinked: Boolean = false,
+    val unlinkIdentifier: String = "",
     val confirmText: String = "",
     val operationInProgress: Boolean = false,
     val errorMessage: String? = null
@@ -143,7 +144,7 @@ fun WechatAccountManagementPanel(
                         is AccountWechatAuthResult.MergeRequired -> state = AccountIdentityUiState(
                             page = AccountIdentityPage.Merge,
                             mergeTicket = auth.mergeTicket,
-                            sourcePhone = auth.sourcePhone,
+                            sourceIdentifiers = auth.sourceIdentifiers,
                             sourceNickname = auth.sourceNickname,
                             sourceWechatLinked = true
                         )
@@ -172,15 +173,19 @@ fun WechatAccountManagementPanel(
             ) {
                 WechatAvatar(session.avatarUrl, avatarCache)
                 Column {
-                    Text(session.nickname ?: session.phone?.maskPhoneForIdentity() ?: "微信用户", fontWeight = FontWeight.SemiBold)
+                    Text(session.nickname ?: session.phone?.maskPhoneForIdentity() ?: session.email?.maskEmailForIdentity() ?: session.username ?: "微信用户", fontWeight = FontWeight.SemiBold)
                     session.phone?.let { Text("手机号：${it.maskPhoneForIdentity()}") }
+                    session.email?.let { Text("邮箱：${it.maskEmailForIdentity()}") }
+                    session.username?.let { Text("用户名：$it") }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (session.phone != null) Text("手机号登录")
+                if (session.email != null) Text("邮箱登录")
+                if (session.username != null) Text("用户名登录")
                 if (session.wechatLinked) Text("微信登录")
             }
-            if (!session.wechatLinked && session.phone != null && authCoordinator != null) {
+            if (!session.wechatLinked && authCoordinator != null) {
                 OutlinedButton(
                     onClick = {
                         if (state.operationInProgress) return@OutlinedButton
@@ -203,16 +208,25 @@ fun WechatAccountManagementPanel(
                     modifier = Modifier.fillMaxWidth().testTag("bind-wechat")
                 ) { Text("绑定微信") }
             }
-            if (session.phone == null && session.wechatLinked) {
+            if (session.phone == null || session.email == null) {
                 OutlinedButton(
                     onClick = { state = AccountIdentityUiState(page = AccountIdentityPage.AttachPhone) },
                     enabled = !state.operationInProgress,
                     modifier = Modifier.fillMaxWidth().testTag("bind-phone")
-                ) { Text("绑定手机号或合并账号") }
+                ) { Text("绑定手机号或邮箱") }
             }
-            if (session.phone != null && session.wechatLinked) {
+            if (session.wechatLinked) {
                 OutlinedButton(
-                    onClick = { state = AccountIdentityUiState(page = AccountIdentityPage.UnlinkWechat) },
+                    onClick = {
+                        if (session.phone == null && session.email == null && session.username == null) {
+                            fail("最后一种登录方式不可解绑")
+                        } else {
+                            state = AccountIdentityUiState(
+                                page = AccountIdentityPage.UnlinkWechat,
+                                unlinkIdentifier = session.phone ?: session.email.orEmpty()
+                            )
+                        }
+                    },
                     enabled = !state.operationInProgress,
                     modifier = Modifier.fillMaxWidth().testTag("unlink-wechat")
                 ) { Text("解绑微信") }
@@ -225,32 +239,38 @@ fun WechatAccountManagementPanel(
 
     when (state.page) {
         AccountIdentityPage.AttachPhone -> AccountIdentityDialog(
-            title = "绑定手机号或合并账号",
+            title = "绑定手机号或邮箱",
             state = state,
+            allowPasswordMerge = session.identifiers.isEmpty() && session.wechatLinked,
             onStateChange = { state = it },
             onRequestSms = {
                 coroutineScope.launch {
-                    if (!state.phone.isValidIdentityPhone()) return@launch fail("请输入 11 位手机号")
+                    if (!state.phone.isValidIdentityContact()) return@launch fail("请输入有效的手机号或邮箱")
                     state = state.copy(operationInProgress = true, errorMessage = null)
-                    when (
-                        val result = accountRepository.requestSmsCode(
-                            phone = state.phone,
-                            purpose = AccountSmsPurpose.PhoneLink,
-                            bearerToken = session.token
-                        )
-                    ) {
-                        is AccountRepositoryResult.Success -> state = state.copy(operationInProgress = false)
+                    when (val result = accountRepository.prepareIdentifierLink(session.token, state.phone)) {
+                        is AccountRepositoryResult.Success -> state = when (val prepared = result.value) {
+                            IdentifierLinkPrepareResponseContract.AlreadyLinked -> AccountIdentityUiState()
+                            is IdentifierLinkPrepareResponseContract.LinkTicketIssued -> state.copy(
+                                phoneTicket = prepared.linkTicket,
+                                operationInProgress = false,
+                                errorMessage = null
+                            )
+                            is IdentifierLinkPrepareResponseContract.MergeRequired -> state.copy(
+                                operationInProgress = false,
+                                errorMessage = "该标识已属于其他账号，不能绑定或合并"
+                            )
+                        }
                         is AccountRepositoryResult.Failure -> handleFailure(result)
                     }
                 }
             },
             onConfirm = {
                 coroutineScope.launch {
-                    if (!state.phone.isValidIdentityPhone()) return@launch fail("请输入 11 位手机号")
+                    if (!state.phone.isValidIdentityContact()) return@launch fail("请输入有效的手机号或邮箱")
                     state = state.copy(operationInProgress = true, errorMessage = null)
                     if (state.phoneAttachMethod == PhoneAttachMethod.PasswordMerge) {
                         when (
-                            val result = accountRepository.prepareMergeWithPhonePassword(
+                            val result = accountRepository.prepareMergeWithIdentifierPassword(
                                 session.token,
                                 state.phone,
                                 state.password
@@ -260,29 +280,28 @@ fun WechatAccountManagementPanel(
                             is AccountRepositoryResult.Failure -> handleFailure(result)
                         }
                     } else {
-                        when (val result = accountRepository.preparePhoneLink(session.token, state.phone, state.code)) {
-                            is AccountRepositoryResult.Failure -> handleFailure(result)
-                            is AccountRepositoryResult.Success -> state = when (val prepared = result.value) {
-                                is PhoneLinkPrepareResponseContract.PhoneTicketIssued -> state.copy(
-                                    page = AccountIdentityPage.SetPhonePassword,
-                                    phoneTicket = prepared.phoneTicket,
-                                    operationInProgress = false,
-                                    errorMessage = null
+                        val ticket = state.phoneTicket ?: return@launch fail("请先获取验证码")
+                        if (session.identifiers.isEmpty() && session.wechatLinked) {
+                            state = state.copy(
+                                page = AccountIdentityPage.SetPhonePassword,
+                                operationInProgress = false,
+                                errorMessage = null
+                            )
+                        } else {
+                            handleCredentials(
+                                accountRepository.completeIdentifierLink(
+                                    token = session.token,
+                                    linkTicket = ticket,
+                                    code = state.code
                                 )
-                                is PhoneLinkPrepareResponseContract.MergeRequired -> AccountIdentityUiState(
-                                    page = AccountIdentityPage.Merge,
-                                    mergeTicket = prepared.mergeTicket,
-                                    sourcePhone = prepared.sourcePhone,
-                                    sourceWechatLinked = prepared.sourceWechatLinked
-                                )
-                            }
+                            )
                         }
                     }
                 }
             }
         )
         AccountIdentityPage.SetPhonePassword -> SimplePasswordDialog(
-            title = "设置手机号登录密码",
+            title = "设置登录密码",
             password = state.password,
             operationInProgress = state.operationInProgress,
             errorMessage = state.errorMessage,
@@ -290,9 +309,16 @@ fun WechatAccountManagementPanel(
             onDismiss = { if (!state.operationInProgress) state = AccountIdentityUiState() },
             onConfirm = {
                 coroutineScope.launch {
-                    val ticket = state.phoneTicket ?: return@launch fail("手机号票据已失效")
+                    val ticket = state.phoneTicket ?: return@launch fail("绑定票据已失效")
                     state = state.copy(operationInProgress = true, errorMessage = null)
-                    handleCredentials(accountRepository.completePhoneLink(session.token, ticket, state.password))
+                    handleCredentials(
+                        accountRepository.completeIdentifierLink(
+                            token = session.token,
+                            linkTicket = ticket,
+                            code = state.code,
+                            password = state.password
+                        )
+                    )
                 }
             }
         )
@@ -311,15 +337,20 @@ fun WechatAccountManagementPanel(
         )
         AccountIdentityPage.UnlinkWechat -> UnlinkWechatDialog(
             state = state,
+            availableIdentifiers = session.identifiers.filter {
+                it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE ||
+                    it.type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL
+            },
             onStateChange = { state = it },
             onRequestSms = {
                 coroutineScope.launch {
-                    val phone = session.phone ?: return@launch fail("最后一种登录方式不可解绑")
+                    val identifier = state.unlinkIdentifier.takeIf { it.isNotBlank() }
+                        ?: return@launch fail("请选择手机号或邮箱")
                     state = state.copy(operationInProgress = true, errorMessage = null)
                     when (
-                        val result = accountRepository.requestSmsCode(
-                            phone = phone,
-                            purpose = AccountSmsPurpose.WechatUnlink,
+                        val result = accountRepository.requestVerificationCode(
+                            identifier = identifier,
+                            purpose = AccountVerificationPurpose.WechatUnlink,
                             bearerToken = session.token
                         )
                     ) {
@@ -333,7 +364,11 @@ fun WechatAccountManagementPanel(
                     state = state.copy(operationInProgress = true, errorMessage = null)
                     val result = when (state.unlinkMethod) {
                         UnlinkMethod.Password -> accountRepository.unlinkWechatWithPassword(session.token, state.password)
-                        UnlinkMethod.Sms -> accountRepository.unlinkWechatWithSms(session.token, state.code)
+                        UnlinkMethod.Code -> accountRepository.unlinkWechatWithCode(
+                            session.token,
+                            state.unlinkIdentifier,
+                            state.code
+                        )
                     }
                     handleCredentials(result, clearAvatar = true)
                 }
@@ -347,6 +382,7 @@ fun WechatAccountManagementPanel(
 private fun AccountIdentityDialog(
     title: String,
     state: AccountIdentityUiState,
+    allowPasswordMerge: Boolean,
     onStateChange: (AccountIdentityUiState) -> Unit,
     onRequestSms: () -> Unit,
     onConfirm: () -> Unit
@@ -356,19 +392,28 @@ private fun AccountIdentityDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("本机账本不变；若手机号已有账号，将进入账号合并确认。")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MethodButton("短信验证", state.phoneAttachMethod == PhoneAttachMethod.Sms) {
+                Text("绑定不会改变本机账本；已属于其他密码账号的标识不能转移或合并。")
+                if (allowPasswordMerge) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MethodButton("验证码绑定", state.phoneAttachMethod == PhoneAttachMethod.Sms) {
                         onStateChange(state.copy(phoneAttachMethod = PhoneAttachMethod.Sms, errorMessage = null))
                     }
-                    MethodButton("密码合并", state.phoneAttachMethod == PhoneAttachMethod.PasswordMerge) {
+                    MethodButton("绑定已有账号", state.phoneAttachMethod == PhoneAttachMethod.PasswordMerge) {
                         onStateChange(state.copy(phoneAttachMethod = PhoneAttachMethod.PasswordMerge, errorMessage = null))
                     }
                 }
                 OutlinedTextField(
                     value = state.phone,
-                    onValueChange = { onStateChange(state.copy(phone = it, errorMessage = null)) },
-                    label = { Text("手机号") },
+                    onValueChange = {
+                        onStateChange(
+                            state.copy(
+                                phone = it,
+                                code = "",
+                                phoneTicket = null,
+                                errorMessage = null
+                            )
+                        )
+                    },
+                    label = { Text("手机号或邮箱") },
                     modifier = Modifier.fillMaxWidth().testTag("identity-phone")
                 )
                 if (state.phoneAttachMethod == PhoneAttachMethod.Sms) {
@@ -447,7 +492,7 @@ private fun MergeConfirmationDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("当前账号（保留）：${session.phone?.maskPhoneForIdentity() ?: session.nickname ?: "微信账号"}")
-                Text("来源账号（删除）：${state.sourcePhone?.maskPhoneForIdentity() ?: state.sourceNickname ?: "微信账号"}")
+                Text("来源账号（删除）：${state.sourceIdentifiers.identitySummary() ?: state.sourceNickname ?: "微信账号"}")
                 Text("当前云配置优先，来源独有开关补入；来源 AI 日志将删除。")
                 Text("本机账本不变，来源云账号将被删除，操作无法自动撤销。")
                 OutlinedTextField(
@@ -473,6 +518,7 @@ private fun MergeConfirmationDialog(
 @Composable
 private fun UnlinkWechatDialog(
     state: AccountIdentityUiState,
+    availableIdentifiers: List<com.autoaccounting.api.AccountIdentifierContract>,
     onStateChange: (AccountIdentityUiState) -> Unit,
     onRequestSms: () -> Unit,
     onConfirm: () -> Unit
@@ -482,13 +528,13 @@ private fun UnlinkWechatDialog(
         title = { Text("解绑微信") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("解绑后仍可使用当前手机号登录；旧 Session 将全部失效。")
+                Text("解绑后仍可使用已绑定账号登录；旧 Session 将全部失效。")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MethodButton("密码验证", state.unlinkMethod == UnlinkMethod.Password) {
                         onStateChange(state.copy(unlinkMethod = UnlinkMethod.Password, errorMessage = null))
                     }
-                    MethodButton("短信验证", state.unlinkMethod == UnlinkMethod.Sms) {
-                        onStateChange(state.copy(unlinkMethod = UnlinkMethod.Sms, errorMessage = null))
+                    MethodButton("验证码验证", state.unlinkMethod == UnlinkMethod.Code) {
+                        onStateChange(state.copy(unlinkMethod = UnlinkMethod.Code, errorMessage = null))
                     }
                 }
                 if (state.unlinkMethod == UnlinkMethod.Password) {
@@ -500,6 +546,26 @@ private fun UnlinkWechatDialog(
                         modifier = Modifier.fillMaxWidth().testTag("unlink-password")
                     )
                 } else {
+                    if (availableIdentifiers.size > 1) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            availableIdentifiers.forEach { identifier ->
+                                val label = when (identifier.type) {
+                                    com.autoaccounting.api.AccountIdentifierTypeContract.PHONE -> "手机验证码"
+                                    com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL -> "邮箱验证码"
+                                    else -> return@forEach
+                                }
+                                MethodButton(label, state.unlinkIdentifier == identifier.value) {
+                                    onStateChange(
+                                        state.copy(
+                                            unlinkIdentifier = identifier.value,
+                                            code = "",
+                                            errorMessage = null
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = state.code,
                         onValueChange = { onStateChange(state.copy(code = it, errorMessage = null)) },
@@ -535,15 +601,36 @@ private fun MethodButton(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun MergePreviewResponseContract.toMergeState(): AccountIdentityUiState = AccountIdentityUiState(
     page = AccountIdentityPage.Merge,
     mergeTicket = mergeTicket,
-    sourcePhone = sourcePhone,
+    sourceIdentifiers = sourceIdentifiers,
     sourceNickname = sourceNickname,
     sourceWechatLinked = sourceWechatLinked
 )
 
-private fun String.isValidIdentityPhone(): Boolean = Regex("^\\d{11}$").matches(this)
+private fun String.isValidIdentityContact(): Boolean = runCatching {
+    val type = com.autoaccounting.api.AccountIdentifierParser.parse(this).type
+    type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE ||
+        type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL
+}.getOrDefault(false)
 
 private fun String.maskPhoneForIdentity(): String =
     if (length == 11) replaceRange(3, 7, "****") else this
+
+private fun String.maskEmailForIdentity(): String {
+    val parts = split("@")
+    if (parts.size != 2) return this
+    val name = parts[0]
+    val maskedName = if (name.length <= 2) "${name.first()}***" else "${name.first()}***${name.last()}"
+    return "$maskedName@${parts[1]}"
+}
+
+private fun List<com.autoaccounting.api.AccountIdentifierContract>.identitySummary(): String? {
+    val identifier = firstOrNull() ?: return null
+    return when (identifier.type) {
+        com.autoaccounting.api.AccountIdentifierTypeContract.PHONE -> identifier.value.maskPhoneForIdentity()
+        com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL -> identifier.value.maskEmailForIdentity()
+        com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME -> identifier.value
+    }
+}
 
 private fun WechatAuthCallback.managementPurpose(): WechatAuthPurpose = when (this) {
     is WechatAuthCallback.Authorized -> purpose

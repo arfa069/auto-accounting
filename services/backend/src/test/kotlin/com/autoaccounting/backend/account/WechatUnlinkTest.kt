@@ -28,6 +28,11 @@ class WechatUnlinkTest {
         return AccountService(
             store = store,
             smsCodeGenerator = { "123456" },
+            emailProvider = object : EmailProvider {
+                override fun sendCode(email: String, code: String, purpose: String): EmailProviderResult =
+                    EmailProviderResult.Sent
+            },
+            emailCodeGenerator = { "123456" },
             tokenGenerator = tokenGenerator,
             clock = clock,
             wechatOAuthClient = FakeWechatOAuthClient(
@@ -48,8 +53,8 @@ class WechatUnlinkTest {
         clock: MutableClock,
         phone: String = PHONE
     ): Pair<AccountToken, AccountToken> {
-        assertTrue(service.issueSmsCode(phone, "device-old", "127.0.0.1") is AccountResult.Success)
-        val registered = service.register(phone, "123456", PASSWORD, "device-old") as AccountResult.Success
+        assertTrue(service.issueVerificationCode(phone, "device-old", "127.0.0.1") is AccountResult.Success)
+        val registered = service.registerIdentifier(phone, "123456", PASSWORD, "device-old") as AccountResult.Success
         clock.advanceBy(60_001)
         val exchange = service.exchangeWechatCode(
             code = "wechat-code",
@@ -59,7 +64,9 @@ class WechatUnlinkTest {
         val linked = (exchange.value.result as WechatAuthResultContract.SignedIn).session
         return registered.value to AccountToken(
             accountId = registered.value.accountId,
-            phone = linked.phone,
+            primaryIdentifier = linked.primaryIdentifier,
+            identifiers = linked.identifiers,
+            phone = linked.identifiers.firstOrNull { it.type.name == "PHONE" }?.value,
             token = requireNotNull(linked.token),
             wechatLinked = linked.wechatLinked,
             nickname = linked.nickname,
@@ -90,7 +97,7 @@ class WechatUnlinkTest {
         assertTrue(service.verifyToken(unlinked.token) is AccountResult.Success)
         assertEquals(null, store.findWechatIdentityByAccountId(unlinked.accountId))
 
-        val phoneLogin = service.login(PHONE, PASSWORD, "device-phone")
+        val phoneLogin = service.loginIdentifier(PHONE, PASSWORD, "device-phone")
         assertTrue(phoneLogin is AccountResult.Success)
         val wechatExchange = service.exchangeWechatCode("wechat-code", null, "device-wechat") as AccountResult.Success
         assertTrue(wechatExchange.value.result is WechatAuthResultContract.RegistrationRequired)
@@ -103,8 +110,8 @@ class WechatUnlinkTest {
         val service = createService(store, clock)
         val (_, linkedSession) = registerAndLink(service, clock)
 
-        val issue = service.issueSmsCode(
-            phone = PHONE,
+        val issue = service.issueVerificationCode(
+            identifier = PHONE,
             deviceId = "device-new",
             ipAddress = "127.0.0.1",
             purpose = "WECHAT_UNLINK",
@@ -112,14 +119,64 @@ class WechatUnlinkTest {
         )
         assertTrue(issue is AccountResult.Success)
 
-        val result = service.unlinkWechatWithSms(
+        val result = service.unlinkWechatWithCode(
             bearerToken = linkedSession.token,
+            identifier = PHONE,
             code = "123456",
             deviceId = "device-new"
         )
         assertTrue(result is AccountResult.Success)
         assertFalse((result as AccountResult.Success).value.wechatLinked)
-        assertEquals(null, store.findSmsCode(PHONE))
+        assertEquals(null, store.findVerificationCode("PHONE", PHONE, "WECHAT_UNLINK"))
+    }
+
+    @Test
+    fun emailOnlyAccountCanUnlinkWechatWithBoundEmailCode() {
+        val store = InMemoryAccountStore()
+        val clock = createClock()
+        val service = createService(store, clock)
+        assertTrue(
+            service.issueVerificationCode(EMAIL, "device-old", "127.0.0.1", "REGISTER") is AccountResult.Success
+        )
+        val registered = service.registerIdentifier(
+            EMAIL,
+            "123456",
+            PASSWORD,
+            "device-old"
+        ) as AccountResult.Success
+        val exchange = service.exchangeWechatCode(
+            code = "wechat-code",
+            bearerToken = registered.value.token,
+            deviceId = "device-old"
+        ) as AccountResult.Success
+        val linked = (exchange.value.result as WechatAuthResultContract.SignedIn).session
+        val linkedToken = requireNotNull(linked.token)
+        clock.advanceBy(60_001)
+
+        assertEquals(
+            AccountResult.Failure(AccountError.INVALID_REQUEST),
+            service.issueVerificationCode(
+                "other@example.com",
+                "device-new",
+                "127.0.0.1",
+                "WECHAT_UNLINK",
+                bearerToken = linkedToken
+            )
+        )
+        assertTrue(
+            service.issueVerificationCode(
+                EMAIL,
+                "device-new",
+                "127.0.0.1",
+                "WECHAT_UNLINK",
+                bearerToken = linkedToken
+            ) is AccountResult.Success
+        )
+
+        val unlinked = service.unlinkWechatWithCode(linkedToken, EMAIL, "123456", "device-new")
+        assertTrue(unlinked is AccountResult.Success)
+        assertFalse((unlinked as AccountResult.Success).value.wechatLinked)
+        assertEquals(null, store.findVerificationCode("EMAIL", EMAIL, "WECHAT_UNLINK"))
     }
 
     @Test
@@ -190,13 +247,14 @@ class WechatUnlinkTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         val session = AccountApiJsonContracts.parseSessionResponse(response.bodyAsText())
-        assertEquals(PHONE, session.phone)
+        assertEquals(PHONE, session.primaryIdentifier?.value)
         assertFalse(session.wechatLinked)
         assertNotNull(session.token)
     }
 
     private companion object {
         const val PHONE = "13800138000"
+        const val EMAIL = "user@example.com"
         const val PASSWORD = "Pass123456!"
     }
 }

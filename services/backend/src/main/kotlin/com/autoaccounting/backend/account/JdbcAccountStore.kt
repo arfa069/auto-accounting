@@ -25,44 +25,10 @@ class JdbcAccountStore(
         runBackendMigrations(jdbcUrl, username, password)
     }
 
-    override fun findUser(phone: String): StoredUser? = connection().use { connection ->
-        connection.prepareStatement(
-            """
-            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
-                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
-            FROM account_phone_credentials p
-            JOIN accounts a ON a.account_id = p.account_id
-            WHERE p.phone = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, phone)
-            statement.executeQuery().use { rs ->
-                if (rs.next()) rs.toStoredUser() else null
-            }
-        }
-    }
-
-    override fun findUserByAccountId(accountId: Long): StoredUser? = connection().use { connection ->
-        connection.prepareStatement(
-            """
-            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
-                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
-            FROM accounts a
-            LEFT JOIN account_phone_credentials p ON p.account_id = a.account_id
-            WHERE a.account_id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setLong(1, accountId)
-            statement.executeQuery().use { rs ->
-                if (rs.next()) rs.toStoredUser() else null
-            }
-        }
-    }
-
     override fun findAccount(accountId: Long): StoredAccount? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -72,6 +38,7 @@ class JdbcAccountStore(
                 if (rs.next()) {
                     StoredAccount(
                         accountId = rs.getLong("account_id"),
+                        primaryIdentifierType = rs.getString("primary_identifier_type"),
                         deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
                         createdAtMillis = rs.getLong("created_at_millis")
                     )
@@ -82,97 +49,15 @@ class JdbcAccountStore(
         }
     }
 
-    override fun createUser(user: StoredUser): Boolean = connection().use { connection ->
-        connection.autoCommit = false
-        try {
-            var accountId: Long = -1
-            connection.prepareStatement(
-                """
-                INSERT INTO accounts (deletion_requested_at_millis, created_at_millis)
-                VALUES (?, ?)
-                """.trimIndent(),
-                Statement.RETURN_GENERATED_KEYS
-            ).use { statement ->
-                statement.setNullableLong(1, user.deletionRequestedAtMillis)
-                statement.setLong(2, user.createdAtMillis)
-                statement.executeUpdate()
-                statement.generatedKeys.use { keys ->
-                    if (keys.next()) accountId = keys.getLong(1)
-                }
-            }
-            if (accountId == -1L) {
-                connection.rollback()
-                return false
-            }
-            connection.prepareStatement(
-                """
-                INSERT INTO account_phone_credentials (
-                    account_id, phone, password_salt, password_hash,
-                    failed_login_count, locked_until_millis, updated_at_millis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """.trimIndent()
-            ).use { statement ->
-                statement.setLong(1, accountId)
-                statement.setString(2, user.phone)
-                statement.setString(3, user.passwordSalt)
-                statement.setString(4, user.passwordHash)
-                statement.setInt(5, user.failedLoginCount)
-                statement.setLong(6, user.lockedUntilMillis)
-                statement.setLong(7, user.createdAtMillis)
-                statement.executeUpdate()
-            }
-            connection.commit()
-            true
-        } catch (error: java.sql.SQLException) {
-            connection.rollback()
-            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) false else throw error
-        } finally {
-            connection.autoCommit = true
-        }
-    }
-
-    override fun updateUser(user: StoredUser) {
+    override fun updateAccountDeletionRequestedAt(accountId: Long, requestedAtMillis: Long?) {
         connection().use { connection ->
-            connection.autoCommit = false
-            try {
-                connection.prepareStatement(
-                    """
-                    UPDATE accounts
-                    SET deletion_requested_at_millis = ?
-                    WHERE account_id = ?
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setNullableLong(1, user.deletionRequestedAtMillis)
-                    statement.setLong(2, user.accountId)
-                    statement.executeUpdate()
-                }
-                if (user.phone.isNotBlank()) {
-                    connection.prepareStatement(
-                        """
-                        UPDATE account_phone_credentials
-                        SET failed_login_count = ?,
-                            locked_until_millis = ?,
-                            password_salt = ?,
-                            password_hash = ?,
-                            updated_at_millis = ?
-                        WHERE account_id = ?
-                        """.trimIndent()
-                    ).use { statement ->
-                        statement.setInt(1, user.failedLoginCount)
-                        statement.setLong(2, user.lockedUntilMillis)
-                        statement.setString(3, user.passwordSalt)
-                        statement.setString(4, user.passwordHash)
-                        statement.setLong(5, System.currentTimeMillis())
-                        statement.setLong(6, user.accountId)
-                        statement.executeUpdate()
-                    }
-                }
-                connection.commit()
-            } catch (error: java.sql.SQLException) {
-                connection.rollback()
-                throw error
-            } finally {
-                connection.autoCommit = true
+            connection.prepareStatement(
+                "UPDATE accounts SET deletion_requested_at_millis = ? WHERE account_id = ?"
+            ).use { statement ->
+                if (requestedAtMillis == null) statement.setNull(1, java.sql.Types.BIGINT)
+                else statement.setLong(1, requestedAtMillis)
+                statement.setLong(2, accountId)
+                statement.executeUpdate()
             }
         }
     }
@@ -180,7 +65,7 @@ class JdbcAccountStore(
     override fun accountsPendingDeletion(): List<StoredAccount> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE deletion_requested_at_millis IS NOT NULL
             """.trimIndent()
@@ -191,6 +76,7 @@ class JdbcAccountStore(
                         add(
                             StoredAccount(
                                 accountId = rs.getLong("account_id"),
+                                primaryIdentifierType = rs.getString("primary_identifier_type"),
                                 deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
                                 createdAtMillis = rs.getLong("created_at_millis")
                             )
@@ -212,145 +98,574 @@ class JdbcAccountStore(
         }
     }
 
-    override fun upsertSmsCode(record: StoredSmsCode) {
-        connection().use { connection ->
-            val updated = connection.prepareStatement(
-                """
-                UPDATE account_sms_codes
-                SET code_hash = ?, expires_at_millis = ?, failed_attempts = ?,
-                    invalidated = ?, device_id = ?, ip_address = ?, purpose = ?, context_key = ?
-                WHERE phone = ?
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, record.codeHash)
-                statement.setLong(2, record.expiresAtMillis)
-                statement.setInt(3, record.failedAttempts)
-                statement.setBoolean(4, record.invalidated)
-                statement.setString(5, record.deviceId)
-                statement.setString(6, record.ipAddress)
-                statement.setString(7, record.purpose)
-                statement.setString(8, record.contextKey)
-                statement.setString(9, record.phone)
-                statement.executeUpdate()
+    // Unified Identifier & Credential Store Implementations
+
+    override fun findAccountByIdentifier(identifierType: String, normalizedValue: String): StoredAccount? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT a.account_id, a.primary_identifier_type, a.deletion_requested_at_millis, a.created_at_millis
+            FROM account_identifiers i
+            JOIN accounts a ON a.account_id = i.account_id
+            WHERE i.identifier_type = ? AND i.normalized_value = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, identifierType)
+            statement.setString(2, normalizedValue)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredAccount(
+                        accountId = rs.getLong("account_id"),
+                        primaryIdentifierType = rs.getString("primary_identifier_type"),
+                        deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
+                        createdAtMillis = rs.getLong("created_at_millis")
+                    )
+                } else null
             }
-            if (updated == 0) {
-                connection.prepareStatement(
-                    """
-                    INSERT INTO account_sms_codes (
-                        phone, code_hash, expires_at_millis, failed_attempts,
-                        invalidated, device_id, ip_address, purpose, context_key
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setString(1, record.phone)
-                    statement.setString(2, record.codeHash)
-                    statement.setLong(3, record.expiresAtMillis)
-                    statement.setInt(4, record.failedAttempts)
-                    statement.setBoolean(5, record.invalidated)
-                    statement.setString(6, record.deviceId)
-                    statement.setString(7, record.ipAddress)
-                    statement.setString(8, record.purpose)
-                    statement.setString(9, record.contextKey)
-                    statement.executeUpdate()
+        }
+    }
+
+    override fun findPasswordCredentialByAccountId(accountId: Long): StoredPasswordCredential? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT account_id, password_salt, password_hash, failed_login_count, locked_until_millis, updated_at_millis
+            FROM account_password_credentials
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredPasswordCredential(
+                        accountId = rs.getLong("account_id"),
+                        passwordSalt = rs.getString("password_salt"),
+                        passwordHash = rs.getString("password_hash"),
+                        failedLoginCount = rs.getInt("failed_login_count"),
+                        lockedUntilMillis = rs.getLong("locked_until_millis"),
+                        updatedAtMillis = rs.getLong("updated_at_millis")
+                    )
+                } else null
+            }
+        }
+    }
+
+    override fun findIdentifiersByAccountId(accountId: Long): List<StoredAccountIdentifier> = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT id, account_id, identifier_type, raw_value, normalized_value, verified, created_at_millis, updated_at_millis
+            FROM account_identifiers
+            WHERE account_id = ?
+            ORDER BY id
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(
+                            StoredAccountIdentifier(
+                                id = rs.getLong("id"),
+                                accountId = rs.getLong("account_id"),
+                                identifierType = rs.getString("identifier_type"),
+                                rawValue = rs.getString("raw_value"),
+                                normalizedValue = rs.getString("normalized_value"),
+                                verified = rs.getBoolean("verified"),
+                                createdAtMillis = rs.getLong("created_at_millis"),
+                                updatedAtMillis = rs.getLong("updated_at_millis")
+                            )
+                        )
+                    }
                 }
             }
         }
     }
 
-    override fun findSmsCode(phone: String): StoredSmsCode? = connection().use { connection ->
+    override fun findIdentifierByValue(identifierType: String, normalizedValue: String): StoredAccountIdentifier? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT phone, code_hash, expires_at_millis, failed_attempts,
-                   invalidated, device_id, ip_address, purpose, context_key
-            FROM account_sms_codes
-            WHERE phone = ?
+            SELECT id, account_id, identifier_type, raw_value, normalized_value, verified, created_at_millis, updated_at_millis
+            FROM account_identifiers
+            WHERE identifier_type = ? AND normalized_value = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, phone)
+            statement.setString(1, identifierType)
+            statement.setString(2, normalizedValue)
             statement.executeQuery().use { rs ->
                 if (rs.next()) {
-                    StoredSmsCode(
-                        phone = rs.getString("phone"),
+                    StoredAccountIdentifier(
+                        id = rs.getLong("id"),
+                        accountId = rs.getLong("account_id"),
+                        identifierType = rs.getString("identifier_type"),
+                        rawValue = rs.getString("raw_value"),
+                        normalizedValue = rs.getString("normalized_value"),
+                        verified = rs.getBoolean("verified"),
+                        createdAtMillis = rs.getLong("created_at_millis"),
+                        updatedAtMillis = rs.getLong("updated_at_millis")
+                    )
+                } else null
+            }
+        }
+    }
+
+    override fun updatePasswordCredential(credential: StoredPasswordCredential) {
+        connection().use { connection ->
+            connection.prepareStatement(
+                """
+                UPDATE account_password_credentials
+                SET password_salt = ?, password_hash = ?, failed_login_count = ?, locked_until_millis = ?, updated_at_millis = ?
+                WHERE account_id = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, credential.passwordSalt)
+                statement.setString(2, credential.passwordHash)
+                statement.setInt(3, credential.failedLoginCount)
+                statement.setLong(4, credential.lockedUntilMillis)
+                statement.setLong(5, credential.updatedAtMillis)
+                statement.setLong(6, credential.accountId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override fun resetPasswordAndRotateSession(
+        credential: StoredPasswordCredential,
+        verificationIdentifierType: String,
+        verificationNormalizedIdentifier: String,
+        verificationPurpose: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            connection.prepareStatement(
+                """
+                UPDATE account_password_credentials
+                SET password_salt = ?, password_hash = ?, failed_login_count = ?,
+                    locked_until_millis = ?, updated_at_millis = ?
+                WHERE account_id = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, credential.passwordSalt)
+                statement.setString(2, credential.passwordHash)
+                statement.setInt(3, credential.failedLoginCount)
+                statement.setLong(4, credential.lockedUntilMillis)
+                statement.setLong(5, credential.updatedAtMillis)
+                statement.setLong(6, credential.accountId)
+                if (statement.executeUpdate() != 1) {
+                    connection.rollback()
+                    return AccountResult.Failure(AccountError.LOGIN_FAILED)
+                }
+            }
+            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
+                statement.setLong(1, credential.accountId)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "DELETE FROM verification_codes WHERE identifier_type = ? AND normalized_identifier = ? AND purpose = ?"
+            ).use { statement ->
+                statement.setString(1, verificationIdentifierType)
+                statement.setString(2, verificationNormalizedIdentifier)
+                statement.setString(3, verificationPurpose)
+                statement.executeUpdate()
+            }
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(
+                        accountId = credential.accountId,
+                        deviceId = deviceId,
+                        firstSeenAtMillis = now,
+                        lastSeenAtMillis = now,
+                        ipAddress = ipAddress
+                    )
+                )
+            }
+            val token = tokenGenerator()
+            insertSession(
+                connection,
+                StoredSession(hashTokenString(token), credential.accountId, deviceId, now)
+            )
+            connection.commit()
+            AccountResult.Success(AccountToken(accountId = credential.accountId, token = token))
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun createAccountWithIdentifier(
+        primaryIdentifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        passwordSalt: String?,
+        passwordHash: String?,
+        verified: Boolean,
+        now: Long
+    ): StoredAccount? = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            var accountId: Long = -1
+            connection.prepareStatement(
+                """
+                INSERT INTO accounts (primary_identifier_type, created_at_millis)
+                VALUES (?, ?)
+                """.trimIndent(),
+                Statement.RETURN_GENERATED_KEYS
+            ).use { statement ->
+                statement.setString(1, primaryIdentifierType)
+                statement.setLong(2, now)
+                statement.executeUpdate()
+                statement.generatedKeys.use { keys ->
+                    if (keys.next()) accountId = keys.getLong(1)
+                }
+            }
+            if (accountId == -1L) {
+                connection.rollback()
+                return null
+            }
+
+            connection.prepareStatement(
+                """
+                INSERT INTO account_identifiers (account_id, identifier_type, raw_value, normalized_value, verified, created_at_millis, updated_at_millis)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.setString(2, primaryIdentifierType)
+                statement.setString(3, rawValue)
+                statement.setString(4, normalizedValue)
+                statement.setBoolean(5, verified)
+                statement.setLong(6, now)
+                statement.setLong(7, now)
+                statement.executeUpdate()
+            }
+
+            if (passwordSalt != null && passwordHash != null) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO account_password_credentials (account_id, password_salt, password_hash, failed_login_count, locked_until_millis, updated_at_millis)
+                    VALUES (?, ?, ?, 0, 0, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setLong(1, accountId)
+                    statement.setString(2, passwordSalt)
+                    statement.setString(3, passwordHash)
+                    statement.setLong(4, now)
+                    statement.executeUpdate()
+                }
+            }
+
+            connection.commit()
+            StoredAccount(accountId = accountId, primaryIdentifierType = primaryIdentifierType, createdAtMillis = now)
+        } catch (error: SQLException) {
+            connection.rollback()
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) null else throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun addIdentifierToAccount(
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        verified: Boolean,
+        now: Long
+    ): Boolean = connection().use { connection ->
+        try {
+            connection.prepareStatement(
+                """
+                INSERT INTO account_identifiers (account_id, identifier_type, raw_value, normalized_value, verified, created_at_millis, updated_at_millis)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.setString(2, identifierType)
+                statement.setString(3, rawValue)
+                statement.setString(4, normalizedValue)
+                statement.setBoolean(5, verified)
+                statement.setLong(6, now)
+                statement.setLong(7, now)
+                statement.executeUpdate()
+            }
+            true
+        } catch (error: SQLException) {
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) false else throw error
+        }
+    }
+
+    override fun completeIdentifierLink(
+        ticketHash: String,
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        newPasswordSalt: String?,
+        newPasswordHash: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> = connection().use { connection ->
+        connection.autoCommit = false
+        try {
+            val ticketValid = connection.prepareStatement(
+                """
+                SELECT ticket_type, account_id, expires_at_millis, used_at_millis
+                FROM account_one_time_tickets
+                WHERE ticket_hash = ? FOR UPDATE
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, ticketHash)
+                statement.executeQuery().use { rs ->
+                    rs.next() && rs.getString("ticket_type") == "IDENTIFIER_LINK" &&
+                        rs.getLong("account_id") == accountId && rs.getObject("used_at_millis") == null &&
+                        rs.getLong("expires_at_millis") >= now
+                }
+            }
+            if (!ticketValid) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+            }
+            val hasPassword = connection.prepareStatement(
+                "SELECT account_id FROM account_password_credentials WHERE account_id = ? FOR UPDATE"
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.executeQuery().use { it.next() }
+            }
+            if (!hasPassword && (newPasswordSalt == null || newPasswordHash == null)) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.INVALID_REQUEST)
+            }
+            if (!hasPassword) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO account_password_credentials (
+                        account_id, password_salt, password_hash, failed_login_count,
+                        locked_until_millis, updated_at_millis
+                    ) VALUES (?, ?, ?, 0, 0, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setLong(1, accountId)
+                    statement.setString(2, newPasswordSalt)
+                    statement.setString(3, newPasswordHash)
+                    statement.setLong(4, now)
+                    statement.executeUpdate()
+                }
+            }
+            connection.prepareStatement(
+                """
+                INSERT INTO account_identifiers (
+                    account_id, identifier_type, raw_value, normalized_value, verified,
+                    created_at_millis, updated_at_millis
+                ) VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setLong(1, accountId)
+                statement.setString(2, identifierType)
+                statement.setString(3, rawValue)
+                statement.setString(4, normalizedValue)
+                statement.setLong(5, now)
+                statement.setLong(6, now)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "UPDATE accounts SET primary_identifier_type = COALESCE(primary_identifier_type, ?) WHERE account_id = ?"
+            ).use { statement ->
+                statement.setString(1, identifierType)
+                statement.setLong(2, accountId)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "UPDATE account_one_time_tickets SET used_at_millis = ? WHERE ticket_hash = ? AND used_at_millis IS NULL"
+            ).use { statement ->
+                statement.setLong(1, now)
+                statement.setString(2, ticketHash)
+                if (statement.executeUpdate() != 1) error("Identifier link ticket was concurrently consumed")
+            }
+            connection.prepareStatement(
+                "DELETE FROM verification_codes WHERE identifier_type = ? AND normalized_identifier = ? AND purpose = 'IDENTIFIER_LINK'"
+            ).use { statement ->
+                statement.setString(1, identifierType)
+                statement.setString(2, normalizedValue)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
+                statement.setLong(1, accountId)
+                statement.executeUpdate()
+            }
+            if (deviceId.isNotBlank()) {
+                upsertRegisteredDevice(
+                    connection,
+                    StoredRegisteredDevice(accountId, deviceId, now, now, ipAddress)
+                )
+            }
+            val token = tokenGenerator()
+            insertSession(connection, StoredSession(hashTokenString(token), accountId, deviceId, now))
+            connection.commit()
+            AccountResult.Success(AccountToken(accountId = accountId, token = token))
+        } catch (error: java.sql.SQLException) {
+            connection.rollback()
+            AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    override fun upsertVerificationCode(code: StoredVerificationCode) {
+        connection().use { connection ->
+            val databaseProduct = connection.metaData.databaseProductName
+            val sql = if (databaseProduct == "H2") {
+                """
+                MERGE INTO verification_codes (
+                    identifier_type, normalized_identifier, purpose, code_hash,
+                    expires_at_millis, failed_attempts, invalidated, device_id, ip_address, context_key
+                ) KEY (identifier_type, normalized_identifier, purpose)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            } else {
+                """
+                INSERT INTO verification_codes (
+                    identifier_type, normalized_identifier, purpose, code_hash,
+                    expires_at_millis, failed_attempts, invalidated, device_id, ip_address, context_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (identifier_type, normalized_identifier, purpose) DO UPDATE SET
+                    code_hash = EXCLUDED.code_hash,
+                    expires_at_millis = EXCLUDED.expires_at_millis,
+                    failed_attempts = EXCLUDED.failed_attempts,
+                    invalidated = EXCLUDED.invalidated,
+                    device_id = EXCLUDED.device_id,
+                    ip_address = EXCLUDED.ip_address,
+                    context_key = EXCLUDED.context_key
+                """.trimIndent()
+            }
+            connection.prepareStatement(sql).use { statement ->
+                statement.setString(1, code.identifierType)
+                statement.setString(2, code.normalizedIdentifier)
+                statement.setString(3, code.purpose)
+                statement.setString(4, code.codeHash)
+                statement.setLong(5, code.expiresAtMillis)
+                statement.setInt(6, code.failedAttempts)
+                statement.setBoolean(7, code.invalidated)
+                statement.setString(8, code.deviceId)
+                statement.setString(9, code.ipAddress)
+                statement.setString(10, code.contextKey)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override fun findVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String): StoredVerificationCode? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT identifier_type, normalized_identifier, purpose, code_hash, expires_at_millis, failed_attempts, invalidated, device_id, ip_address, context_key
+            FROM verification_codes
+            WHERE identifier_type = ? AND normalized_identifier = ? AND purpose = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, identifierType)
+            statement.setString(2, normalizedIdentifier)
+            statement.setString(3, purpose)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredVerificationCode(
+                        identifierType = rs.getString("identifier_type"),
+                        normalizedIdentifier = rs.getString("normalized_identifier"),
+                        purpose = rs.getString("purpose"),
                         codeHash = rs.getString("code_hash"),
                         expiresAtMillis = rs.getLong("expires_at_millis"),
                         failedAttempts = rs.getInt("failed_attempts"),
                         invalidated = rs.getBoolean("invalidated"),
-                        deviceId = rs.getString("device_id").orEmpty(),
-                        ipAddress = rs.getString("ip_address").orEmpty(),
-                        purpose = rs.getString("purpose").orEmpty(),
+                        deviceId = rs.getString("device_id"),
+                        ipAddress = rs.getString("ip_address"),
                         contextKey = rs.getString("context_key")
                     )
-                } else {
-                    null
-                }
+                } else null
             }
         }
     }
 
-    override fun updateSmsCode(record: StoredSmsCode) {
-        upsertSmsCode(record)
+    override fun deleteVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String) {
+        connection().use { connection ->
+            deleteVerificationCode(connection, identifierType, normalizedIdentifier, purpose)
+        }
     }
 
-    override fun deleteSmsCode(phone: String) {
+    private fun deleteVerificationCode(
+        connection: Connection,
+        identifierType: String,
+        normalizedIdentifier: String,
+        purpose: String
+    ) {
+        connection.prepareStatement(
+            """
+            DELETE FROM verification_codes
+            WHERE identifier_type = ? AND normalized_identifier = ? AND purpose = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, identifierType)
+            statement.setString(2, normalizedIdentifier)
+            statement.setString(3, purpose)
+            statement.executeUpdate()
+        }
+    }
+
+    override fun recordVerificationSendLog(channelType: String, scopeType: String, scopeValue: String, issuedAtMillis: Long) {
         connection().use { connection ->
-            connection.prepareStatement("DELETE FROM account_sms_codes WHERE phone = ?").use { statement ->
-                statement.setString(1, phone)
+            connection.prepareStatement(
+                """
+                INSERT INTO verification_code_send_logs (channel_type, scope_type, scope_value, issued_at_millis)
+                VALUES (?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, channelType)
+                statement.setString(2, scopeType)
+                statement.setString(3, scopeValue)
+                statement.setLong(4, issuedAtMillis)
                 statement.executeUpdate()
             }
         }
     }
 
-    override fun recordSmsIssue(scopeType: String, scopeValue: String, issuedAtMillis: Long) {
-        connection().use { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO account_sms_issues (scope_type, scope_value, issued_at_millis)
-                VALUES (?, ?, ?)
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, scopeType)
-                statement.setString(2, scopeValue)
-                statement.setLong(3, issuedAtMillis)
-                statement.executeUpdate()
+    override fun countVerificationSendLogs(channelType: String, scopeType: String, scopeValue: String, sinceMillis: Long): Int = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT COUNT(*) AS issue_count
+            FROM verification_code_send_logs
+            WHERE channel_type = ? AND scope_type = ? AND scope_value = ? AND issued_at_millis >= ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, channelType)
+            statement.setString(2, scopeType)
+            statement.setString(3, scopeValue)
+            statement.setLong(4, sinceMillis)
+            statement.executeQuery().use { rs ->
+                rs.next()
+                rs.getInt("issue_count")
             }
         }
     }
 
-    override fun countSmsIssues(scopeType: String, scopeValue: String, sinceMillis: Long): Int {
-        return connection().use { connection ->
-            connection.prepareStatement(
-                """
-                SELECT COUNT(*) AS issue_count
-                FROM account_sms_issues
-                WHERE scope_type = ? AND scope_value = ? AND issued_at_millis >= ?
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, scopeType)
-                statement.setString(2, scopeValue)
-                statement.setLong(3, sinceMillis)
-                statement.executeQuery().use { rs ->
-                    rs.next()
-                    rs.getInt("issue_count")
-                }
-            }
-        }
-    }
-
-    override fun latestSmsIssueMillis(scopeType: String, scopeValue: String): Long? {
-        return connection().use { connection ->
-            connection.prepareStatement(
-                """
-                SELECT MAX(issued_at_millis) AS latest_issue
-                FROM account_sms_issues
-                WHERE scope_type = ? AND scope_value = ?
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, scopeType)
-                statement.setString(2, scopeValue)
-                statement.executeQuery().use { rs ->
-                    rs.next()
-                    rs.getNullableLong("latest_issue")
-                }
+    override fun latestVerificationSendLogMillis(channelType: String, scopeType: String, scopeValue: String): Long? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT MAX(issued_at_millis) AS latest_issue
+            FROM verification_code_send_logs
+            WHERE channel_type = ? AND scope_type = ? AND scope_value = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, channelType)
+            statement.setString(2, scopeType)
+            statement.setString(3, scopeValue)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.getNullableLong("latest_issue") else null
             }
         }
     }
@@ -738,6 +1053,10 @@ class JdbcAccountStore(
                 )
             }
 
+            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
+                statement.setLong(1, accountId)
+                statement.executeUpdate()
+            }
             val digest = MessageDigest.getInstance("SHA-256")
                 .digest(token.toByteArray(Charsets.UTF_8))
             val tokenHash = Base64.getEncoder().encodeToString(digest)
@@ -788,7 +1107,7 @@ class JdbcAccountStore(
         avatarUrl: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken> = connection().use { connection ->
@@ -856,6 +1175,10 @@ class JdbcAccountStore(
                 )
             }
 
+            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
+                statement.setLong(1, targetAccountId)
+                statement.executeUpdate()
+            }
             val digest = MessageDigest.getInstance("SHA-256")
                 .digest(token.toByteArray(Charsets.UTF_8))
             val tokenHash = Base64.getEncoder().encodeToString(digest)
@@ -868,7 +1191,9 @@ class JdbcAccountStore(
                     issuedAtMillis = now
                 )
             )
-            smsCodePhoneToDelete?.let { deleteSmsCode(connection, it) }
+            verificationCodeToDelete?.let { code ->
+                deleteVerificationCode(connection, code.identifierType, code.normalizedIdentifier, code.purpose)
+            }
 
             val account = queryAccount(connection, targetAccountId)
             val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
@@ -907,137 +1232,12 @@ class JdbcAccountStore(
         }
     }
 
-    override fun completePhoneLink(
-        ticketHash: String,
-        targetAccountId: Long,
-        phone: String,
-        passwordSalt: String,
-        passwordHash: String,
-        deviceId: String,
-        ipAddress: String,
-        now: Long,
-        tokenGenerator: () -> String
-    ): AccountResult<AccountToken> = connection().use { connection ->
-        connection.autoCommit = false
-        try {
-            val ticket = queryOneTimeTicket(connection, ticketHash)
-                ?: run {
-                    connection.rollback()
-                    return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-                }
-            if (ticket.ticketType != "PHONE_LINK" || ticket.expiresAtMillis < now || ticket.accountId != targetAccountId) {
-                connection.rollback()
-                return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-            }
-            if (ticket.usedAtMillis != null) {
-                connection.rollback()
-                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
-            }
-
-            val token = tokenGenerator()
-
-            val rowsUpdated = markOneTimeTicketUsed(connection, ticketHash, now)
-            if (rowsUpdated == 0) {
-                connection.rollback()
-                return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
-            }
-
-            val existingCredential = queryPhoneCredentialByAccountId(connection, targetAccountId)
-            if (existingCredential != null) {
-                connection.rollback()
-                return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
-            }
-
-            val phoneUser = queryUserByPhone(connection, phone)
-            if (phoneUser != null) {
-                connection.rollback()
-                return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
-            }
-
-            insertPhoneCredential(
-                connection,
-                targetAccountId,
-                phone,
-                passwordSalt,
-                passwordHash,
-                now
-            )
-
-            connection.prepareStatement("DELETE FROM account_sessions WHERE account_id = ?").use { statement ->
-                statement.setLong(1, targetAccountId)
-                statement.executeUpdate()
-            }
-
-            if (deviceId.isNotBlank()) {
-                upsertRegisteredDevice(
-                    connection,
-                    StoredRegisteredDevice(
-                        accountId = targetAccountId,
-                        deviceId = deviceId,
-                        firstSeenAtMillis = now,
-                        lastSeenAtMillis = now,
-                        ipAddress = ipAddress
-                    )
-                )
-            }
-
-            val digest = MessageDigest.getInstance("SHA-256")
-                .digest(token.toByteArray(Charsets.UTF_8))
-            val tokenHash = Base64.getEncoder().encodeToString(digest)
-            insertSession(
-                connection,
-                StoredSession(
-                    tokenHash = tokenHash,
-                    accountId = targetAccountId,
-                    deviceId = deviceId,
-                    issuedAtMillis = now
-                )
-            )
-
-            val account = queryAccount(connection, targetAccountId)
-            val wechatIdentity = queryWechatIdentityByAccountId(connection, targetAccountId)
-            val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
-                AccountDeletionStatus(
-                    accountId = targetAccountId,
-                    phone = phone,
-                    requestedAtMillis = requestedAt,
-                    finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
-                )
-            }
-
-            connection.commit()
-            AccountResult.Success(
-                AccountToken(
-                    accountId = targetAccountId,
-                    phone = phone,
-                    token = token,
-                    deletionStatus = deletionStatus,
-                    wechatLinked = wechatIdentity != null,
-                    nickname = wechatIdentity?.nickname,
-                    avatarUrl = wechatIdentity?.avatarUrl
-                )
-            )
-        } catch (error: SQLException) {
-            connection.rollback()
-            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
-                AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
-            } else {
-                throw error
-            }
-        } catch (error: Exception) {
-            connection.rollback()
-            throw error
-        } finally {
-            connection.autoCommit = true
-        }
-    }
-
     override fun unlinkWechatIdentity(
         accountId: Long,
-        phone: String,
+        phone: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken> = connection().use { connection ->
@@ -1048,14 +1248,15 @@ class JdbcAccountStore(
                     connection.rollback()
                     return AccountResult.Failure(AccountError.TOKEN_INVALID)
                 }
-            val phoneCredential = queryPhoneCredentialByAccountId(connection, accountId)
+            queryPasswordCredential(connection, accountId)
                 ?: run {
                     connection.rollback()
                     return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
                 }
-            if (phoneCredential.phone != phone) {
+            val currentIdentifiers = queryIdentifiersByAccountId(connection, accountId)
+            if (currentIdentifiers.isEmpty()) {
                 connection.rollback()
-                return AccountResult.Failure(AccountError.TOKEN_INVALID)
+                return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
             }
             if (account.deletionRequestedAtMillis != null) {
                 connection.rollback()
@@ -1102,13 +1303,15 @@ class JdbcAccountStore(
                     issuedAtMillis = now
                 )
             )
-            smsCodePhoneToDelete?.let { deleteSmsCode(connection, it) }
+            verificationCodeToDelete?.let { code ->
+                deleteVerificationCode(connection, code.identifierType, code.normalizedIdentifier, code.purpose)
+            }
 
             connection.commit()
             AccountResult.Success(
                 AccountToken(
                     accountId = accountId,
-                    phone = phone,
+                    phone = currentIdentifiers.firstOrNull { it.identifierType == "PHONE" }?.normalizedValue,
                     token = token,
                     wechatLinked = false
                 )
@@ -1121,70 +1324,58 @@ class JdbcAccountStore(
         }
     }
 
-    private fun queryPhoneCredentialByAccountId(connection: Connection, accountId: Long): StoredPhoneCredential? {
+    private fun queryPasswordCredential(connection: Connection, accountId: Long): StoredPasswordCredential? {
         return connection.prepareStatement(
             """
-            SELECT account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis
-            FROM account_phone_credentials
+            SELECT account_id, password_salt, password_hash, failed_login_count, locked_until_millis, updated_at_millis
+            FROM account_password_credentials
             WHERE account_id = ?
             """.trimIndent()
         ).use { statement ->
             statement.setLong(1, accountId)
             statement.executeQuery().use { rs ->
-                if (rs.next()) {
-                    StoredPhoneCredential(
-                        accountId = rs.getLong("account_id"),
-                        phone = rs.getString("phone"),
-                        passwordSalt = rs.getString("password_salt"),
-                        passwordHash = rs.getString("password_hash"),
-                        failedLoginCount = rs.getInt("failed_login_count"),
-                        lockedUntilMillis = rs.getLong("locked_until_millis")
-                    )
-                } else {
-                    null
-                }
+                if (!rs.next()) return@use null
+                StoredPasswordCredential(
+                    accountId = rs.getLong("account_id"),
+                    passwordSalt = rs.getString("password_salt"),
+                    passwordHash = rs.getString("password_hash"),
+                    failedLoginCount = rs.getInt("failed_login_count"),
+                    lockedUntilMillis = rs.getLong("locked_until_millis"),
+                    updatedAtMillis = rs.getLong("updated_at_millis")
+                )
             }
         }
     }
 
-    private fun queryUserByPhone(connection: Connection, phone: String): StoredUser? {
+    private fun queryIdentifiersByAccountId(connection: Connection, accountId: Long): List<StoredAccountIdentifier> {
         return connection.prepareStatement(
             """
-            SELECT a.account_id, p.phone, p.password_salt, p.password_hash, p.failed_login_count,
-                   p.locked_until_millis, a.deletion_requested_at_millis, a.created_at_millis
-            FROM account_phone_credentials p
-            JOIN accounts a ON a.account_id = p.account_id
-            WHERE p.phone = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, phone)
-            statement.executeQuery().use { rs ->
-                if (rs.next()) rs.toStoredUser() else null
-            }
-        }
-    }
-
-    private fun insertPhoneCredential(
-        connection: Connection,
-        accountId: Long,
-        phone: String,
-        passwordSalt: String,
-        passwordHash: String,
-        now: Long
-    ) {
-        connection.prepareStatement(
-            """
-            INSERT INTO account_phone_credentials (
-                account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis, updated_at_millis
-            ) VALUES (?, ?, ?, ?, 0, 0, ?)
+            SELECT id, account_id, identifier_type, raw_value, normalized_value, verified,
+                   created_at_millis, updated_at_millis
+            FROM account_identifiers
+            WHERE account_id = ?
+            ORDER BY id
             """.trimIndent()
         ).use { statement ->
             statement.setLong(1, accountId)
-            statement.setString(2, phone)
-            statement.setString(3, passwordSalt)
-            statement.setString(4, passwordHash)
-            statement.setLong(5, now)
-            statement.executeUpdate()
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(
+                            StoredAccountIdentifier(
+                                id = rs.getLong("id"),
+                                accountId = rs.getLong("account_id"),
+                                identifierType = rs.getString("identifier_type"),
+                                rawValue = rs.getString("raw_value"),
+                                normalizedValue = rs.getString("normalized_value"),
+                                verified = rs.getBoolean("verified"),
+                                createdAtMillis = rs.getLong("created_at_millis"),
+                                updatedAtMillis = rs.getLong("updated_at_millis")
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1300,13 +1491,6 @@ class JdbcAccountStore(
         }
     }
 
-    private fun deleteSmsCode(connection: Connection, phone: String) {
-        connection.prepareStatement("DELETE FROM account_sms_codes WHERE phone = ?").use { statement ->
-            statement.setString(1, phone)
-            statement.executeUpdate()
-        }
-    }
-
     private fun upsertRegisteredDevice(connection: Connection, device: StoredRegisteredDevice) {
         val updated = connection.prepareStatement(
             """
@@ -1341,7 +1525,7 @@ class JdbcAccountStore(
     private fun queryAccount(connection: Connection, accountId: Long): StoredAccount? {
         return connection.prepareStatement(
             """
-            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -1400,9 +1584,11 @@ class JdbcAccountStore(
                 return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
             }
 
-            val targetPhoneCred = findPhoneCredentialInternal(connection, targetAccountId)
-            val sourcePhoneCred = findPhoneCredentialInternal(connection, sourceAccountId)
-            if (targetPhoneCred != null && sourcePhoneCred != null) {
+            val targetAccount = lockedAccounts.first { it.accountId == targetAccountId }
+            val sourceAccount = lockedAccounts.first { it.accountId == sourceAccountId }
+            val targetPassCred = queryPasswordCredential(connection, targetAccountId)
+            val sourcePassCred = queryPasswordCredential(connection, sourceAccountId)
+            if (targetPassCred != null && sourcePassCred != null) {
                 connection.rollback()
                 return AccountResult.Failure(AccountError.MERGE_BLOCKED)
             }
@@ -1414,13 +1600,41 @@ class JdbcAccountStore(
                 return AccountResult.Failure(AccountError.MERGE_BLOCKED)
             }
 
+            val targetIdentifiers = queryIdentifiersByAccountId(connection, targetAccountId)
+            val sourceIdentifiers = queryIdentifiersByAccountId(connection, sourceAccountId)
+            if (targetIdentifiers.any { target ->
+                    sourceIdentifiers.any { source -> source.identifierType == target.identifierType }
+                }
+            ) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+            }
+
             // Transfer credentials
-            if (sourcePhoneCred != null) {
+            if (sourcePassCred != null) {
                 connection.prepareStatement(
-                    "UPDATE account_phone_credentials SET account_id = ? WHERE account_id = ?"
+                    "UPDATE account_password_credentials SET account_id = ? WHERE account_id = ?"
                 ).use { stmt ->
                     stmt.setLong(1, targetAccountId)
                     stmt.setLong(2, sourceAccountId)
+                    stmt.executeUpdate()
+                }
+            }
+
+            connection.prepareStatement(
+                "UPDATE account_identifiers SET account_id = ? WHERE account_id = ?"
+            ).use { stmt ->
+                stmt.setLong(1, targetAccountId)
+                stmt.setLong(2, sourceAccountId)
+                stmt.executeUpdate()
+            }
+
+            if (targetAccount.primaryIdentifierType == null && sourceAccount.primaryIdentifierType != null) {
+                connection.prepareStatement(
+                    "UPDATE accounts SET primary_identifier_type = ? WHERE account_id = ?"
+                ).use { stmt ->
+                    stmt.setString(1, sourceAccount.primaryIdentifierType)
+                    stmt.setLong(2, targetAccountId)
                     stmt.executeUpdate()
                 }
             }
@@ -1483,12 +1697,16 @@ class JdbcAccountStore(
                 )
             }
 
-            // Delete tickets and source account
+            // Delete verification codes for every identifier moved from the source account.
             connection.prepareStatement(
-                "DELETE FROM account_sms_codes WHERE phone = ?"
+                "DELETE FROM verification_codes WHERE identifier_type = ? AND normalized_identifier = ?"
             ).use { stmt ->
-                stmt.setString(1, sourcePhoneCred?.phone.orEmpty())
-                stmt.executeUpdate()
+                for (identifier in sourceIdentifiers) {
+                    stmt.setString(1, identifier.identifierType)
+                    stmt.setString(2, identifier.normalizedValue)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
             }
 
             connection.prepareStatement(
@@ -1515,7 +1733,9 @@ class JdbcAccountStore(
 
             connection.commit()
 
-            val finalPhone = sourcePhoneCred?.phone ?: targetPhoneCred?.phone
+            val finalPhone = queryIdentifiersByAccountId(connection, targetAccountId)
+                .firstOrNull { it.identifierType == "PHONE" }
+                ?.rawValue
             val finalWechat = targetWechat ?: sourceWechat
 
             AccountResult.Success(
@@ -1551,7 +1771,7 @@ class JdbcAccountStore(
         val list = mutableListOf<StoredAccount>()
         connection.prepareStatement(
             """
-            SELECT account_id, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id IN (?, ?)
             ORDER BY account_id
@@ -1567,26 +1787,6 @@ class JdbcAccountStore(
             }
         }
         return list
-    }
-
-    private fun findPhoneCredentialInternal(connection: Connection, accountId: Long): StoredPhoneCredential? {
-        return connection.prepareStatement(
-            "SELECT account_id, phone, password_salt, password_hash, failed_login_count, locked_until_millis FROM account_phone_credentials WHERE account_id = ?"
-        ).use { stmt ->
-            stmt.setLong(1, accountId)
-            stmt.executeQuery().use { rs ->
-                if (rs.next()) {
-                    StoredPhoneCredential(
-                        accountId = rs.getLong("account_id"),
-                        phone = rs.getString("phone"),
-                        passwordSalt = rs.getString("password_salt"),
-                        passwordHash = rs.getString("password_hash"),
-                        failedLoginCount = rs.getInt("failed_login_count"),
-                        lockedUntilMillis = rs.getLong("locked_until_millis")
-                    )
-                } else null
-            }
-        }
     }
 
     private fun findWechatIdentityInternal(connection: Connection, accountId: Long): StoredWechatIdentity? {
@@ -1797,20 +1997,7 @@ private const val UNIQUE_VIOLATION_SQL_STATE = "23505"
 private fun ResultSet.toStoredAccount(): StoredAccount {
     return StoredAccount(
         accountId = getLong("account_id"),
-        deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
-        createdAtMillis = getLong("created_at_millis")
-    )
-}
-
-private fun ResultSet.toStoredUser(): StoredUser {
-
-    return StoredUser(
-        accountId = getLong("account_id"),
-        phone = getString("phone").orEmpty(),
-        passwordSalt = getString("password_salt").orEmpty(),
-        passwordHash = getString("password_hash").orEmpty(),
-        failedLoginCount = getInt("failed_login_count"),
-        lockedUntilMillis = getLong("locked_until_millis"),
+        primaryIdentifierType = getString("primary_identifier_type"),
         deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
         createdAtMillis = getLong("created_at_millis")
     )

@@ -282,7 +282,9 @@ fun AutoAccountingApp(
     fun applyVerifiedCredentials(credentials: AccountCredentials) {
         wechatAvatarCache.prepareUrl(credentials.avatarUrl)
         accountSession = AccountSession.SignedIn(
-            phone = credentials.phone,
+            primaryIdentifier = credentials.primaryIdentifier,
+            identifiers = credentials.identifiers,
+            rawPhone = credentials.rawPhone,
             token = credentials.token,
             wechatLinked = credentials.wechatLinked,
             nickname = credentials.nickname,
@@ -302,7 +304,9 @@ fun AutoAccountingApp(
         when (val restored = withContext(Dispatchers.IO) { secureAccountSessionStore.restore() }) {
             is AccountSessionRestoreResult.Restored -> {
                 accountSession = AccountSession.SignedIn(
-                    phone = restored.credentials.phone,
+                    primaryIdentifier = restored.credentials.primaryIdentifier,
+                    identifiers = restored.credentials.identifiers,
+                    rawPhone = restored.credentials.rawPhone,
                     token = restored.credentials.token,
                     wechatLinked = restored.credentials.wechatLinked,
                     nickname = restored.credentials.nickname,
@@ -331,7 +335,9 @@ fun AutoAccountingApp(
             val decision = resolveAccountSessionVerification(
                 accountRepository.verifySession(
                     AccountCredentials(
-                        phone = signedIn.phone,
+                        primaryIdentifier = signedIn.primaryIdentifier,
+                        identifiers = signedIn.identifiers,
+                        rawPhone = signedIn.rawPhone,
                         token = signedIn.token,
                         wechatLinked = signedIn.wechatLinked,
                         nickname = signedIn.nickname,

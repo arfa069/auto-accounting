@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.server.testing.testApplication
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,22 +33,24 @@ class AccountRoutesTest {
 
         repeat(5) { index ->
             val response = client.submitForm(
-                url = "/account/sms",
+                url = "/account/verification-code",
                 formParameters = Parameters.build {
-                    append("phone", "1380013800$index")
+                    append("identifier", "1380013800$index")
                     append("deviceId", "device-$index")
                     append("ipAddress", "203.0.113.$index")
+                    append("purpose", "REGISTER")
                 }
             )
             assertEquals(HttpStatusCode.OK, response.status)
         }
 
         val limited = client.submitForm(
-            url = "/account/sms",
+            url = "/account/verification-code",
             formParameters = Parameters.build {
-                append("phone", "13900139000")
+                append("identifier", "13900139000")
                 append("deviceId", "device-final")
                 append("ipAddress", "198.51.100.10")
+                append("purpose", "REGISTER")
             }
         )
         assertEquals(HttpStatusCode.TooManyRequests, limited.status)
@@ -68,10 +71,11 @@ class AccountRoutesTest {
         }
 
         val sms = client.submitForm(
-            url = "/account/sms",
+            url = "/account/verification-code",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("deviceId", "device-a")
+                append("purpose", "REGISTER")
             }
         )
         assertEquals(HttpStatusCode.OK, sms.status)
@@ -80,7 +84,7 @@ class AccountRoutesTest {
         val registered = client.submitForm(
             url = "/account/register",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "123456")
                 append("password", "Aa123456!")
                 append("deviceId", "device-a")
@@ -92,7 +96,7 @@ class AccountRoutesTest {
         val failedLogin = client.submitForm(
             url = "/account/login",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("password", "bad")
             }
         )
@@ -101,18 +105,19 @@ class AccountRoutesTest {
 
         clock.advanceBy(61_000)
         client.submitForm(
-            url = "/account/sms",
+            url = "/account/verification-code",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("deviceId", "device-a")
                 append("ipAddress", "127.0.0.2")
+                append("purpose", "RECOVERY")
             }
         )
 
         val recovered = client.submitForm(
             url = "/account/recover",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "123456")
                 append("password", "Bb123456!")
                 append("deviceId", "device-a")
@@ -127,7 +132,7 @@ class AccountRoutesTest {
         ) { header(HttpHeaders.Authorization, "Bearer token-1") }
         assertEquals(HttpStatusCode.OK, verified.status)
         val verifiedContract = AccountApiJsonContracts.parseSessionResponse(verified.bodyAsText())
-        assertEquals("13800138000", verifiedContract.phone)
+        assertEquals("13800138000", verifiedContract.primaryIdentifier?.value)
         assertEquals(null, verifiedContract.token)
 
         val signedOut = client.submitForm(
@@ -156,16 +161,17 @@ class AccountRoutesTest {
         }
 
         client.submitForm(
-            url = "/account/sms",
+            url = "/account/verification-code",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("deviceId", "device-a")
+                append("purpose", "REGISTER")
             }
         )
         client.submitForm(
             url = "/account/register",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "123456")
                 append("password", "Aa123456!")
                 append("deviceId", "device-a")
@@ -272,9 +278,48 @@ class AccountRoutesTest {
         )
         assertEquals(regResponse.bodyAsText(), HttpStatusCode.OK, regResponse.status)
         val session1 = AccountApiJsonContracts.parseSessionResponse(regResponse.bodyAsText())
-        assertNull(session1.phone)
+        assertNull(session1.primaryIdentifier)
         assertTrue(session1.wechatLinked)
         assertEquals("微信小张", session1.nickname)
+
+        val pureWechatToken = requireNotNull(session1.token)
+        val prepared = client.submitForm(
+            url = "/account/identifier/link/prepare",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("deviceId", "dev_route")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer $pureWechatToken") }
+        val linkTicket = (
+            AccountApiJsonContracts.parseIdentifierLinkPrepareResponse(prepared.bodyAsText())
+                as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        ).linkTicket
+
+        val missingPassword = client.submitForm(
+            url = "/account/identifier/link/complete",
+            formParameters = Parameters.build {
+                append("linkTicket", linkTicket)
+                append("code", "123456")
+                append("deviceId", "dev_route")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer $pureWechatToken") }
+        assertEquals(HttpStatusCode.BadRequest, missingPassword.status)
+        assertTrue(missingPassword.bodyAsText().contains("INVALID_REQUEST"))
+
+        val linked = client.submitForm(
+            url = "/account/identifier/link/complete",
+            formParameters = Parameters.build {
+                append("linkTicket", linkTicket)
+                append("code", "123456")
+                append("password", "Pass1234!")
+                append("deviceId", "dev_route")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer $pureWechatToken") }
+        assertEquals(linked.bodyAsText(), HttpStatusCode.OK, linked.status)
+        assertEquals(
+            "13800138000",
+            AccountApiJsonContracts.parseSessionResponse(linked.bodyAsText()).primaryIdentifier?.value
+        )
     }
 
     @Test
@@ -295,13 +340,16 @@ class AccountRoutesTest {
 
         // 1. Register phone account
         client.submitForm(
-            url = "/account/sms",
-            formParameters = Parameters.build { append("phone", "13800138000") }
+            url = "/account/verification-code",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("purpose", "REGISTER")
+            }
         )
         client.submitForm(
             url = "/account/register",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "123456")
                 append("password", "Pass1234!")
             }
@@ -321,13 +369,13 @@ class AccountRoutesTest {
             url = "/account/wechat/link/password",
             formParameters = Parameters.build {
                 append("wechatTicket", regReq.wechatTicket)
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("password", "Pass1234!")
             }
         )
         assertEquals(linkResponse.bodyAsText(), HttpStatusCode.OK, linkResponse.status)
         val sessionContract = AccountApiJsonContracts.parseSessionResponse(linkResponse.bodyAsText())
-        assertEquals("13800138000", sessionContract.phone)
+        assertEquals("13800138000", sessionContract.primaryIdentifier?.value)
         assertTrue(sessionContract.wechatLinked)
     }
 
@@ -341,13 +389,16 @@ class AccountRoutesTest {
             module(accountService = service)
         }
         client.submitForm(
-            url = "/account/sms",
-            formParameters = Parameters.build { append("phone", "13800138000") }
+            url = "/account/verification-code",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("purpose", "REGISTER")
+            }
         )
         client.submitForm(
             url = "/account/register",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "654321")
                 append("password", "Pass1234!")
             }
@@ -361,19 +412,19 @@ class AccountRoutesTest {
         service.advanceTimeBy(60_001L)
 
         val smsResponse = client.submitForm(
-            url = "/account/sms",
+            url = "/account/verification-code",
             formParameters = Parameters.build {
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("purpose", "WECHAT_LINK")
                 append("contextKey", registrationRequired.wechatTicket)
             }
         )
         assertEquals(smsResponse.bodyAsText(), HttpStatusCode.OK, smsResponse.status)
         val linkResponse = client.submitForm(
-            url = "/account/wechat/link/sms",
+            url = "/account/wechat/link/code",
             formParameters = Parameters.build {
                 append("wechatTicket", registrationRequired.wechatTicket)
-                append("phone", "13800138000")
+                append("identifier", "13800138000")
                 append("code", "654321")
             }
         )
@@ -382,4 +433,146 @@ class AccountRoutesTest {
         assertTrue(AccountApiJsonContracts.parseSessionResponse(linkResponse.bodyAsText()).wechatLinked)
     }
 
+    @Test
+    @Suppress("LongMethod")
+    fun testUnifiedIdentifierRoutes() = testApplication {
+        val clock = MutableClock()
+        val store = InMemoryAccountStore()
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            emailCodeGenerator = { "123456" },
+            emailProvider = object : EmailProvider {
+                override fun sendCode(email: String, code: String, purpose: String) = EmailProviderResult.Sent
+            },
+            tokenGenerator = { "token-unified" },
+            clock = clock
+        )
+        application {
+            module(accountService = service)
+        }
+
+        // 1. Issue a registration code for email.
+        val issueRes = client.submitForm(
+            url = "/account/verification-code",
+            formParameters = Parameters.build {
+                append("identifier", "test@example.com")
+                append("deviceId", "dev-1")
+                append("purpose", "REGISTER")
+            }
+        )
+        assertEquals(HttpStatusCode.OK, issueRes.status)
+
+        // 2. Register and log in through the final unified routes.
+        val regRes = client.submitForm(
+            url = "/account/register",
+            formParameters = Parameters.build {
+                append("identifier", "test@example.com")
+                append("code", "123456")
+                append("password", "Pass1234!")
+                append("deviceId", "dev-1")
+            }
+        )
+        assertEquals(HttpStatusCode.OK, regRes.status)
+        val regSession = AccountApiJsonContracts.parseSessionResponse(regRes.bodyAsText())
+        assertNotNull(regSession.token)
+
+        val loginRes = client.submitForm(
+            url = "/account/login",
+            formParameters = Parameters.build {
+                append("identifier", "test@example.com")
+                append("password", "Pass1234!")
+                append("deviceId", "dev-1")
+            }
+        )
+        assertEquals(HttpStatusCode.OK, loginRes.status)
+
+        // 3. Prepare issues the identifier-link code and returns a one-time ticket.
+        clock.advanceBy(60_001)
+        val prepLinkRes = client.submitForm(
+            url = "/account/identifier/link/prepare",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("deviceId", "dev-1")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-unified") }
+        assertEquals(HttpStatusCode.OK, prepLinkRes.status)
+
+        // 4. Complete requires both the current session and the delivered code.
+        val prepContract = AccountApiJsonContracts.parseIdentifierLinkPrepareResponse(prepLinkRes.bodyAsText())
+        val ticketIssued = prepContract as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        val completeRes = client.submitForm(
+            url = "/account/identifier/link/complete",
+            formParameters = Parameters.build {
+                append("linkTicket", ticketIssued.linkTicket)
+                append("code", "123456")
+                append("deviceId", "dev-1")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-unified") }
+        assertEquals(HttpStatusCode.OK, completeRes.status)
+
+        val linkedSession = AccountApiJsonContracts.parseSessionResponse(completeRes.bodyAsText())
+        assertTrue(linkedSession.identifiers.any { it.value == "13800138000" })
+
+        // 5. Verification-code unlink requires the explicitly selected bound identifier.
+        val accountId = store.findAccountByIdentifier("EMAIL", "test@example.com")!!.accountId
+        store.upsertWechatIdentity(
+            StoredWechatIdentity(
+                accountId = accountId,
+                appId = "wx-test",
+                openid = "openid-test",
+                createdAtMillis = clock.millis(),
+                updatedAtMillis = clock.millis()
+            )
+        )
+        clock.advanceBy(60_001)
+        val unlinkCode = client.submitForm(
+            url = "/account/verification-code",
+            formParameters = Parameters.build {
+                append("identifier", "test@example.com")
+                append("deviceId", "dev-1")
+                append("purpose", "WECHAT_UNLINK")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-unified") }
+        assertEquals(HttpStatusCode.OK, unlinkCode.status)
+
+        val missingUnlinkIdentifier = client.submitForm(
+            url = "/account/wechat/unlink/code",
+            formParameters = Parameters.build {
+                append("code", "123456")
+                append("deviceId", "dev-1")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-unified") }
+        assertEquals(HttpStatusCode.BadRequest, missingUnlinkIdentifier.status)
+        assertTrue(missingUnlinkIdentifier.bodyAsText().contains("INVALID_REQUEST"))
+
+        val unlinkResponse = client.submitForm(
+            url = "/account/wechat/unlink/code",
+            formParameters = Parameters.build {
+                append("identifier", "test@example.com")
+                append("code", "123456")
+                append("deviceId", "dev-1")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-unified") }
+        assertEquals(HttpStatusCode.OK, unlinkResponse.status)
+
+        // 6. Removed endpoints stay absent and legacy request fields are rejected.
+        val removedRoute = client.submitForm(
+            url = "/account/sms",
+            formParameters = Parameters.build {
+                append("phone", "13900139000")
+            }
+        )
+        assertEquals(HttpStatusCode.NotFound, removedRoute.status)
+
+        val legacyField = client.submitForm(
+            url = "/account/login",
+            formParameters = Parameters.build {
+                append("phone", "test@example.com")
+                append("password", "Pass1234!")
+            }
+        )
+        assertEquals(HttpStatusCode.Unauthorized, legacyField.status)
+        assertTrue(legacyField.bodyAsText().contains("LOGIN_FAILED"))
+    }
 }

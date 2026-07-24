@@ -46,6 +46,13 @@ enum class AccountError(
     SMS_TOO_FREQUENT("获取太频繁，请稍后再试"),
     SMS_PROVIDER_UNCONFIGURED("短信服务未配置"),
     SMS_SEND_FAILED("验证码发送失败，请稍后重试"),
+    IDENTIFIER_ALREADY_REGISTERED("该账号标识已注册，请直接登录"),
+    IDENTIFIER_NOT_REGISTERED("该账号标识尚未注册，请先创建账号"),
+    IDENTIFIER_ALREADY_LINKED("该账号标识已被其他账号绑定"),
+    IDENTIFIER_CONFLICT("账号标识存在冲突"),
+    EMAIL_PROVIDER_UNCONFIGURED("邮件服务未配置"),
+    EMAIL_SEND_FAILED("邮件验证码发送失败，请稍后重试"),
+    CODE_SEND_TOO_FREQUENT("获取太频繁，请稍后再试"),
     LOGIN_FAILED("手机号或密码不正确"),
     TOKEN_INVALID("登录状态已失效，请重新登录"),
     ACCOUNT_LOCKED("尝试次数过多，请稍后再试，或使用短信找回密码"),
@@ -73,6 +80,8 @@ val AccountResult<*>.error: AccountError?
 
 data class AccountToken(
     val accountId: Long = 0L,
+    val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
+    val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
     val phone: String? = null,
     val token: String,
     val deletionStatus: AccountDeletionStatus? = null,
@@ -101,6 +110,8 @@ class AccountService(
     private val store: AccountStore = InMemoryAccountStore(),
     private val smsProvider: SmsProvider = NoopSmsProvider,
     private val smsCodeGenerator: () -> String = { "%06d".format(SecureRandom().nextInt(1_000_000)) },
+    private val emailProvider: EmailProvider = NoopEmailProvider,
+    private val emailCodeGenerator: () -> String = { "%06d".format(SecureRandom().nextInt(1_000_000)) },
     private val tokenGenerator: () -> String = { secureToken() },
     private val verificationCodeHasher: VerificationCodeHasher = VerificationCodeHasher.random(),
     private val clock: MutableClock = MutableClock(),
@@ -187,11 +198,12 @@ class AccountService(
                 )
             )
             registerDevice(currentAccountId, deviceId, ipAddress, now)
-            val user = phoneUserByAccountId(currentAccountId)
+            val phone = phoneIdentifier(currentAccountId)
             val account = store.findAccount(currentAccountId)
-            val deletionStatus = account?.deletionRequestedAtMillis?.let { account.deletionStatus(user?.phone, it) }
+            val deletionStatus = account?.deletionRequestedAtMillis?.let { account.deletionStatus(phone, it) }
             val sessionContract = AccountSessionResponseContract(
-                phone = user?.phone?.takeIf { it.isNotBlank() },
+                primaryIdentifier = primaryIdentifierForAccount(currentAccountId),
+                identifiers = identifierContracts(currentAccountId),
                 token = bearerToken,
                 wechatLinked = true,
                 nickname = updatedNickname,
@@ -215,10 +227,10 @@ class AccountService(
                     )
                 )
                 registerDevice(existingIdentity.accountId, deviceId, ipAddress, now)
-                val user = phoneUserByAccountId(existingIdentity.accountId)
+                val phone = phoneIdentifier(existingIdentity.accountId)
                 val sessionResult = issueSession(
                     accountId = existingIdentity.accountId,
-                    phone = user?.phone?.takeIf { it.isNotBlank() },
+                    phone = phone,
                     deviceId = deviceId,
                     now = now
                 )
@@ -228,7 +240,8 @@ class AccountService(
                 }
 
                 val sessionContract = AccountSessionResponseContract(
-                    phone = sessionToken.phone,
+                    primaryIdentifier = sessionToken.primaryIdentifier,
+                    identifiers = sessionToken.identifiers,
                     token = sessionToken.token,
                     wechatLinked = true,
                     nickname = updatedNickname,
@@ -301,20 +314,22 @@ class AccountService(
             ipAddress = ipAddress,
             now = now,
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
 
     fun linkWechatWithPassword(
         wechatTicket: String,
-        phone: String,
+        identifier: String,
         password: String,
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        if (wechatTicket.isBlank() || !isValidDeviceId(deviceId)) {
-            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        if (wechatTicket.isBlank() || !isValidDeviceId(deviceId) || password.isBlank()) {
+            return AccountResult.Failure(AccountError.LOGIN_FAILED)
         }
-        if (!isValidPhone(phone) || password.isBlank()) {
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
             return AccountResult.Failure(AccountError.LOGIN_FAILED)
         }
         val now = clock.millis()
@@ -322,16 +337,18 @@ class AccountService(
             is AccountResult.Success -> ticketResult.value
             is AccountResult.Failure -> return ticketResult
         }
-        val user = store.findUser(phone)
+        val account = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
-        if (user.lockedUntilMillis > now) {
+        val passCred = store.findPasswordCredentialByAccountId(account.accountId)
+            ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
+        if (passCred.lockedUntilMillis > now) {
             return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
         }
 
-        if (!user.passwordHash().matches(password)) {
-            val failedCount = user.failedLoginCount + 1
-            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else user.lockedUntilMillis
-            store.updateUser(user.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
+        if (!PasswordHash(passCred.passwordSalt, passCred.passwordHash).matches(password)) {
+            val failedCount = passCred.failedLoginCount + 1
+            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else passCred.lockedUntilMillis
+            store.updatePasswordCredential(passCred.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
             return if (failedCount >= MAX_LOGIN_FAILURES) {
                 AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
             } else {
@@ -339,17 +356,20 @@ class AccountService(
             }
         }
 
-        store.updateUser(user.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+        store.updatePasswordCredential(passCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
 
-        val targetExistingIdentity = store.findWechatIdentityByAccountId(user.accountId)
+        val targetExistingIdentity = store.findWechatIdentityByAccountId(account.accountId)
         if (targetExistingIdentity != null) {
             return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
         }
 
+        val identifiers = store.findIdentifiersByAccountId(account.accountId)
+        val boundPhone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
+
         return store.linkWechatIdentity(
             ticketHash = payload.ticketHash,
-            targetAccountId = user.accountId,
-            phone = user.phone,
+            targetAccountId = account.accountId,
+                phone = boundPhone.orEmpty(),
             appId = payload.appId,
             openid = payload.openid,
             unionid = payload.unionid,
@@ -357,20 +377,28 @@ class AccountService(
             avatarUrl = payload.avatarUrl,
             deviceId = deviceId,
             ipAddress = ipAddress,
-            smsCodePhoneToDelete = null,
+            verificationCodeToDelete = null,
             now = now,
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
 
-    fun linkWechatWithSms(
+    fun linkWechatWithCode(
         wechatTicket: String,
-        phone: String,
+        identifier: String,
         code: String,
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        if (wechatTicket.isBlank() || !isValidPhone(phone) || !isValidVerificationCode(code) || !isValidDeviceId(deviceId)) {
+        if (wechatTicket.isBlank() || !isValidVerificationCode(code) || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
+            return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
+        }
+        if (parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
         val now = clock.millis()
@@ -378,29 +406,32 @@ class AccountService(
             is AccountResult.Success -> ticketResult.value
             is AccountResult.Failure -> return ticketResult
         }
-        when (
-            val verification = verifySmsCode(
-                phone = phone,
-                code = code,
-                expectedPurpose = SMS_PURPOSE_WECHAT_LINK,
-                expectedContextKey = payload.ticketHash
-            )
-        ) {
-            is AccountResult.Failure -> return verification
-            is AccountResult.Success -> Unit
-        }
-        val user = store.findUser(phone)
+
+        val verifyRes = verifyVerificationCode(
+            identifierType = parseResult.type.name,
+            normalizedIdentifier = parseResult.normalizedValue,
+            code = code,
+            expectedPurpose = SMS_PURPOSE_WECHAT_LINK,
+            expectedContextKey = payload.ticketHash
+        )
+        if (verifyRes is AccountResult.Failure) return verifyRes
+        val verifiedCode = (verifyRes as AccountResult.Success).value
+
+        val account = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
             ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
 
-        val targetExistingIdentity = store.findWechatIdentityByAccountId(user.accountId)
+        val targetExistingIdentity = store.findWechatIdentityByAccountId(account.accountId)
         if (targetExistingIdentity != null) {
             return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
         }
 
+        val identifiers = store.findIdentifiersByAccountId(account.accountId)
+        val boundPhone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
+
         return store.linkWechatIdentity(
             ticketHash = payload.ticketHash,
-            targetAccountId = user.accountId,
-            phone = user.phone,
+            targetAccountId = account.accountId,
+                phone = boundPhone.orEmpty(),
             appId = payload.appId,
             openid = payload.openid,
             unionid = payload.unionid,
@@ -408,10 +439,10 @@ class AccountService(
             avatarUrl = payload.avatarUrl,
             deviceId = deviceId,
             ipAddress = ipAddress,
-            smsCodePhoneToDelete = phone,
+            verificationCodeToDelete = verifiedCode,
             now = now,
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
 
     fun unlinkWechatWithPassword(
@@ -425,8 +456,10 @@ class AccountService(
         }
         val current = verifiedAccount(bearerToken)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val phone = current.phone
-            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        val identifiers = store.findIdentifiersByAccountId(current.accountId)
+        if (identifiers.isEmpty()) {
+            return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        }
         if (!current.wechatLinked) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
@@ -435,36 +468,39 @@ class AccountService(
         }
 
         val now = clock.millis()
-        val user = phoneUserByAccountId(current.accountId)
+        val passCred = store.findPasswordCredentialByAccountId(current.accountId)
             ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
-        if (user.lockedUntilMillis > now) {
+        if (passCred.lockedUntilMillis > now) {
             return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
         }
-        if (!user.passwordHash().matches(password)) {
-            val failedCount = user.failedLoginCount + 1
-            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else user.lockedUntilMillis
-            store.updateUser(user.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
+        if (!PasswordHash(passCred.passwordSalt, passCred.passwordHash).matches(password)) {
+            val failedCount = passCred.failedLoginCount + 1
+            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else passCred.lockedUntilMillis
+            store.updatePasswordCredential(passCred.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
             return if (failedCount >= MAX_LOGIN_FAILURES) {
                 AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
             } else {
                 AccountResult.Failure(AccountError.LOGIN_FAILED)
             }
         }
-        store.updateUser(user.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+        store.updatePasswordCredential(passCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+
+        val boundPhone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
 
         return store.unlinkWechatIdentity(
             accountId = current.accountId,
-            phone = phone,
+            phone = boundPhone.orEmpty(),
             deviceId = deviceId,
             ipAddress = ipAddress,
-            smsCodePhoneToDelete = null,
+            verificationCodeToDelete = null,
             now = now,
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
 
-    fun unlinkWechatWithSms(
+    fun unlinkWechatWithCode(
         bearerToken: String,
+        identifier: String,
         code: String,
         deviceId: String = "",
         ipAddress: String = ""
@@ -474,200 +510,91 @@ class AccountService(
         }
         val current = verifiedAccount(bearerToken)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val phone = current.phone
-            ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        val identifiers = store.findIdentifiersByAccountId(current.accountId)
+        if (identifiers.isEmpty()) {
+            return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
+        }
         if (!current.wechatLinked) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
         if (current.deletionStatus != null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
         }
-        when (
-            val verification = verifySmsCode(
-                phone = phone,
-                code = code,
-                expectedPurpose = SMS_PURPOSE_WECHAT_UNLINK,
-                expectedContextKey = current.accountId.toString()
-            )
-        ) {
-            is AccountResult.Failure -> return verification
-            is AccountResult.Success -> Unit
+
+        val parsedIdentifier = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
+        if (parsedIdentifier.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val verifyIdent = identifiers.find {
+            it.identifierType == parsedIdentifier.type.name &&
+                it.normalizedValue == parsedIdentifier.normalizedValue
+        } ?: return AccountResult.Failure(AccountError.INVALID_REQUEST)
+
+        val verifyRes = verifyVerificationCode(
+            identifierType = verifyIdent.identifierType,
+            normalizedIdentifier = verifyIdent.normalizedValue,
+            code = code,
+            expectedPurpose = SMS_PURPOSE_WECHAT_UNLINK,
+            expectedContextKey = current.accountId.toString()
+        )
+        if (verifyRes is AccountResult.Failure) return verifyRes
+        val verifiedCode = (verifyRes as AccountResult.Success).value
+
+        val boundPhone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
 
         return store.unlinkWechatIdentity(
             accountId = current.accountId,
-            phone = phone,
+            phone = boundPhone.orEmpty(),
             deviceId = deviceId,
             ipAddress = ipAddress,
-            smsCodePhoneToDelete = phone,
+            verificationCodeToDelete = verifiedCode,
             now = clock.millis(),
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
 
-    fun preparePhoneLink(
+    fun prepareMergeWithIdentifierPassword(
         bearerToken: String,
-        phone: String,
-        code: String
-    ): AccountResult<com.autoaccounting.api.PhoneLinkPrepareResponseContract> {
-        val verified = verifiedAccount(bearerToken)
-            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val currentAccountId = verified.accountId
-
-        if (phoneUserByAccountId(currentAccountId) != null) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
-        }
-
-        if (!isValidPhone(phone) || !isValidVerificationCode(code)) {
-            return AccountResult.Failure(AccountError.INVALID_REQUEST)
-        }
-
-        when (val verification = verifySmsCode(phone = phone, code = code, expectedPurpose = SMS_PURPOSE_PHONE_LINK)) {
-            is AccountResult.Failure -> return verification
-            is AccountResult.Success -> Unit
-        }
-
-        store.deleteSmsCode(phone)
-
-        val now = clock.millis()
-        val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
-        val existingUser = store.findUser(phone)
-
-        return if (existingUser == null) {
-            val phoneTicketPlain = secureToken()
-            val phoneTicketHash = hashToken(phoneTicketPlain)
-            val payload = buildJsonObject { put("phone", phone) }.toString()
-
-            store.createOneTimeTicket(
-                StoredOneTimeTicket(
-                    ticketHash = phoneTicketHash,
-                    ticketType = "PHONE_LINK",
-                    accountId = currentAccountId,
-                    payloadJson = payload,
-                    expiresAtMillis = ticketExpiresAt
-                )
-            )
-
-            AccountResult.Success(
-                com.autoaccounting.api.PhoneLinkPrepareResponseContract.PhoneTicketIssued(
-                    phoneTicket = phoneTicketPlain,
-                    ticketExpiresAtMillis = ticketExpiresAt
-                )
-            )
-        } else {
-            val mergeTicketPlain = secureToken()
-            val mergeTicketHash = hashToken(mergeTicketPlain)
-            val sourceAccountId = existingUser.accountId
-            val payload = buildJsonObject {
-                put("targetAccountId", currentAccountId)
-                put("sourceAccountId", sourceAccountId)
-            }.toString()
-
-            store.createOneTimeTicket(
-                StoredOneTimeTicket(
-                    ticketHash = mergeTicketHash,
-                    ticketType = "ACCOUNT_MERGE",
-                    accountId = currentAccountId,
-                    payloadJson = payload,
-                    expiresAtMillis = ticketExpiresAt
-                )
-            )
-
-            val sourceWechatLinked = store.findWechatIdentityByAccountId(sourceAccountId) != null
-            AccountResult.Success(
-                com.autoaccounting.api.PhoneLinkPrepareResponseContract.MergeRequired(
-                    mergeTicket = mergeTicketPlain,
-                    sourcePhone = phone,
-                    sourceWechatLinked = sourceWechatLinked,
-                    ticketExpiresAtMillis = ticketExpiresAt
-                )
-            )
-        }
-    }
-
-    fun completePhoneLink(
-        bearerToken: String,
-        phoneTicket: String,
-        password: String,
-        deviceId: String = "",
-        ipAddress: String = ""
-    ): AccountResult<AccountToken> {
-        val verified = verifiedAccount(bearerToken)
-            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val currentAccountId = verified.accountId
-
-        if (phoneTicket.isBlank() || !isValidDeviceId(deviceId)) {
-            return AccountResult.Failure(AccountError.INVALID_REQUEST)
-        }
-        if (!isValidPassword(password)) {
-            return AccountResult.Failure(AccountError.INVALID_REQUEST)
-        }
-
-        val now = clock.millis()
-        val ticketHash = hashToken(phoneTicket)
-        val ticket = store.findOneTimeTicket(ticketHash)
-            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-
-        if (ticket.ticketType != "PHONE_LINK" || ticket.expiresAtMillis < now || ticket.accountId != currentAccountId) {
-            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        }
-        if (ticket.usedAtMillis != null) {
-            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
-        }
-
-        if (phoneUserByAccountId(currentAccountId) != null) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
-        }
-
-        val jsonObj = runCatching { Json.parseToJsonElement(ticket.payloadJson).jsonObject }.getOrNull()
-            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        val phone = jsonObj["phone"]?.jsonPrimitive?.contentOrNull
-            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-
-        val passwordHash = PasswordHash.create(password)
-
-        return store.completePhoneLink(
-            ticketHash = ticketHash,
-            targetAccountId = currentAccountId,
-            phone = phone,
-            passwordSalt = passwordHash.salt,
-            passwordHash = passwordHash.hash,
-            deviceId = deviceId,
-            ipAddress = ipAddress,
-            now = now,
-            tokenGenerator = tokenGenerator
-        )
-    }
-
-    fun prepareMergeWithPhonePassword(
-        bearerToken: String,
-        phone: String,
+        identifier: String,
         password: String
     ): AccountResult<com.autoaccounting.api.MergePreviewResponseContract> {
         val currentAccount = verifiedAccount(bearerToken)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val currentAccountId = currentAccount.accountId
 
-        if (!isValidPhone(phone) || !isValidPassword(password)) {
+        if (password.isBlank()) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
 
-        val sourceUser = store.findUser(phone)
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val sourceAccount = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
+            ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
+
+        val sourcePassCred = store.findPasswordCredentialByAccountId(sourceAccount.accountId)
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
 
         val now = clock.millis()
-        if (sourceUser.lockedUntilMillis > now) {
+        if (sourcePassCred.lockedUntilMillis > now) {
             return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
         }
 
-        if (!sourceUser.passwordHash().matches(password)) {
-            val updatedCount = sourceUser.failedLoginCount + 1
+        if (!PasswordHash(sourcePassCred.passwordSalt, sourcePassCred.passwordHash).matches(password)) {
+            val updatedCount = sourcePassCred.failedLoginCount + 1
             val lockUntil = if (updatedCount >= MAX_LOGIN_FAILURES) {
                 now + LOGIN_LOCK_MILLIS
             } else {
                 0L
             }
-            store.updateUser(sourceUser.copy(failedLoginCount = updatedCount, lockedUntilMillis = lockUntil))
+            store.updatePasswordCredential(sourcePassCred.copy(failedLoginCount = updatedCount, lockedUntilMillis = lockUntil))
             return if (lockUntil > now) {
                 AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
             } else {
@@ -675,30 +602,43 @@ class AccountService(
             }
         }
 
-        if (sourceUser.failedLoginCount > 0 || sourceUser.lockedUntilMillis > 0) {
-            store.updateUser(sourceUser.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+        if (sourcePassCred.failedLoginCount > 0 || sourcePassCred.lockedUntilMillis > 0) {
+            store.updatePasswordCredential(sourcePassCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
         }
 
-        val sourceAccountId = sourceUser.accountId
+        val sourceAccountId = sourceAccount.accountId
         if (sourceAccountId == currentAccountId) {
             return AccountResult.Failure(AccountError.MERGE_BLOCKED)
         }
 
-        val targetAccount = store.findAccount(currentAccountId)
-        val sourceAccount = store.findAccount(sourceAccountId)
-        if (targetAccount?.deletionRequestedAtMillis != null || sourceAccount?.deletionRequestedAtMillis != null) {
+        val targetAccountObj = store.findAccount(currentAccountId)
+        val sourceAccountObj = store.findAccount(sourceAccountId)
+        if (targetAccountObj?.deletionRequestedAtMillis != null || sourceAccountObj?.deletionRequestedAtMillis != null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
         }
 
-        val currentPhoneCred = phoneUserByAccountId(currentAccountId)
+        val currentPassCred = store.findPasswordCredentialByAccountId(currentAccountId)
         val currentWechat = store.findWechatIdentityByAccountId(currentAccountId)
         val sourceWechat = store.findWechatIdentityByAccountId(sourceAccountId)
 
-        if (currentPhoneCred != null && sourceUser.phone.isNotBlank()) {
+        if (currentPassCred != null) {
             return AccountResult.Failure(AccountError.MERGE_BLOCKED)
         }
         if (currentWechat != null && sourceWechat != null) {
             return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
+        val currentIdentifiers = store.findIdentifiersByAccountId(currentAccountId).map {
+            com.autoaccounting.api.AccountIdentifierContract(
+                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(it.identifierType),
+                value = it.rawValue
+            )
+        }
+        val sourceIdentifiers = store.findIdentifiersByAccountId(sourceAccountId).map {
+            com.autoaccounting.api.AccountIdentifierContract(
+                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(it.identifierType),
+                value = it.rawValue
+            )
         }
 
         val mergeTicketPlain = secureToken()
@@ -722,10 +662,10 @@ class AccountService(
             com.autoaccounting.api.MergePreviewResponseContract(
                 mergeTicket = mergeTicketPlain,
                 ticketExpiresAtMillis = ticketExpiresAt,
-                currentPhone = currentPhoneCred?.phone?.takeIf { it.isNotBlank() },
+                currentIdentifiers = currentIdentifiers,
                 currentWechatLinked = currentWechat != null,
                 currentNickname = currentWechat?.nickname,
-                sourcePhone = sourceUser.phone.takeIf { it.isNotBlank() },
+                sourceIdentifiers = sourceIdentifiers,
                 sourceWechatLinked = sourceWechat != null,
                 sourceNickname = sourceWechat?.nickname
             )
@@ -758,10 +698,8 @@ class AccountService(
             ipAddress = ipAddress,
             now = now,
             tokenGenerator = tokenGenerator
-        )
+        ).mapAccountToken(::enrichAccountToken)
     }
-
-
 
     private fun mergeRequiredResult(
         existingIdentity: StoredWechatIdentity,
@@ -770,7 +708,12 @@ class AccountService(
         now: Long
     ): AccountResult<WechatExchangeResponseContract> {
         val sourceAccountId = existingIdentity.accountId
-        val sourceUser = phoneUserByAccountId(sourceAccountId)
+        val sourceIdentifiers = store.findIdentifiersByAccountId(sourceAccountId).map {
+            com.autoaccounting.api.AccountIdentifierContract(
+                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(it.identifierType),
+                value = it.rawValue
+            )
+        }
         val mergeTicketPlain = secureToken()
         val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
         val payload = buildJsonObject {
@@ -792,19 +735,18 @@ class AccountService(
                 result = WechatAuthResultContract.MergeRequired(
                     mergeTicket = mergeTicketPlain,
                     sourceNickname = existingIdentity.nickname ?: fallbackNickname,
-                    sourcePhone = sourceUser?.phone?.takeIf { it.isNotBlank() },
+                    sourceIdentifiers = sourceIdentifiers,
                     ticketExpiresAtMillis = ticketExpiresAt
                 )
             )
         )
     }
 
-    fun issueSmsCode(
-
+    private fun issuePhoneCode(
         phone: String,
         deviceId: String,
         ipAddress: String,
-        purpose: String = SMS_PURPOSE_DEFAULT,
+        purpose: String,
         contextKey: String? = null,
         bearerToken: String? = null
     ): AccountResult<Unit> {
@@ -812,9 +754,16 @@ class AccountService(
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
         val now = clock.millis()
-        val normalizedPurpose = purpose.ifBlank { SMS_PURPOSE_DEFAULT }
+        val normalizedPurpose = when (purpose.ifBlank { SMS_PURPOSE_DEFAULT }) {
+            SMS_PURPOSE_DEFAULT -> if (store.findAccountByIdentifier("PHONE", phone) == null) {
+                PURPOSE_REGISTER
+            } else {
+                PURPOSE_RECOVERY
+            }
+            else -> purpose
+        }
         val storedContextKey = when (normalizedPurpose) {
-            SMS_PURPOSE_DEFAULT, SMS_PURPOSE_PHONE_LINK -> {
+            PURPOSE_REGISTER, PURPOSE_RECOVERY, PURPOSE_IDENTIFIER_LINK -> {
                 if (!contextKey.isNullOrBlank()) return AccountResult.Failure(AccountError.INVALID_REQUEST)
                 null
             }
@@ -844,147 +793,474 @@ class AccountService(
         }
 
         val code = smsCodeGenerator()
+        if (!isValidVerificationCode(code)) {
+            return AccountResult.Failure(AccountError.SMS_SEND_FAILED)
+        }
         when (val sendResult = smsProvider.sendCode(phone, code)) {
             SmsProviderResult.Sent -> Unit
             is SmsProviderResult.Failed -> return AccountResult.Failure(sendResult.error)
         }
 
-        store.upsertSmsCode(
-            StoredSmsCode(
-                phone = phone,
-                codeHash = verificationCodeHasher.hash(phone, code),
+        store.upsertVerificationCode(
+            StoredVerificationCode(
+                identifierType = "PHONE",
+                normalizedIdentifier = phone,
+                purpose = normalizedPurpose,
+                codeHash = verificationCodeHasher.hash("PHONE", phone, normalizedPurpose, code),
                 expiresAtMillis = now + SMS_CODE_TTL_MILLIS,
                 deviceId = deviceId,
                 ipAddress = ipAddress,
-                purpose = normalizedPurpose,
                 contextKey = storedContextKey
             )
         )
         smsRateLimitScopes(phone, deviceId, ipAddress).forEach { (scopeType, scopeValue) ->
-            store.recordSmsIssue(scopeType, scopeValue, now)
+            store.recordVerificationSendLog("SMS", scopeType, scopeValue, now)
         }
         return AccountResult.Success(Unit)
     }
 
-    fun register(
-        phone: String,
-        code: String,
+    fun issueVerificationCode(
+        identifier: String,
+        deviceId: String,
+        ipAddress: String,
+        purpose: String = SMS_PURPOSE_DEFAULT,
+        contextKey: String? = null,
+        bearerToken: String? = null
+    ): AccountResult<Unit> {
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        return when (parseResult.type) {
+            com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME -> AccountResult.Failure(AccountError.INVALID_REQUEST)
+            com.autoaccounting.api.AccountIdentifierTypeContract.PHONE -> issuePhoneCode(parseResult.normalizedValue, deviceId, ipAddress, purpose, contextKey, bearerToken)
+            com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL -> issueEmailCode(parseResult.normalizedValue, deviceId, ipAddress, purpose, contextKey, bearerToken)
+        }
+    }
+
+    private fun issueEmailCode(
+        email: String,
+        deviceId: String,
+        ipAddress: String,
+        purpose: String,
+        contextKey: String?,
+        bearerToken: String?
+    ): AccountResult<Unit> {
+        if (!isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val now = clock.millis()
+        val normalizedPurpose = when (purpose.ifBlank { PURPOSE_REGISTER }) {
+            SMS_PURPOSE_DEFAULT -> PURPOSE_REGISTER
+            else -> purpose
+        }
+        val storedContextKey = when (normalizedPurpose) {
+            PURPOSE_REGISTER, PURPOSE_RECOVERY, PURPOSE_IDENTIFIER_LINK -> {
+                if (!contextKey.isNullOrBlank()) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                null
+            }
+            SMS_PURPOSE_WECHAT_LINK -> {
+                val rawContext = contextKey?.takeIf { it.isNotBlank() }
+                    ?: return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                when (val ticketResult = validateWechatAuthTicket(rawContext, now)) {
+                    is AccountResult.Success -> ticketResult.value.ticketHash
+                    is AccountResult.Failure -> return ticketResult
+                }
+            }
+            SMS_PURPOSE_WECHAT_UNLINK -> {
+                if (!contextKey.isNullOrBlank()) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                val current = verifiedAccount(bearerToken.orEmpty())
+                    ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+                val emailIsBound = current.identifiers.any {
+                    it.type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL && it.value == email
+                }
+                if (!emailIsBound || !current.wechatLinked) {
+                    return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                }
+                if (current.deletionStatus != null) {
+                    return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
+                }
+                current.accountId.toString()
+            }
+            else -> return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        if (isEmailRateLimited(email, deviceId, ipAddress, now)) {
+            return AccountResult.Failure(AccountError.CODE_SEND_TOO_FREQUENT)
+        }
+
+        val code = emailCodeGenerator()
+        if (!isValidVerificationCode(code)) {
+            return AccountResult.Failure(AccountError.EMAIL_SEND_FAILED)
+        }
+        when (val sendResult = emailProvider.sendCode(email, code, normalizedPurpose)) {
+            EmailProviderResult.Sent -> Unit
+            is EmailProviderResult.Failed -> return AccountResult.Failure(sendResult.error)
+        }
+
+        store.upsertVerificationCode(
+            StoredVerificationCode(
+                identifierType = "EMAIL",
+                normalizedIdentifier = email,
+                purpose = normalizedPurpose,
+                codeHash = verificationCodeHasher.hash("EMAIL", email, normalizedPurpose, code),
+                expiresAtMillis = now + SMS_CODE_TTL_MILLIS,
+                deviceId = deviceId,
+                ipAddress = ipAddress,
+                contextKey = storedContextKey
+            )
+        )
+        emailRateLimitScopes(email, deviceId, ipAddress).forEach { (scopeType, scopeValue) ->
+            store.recordVerificationSendLog("EMAIL", scopeType, scopeValue, now)
+        }
+        return AccountResult.Success(Unit)
+    }
+
+    private fun isEmailRateLimited(email: String, deviceId: String, ipAddress: String, now: Long): Boolean {
+        return emailRateLimitScopes(email, deviceId, ipAddress).any { (scopeType, scopeValue) ->
+            val windowMillis = if (scopeType == SMS_SCOPE_PHONE || scopeType == SMS_SCOPE_DEVICE) {
+                SMS_RATE_LIMIT_MILLIS
+            } else {
+                SMS_HOUR_MILLIS
+            }
+            val maxAllowed = if (scopeType == SMS_SCOPE_PHONE || scopeType == SMS_SCOPE_DEVICE) 1 else 5
+            val count = store.countVerificationSendLogs("EMAIL", scopeType, scopeValue, now - windowMillis)
+            count >= maxAllowed
+        }
+    }
+
+    private fun emailRateLimitScopes(email: String, deviceId: String, ipAddress: String): List<Pair<String, String>> {
+        val scopes = mutableListOf<Pair<String, String>>(
+            SMS_SCOPE_PHONE to email,
+            SMS_SCOPE_DEVICE to deviceId
+        )
+        if (ipAddress.isNotBlank()) {
+            scopes += SMS_SCOPE_IP to ipAddress
+        }
+        return scopes
+    }
+
+    fun registerIdentifier(
+        identifier: String,
+        code: String?,
         password: String,
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        if (
-            !isValidPhone(phone) ||
-            !isValidVerificationCode(code) ||
-            !isValidPassword(password) ||
-            !isValidDeviceId(deviceId)
-        ) {
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
-        if (store.findUser(phone) != null) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
+
+        if (!isValidPassword(password) || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
-        val smsCode = when (val verification = verifySmsCode(phone, code)) {
-            is AccountResult.Failure -> return verification
-            is AccountResult.Success -> verification.value
+
+        val existingAccount = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
+        if (existingAccount != null) {
+            val error = if (parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE) {
+                AccountError.PHONE_ALREADY_REGISTERED
+            } else {
+                AccountError.IDENTIFIER_ALREADY_REGISTERED
+            }
+            return AccountResult.Failure(error)
+        }
+
+        when (parseResult.type) {
+            com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME -> {
+                if (!code.isNullOrEmpty()) {
+                    return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                }
+            }
+            com.autoaccounting.api.AccountIdentifierTypeContract.PHONE -> {
+                if (code.isNullOrBlank() || !isValidVerificationCode(code)) {
+                    return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                }
+                val verifyRes = verifyVerificationCode("PHONE", parseResult.normalizedValue, code, PURPOSE_REGISTER)
+                if (verifyRes is AccountResult.Failure) return verifyRes
+            }
+            com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL -> {
+                if (code.isNullOrBlank() || !isValidVerificationCode(code)) {
+                    return AccountResult.Failure(AccountError.INVALID_REQUEST)
+                }
+                val verifyRes = verifyVerificationCode("EMAIL", parseResult.normalizedValue, code, PURPOSE_REGISTER)
+                if (verifyRes is AccountResult.Failure) return verifyRes
+            }
         }
 
         val now = clock.millis()
         val passwordHash = PasswordHash.create(password)
-        val created = store.createUser(
-            StoredUser(
-                accountId = 0L,
-                phone = phone,
-                passwordSalt = passwordHash.salt,
-                passwordHash = passwordHash.hash,
-                createdAtMillis = now
-            )
-        )
-        if (!created) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
+        val account = store.createAccountWithIdentifier(
+            primaryIdentifierType = parseResult.type.name,
+            rawValue = parseResult.displayValue,
+            normalizedValue = parseResult.normalizedValue,
+            passwordSalt = passwordHash.salt,
+            passwordHash = passwordHash.hash,
+            verified = true,
+            now = now
+        ) ?: return AccountResult.Failure(AccountError.INVALID_REQUEST)
+
+        if (parseResult.type != com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
+            store.deleteVerificationCode(parseResult.type.name, parseResult.normalizedValue, PURPOSE_REGISTER)
         }
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
-        store.deleteSmsCode(phone)
-        registerDeviceFromSms(user.accountId, smsCode, deviceId, ipAddress, now)
-        return issueSession(user.accountId, user.phone, deviceId.ifBlank { smsCode.deviceId }, now)
+
+        registerDevice(account.accountId, deviceId, ipAddress, now)
+
+        val phone = if (parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE) parseResult.normalizedValue else null
+        return issueSession(account.accountId, phone, deviceId, now)
     }
 
-    fun login(
-        phone: String,
+    fun loginIdentifier(
+        identifier: String,
         password: String,
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        if (!isValidPhone(phone) || password.isBlank() || !isValidDeviceId(deviceId)) {
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
             return AccountResult.Failure(AccountError.LOGIN_FAILED)
         }
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
+
+        if (password.isBlank() || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.LOGIN_FAILED)
+        }
+
+        val account = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
+        if (account == null) {
+            PasswordHash.create("DummyPassword123!")
+            return AccountResult.Failure(AccountError.LOGIN_FAILED)
+        }
+
+        val cred = store.findPasswordCredentialByAccountId(account.accountId)
+            ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
+
         val now = clock.millis()
-        if (user.lockedUntilMillis > now) {
+        if (cred.lockedUntilMillis > now) {
             return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
         }
 
-        if (!user.passwordHash().matches(password)) {
-            val failedLoginCount = user.failedLoginCount + 1
-            val lockedUntilMillis = if (failedLoginCount >= MAX_LOGIN_FAILURES) {
-                now + LOGIN_LOCK_MILLIS
-            } else {
-                user.lockedUntilMillis
-            }
-            store.updateUser(
-                user.copy(
+        if (!PasswordHash(cred.passwordSalt, cred.passwordHash).matches(password)) {
+            val failedLoginCount = cred.failedLoginCount + 1
+            val lockedUntil = if (failedLoginCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else cred.lockedUntilMillis
+            store.updatePasswordCredential(
+                cred.copy(
                     failedLoginCount = failedLoginCount,
-                    lockedUntilMillis = lockedUntilMillis
+                    lockedUntilMillis = lockedUntil,
+                    updatedAtMillis = now
                 )
             )
-            return if (failedLoginCount >= MAX_LOGIN_FAILURES) {
+            return if (lockedUntil > now) {
                 AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
             } else {
                 AccountResult.Failure(AccountError.LOGIN_FAILED)
             }
         }
 
-        store.updateUser(user.copy(failedLoginCount = 0, lockedUntilMillis = 0))
-        registerDevice(user.accountId, deviceId, ipAddress, now)
-        return issueSession(user.accountId, user.phone, deviceId, now)
+        if (cred.failedLoginCount > 0 || cred.lockedUntilMillis > 0) {
+            store.updatePasswordCredential(
+                cred.copy(
+                    failedLoginCount = 0,
+                    lockedUntilMillis = 0,
+                    updatedAtMillis = now
+                )
+            )
+        }
+
+        registerDevice(account.accountId, deviceId, ipAddress, now)
+        val identifiers = store.findIdentifiersByAccountId(account.accountId)
+        val phone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
+        return issueSession(account.accountId, phone, deviceId, now)
     }
 
-    fun recoverPassword(
-        phone: String,
+    fun recoverPasswordByIdentifier(
+        identifier: String,
         code: String,
         newPassword: String,
         deviceId: String = "",
         ipAddress: String = ""
     ): AccountResult<AccountToken> {
-        if (
-            !isValidPhone(phone) ||
-            !isValidVerificationCode(code) ||
-            !isValidPassword(newPassword) ||
-            !isValidDeviceId(deviceId)
-        ) {
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
             return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
-        val user = store.findUser(phone)
-            ?: return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
-        val smsCode = when (val verification = verifySmsCode(phone, code)) {
-            is AccountResult.Failure -> return verification
-            is AccountResult.Success -> verification.value
+
+        if (parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
         }
 
+        if (!isValidPassword(newPassword) || !isValidDeviceId(deviceId)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val verifyRes = verifyVerificationCode(parseResult.type.name, parseResult.normalizedValue, code, PURPOSE_RECOVERY)
+        if (verifyRes is AccountResult.Failure) return verifyRes
+
+        val account = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
+            ?: return AccountResult.Failure(AccountError.IDENTIFIER_NOT_REGISTERED)
+
+        val cred = store.findPasswordCredentialByAccountId(account.accountId)
+            ?: return AccountResult.Failure(AccountError.IDENTIFIER_NOT_REGISTERED)
+
+        val now = clock.millis()
         val passwordHash = PasswordHash.create(newPassword)
-        store.updateUser(
-            user.copy(
+        val rotated = store.resetPasswordAndRotateSession(
+            credential = cred.copy(
                 passwordSalt = passwordHash.salt,
                 passwordHash = passwordHash.hash,
                 failedLoginCount = 0,
-                lockedUntilMillis = 0
+                lockedUntilMillis = 0,
+                updatedAtMillis = now
+            ),
+            verificationIdentifierType = parseResult.type.name,
+            verificationNormalizedIdentifier = parseResult.normalizedValue,
+            verificationPurpose = PURPOSE_RECOVERY,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            now = now,
+            tokenGenerator = tokenGenerator
+        )
+        return rotated.mapAccountToken(::enrichAccountToken)
+    }
+
+    fun prepareIdentifierLink(
+        bearerToken: String,
+        identifier: String,
+        deviceId: String = "",
+        ipAddress: String = ""
+    ): AccountResult<com.autoaccounting.api.IdentifierLinkPrepareResponseContract> {
+        val currentAccount = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+
+        val parseResult = try {
+            com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+        } catch (e: Exception) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        if (parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val existingIdentifierAccount = store.findAccountByIdentifier(parseResult.type.name, parseResult.normalizedValue)
+        if (existingIdentifierAccount != null) {
+            return if (existingIdentifierAccount.accountId == currentAccount.accountId) {
+                AccountResult.Success(
+                    com.autoaccounting.api.IdentifierLinkPrepareResponseContract.AlreadyLinked
+                )
+            } else {
+                AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+            }
+        }
+
+        val currentIdentifiers = store.findIdentifiersByAccountId(currentAccount.accountId)
+        if (currentIdentifiers.any { it.identifierType == parseResult.type.name }) {
+            return AccountResult.Failure(AccountError.IDENTIFIER_ALREADY_LINKED)
+        }
+
+        val now = clock.millis()
+        val ticket = secureToken()
+        val ticketHash = hashToken(ticket)
+        val expiresAt = now + TICKET_VALIDITY_MILLIS
+
+        val payloadObj = buildJsonObject {
+            put("accountId", currentAccount.accountId)
+            put("identifierType", parseResult.type.name)
+            put("rawValue", parseResult.displayValue)
+            put("normalizedValue", parseResult.normalizedValue)
+        }
+
+        val issueRes = issueVerificationCode(
+            identifier = parseResult.displayValue,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            purpose = PURPOSE_IDENTIFIER_LINK
+        )
+        if (issueRes is AccountResult.Failure) return issueRes
+
+        store.createOneTimeTicket(
+            StoredOneTimeTicket(
+                ticketHash = ticketHash,
+                ticketType = "IDENTIFIER_LINK",
+                accountId = currentAccount.accountId,
+                payloadJson = payloadObj.toString(),
+                expiresAtMillis = expiresAt
             )
         )
-        store.deleteSmsCode(phone)
-        store.deleteSessionsForAccount(user.accountId)
+
+        return AccountResult.Success(
+            com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued(
+                linkTicket = ticket,
+                ticketExpiresAtMillis = expiresAt
+            )
+        )
+    }
+
+    fun confirmIdentifierLink(
+        bearerToken: String,
+        linkTicket: String,
+        code: String,
+        deviceId: String = "",
+        ipAddress: String = "",
+        password: String? = null
+    ): AccountResult<AccountToken> {
+        val currentAccount = verifiedAccount(bearerToken)
+            ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+
+        val ticketHash = hashToken(linkTicket)
+        val ticket = store.findOneTimeTicket(ticketHash)
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+
         val now = clock.millis()
-        registerDeviceFromSms(user.accountId, smsCode, deviceId, ipAddress, now)
-        return issueSession(user.accountId, user.phone, deviceId.ifBlank { smsCode.deviceId }, now)
+        if (ticket.ticketType != "IDENTIFIER_LINK" || ticket.expiresAtMillis < now) {
+            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        }
+        if (ticket.usedAtMillis != null) {
+            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
+        }
+        if (ticket.accountId != currentAccount.accountId) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+
+        val jsonObj = runCatching { Json.parseToJsonElement(ticket.payloadJson).jsonObject }.getOrNull()
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+
+        val identifierType = jsonObj["identifierType"]?.jsonPrimitive?.contentOrNull
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        val rawValue = jsonObj["rawValue"]?.jsonPrimitive?.contentOrNull
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        val normalizedValue = jsonObj["normalizedValue"]?.jsonPrimitive?.contentOrNull
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+
+        val verifyRes = verifyVerificationCode(identifierType, normalizedValue, code, PURPOSE_IDENTIFIER_LINK)
+        if (verifyRes is AccountResult.Failure) return verifyRes
+
+        val passwordHash = if (store.findPasswordCredentialByAccountId(currentAccount.accountId) == null) {
+            val newPassword = password.orEmpty()
+            if (!isValidPassword(newPassword)) return AccountResult.Failure(AccountError.INVALID_REQUEST)
+            PasswordHash.create(newPassword)
+        } else {
+            null
+        }
+
+        val linked = store.completeIdentifierLink(
+            ticketHash = ticketHash,
+            accountId = currentAccount.accountId,
+            identifierType = identifierType,
+            rawValue = rawValue,
+            normalizedValue = normalizedValue,
+            newPasswordSalt = passwordHash?.salt,
+            newPasswordHash = passwordHash?.hash,
+            deviceId = deviceId,
+            ipAddress = ipAddress,
+            now = now,
+            tokenGenerator = tokenGenerator
+        )
+        return linked.mapAccountToken(::enrichAccountToken)
     }
 
     fun verifyToken(token: String): AccountResult<AccountToken> {
@@ -993,12 +1269,14 @@ class AccountService(
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val account = store.findAccount(session.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = phoneUserByAccountId(account.accountId)
-        val phone = user?.phone?.takeIf { it.isNotBlank() }
+        val phone = phoneIdentifier(account.accountId)
         val wechatIdentity = store.findWechatIdentityByAccountId(account.accountId)
+        val identifiers = identifierContracts(account.accountId)
         return AccountResult.Success(
             AccountToken(
                 accountId = account.accountId,
+                primaryIdentifier = primaryIdentifierForAccount(account.accountId),
+                identifiers = identifiers,
                 phone = phone,
                 token = token,
                 deletionStatus = account.deletionRequestedAtMillis?.let { requestedAt ->
@@ -1022,22 +1300,14 @@ class AccountService(
         return store.registeredDevices(accountId)
     }
 
-    fun registeredDevices(phone: String): List<StoredRegisteredDevice> {
-        val user = store.findUser(phone) ?: return emptyList()
-        return store.registeredDevices(user.accountId)
-    }
-
     fun requestAccountDeletion(token: String): AccountResult<AccountDeletionStatus> {
         val verified = verifiedAccount(token)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val account = store.findAccount(verified.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val requestedAt = account.deletionRequestedAtMillis ?: clock.millis()
-        val user = phoneUserByAccountId(account.accountId)
-        if (user != null) {
-            store.updateUser(user.copy(deletionRequestedAtMillis = requestedAt))
-        }
-        val phone = user?.phone?.takeIf { it.isNotBlank() }
+        store.updateAccountDeletionRequestedAt(account.accountId, requestedAt)
+        val phone = verified.phone
         return AccountResult.Success(account.deletionStatus(phone, requestedAt))
     }
 
@@ -1046,8 +1316,7 @@ class AccountService(
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val account = store.findAccount(verified.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val user = phoneUserByAccountId(account.accountId)
-        val phone = user?.phone?.takeIf { it.isNotBlank() }
+        val phone = phoneIdentifier(account.accountId)
         return AccountResult.Success(
             account.deletionRequestedAtMillis?.let { requestedAt ->
                 account.deletionStatus(phone, requestedAt)
@@ -1063,10 +1332,7 @@ class AccountService(
         if (account.deletionRequestedAtMillis == null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
         }
-        val user = phoneUserByAccountId(account.accountId)
-        if (user != null) {
-            store.updateUser(user.copy(deletionRequestedAtMillis = null))
-        }
+        store.updateAccountDeletionRequestedAt(account.accountId, null)
         return AccountResult.Success(Unit)
     }
 
@@ -1079,19 +1345,9 @@ class AccountService(
         return AccountResult.Success(Unit)
     }
 
-    fun writeCloudConfiguration(phone: String): AccountResult<Unit> {
-        val user = store.findUser(phone) ?: return AccountResult.Failure(AccountError.PHONE_NOT_REGISTERED)
-        return writeCloudConfiguration(user.accountId)
-    }
-
     fun canWriteCloudData(accountId: Long): Boolean {
         val account = store.findAccount(accountId) ?: return false
         return account.deletionRequestedAtMillis == null
-    }
-
-    fun canWriteCloudData(phone: String): Boolean {
-        val user = store.findUser(phone) ?: return false
-        return canWriteCloudData(user.accountId)
     }
 
     fun accountsDueForDeletion(): List<Long> {
@@ -1116,31 +1372,40 @@ class AccountService(
         clock.advanceBy(millis)
     }
 
-    private fun phoneUserByAccountId(accountId: Long): StoredUser? {
-        return store.findUserByAccountId(accountId)?.takeIf { it.phone.isNotBlank() }
+    private fun phoneIdentifier(accountId: Long): String? {
+        return store.findIdentifiersByAccountId(accountId)
+            .firstOrNull { it.identifierType == "PHONE" }
+            ?.rawValue
     }
 
-    private fun verifySmsCode(
-        phone: String,
+    fun verifyVerificationCode(
+        identifierType: String,
+        normalizedIdentifier: String,
         code: String,
         expectedPurpose: String = SMS_PURPOSE_DEFAULT,
         expectedContextKey: String? = null
-    ): AccountResult<StoredSmsCode> {
-        val record = store.findSmsCode(phone)
+    ): AccountResult<StoredVerificationCode> {
+        val now = clock.millis()
+        val normalizedPurpose = expectedPurpose.ifBlank { PURPOSE_REGISTER }
+        val record = store.findVerificationCode(identifierType, normalizedIdentifier, normalizedPurpose)
             ?: return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
-        if (record.purpose != expectedPurpose || record.contextKey != expectedContextKey) {
-            return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
-        }
+
         if (record.invalidated) {
             return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
         }
-        if (clock.millis() > record.expiresAtMillis) {
-            store.updateSmsCode(record.copy(invalidated = true))
+
+        if (now > record.expiresAtMillis) {
+            store.upsertVerificationCode(record.copy(invalidated = true))
             return AccountResult.Failure(AccountError.VERIFICATION_CODE_EXPIRED)
         }
-        if (!verificationCodeHasher.matches(phone, code, record.codeHash)) {
+
+        if (expectedContextKey != null && record.contextKey != expectedContextKey) {
+            return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
+        }
+
+        if (!verificationCodeHasher.matches(identifierType, normalizedIdentifier, normalizedPurpose, code, record.codeHash)) {
             val failedAttempts = record.failedAttempts + 1
-            store.updateSmsCode(
+            store.upsertVerificationCode(
                 record.copy(
                     failedAttempts = failedAttempts,
                     invalidated = failedAttempts >= MAX_SMS_CODE_FAILURES
@@ -1148,6 +1413,7 @@ class AccountService(
             )
             return AccountResult.Failure(AccountError.VERIFICATION_CODE_WRONG)
         }
+
         return AccountResult.Success(record)
     }
 
@@ -1189,12 +1455,12 @@ class AccountService(
         now: Long
     ): Boolean {
         return smsRateLimitScopes(phone, deviceId, ipAddress).any { (scopeType, scopeValue) ->
-            val lastIssuedAt = store.latestSmsIssueMillis(scopeType, scopeValue)
+            val lastIssuedAt = store.latestVerificationSendLogMillis("SMS", scopeType, scopeValue)
             val minuteLimited = scopeType == SMS_SCOPE_PHONE &&
                 lastIssuedAt != null &&
                 now - lastIssuedAt < SMS_RATE_LIMIT_MILLIS
-            val hourLimited = store.countSmsIssues(scopeType, scopeValue, now - SMS_HOUR_MILLIS) >= 5
-            val dayLimited = store.countSmsIssues(scopeType, scopeValue, now - SMS_DAY_MILLIS) >= 10
+            val hourLimited = store.countVerificationSendLogs("SMS", scopeType, scopeValue, now - SMS_HOUR_MILLIS) >= 5
+            val dayLimited = store.countVerificationSendLogs("SMS", scopeType, scopeValue, now - SMS_DAY_MILLIS) >= 10
             minuteLimited || hourLimited || dayLimited
         }
     }
@@ -1209,21 +1475,6 @@ class AccountService(
             if (deviceId.isNotBlank()) add(SMS_SCOPE_DEVICE to deviceId)
             if (ipAddress.isNotBlank()) add(SMS_SCOPE_IP to ipAddress)
         }
-    }
-
-    private fun registerDeviceFromSms(
-        accountId: Long,
-        smsCode: StoredSmsCode,
-        requestedDeviceId: String,
-        requestedIpAddress: String,
-        now: Long
-    ) {
-        registerDevice(
-            accountId = accountId,
-            deviceId = requestedDeviceId.ifBlank { smsCode.deviceId },
-            ipAddress = requestedIpAddress.ifBlank { smsCode.ipAddress },
-            now = now
-        )
     }
 
     private fun registerDevice(
@@ -1265,9 +1516,12 @@ class AccountService(
             ?.deletionRequestedAtMillis
             ?.let { requestedAt -> account.deletionStatus(phone, requestedAt) }
         val wechatIdentity = store.findWechatIdentityByAccountId(accountId)
+        val identifiers = identifierContracts(accountId)
         return AccountResult.Success(
             AccountToken(
                 accountId = accountId,
+                primaryIdentifier = primaryIdentifierForAccount(accountId),
+                identifiers = identifiers,
                 phone = phone,
                 token = token,
                 deletionStatus = deletionStatus,
@@ -1281,6 +1535,42 @@ class AccountService(
 
     private fun verifiedAccount(token: String): AccountToken? {
         return (verifyToken(token) as? AccountResult.Success)?.value
+    }
+
+    private fun identifierContracts(accountId: Long): List<com.autoaccounting.api.AccountIdentifierContract> {
+        return store.findIdentifiersByAccountId(accountId).map { identifier ->
+            com.autoaccounting.api.AccountIdentifierContract(
+                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(identifier.identifierType),
+                value = identifier.rawValue,
+                verified = identifier.verified
+            )
+        }
+    }
+
+    private fun enrichAccountToken(token: AccountToken): AccountToken {
+        val account = store.findAccount(token.accountId)
+        val identifiers = identifierContracts(token.accountId)
+        val phone = identifiers.firstOrNull {
+            it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE
+        }?.value
+        val wechat = store.findWechatIdentityByAccountId(token.accountId)
+        return token.copy(
+            primaryIdentifier = primaryIdentifierForAccount(token.accountId),
+            identifiers = identifiers,
+            phone = phone,
+            deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
+                account.deletionStatus(phone, requestedAt)
+            },
+            wechatLinked = wechat != null,
+            nickname = wechat?.nickname,
+            avatarUrl = wechat?.avatarUrl
+        )
+    }
+
+    private fun primaryIdentifierForAccount(accountId: Long): com.autoaccounting.api.AccountIdentifierContract? {
+        val account = store.findAccount(accountId) ?: return null
+        val primaryType = account.primaryIdentifierType ?: return null
+        return identifierContracts(accountId).firstOrNull { it.type.name == primaryType }
     }
 
     private fun StoredAccount.deletionStatus(phone: String?, requestedAtMillis: Long): AccountDeletionStatus {
@@ -1300,11 +1590,6 @@ class AccountService(
         )
     }
 
-
-    private fun StoredUser.passwordHash(): PasswordHash {
-        return PasswordHash(passwordSalt, passwordHash)
-    }
-
     companion object {
         private const val SMS_SCOPE_PHONE = "phone"
         private const val SMS_SCOPE_DEVICE = "device"
@@ -1317,8 +1602,10 @@ class AccountService(
         private const val MAX_LOGIN_FAILURES = 5
         private const val SMS_PURPOSE_DEFAULT = "DEFAULT"
         private const val SMS_PURPOSE_WECHAT_LINK = "WECHAT_LINK"
-        private const val SMS_PURPOSE_PHONE_LINK = "PHONE_LINK"
         private const val SMS_PURPOSE_WECHAT_UNLINK = "WECHAT_UNLINK"
+        private const val PURPOSE_REGISTER = "REGISTER"
+        private const val PURPOSE_RECOVERY = "RECOVERY"
+        private const val PURPOSE_IDENTIFIER_LINK = "IDENTIFIER_LINK"
         private const val LOGIN_LOCK_MILLIS = 15 * 60_000L
         const val ACCOUNT_DELETION_COOLING_OFF_MILLIS = 7 * 24 * 60 * 60 * 1_000L
 
@@ -1336,6 +1623,7 @@ class AccountService(
                     password = jdbcConfig.password
                 ),
                 smsProvider = WebhookSmsProvider.fromEnvironment(env),
+                emailProvider = SmtpEmailProvider.fromEnvironment(env),
                 verificationCodeHasher = VerificationCodeHasher.fromSecret(authPepper),
                 wechatOAuthClient = WechatOAuthClient.fromEnvironment(env)
             )
@@ -1423,6 +1711,13 @@ private fun isValidDeviceId(deviceId: String): Boolean {
     return deviceId.length <= 128 && deviceId.none(Char::isWhitespace)
 }
 
+private fun AccountResult<AccountToken>.mapAccountToken(
+    transform: (AccountToken) -> AccountToken
+): AccountResult<AccountToken> = when (this) {
+    is AccountResult.Success -> AccountResult.Success(transform(value))
+    is AccountResult.Failure -> this
+}
+
 private fun StoredWechatIdentity.matchesWechatIdentity(
     appId: String,
     openid: String,
@@ -1437,22 +1732,34 @@ class VerificationCodeHasher private constructor(
 ) {
     private val secretBytes = secret.copyOf()
 
-    fun hash(phone: String, code: String): String {
+    fun hash(identifierType: String, normalizedIdentifier: String, purpose: String, code: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(secretBytes, "HmacSHA256"))
         return Base64.getEncoder().encodeToString(
-            mac.doFinal("$phone:$code".toByteArray(Charsets.UTF_8))
+            mac.doFinal("$identifierType:$normalizedIdentifier:$purpose:$code".toByteArray(Charsets.UTF_8))
         )
     }
 
-    fun matches(phone: String, code: String, expectedHash: String): Boolean {
+    fun hash(normalizedIdentifier: String, code: String): String =
+        hash("PHONE", normalizedIdentifier, "REGISTER", code)
+
+    fun matches(
+        identifierType: String,
+        normalizedIdentifier: String,
+        purpose: String,
+        code: String,
+        expectedHash: String
+    ): Boolean {
         return runCatching {
             MessageDigest.isEqual(
                 Base64.getDecoder().decode(expectedHash),
-                Base64.getDecoder().decode(hash(phone, code))
+                Base64.getDecoder().decode(hash(identifierType, normalizedIdentifier, purpose, code))
             )
         }.getOrDefault(false)
     }
+
+    fun matches(normalizedIdentifier: String, code: String, expectedHash: String): Boolean =
+        matches("PHONE", normalizedIdentifier, "REGISTER", code, expectedHash)
 
     companion object {
         internal fun fromSecret(secret: String): VerificationCodeHasher {

@@ -18,18 +18,18 @@ class AccountServiceTest {
 
         assertEquals(
             AccountError.VERIFICATION_CODE_WRONG,
-            service.register("13800138000", "000000", "Aa123456!").error
+            service.registerIdentifier("13800138000", "000000", "Aa123456!").error
         )
 
-        val issued = service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        val issued = service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
         assertEquals(AccountResult.Success(Unit), issued)
 
-        val registered = service.register("13800138000", "123456", "Aa123456!")
+        val registered = service.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         assertTrue(registered is AccountResult.Success)
         assertEquals(
             AccountError.PHONE_ALREADY_REGISTERED,
-            service.register("13800138000", "123456", "Aa123456!").error
+            service.registerIdentifier("13800138000", "123456", "Aa123456!").error
         )
     }
 
@@ -39,20 +39,20 @@ class AccountServiceTest {
 
         assertEquals(
             AccountError.INVALID_REQUEST,
-            service.issueSmsCode("123", "device-a", "127.0.0.1").error
+            service.issueVerificationCode("123", "device-a", "127.0.0.1").error
         )
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
         assertEquals(
             AccountError.INVALID_REQUEST,
-            service.register("13800138000", "12345", "Aa123456!").error
+            service.registerIdentifier("13800138000", "12345", "Aa123456!").error
         )
         assertEquals(
             AccountError.INVALID_REQUEST,
-            service.register("13800138000", "123456", "weak-password").error
+            service.registerIdentifier("13800138000", "123456", "weak-password").error
         )
         assertEquals(
             AccountError.LOGIN_FAILED,
-            service.login("13800138000", "Aa123456!", "invalid device").error
+            service.loginIdentifier("13800138000", "Aa123456!", "invalid device").error
         )
     }
 
@@ -60,52 +60,52 @@ class AccountServiceTest {
     fun smsIssueIsRateLimitedByPhoneDeviceAndIp() {
         val service = accountService()
 
-        assertEquals(AccountResult.Success(Unit), service.issueSmsCode("13800138000", "device-a", "127.0.0.1"))
+        assertEquals(AccountResult.Success(Unit), service.issueVerificationCode("13800138000", "device-a", "127.0.0.1"))
 
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            service.issueSmsCode("13800138000", "device-b", "127.0.0.2").error
+            service.issueVerificationCode("13800138000", "device-b", "127.0.0.2").error
         )
 
         repeat(4) { index ->
             assertEquals(
                 AccountResult.Success(Unit),
-                service.issueSmsCode("1390013900$index", "device-a", "127.0.0.${index + 2}")
+                service.issueVerificationCode("1390013900$index", "device-a", "127.0.0.${index + 2}")
             )
         }
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            service.issueSmsCode("13700137000", "device-a", "127.0.0.9").error
+            service.issueVerificationCode("13700137000", "device-a", "127.0.0.9").error
         )
 
         val ipLimitedService = accountService()
         repeat(5) { index ->
             assertEquals(
                 AccountResult.Success(Unit),
-                ipLimitedService.issueSmsCode("1360013600$index", "device-$index", "127.0.0.1")
+                ipLimitedService.issueVerificationCode("1360013600$index", "device-$index", "127.0.0.1")
             )
         }
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
-            ipLimitedService.issueSmsCode("13500135000", "device-z", "127.0.0.1").error
+            ipLimitedService.issueVerificationCode("13500135000", "device-z", "127.0.0.1").error
         )
     }
 
     @Test
     fun smsCodeIsInvalidatedAfterThreeWrongAttempts() {
         val service = accountService()
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
 
         repeat(3) {
             assertEquals(
                 AccountError.VERIFICATION_CODE_WRONG,
-                service.register("13800138000", "000000", "Aa123456!").error
+                service.registerIdentifier("13800138000", "000000", "Aa123456!").error
             )
         }
 
         assertEquals(
             AccountError.VERIFICATION_CODE_WRONG,
-            service.register("13800138000", "123456", "Aa123456!").error
+            service.registerIdentifier("13800138000", "123456", "Aa123456!").error
         )
     }
 
@@ -122,23 +122,29 @@ class AccountServiceTest {
     @Test
     fun loginLocksAfterFiveConsecutivePasswordFailures() {
         val service = accountService()
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.register("13800138000", "123456", "Aa123456!")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        service.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         repeat(4) {
-            assertEquals(AccountError.LOGIN_FAILED, service.login("13800138000", "wrong").error)
+            assertEquals(AccountError.LOGIN_FAILED, service.loginIdentifier("13800138000", "wrong").error)
         }
 
-        assertEquals(AccountError.ACCOUNT_LOCKED, service.login("13800138000", "wrong").error)
-        assertEquals(AccountError.ACCOUNT_LOCKED, service.login("13800138000", "Aa123456!").error)
+        assertEquals(AccountError.ACCOUNT_LOCKED, service.loginIdentifier("13800138000", "wrong").error)
+        assertEquals(AccountError.ACCOUNT_LOCKED, service.loginIdentifier("13800138000", "Aa123456!").error)
     }
 
     @Test
     fun registrationCreatesPersistedTokenAndRegisteredDevice() {
         val service = accountService()
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
 
-        val registered = service.register("13800138000", "123456", "Aa123456!")
+        val registered = service.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!",
+            "device-a",
+            "127.0.0.1"
+        )
             as AccountResult.Success<AccountToken>
 
         val verified = service.verifyToken(registered.value.token) as AccountResult.Success<AccountToken>
@@ -147,7 +153,7 @@ class AccountServiceTest {
         assertTrue(verified.value.accountId > 0L)
         assertEquals(
             listOf("device-a"),
-            service.registeredDevices("13800138000").map { it.deviceId }
+            service.registeredDevices(registered.value.accountId).map { it.deviceId }
         )
     }
 
@@ -162,11 +168,11 @@ class AccountServiceTest {
 
         assertEquals(
             AccountError.SMS_PROVIDER_UNCONFIGURED,
-            service.issueSmsCode("13800138000", "device-a", "127.0.0.1").error
+            service.issueVerificationCode("13800138000", "device-a", "127.0.0.1").error
         )
         assertEquals(
             AccountError.VERIFICATION_CODE_WRONG,
-            service.register("13800138000", "123456", "Aa123456!").error
+            service.registerIdentifier("13800138000", "123456", "Aa123456!").error
         )
     }
 
@@ -174,28 +180,28 @@ class AccountServiceTest {
     fun recoveryResetsPasswordAfterSmsVerification() {
         var tokenIndex = 0
         val service = accountService(tokenGenerator = { "token-${++tokenIndex}" })
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val originalToken = (service.register("13800138000", "123456", "Aa123456!")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val originalToken = (service.registerIdentifier("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value.token
 
         service.advanceTimeBy(61_000)
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val recovered = service.recoverPassword("13800138000", "123456", "Bb123456!")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val recovered = service.recoverPasswordByIdentifier("13800138000", "123456", "Bb123456!")
 
         assertTrue(recovered is AccountResult.Success)
         assertEquals(AccountError.TOKEN_INVALID, service.verifyToken(originalToken).error)
-        assertEquals(AccountError.LOGIN_FAILED, service.login("13800138000", "Aa123456!").error)
-        assertTrue(service.login("13800138000", "Bb123456!") is AccountResult.Success)
+        assertEquals(AccountError.LOGIN_FAILED, service.loginIdentifier("13800138000", "Aa123456!").error)
+        assertTrue(service.loginIdentifier("13800138000", "Bb123456!") is AccountResult.Success)
     }
 
     @Test
     fun signOutRevokesOnlyCurrentSession() {
         var tokenIndex = 0
         val service = accountService(tokenGenerator = { "token-${++tokenIndex}" })
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val firstToken = (service.register("13800138000", "123456", "Aa123456!")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val firstToken = (service.registerIdentifier("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value.token
-        val secondToken = (service.login("13800138000", "Aa123456!", "device-b")
+        val secondToken = (service.loginIdentifier("13800138000", "Aa123456!", "device-b")
             as AccountResult.Success<AccountToken>).value.token
 
         assertEquals(AccountResult.Success(Unit), service.signOut(firstToken))
@@ -206,23 +212,30 @@ class AccountServiceTest {
     @Test
     fun accountDeletionHasCoolingOffCancelAndFinalDeleteStateMachine() {
         val service = accountService(startMillis = 0)
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val token = (service.register("13800138000", "123456", "Aa123456!")
-            as AccountResult.Success<AccountToken>).value.token
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val registration = service.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!",
+            "device-a",
+            "127.0.0.1"
+        ) as AccountResult.Success<AccountToken>
+        val token = registration.value.token
+        val accountId = registration.value.accountId
 
         val requested = service.requestAccountDeletion(token) as AccountResult.Success<AccountDeletionStatus>
 
         assertEquals("13800138000", requested.value.phone)
         assertEquals(0L, requested.value.requestedAtMillis)
         assertEquals(604_800_000L, requested.value.finalDeletionAtMillis)
-        assertTrue(service.login("13800138000", "Aa123456!") is AccountResult.Success)
+        assertTrue(service.loginIdentifier("13800138000", "Aa123456!") is AccountResult.Success)
         assertEquals(
             AccountError.ACCOUNT_DELETION_PENDING,
-            service.writeCloudConfiguration("13800138000").error
+            service.writeCloudConfiguration(accountId).error
         )
 
         assertTrue(service.cancelAccountDeletion(token) is AccountResult.Success<*>)
-        assertEquals(AccountResult.Success(Unit), service.writeCloudConfiguration("13800138000"))
+        assertEquals(AccountResult.Success(Unit), service.writeCloudConfiguration(accountId))
 
         service.requestAccountDeletion(token)
         service.advanceTimeBy(604_799_999)
@@ -243,8 +256,8 @@ class AccountServiceTest {
             store = InMemoryCloudConfigStore(),
             accountService = accountService
         )
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val tokenResult = (accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value
         val accountId = tokenResult.accountId
 
@@ -287,8 +300,8 @@ class AccountServiceTest {
         val aiService = AiCategorizationService(logStore = aiStore)
         val configStore = FailingOnceCloudConfigStore()
         val cloudConfigService = CloudConfigService(configStore, accountService)
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val tokenResult = (accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val tokenResult = (accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
             as AccountResult.Success<AccountToken>).value
         val token = tokenResult.token
         val accountId = tokenResult.accountId
@@ -323,20 +336,27 @@ class AccountServiceTest {
     @Test
     fun deviceWritesArePausedWhileAccountDeletionIsPending() {
         val service = accountService()
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val token = (service.register("13800138000", "123456", "Aa123456!")
-            as AccountResult.Success<AccountToken>).value.token
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val registration = service.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!",
+            "device-a",
+            "127.0.0.1"
+        ) as AccountResult.Success<AccountToken>
+        val token = registration.value.token
+        val accountId = registration.value.accountId
 
         // Verify initial device registered
-        assertEquals(1, service.registeredDevices("13800138000").size)
-        assertEquals("device-a", service.registeredDevices("13800138000").first().deviceId)
+        assertEquals(1, service.registeredDevices(accountId).size)
+        assertEquals("device-a", service.registeredDevices(accountId).first().deviceId)
 
         // Request account deletion -> enters pending state
         service.requestAccountDeletion(token)
 
         // Try to log in with new device during cooling-off -> should NOT write the new device
-        service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
-        val devicesDuringPending = service.registeredDevices("13800138000")
+        service.loginIdentifier("13800138000", "Aa123456!", "device-b", "127.0.0.2")
+        val devicesDuringPending = service.registeredDevices(accountId)
         assertEquals(1, devicesDuringPending.size)
         assertEquals("device-a", devicesDuringPending.first().deviceId)
 
@@ -344,8 +364,8 @@ class AccountServiceTest {
         service.cancelAccountDeletion(token)
 
         // Log in again -> should write the new device
-        service.login("13800138000", "Aa123456!", "device-b", "127.0.0.2")
-        val devicesAfterCancel = service.registeredDevices("13800138000")
+        service.loginIdentifier("13800138000", "Aa123456!", "device-b", "127.0.0.2")
+        val devicesAfterCancel = service.registeredDevices(accountId)
         assertEquals(2, devicesAfterCancel.size)
         assertEquals(listOf("device-a", "device-b"), devicesAfterCancel.map { it.deviceId })
     }

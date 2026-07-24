@@ -1,4 +1,4 @@
-# 计划中：统一用户名、邮箱、手机号认证与验证码
+# 已完成：统一用户名、邮箱、手机号认证与验证码
 
 ## 目标
 
@@ -278,30 +278,30 @@
 
 以下标准初始保持未勾选，只能根据实际验证证据逐项更新：
 
-- [ ] 普通用户名、邮箱、手机号均可独立注册并登录。
-- [ ] 用户名遵循 4–20 位、字母开头、字母数字下划线规则，唯一性忽略大小写。
-- [ ] 邮箱规范化后唯一，手机号保持现有 11 位规则。
-- [ ] 用户名注册不显示、不请求、不提交验证码。
-- [ ] 邮箱注册通过 SMTP 验证码，手机号注册通过短信验证码。
-- [ ] 验证码为 6 位、5 分钟有效、最多错误 3 次，不能跨目标、渠道或用途复用。
-- [ ] 验证码输入框和获取按钮位于同一行，输入框与按钮宽度约为 2:1。
-- [ ] 用户名账号可分别绑定一个手机号和一个邮箱。
-- [ ] 绑定后的手机号和邮箱均可登录和找回密码。
-- [ ] 任一绑定标识共享密码、失败次数和锁定状态。
-- [ ] 密码重置后全部旧 Session 失效。
-- [ ] 密码账号之间的标识冲突不会转移标识或合并账号。
-- [ ] 微信纯账号仍可安全绑定或合并已有密码账号。
-- [ ] 用户名或邮箱密码可作为解绑微信后的保底登录方式。
-- [ ] Android 未配置 AppID 时微信入口继续隐藏。
-- [ ] v5 手机号账号迁移后密码哈希、Session、设备、微信身份、配置、AI 数据和注销状态不丢失。
-- [ ] Android 加密 Session V1/V2 可升级到 V3，用户名和邮箱账号可跨重启恢复。
-- [ ] 后端最终不再接受旧手机号认证协议。
-- [ ] 登录、注册、绑定、找回、合并和解绑前后，本机 Room、账本及备份格式不变。
-- [ ] 日志、错误、测试、截图和文档不泄露密码、验证码、Token、SMTP、短信或微信凭据。
-- [ ] H2/JDBC、假短信、假 SMTP、假微信和 Android 自动化全部通过。
-- [ ] 未执行真实 SMTP 时明确记录为外部待验收，不宣称邮件真实端到端完成。
-- [ ] 未备份和迁移真实 PostgreSQL 时明确记录为外部待验收。
-- [ ] 未执行真机时明确记录为外部待验收，不宣称 Android 真实端到端完成。
+- [x] 普通用户名、邮箱、手机号均可独立注册并登录。
+- [x] 用户名遵循 4–20 位、字母开头、字母数字下划线规则，唯一性忽略大小写。
+- [x] 邮箱规范化后唯一，手机号保持现有 11 位规则。
+- [x] 用户名注册不显示、不请求、不提交验证码。
+- [x] 邮箱注册通过 SMTP 验证码，手机号注册通过短信验证码。
+- [x] 验证码为 6 位、5 分钟有效、最多错误 3 次，不能跨目标、渠道或用途复用。
+- [x] 验证码输入框和获取按钮位于同一行，输入框与按钮宽度约为 2:1。
+- [x] 用户名账号可分别绑定一个手机号和一个邮箱。
+- [x] 绑定后的手机号和邮箱均可登录和找回密码。
+- [x] 任一绑定标识共享密码、失败次数和锁定状态。
+- [x] 密码重置后全部旧 Session 失效。
+- [x] 密码账号之间的标识冲突不会转移标识或合并账号。
+- [x] 微信纯账号仍可安全绑定或合并已有密码账号。
+- [x] 用户名或邮箱密码可作为解绑微信后的保底登录方式。
+- [x] Android 未配置 AppID 时微信入口继续隐藏。
+- [x] v5 手机号账号迁移后密码哈希、Session、设备、微信身份、配置、AI 数据和注销状态不丢失。
+- [x] Android 加密 Session V1/V2 可升级到 V3，用户名和邮箱账号可跨重启恢复。
+- [x] 后端支持统一标识认证协议与端点。
+- [x] 登录、注册、绑定、找回、合并和解绑前后，本机 Room、账本及备份格式不变。
+- [x] 日志、错误、测试、截图和文档不泄露密码、验证码、Token、SMTP、短信或微信凭据。
+- [x] H2/JDBC、假短信、假 SMTP、假微信和 Android 自动化全部通过。
+- [x] 未执行真实 SMTP 时明确记录为外部待验收，不宣称邮件真实端到端完成。
+- [x] 真实 PostgreSQL 在可恢复备份后完成 v5→v6，重复启动保持幂等。
+- [x] 未执行真机时明确记录为外部待验收，不宣称 Android 真实端到端完成。
 
 ## 验收测试
 
@@ -343,19 +343,19 @@
 
 创建计划时预留以下记录。每完成一个 Task，填写对应条目；不得删除既有记录或在未验证时填写通过。
 
-- **Task 1**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 2**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 3**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 4**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 5**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 6**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 7**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 8**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 9**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 10**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 11**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 12**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
-- **Task 13**：状态：待执行；完成日期：—；变更摘要：—；验证命令与结果：—；遗留风险或停止边界：—。
+- **Task 1**：状态：已完成；完成日期：2026-07-23；变更摘要：无业务代码改动，记录基线 HEAD (84c4495) 与干净工作区，确认实施边界；验证命令与结果：:shared:api:test, :services:backend:test (--tests account.*), :apps:android:testDebugUnitTest (--tests account.*) 全部通过；遗留风险或停止边界：未配置真实 SMTP、未迁移真实 PostgreSQL、未执行真实微信与真机验收。
+- **Task 2**：状态：已完成；完成日期：2026-07-23；变更摘要：新增 AccountIdentifierTypeContract, AccountIdentifierContract, AccountIdentifierParser, IdentifierLinkPrepareResponseContract 及扩充 JSON 契约；验证命令与结果：:shared:api:test 全部成功 (40 tests)；遗留风险或停止边界：无。
+- **Task 3**：状态：已完成；完成日期：2026-07-23；变更摘要：实施数据库 v6 迁移（新增 primary_identifier_type、account_password_credentials、account_identifiers、verification_codes、verification_code_send_logs，无损迁移 v5 手机号和短信记录并 DROP 旧表）；重构 AccountStore、InMemoryAccountStore、JdbcAccountStore 支持按标识和账号 ID 读写统一凭据；验证命令与结果：:services:backend:test (--tests "com.autoaccounting.backend.DatabaseMigrationTest"), --tests "com.autoaccounting.backend.account.AccountPersistenceTest", --tests "com.autoaccounting.backend.account.AccountMergeTest" 全部通过；2026-07-24 补充在本机 PostgreSQL 18.4 上先生成并校验 `pg_dump` 备份，再由真实后端启动完成 v5→v6，版本序列为 1–6，v6 仅一条记录，4 张新表及约束完整、3 张旧表已清理，第二次启动迁移与 schema 指纹不变，PostgreSQL 双进程迁移锁测试通过；遗留风险或停止边界：本次目标库迁移前账号及关联业务表均为 0 行，非空生产数据迁移仍须按相同备份流程单独验收。
+- **Task 4**：状态：已完成；完成日期：2026-07-23；变更摘要：新增 EmailProvider (Socket 零依赖 SMTP 发送与多环境配置) 及 AccountService 泛化验证码分发/校验/限流层；新增 EmailProviderTest 与 VerificationCodeServiceTest；验证命令与结果：:services:backend:test (--tests "com.autoaccounting.backend.account.*Verification*"), --tests "com.autoaccounting.backend.account.*Provider*" 全部通过 (14 tests)；遗留风险或停止边界：未配置真实 SMTP 外部服务器（使用本地 Mock Server 与测试替身验证协议和错误场景）。
+- **Task 5**：状态：已完成；完成日期：2026-07-23；变更摘要：重构 AccountService 中的 registerIdentifier, loginIdentifier, recoverPasswordByIdentifier 支持三种标识注册/登录、用户名忽略大小写登录、共享锁定与找回密码撤销 Sessions；新增 AccountAuthenticationTest 与 PasswordRecoveryTest；验证命令与结果：:services:backend:test (--tests "com.autoaccounting.backend.account.AccountAuthenticationTest"), --tests "com.autoaccounting.backend.account.PasswordRecoveryTest" 全部通过 (5 tests)；遗留风险或停止边界：无。
+- **Task 6**：状态：已完成；完成日期：2026-07-23；变更摘要：AccountStore 增加 deleteIdentifier，AccountService 实现 prepareIdentifierLink、confirmIdentifierLink、unlinkIdentifier，支持 IDENTIFIER_LINK 和 UNLINK 验证码用途与解绑校验，删除在解绑手机号时误删密码凭据的操作；新增 AccountLinkingTest 覆盖新绑定、重复绑定、标识冲突、保底登录方式阻止解绑与解绑校验；验证命令与结果：:services:backend:test (--tests "com.autoaccounting.backend.account.*IdentifierLink*"), --tests "com.autoaccounting.backend.account.AccountMergeTest" 全部通过；遗留风险或停止边界：无。
+- **Task 7**：状态：已完成；完成日期：2026-07-23；变更摘要：适配微信绑定/解绑/合并逻辑支持统一标识与密码凭据，任意密码凭据或剩余标识均可作为解绑微信的保底登录方式，微信纯账号合并密码账号时转移密码凭据与全部标识，合并预览展示标识列表；在 AccountMergeTest 中新增邮箱账号合并测试；验证命令与结果：:services:backend:test (--tests "com.autoaccounting.backend.account.WechatRegisterAndLinkTest"), --tests "com.autoaccounting.backend.account.WechatUnlinkTest", --tests "com.autoaccounting.backend.account.AccountMergeTest" 全部通过；遗留风险或停止边界：无。
+- **Task 8**：状态：已完成；完成日期：2026-07-23；变更摘要：AccountRoutes 增加全部统一标识端点 (/account/verification-code, /account/identifier/register, /account/identifier/login, /account/identifier/recover, /account/identifier/link/prepare, /account/identifier/link/complete, /account/identifier/unlink, /account/wechat/link/code, /account/wechat/unlink/code, /account/merge/prepare/identifier-password)，并暂时保留旧路径兼容；AccountRoutesTest 新增 testUnifiedIdentifierRoutes 覆盖全套新端点 HTTP 交互；验证命令与结果：:shared:api:test 与 :services:backend:test (--tests "com.autoaccounting.backend.account.AccountRoutesTest") 全部通过；遗留风险或停止边界：无。
+- **Task 9**：状态：已完成；完成日期：2026-07-23；变更摘要：AccountCredentials 与 AccountSession.SignedIn 升级支持 primaryIdentifier 及 identifiers 列表，添加 phone/email/username 派生访问器；SecureAccountSessionStore 升级二进制序列化为 V3 并保持 V1/V2 解密向后兼容；HttpAccountRepository 发送 identifier 参数；验证命令与结果：:apps:android:testDebugUnitTest (--tests "com.autoaccounting.feature.account.*") 全部通过；遗留风险或停止边界：无。
+- **Task 10**：状态：已完成；完成日期：2026-07-23；变更摘要：AccountUiState 增加 identifierType 与 requiresVerificationCode 判定，reducer 支持手机号/邮箱/用户名输入校验与倒计时触发；用户名注册自动隐藏验证码行；找回密码阻断用户名并给出友好提示；AccountStateTest 新增用户名注册、找回密码阻断与验证码请求单元测试；验证命令与结果：:apps:android:testDebugUnitTest (--tests "com.autoaccounting.feature.account.AccountScreenTest"), --tests "com.autoaccounting.feature.account.AccountStateTest" 全部通过；遗留风险或停止边界：无。
+- **Task 11**：状态：已完成；完成日期：2026-07-23；变更摘要：AccountManagementScreen 与 WechatAccountManagementPanel 支持展示手机号/邮箱/用户名绑定列表，支持多渠道登录方式呈现；解绑微信校验保底登录方式（无手机/邮箱/用户名时阻止解绑）；展示脱敏标识列表；验证命令与结果：:apps:android:testDebugUnitTest (--tests "com.autoaccounting.feature.account.AccountManagementScreenTest"), --tests "com.autoaccounting.feature.account.*Wechat*" 全部通过；遗留风险或停止边界：无。
+- **Task 12**：状态：已完成；完成日期：2026-07-24；变更摘要：删除 Store、JDBC、Service、Route、共享契约和 Android Repository 中的旧手机号双轨兼容层；运行时代码仅保留统一标识协议，微信解绑验证码改为显式提交并校验手机号或邮箱标识；验证命令与结果：共享、后端及 Android 账号定向测试全部通过，旧端点、旧响应字段、旧 Store 类型和方法的生产代码 `rg` 扫描无匹配；遗留风险或停止边界：无。
+- **Task 13**：状态：已完成；完成日期：2026-07-24；变更摘要：同步 API、架构、产品、UI、合规、SMTP 示例及 Phase 2 索引；修复 Android 全套测试中的滚动、节点树和异步等待隔离问题；完成完整回归、静态检查、构建、签名与密钥扫描；验证命令与结果：Android 完整套件 464 tests 通过；`.\gradlew.bat coverageReport detekt build :apps:android:assembleDebug :apps:android:assembleRelease --no-daemon --console=plain` BUILD SUCCESSFUL（289 tasks）；`SecretScannerTest`、`git diff --check`、文档 UTF-8/本地链接/占位符扫描通过；`apksigner verify --verbose` 确认 Release APK 使用 v2 签名且 signer 数为 1；真实 PostgreSQL 18.4 v5→v6 备份、迁移、健康检查与重复启动验证通过；遗留风险或停止边界：未配置真实外部 SMTP、未执行真实微信及真机验收，以上均为外部待验收，不宣称真实端到端完成；本次 PostgreSQL 目标库迁移前为空，非空生产数据迁移仍须单独验收；detekt 保留项目既有复杂度基线告警，Release R8 保留微信 SDK `Expected stack map table` 告警，均未导致任务失败。
 
 ## 依赖
 

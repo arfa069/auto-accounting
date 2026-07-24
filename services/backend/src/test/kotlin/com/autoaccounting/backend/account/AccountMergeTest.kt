@@ -40,9 +40,9 @@ class AccountMergeTest {
         deviceId: String = "dev-1"
     ): AccountToken {
         clock.advanceBy(60_001)
-        val smsRes = service.issueSmsCode(phone, deviceId, "127.0.0.1")
+        val smsRes = service.issueVerificationCode(phone, deviceId, "127.0.0.1")
         assertTrue("SMS issue should succeed for $phone: ${(smsRes as? AccountResult.Failure)?.error}", smsRes is AccountResult.Success)
-        val regRes = service.register(phone, code, password, deviceId)
+        val regRes = service.registerIdentifier(phone, code, password, deviceId)
         assertTrue("Register phone user $phone should succeed: ${(regRes as? AccountResult.Failure)?.error}", regRes is AccountResult.Success)
         return (regRes as AccountResult.Success).value
     }
@@ -78,16 +78,20 @@ class AccountMergeTest {
         val targetAccountId = targetToken.accountId
 
         // 3. Prepare merge with phone & password
-        val prepareRes = service.prepareMergeWithPhonePassword(
+        val prepareRes = service.prepareMergeWithIdentifierPassword(
             bearerToken = targetToken.token,
-            phone = "13800138000",
+            identifier = "13800138000",
             password = "Pass123456!"
         )
         assertTrue("Prepare merge should succeed", prepareRes is AccountResult.Success)
         val preview = (prepareRes as AccountResult.Success).value
-        assertEquals("Target phone should be null", null, preview.currentPhone)
+        assertTrue("Target identifiers should be empty", preview.currentIdentifiers.isEmpty())
         assertTrue("Target WeChat should be linked", preview.currentWechatLinked)
-        assertEquals("Source phone matches", "13800138000", preview.sourcePhone)
+        assertEquals(
+            "Source phone matches",
+            "13800138000",
+            preview.sourceIdentifiers.single { it.type.name == "PHONE" }.value
+        )
         assertFalse("Source WeChat is not linked", preview.sourceWechatLinked)
 
         // 4. Confirm merge
@@ -101,6 +105,7 @@ class AccountMergeTest {
         val mergedToken = (confirmRes as AccountResult.Success).value
         assertEquals("Target account ID preserved", targetAccountId, mergedToken.accountId)
         assertEquals("Target now has source phone", "13800138000", mergedToken.phone)
+        assertEquals("PHONE", mergedToken.primaryIdentifier?.type?.name)
         assertTrue("Target still has WeChat linked", mergedToken.wechatLinked)
         assertEquals("Target nickname preserved", "TargetWxUser", mergedToken.nickname)
 
@@ -140,7 +145,7 @@ class AccountMergeTest {
         val exchange2 = service.exchangeWechatCode("good_code", targetPhoneToken.token, "dev-target")
         assertTrue(exchange2 is AccountResult.Success)
         val mergeReq = (exchange2 as AccountResult.Success).value.result as WechatAuthResultContract.MergeRequired
-        assertNull("Source pure WeChat account has no phone", mergeReq.sourcePhone)
+        assertTrue("Source pure WeChat account has no identifiers", mergeReq.sourceIdentifiers.isEmpty())
 
         // 4. Confirm merge
         val confirmRes = service.confirmMerge(
@@ -187,9 +192,48 @@ class AccountMergeTest {
         assertTrue((ex2 as AccountResult.Success).value.result is WechatAuthResultContract.SignedIn)
 
         // Attempting password prepare with Account 2 from Account 1
-        val prepareRes = service1.prepareMergeWithPhonePassword(t1.token, "13800000002", "Pass123456!")
+        val prepareRes = service1.prepareMergeWithIdentifierPassword(t1.token, "13800000002", "Pass123456!")
         assertTrue("Merge is blocked due to duplicate phone and wechat credentials", prepareRes is AccountResult.Failure)
         assertEquals(AccountError.MERGE_BLOCKED, (prepareRes as AccountResult.Failure).error)
+    }
+
+    @Test
+    fun jdbcMergeBlocksIdentifierTypeConflictBeforeTransfer() {
+        val store = JdbcAccountStore(h2DatabaseUrl())
+        val clock = createClock()
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            clock = clock,
+            wechatOAuthClient = FakeWechatOAuthClient()
+        )
+        val source = registerPhoneUser(service, clock, "13800000001", deviceId = "source")
+        val exchange = service.exchangeWechatCode("code_wx", null, "target") as AccountResult.Success
+        val registration = exchange.value.result as WechatAuthResultContract.RegistrationRequired
+        val target = (service.registerWithWechat(registration.wechatTicket, "target") as AccountResult.Success).value
+        assertTrue(
+            store.addIdentifierToAccount(
+                accountId = target.accountId,
+                identifierType = "PHONE",
+                rawValue = "13900000001",
+                normalizedValue = "13900000001",
+                verified = true,
+                now = clock.millis()
+            )
+        )
+
+        val preview = service.prepareMergeWithIdentifierPassword(
+            target.token,
+            "13800000001",
+            "Pass123456!"
+        ) as AccountResult.Success
+        val result = service.confirmMerge(target.token, preview.value.mergeTicket, "合并账号")
+
+        assertEquals(AccountError.MERGE_BLOCKED, (result as AccountResult.Failure).error)
+        assertNotNull(store.findAccount(source.accountId))
+        assertNotNull(store.findAccount(target.accountId))
+        assertEquals("13800000001", store.findIdentifiersByAccountId(source.accountId).single().rawValue)
+        assertEquals("13900000001", store.findIdentifiersByAccountId(target.accountId).single().rawValue)
     }
 
     @Test
@@ -214,7 +258,7 @@ class AccountMergeTest {
         service.requestAccountDeletion(t1.token)
 
         // Prepare merge should fail with ACCOUNT_DELETION_PENDING
-        val prepareRes = service.prepareMergeWithPhonePassword(t2.token, "13800000001", "Pass123456!")
+        val prepareRes = service.prepareMergeWithIdentifierPassword(t2.token, "13800000001", "Pass123456!")
         assertTrue("Prepare merge fails when deletion pending", prepareRes is AccountResult.Failure)
         assertEquals(AccountError.ACCOUNT_DELETION_PENDING, (prepareRes as AccountResult.Failure).error)
     }
@@ -236,7 +280,7 @@ class AccountMergeTest {
         assertTrue(t2Res is AccountResult.Success)
         val t2 = (t2Res as AccountResult.Success).value
 
-        val prepareRes = service.prepareMergeWithPhonePassword(t2.token, "13800000001", "Pass123456!")
+        val prepareRes = service.prepareMergeWithIdentifierPassword(t2.token, "13800000001", "Pass123456!")
         assertTrue(prepareRes is AccountResult.Success)
         val preview = (prepareRes as AccountResult.Success).value
 
@@ -271,6 +315,20 @@ class AccountMergeTest {
         // Source Phone Account
         val t1 = registerPhoneUser(service, clock, "13800000001", deviceId = "source-device")
         val sourceId = t1.accountId
+        accountStore.addIdentifierToAccount(
+            sourceId,
+            "EMAIL",
+            "source@example.com",
+            "source@example.com",
+            true,
+            clock.millis()
+        )
+        accountStore.upsertVerificationCode(
+            StoredVerificationCode("PHONE", "13800000001", "RECOVERY", "hash-phone", Long.MAX_VALUE)
+        )
+        accountStore.upsertVerificationCode(
+            StoredVerificationCode("EMAIL", "source@example.com", "RECOVERY", "hash-email", Long.MAX_VALUE)
+        )
 
         // Target WeChat Account
         val exRes = service.exchangeWechatCode("code_wx", null, "target-device")
@@ -297,13 +355,17 @@ class AccountMergeTest {
         // Insert Source AI Log
         aiStore.insertLog(StoredAiCategorizationLog(accountId = sourceId, merchantTitle = "M", sourceLabel = "S", transactionKind = "K", amountRangeLabel = "A", suggestedCategory = "C", confidenceLabel = "H", explanation = "E", createdAtMillis = clock.millis()))
 
-        val prepareRes = service.prepareMergeWithPhonePassword(t2.token, "13800000001", "Pass123456!")
+        val prepareRes = service.prepareMergeWithIdentifierPassword(t2.token, "13800000001", "Pass123456!")
         assertTrue(prepareRes is AccountResult.Success)
         val preview = (prepareRes as AccountResult.Success).value
 
         // Execute merge
         val confirmRes = service.confirmMerge(t2.token, preview.mergeTicket, "合并账号", "confirm-device")
         assertTrue(confirmRes is AccountResult.Success)
+        val merged = (confirmRes as AccountResult.Success).value
+        assertEquals("PHONE", merged.primaryIdentifier?.type?.name)
+        assertNull(accountStore.findVerificationCode("PHONE", "13800000001", "RECOVERY"))
+        assertNull(accountStore.findVerificationCode("EMAIL", "source@example.com", "RECOVERY"))
 
         val mergedConfig = cloudStore.findConfig(targetId)
         assertNotNull("Target cloud config should remain", mergedConfig)
@@ -353,11 +415,11 @@ class AccountMergeTest {
             module(accountService = service)
         }
 
-        // 1. Prepare merge via HTTP POST /account/merge/prepare/phone-password
+        // 1. Prepare merge via the final unified identifier endpoint.
         val prepResponse = client.submitForm(
-            url = "/account/merge/prepare/phone-password",
+            url = "/account/merge/prepare/identifier-password",
             formParameters = Parameters.build {
-                append("phone", "13999999999")
+                append("identifier", "13999999999")
                 append("password", "Pass123456!")
             }
         ) {
@@ -366,7 +428,7 @@ class AccountMergeTest {
         assertEquals(HttpStatusCode.OK, prepResponse.status)
         val preview = AccountApiJsonContracts.parseMergePreviewResponse(prepResponse.bodyAsText())
         assertNotNull(preview.mergeTicket)
-        assertEquals("13999999999", preview.sourcePhone)
+        assertEquals("13999999999", preview.sourceIdentifiers.single { it.type.name == "PHONE" }.value)
 
         // 2. Confirm merge via HTTP POST /account/merge/confirm
         val confirmResponse = client.submitForm(
@@ -382,8 +444,83 @@ class AccountMergeTest {
         assertEquals(HttpStatusCode.OK, confirmResponse.status)
         val session = AccountApiJsonContracts.parseSessionResponse(confirmResponse.bodyAsText())
         assertNotNull(session.token)
-        assertEquals("13999999999", session.phone)
+        assertTrue(session.identifiers.any { it.value == "13999999999" })
         assertTrue(session.wechatLinked)
         assertEquals("H2WxUser", session.nickname)
+    }
+
+    @Test
+    fun testPrepareAndMergeWithEmailIdentifierAndPassword() {
+        val store = InMemoryAccountStore()
+        val clock = createClock()
+        val fakeOAuth = FakeWechatOAuthClient(
+            userInfoResult = WechatOAuthResult.Success(
+                WechatUserInfoResponse("fake_openid_email", "EmailWxUser", "https://img/email.jpg", "fake_unionid_email")
+            )
+        )
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            emailCodeGenerator = { "123456" },
+            emailProvider = object : EmailProvider {
+                override fun sendCode(email: String, code: String, purpose: String) = EmailProviderResult.Sent
+            },
+            clock = clock,
+            wechatOAuthClient = fakeOAuth
+        )
+
+        // 1. Register email account
+        val issueRes = service.issueVerificationCode(
+            identifier = "user@example.com",
+            deviceId = "dev-email",
+            ipAddress = "127.0.0.1",
+            purpose = "REGISTER"
+        )
+        assertTrue("Email code issue should succeed", issueRes is AccountResult.Success)
+        val emailRes = service.registerIdentifier("user@example.com", "123456", "Pass123456!", "dev-email")
+        assertTrue("Email reg should succeed", emailRes is AccountResult.Success)
+        val emailToken = (emailRes as AccountResult.Success).value
+        val sourceAccountId = emailToken.accountId
+
+        // 2. Create pure WeChat account
+        val exchangeRes = service.exchangeWechatCode("good_code", null, "dev-wx")
+        assertTrue(exchangeRes is AccountResult.Success)
+        val regReq = (exchangeRes as AccountResult.Success).value.result as WechatAuthResultContract.RegistrationRequired
+        val targetTokenRes = service.registerWithWechat(regReq.wechatTicket, "dev-wx")
+        assertTrue(targetTokenRes is AccountResult.Success)
+        val targetToken = (targetTokenRes as AccountResult.Success).value
+        val targetAccountId = targetToken.accountId
+
+        // 3. Prepare merge using email identifier and password
+        val prepRes = service.prepareMergeWithIdentifierPassword(
+            bearerToken = targetToken.token,
+            identifier = "user@example.com",
+            password = "Pass123456!"
+        )
+        assertTrue("Prepare merge with email should succeed", prepRes is AccountResult.Success)
+        val preview = (prepRes as AccountResult.Success).value
+        assertEquals(1, preview.sourceIdentifiers.size)
+        assertEquals("user@example.com", preview.sourceIdentifiers[0].value)
+
+        // 4. Confirm merge
+        val confirmRes = service.confirmMerge(
+            bearerToken = targetToken.token,
+            mergeTicket = preview.mergeTicket,
+            confirmText = "合并账号",
+            deviceId = "dev-wx"
+        )
+        assertTrue("Confirm merge should succeed", confirmRes is AccountResult.Success)
+        val mergedToken = (confirmRes as AccountResult.Success).value
+        assertEquals(targetAccountId, mergedToken.accountId)
+
+        // 5. Source account deleted, email identifier & password cred transferred to target account
+        assertNull(store.findAccount(sourceAccountId))
+        val targetIdents = store.findIdentifiersByAccountId(targetAccountId)
+        assertTrue(targetIdents.any { it.identifierType == "EMAIL" && it.normalizedValue == "user@example.com" })
+        assertNotNull(store.findPasswordCredentialByAccountId(targetAccountId))
+
+        // 6. Login with email & password works for merged account
+        val loginRes = service.loginIdentifier("user@example.com", "Pass123456!", "dev-wx")
+        assertTrue("Login with transferred email should succeed", loginRes is AccountResult.Success)
     }
 }

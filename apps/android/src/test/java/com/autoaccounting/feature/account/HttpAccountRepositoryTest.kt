@@ -14,17 +14,17 @@ class HttpAccountRepositoryTest {
         val transport = RecordingTransport(
             AccountHttpResponse(
                 200,
-                """{"ok":true,"phone":"13800138000","token":"token-1","deletionPending":false,"requestedAtMillis":null,"finalDeletionAtMillis":null}"""
+                phoneOnlySessionJson().replace("new-token", "token-1")
             )
         )
         val repository = repository(transport)
 
         val result = repository.register("13800138000", "123456", "Aa123456!")
 
-        assertEquals(
-            AccountRepositoryResult.Success(AccountCredentials("13800138000", "token-1")),
-            result
-        )
+        val credentials = (result as AccountRepositoryResult.Success).value
+        assertEquals("13800138000", credentials.phone)
+        assertEquals("token-1", credentials.token)
+        assertNull(credentials.rawPhone)
         assertEquals("/account/register", transport.lastUrl?.removePrefix("https://example.test"))
         assertEquals("install-id", transport.lastForm?.get("deviceId"))
         assertNull(transport.lastBearerToken)
@@ -35,7 +35,10 @@ class HttpAccountRepositoryTest {
         val transport = RecordingTransport(
             AccountHttpResponse(
                 200,
-                """{"ok":true,"phone":"13800138000","deletionPending":true,"requestedAtMillis":1000,"finalDeletionAtMillis":604801000}"""
+                phoneOnlySessionJson().replace("\"token\":\"new-token\",", "").replace(
+                    "\"deletionPending\":false",
+                    "\"deletionPending\":true,\"requestedAtMillis\":1000,\"finalDeletionAtMillis\":604801000"
+                )
             )
         )
         val repository = repository(transport)
@@ -53,11 +56,14 @@ class HttpAccountRepositoryTest {
     @Test
     fun configurationNetworkInvalidSessionRateLimitAndBusinessFailuresStayDistinct() = runBlocking {
         val missing = HttpAccountRepository("", { "install-id" }, RecordingTransport(okResponse()))
-            .requestSmsCode("13800138000") as AccountRepositoryResult.Failure
+            .requestVerificationCode("13800138000", AccountVerificationPurpose.Register) as AccountRepositoryResult.Failure
         assertEquals(AccountFailureKind.ConfigurationMissing, missing.kind)
 
         val networkTransport = RecordingTransport(IOException("offline"))
-        val network = repository(networkTransport).requestSmsCode("13800138000")
+        val network = repository(networkTransport).requestVerificationCode(
+            "13800138000",
+            AccountVerificationPurpose.Register
+        )
             as AccountRepositoryResult.Failure
         assertEquals(AccountFailureKind.Network, network.kind)
         assertEquals(1, networkTransport.callCount)
@@ -76,7 +82,7 @@ class HttpAccountRepositoryTest {
 
         val limited = repository(
             RecordingTransport(errorResponse(429, "SMS_TOO_FREQUENT", "slow down"))
-        ).requestSmsCode("13800138000") as AccountRepositoryResult.Failure
+        ).requestVerificationCode("13800138000", AccountVerificationPurpose.Register) as AccountRepositoryResult.Failure
         assertEquals(AccountFailureKind.RateLimited, limited.kind)
 
         val business = repository(
@@ -98,18 +104,18 @@ class HttpAccountRepositoryTest {
     }
 
     @Test
-    fun phoneAuthenticationWithoutPhoneIsInvalidResponse() = runBlocking {
+    fun usernameAuthenticationWithoutPhoneIsAccepted() = runBlocking {
         val transport = RecordingTransport(
             AccountHttpResponse(
                 200,
-                """{"ok":true,"token":"token-1","deletionPending":false}"""
+                """{"ok":true,"primaryIdentifier":{"type":"USERNAME","value":"user_one","verified":true},"identifiers":[{"type":"USERNAME","value":"user_one","verified":true}],"token":"token-1","deletionPending":false}"""
             )
         )
 
-        val result = repository(transport).login("13800138000", "Aa123456!")
-            as AccountRepositoryResult.Failure
+        val result = repository(transport).login("user_one", "Aa123456!")
+            as AccountRepositoryResult.Success
 
-        assertEquals(AccountFailureKind.InvalidResponse, result.kind)
+        assertEquals("user_one", result.value.username)
         assertEquals(1, transport.callCount)
     }
 
@@ -127,12 +133,13 @@ class HttpAccountRepositoryTest {
                 okResponse(),
                 AccountHttpResponse(
                     200,
-                    """{"ok":true,"status":"PHONE_TICKET_ISSUED","phoneTicket":"phone-ticket","ticketExpiresAtMillis":300000}"""
+                    """{"ok":true,"status":"LINK_TICKET_ISSUED","linkTicket":"link-ticket","ticketExpiresAtMillis":300000}"""
                 ),
+                AccountHttpResponse(200, phoneWechatSessionJson()),
                 AccountHttpResponse(200, phoneWechatSessionJson()),
                 AccountHttpResponse(
                     200,
-                    """{"ok":true,"mergeTicket":"merge-ticket","ticketExpiresAtMillis":300000,"currentPhone":null,"currentWechatLinked":true,"currentNickname":"微信用户","sourcePhone":"13800138000","sourceWechatLinked":false,"sourceNickname":null}"""
+                    """{"ok":true,"mergeTicket":"merge-ticket","ticketExpiresAtMillis":300000,"currentIdentifiers":[],"currentWechatLinked":true,"currentNickname":"微信用户","sourceIdentifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"sourceWechatLinked":false,"sourceNickname":null}"""
                 ),
                 AccountHttpResponse(200, phoneWechatSessionJson()),
                 AccountHttpResponse(200, phoneOnlySessionJson()),
@@ -154,29 +161,43 @@ class HttpAccountRepositoryTest {
         repository.linkWechatWithPassword("wx-ticket", "13800138000", "Aa123456!")
         assertRequest(transport.requests.last(), "/account/wechat/link/password", "password" to "Aa123456!")
 
-        repository.linkWechatWithSms("wx-ticket", "13800138000", "123456")
-        assertRequest(transport.requests.last(), "/account/wechat/link/sms", "code" to "123456")
+        repository.linkWechatWithCode("wx-ticket", "13800138000", "123456")
+        assertRequest(transport.requests.last(), "/account/wechat/link/code", "code" to "123456")
 
-        repository.requestSmsCode(
-            phone = "13800138000",
-            purpose = AccountSmsPurpose.WechatUnlink,
+        repository.requestVerificationCode(
+            identifier = "13800138000",
+            purpose = AccountVerificationPurpose.WechatUnlink,
             bearerToken = "current-token"
         )
-        assertRequest(transport.requests.last(), "/account/sms", "purpose" to "WECHAT_UNLINK", "current-token")
+        assertRequest(transport.requests.last(), "/account/verification-code", "purpose" to "WECHAT_UNLINK", "current-token")
 
-        repository.preparePhoneLink("current-token", "13800138000", "123456")
-        assertRequest(transport.requests.last(), "/account/phone/link/prepare", "code" to "123456", "current-token")
+        repository.prepareIdentifierLink("current-token", "13800138000")
+        assertRequest(transport.requests.last(), "/account/identifier/link/prepare", "identifier" to "13800138000", "current-token")
 
-        repository.completePhoneLink("current-token", "phone-ticket", "Aa123456!")
-        assertRequest(transport.requests.last(), "/account/phone/link/complete", "phoneTicket" to "phone-ticket", "current-token")
+        repository.completeIdentifierLink("current-token", "link-ticket", "123456")
+        assertRequest(transport.requests.last(), "/account/identifier/link/complete", "linkTicket" to "link-ticket", "current-token")
+        assertTrue("password" !in transport.requests.last().form)
 
-        val preview = repository.prepareMergeWithPhonePassword(
+        repository.completeIdentifierLink(
+            "current-token",
+            "link-ticket",
+            "123456",
+            "Aa123456!"
+        )
+        assertRequest(
+            transport.requests.last(),
+            "/account/identifier/link/complete",
+            "password" to "Aa123456!",
+            "current-token"
+        )
+
+        val preview = repository.prepareMergeWithIdentifierPassword(
             "current-token",
             "13800138000",
             "Aa123456!"
         ) as AccountRepositoryResult.Success
         assertEquals("merge-ticket", preview.value.mergeTicket)
-        assertRequest(transport.requests.last(), "/account/merge/prepare/phone-password", "phone" to "13800138000", "current-token")
+        assertRequest(transport.requests.last(), "/account/merge/prepare/identifier-password", "identifier" to "13800138000", "current-token")
 
         repository.confirmMerge("current-token", "merge-ticket", "合并账号")
         assertRequest(transport.requests.last(), "/account/merge/confirm", "confirmText" to "合并账号", "current-token")
@@ -188,8 +209,9 @@ class HttpAccountRepositoryTest {
         assertTrue(!passwordUnlink.value.wechatLinked)
         assertRequest(transport.requests.last(), "/account/wechat/unlink/password", "password" to "Aa123456!", "current-token")
 
-        repository.unlinkWechatWithSms("current-token", "123456")
-        assertRequest(transport.requests.last(), "/account/wechat/unlink/sms", "code" to "123456", "current-token")
+        repository.unlinkWechatWithCode("current-token", "13800138000", "123456")
+        assertRequest(transport.requests.last(), "/account/wechat/unlink/code", "code" to "123456", "current-token")
+        assertEquals("13800138000", transport.requests.last().form["identifier"])
     }
 
     @Test
@@ -199,7 +221,7 @@ class HttpAccountRepositoryTest {
                 AccountHttpResponse(200, phoneWechatExchangeJson()),
                 AccountHttpResponse(
                     200,
-                    """{"ok":true,"status":"MERGE_REQUIRED","mergeTicket":"merge-ticket","sourceNickname":"来源微信","sourcePhone":null,"ticketExpiresAtMillis":300000}"""
+                    """{"ok":true,"status":"MERGE_REQUIRED","mergeTicket":"merge-ticket","sourceNickname":"来源微信","sourceIdentifiers":[],"ticketExpiresAtMillis":300000}"""
                 )
             )
         )
@@ -229,7 +251,7 @@ class HttpAccountRepositoryTest {
                             bearerToken: String?
                         ): AccountHttpResponse = throw CancellationException("cancelled")
                     }
-                ).requestSmsCode("13800138000")
+                ).requestVerificationCode("13800138000", AccountVerificationPurpose.Register)
             }
         } catch (_: CancellationException) {
             cancellationPropagated = true
@@ -254,16 +276,16 @@ class HttpAccountRepositoryTest {
         )
 
     private fun wechatSessionJson(): String =
-        """{"ok":true,"phone":null,"token":"wechat-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"token":"wechat-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun phoneWechatSessionJson(): String =
-        """{"ok":true,"phone":"13800138000","token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun phoneOnlySessionJson(): String =
-        """{"ok":true,"phone":"13800138000","token":"new-token","wechatLinked":false,"nickname":null,"avatarUrl":null,"deletionPending":false}"""
+        """{"ok":true,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":false,"nickname":null,"avatarUrl":null,"deletionPending":false}"""
 
     private fun phoneWechatExchangeJson(): String =
-        """{"ok":true,"status":"SIGNED_IN","phone":"13800138000","token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"status":"SIGNED_IN","primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun assertRequest(
         request: RecordedRequest,

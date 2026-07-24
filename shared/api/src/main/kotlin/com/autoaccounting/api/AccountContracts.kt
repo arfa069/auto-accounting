@@ -3,10 +3,13 @@ package com.autoaccounting.api
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -16,11 +19,18 @@ enum class AccountErrorCodeContract {
     INVALID_REQUEST,
     PHONE_ALREADY_REGISTERED,
     PHONE_NOT_REGISTERED,
+    IDENTIFIER_ALREADY_REGISTERED,
+    IDENTIFIER_NOT_REGISTERED,
+    IDENTIFIER_ALREADY_LINKED,
+    IDENTIFIER_CONFLICT,
     VERIFICATION_CODE_WRONG,
     VERIFICATION_CODE_EXPIRED,
     SMS_TOO_FREQUENT,
+    CODE_SEND_TOO_FREQUENT,
     SMS_PROVIDER_UNCONFIGURED,
+    EMAIL_PROVIDER_UNCONFIGURED,
     SMS_SEND_FAILED,
+    EMAIL_SEND_FAILED,
     LOGIN_FAILED,
     TOKEN_INVALID,
     ACCOUNT_LOCKED,
@@ -41,7 +51,8 @@ enum class AccountErrorCodeContract {
 const val TICKET_VALIDITY_MILLIS: Long = 5 * 60 * 1000L
 
 data class AccountSessionResponseContract(
-    val phone: String? = null,
+    val primaryIdentifier: AccountIdentifierContract? = null,
+    val identifiers: List<AccountIdentifierContract> = emptyList(),
     val token: String? = null,
     val wechatLinked: Boolean = false,
     val nickname: String? = null,
@@ -89,7 +100,7 @@ sealed class WechatAuthResultContract {
     data class MergeRequired(
         val mergeTicket: String,
         val sourceNickname: String?,
-        val sourcePhone: String?,
+        val sourceIdentifiers: List<AccountIdentifierContract> = emptyList(),
         val ticketExpiresAtMillis: Long
     ) : WechatAuthResultContract()
 }
@@ -101,23 +112,20 @@ data class WechatExchangeResponseContract(
     val result: WechatAuthResultContract
 )
 
-/**
- * Response for the phone link prepare endpoint.
- * When the phone is unregistered, a phone ticket is returned.
- * When the phone belongs to another account, a merge ticket is returned.
- */
-sealed class PhoneLinkPrepareResponseContract {
-    data class PhoneTicketIssued(
-        val phoneTicket: String,
+sealed class IdentifierLinkPrepareResponseContract {
+    data object AlreadyLinked : IdentifierLinkPrepareResponseContract()
+
+    data class LinkTicketIssued(
+        val linkTicket: String,
         val ticketExpiresAtMillis: Long
-    ) : PhoneLinkPrepareResponseContract()
+    ) : IdentifierLinkPrepareResponseContract()
 
     data class MergeRequired(
         val mergeTicket: String,
-        val sourcePhone: String?,
+        val sourceIdentifiers: List<AccountIdentifierContract>,
         val sourceWechatLinked: Boolean,
         val ticketExpiresAtMillis: Long
-    ) : PhoneLinkPrepareResponseContract()
+    ) : IdentifierLinkPrepareResponseContract()
 }
 
 /**
@@ -127,12 +135,12 @@ sealed class PhoneLinkPrepareResponseContract {
 data class MergePreviewResponseContract(
     val mergeTicket: String,
     val ticketExpiresAtMillis: Long,
-    val currentPhone: String?,
-    val currentWechatLinked: Boolean,
-    val currentNickname: String?,
-    val sourcePhone: String?,
-    val sourceWechatLinked: Boolean,
-    val sourceNickname: String?
+    val currentIdentifiers: List<AccountIdentifierContract> = emptyList(),
+    val currentWechatLinked: Boolean = false,
+    val currentNickname: String? = null,
+    val sourceIdentifiers: List<AccountIdentifierContract> = emptyList(),
+    val sourceWechatLinked: Boolean = false,
+    val sourceNickname: String? = null
 )
 
 object AccountApiJsonContracts {
@@ -143,7 +151,12 @@ object AccountApiJsonContracts {
     fun encodeSessionResponse(response: AccountSessionResponseContract): String {
         return buildJsonObject {
             put("ok", true)
-            if (response.phone != null) put("phone", response.phone) else put("phone", JsonNull)
+            if (response.primaryIdentifier != null) {
+                putIdentifier("primaryIdentifier", response.primaryIdentifier)
+            }
+            if (response.identifiers.isNotEmpty()) {
+                putIdentifiers("identifiers", response.identifiers)
+            }
             response.token?.let { put("token", it) }
             put("wechatLinked", response.wechatLinked)
             if (response.nickname != null) put("nickname", response.nickname) else put("nickname", JsonNull)
@@ -155,7 +168,8 @@ object AccountApiJsonContracts {
     fun parseSessionResponse(body: String): AccountSessionResponseContract {
         val root = parseSuccessfulRoot(body)
         return AccountSessionResponseContract(
-            phone = root["phone"]?.jsonPrimitive?.contentOrNull,
+            primaryIdentifier = root.parseIdentifier("primaryIdentifier"),
+            identifiers = root.parseIdentifiers("identifiers"),
             token = root["token"]?.jsonPrimitive?.contentOrNull,
             wechatLinked = root["wechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
             nickname = root["nickname"]?.jsonPrimitive?.contentOrNull,
@@ -172,7 +186,12 @@ object AccountApiJsonContracts {
             when (val r = response.result) {
                 is WechatAuthResultContract.SignedIn -> {
                     put("status", "SIGNED_IN")
-                    if (r.session.phone != null) put("phone", r.session.phone) else put("phone", JsonNull)
+                    if (r.session.primaryIdentifier != null) {
+                        putIdentifier("primaryIdentifier", r.session.primaryIdentifier)
+                    }
+                    if (r.session.identifiers.isNotEmpty()) {
+                        putIdentifiers("identifiers", r.session.identifiers)
+                    }
                     r.session.token?.let { put("token", it) }
                     put("wechatLinked", r.session.wechatLinked)
                     if (r.session.nickname != null) put("nickname", r.session.nickname) else put("nickname", JsonNull)
@@ -190,7 +209,9 @@ object AccountApiJsonContracts {
                     put("status", "MERGE_REQUIRED")
                     put("mergeTicket", r.mergeTicket)
                     if (r.sourceNickname != null) put("sourceNickname", r.sourceNickname) else put("sourceNickname", JsonNull)
-                    if (r.sourcePhone != null) put("sourcePhone", r.sourcePhone) else put("sourcePhone", JsonNull)
+                    if (r.sourceIdentifiers.isNotEmpty()) {
+                        putIdentifiers("sourceIdentifiers", r.sourceIdentifiers)
+                    }
                     put("ticketExpiresAtMillis", r.ticketExpiresAtMillis)
                 }
             }
@@ -201,48 +222,58 @@ object AccountApiJsonContracts {
         val root = parseSuccessfulRoot(body)
         val status = root.requiredString("status")
         val result = when (status) {
-            "SIGNED_IN" -> WechatAuthResultContract.SignedIn(
-                session = AccountSessionResponseContract(
-                    phone = root["phone"]?.jsonPrimitive?.contentOrNull,
-                    token = root["token"]?.jsonPrimitive?.contentOrNull,
-                    wechatLinked = root["wechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    nickname = root["nickname"]?.jsonPrimitive?.contentOrNull,
-                    avatarUrl = root["avatarUrl"]?.jsonPrimitive?.contentOrNull,
-                    deletionStatus = root.parseDeletionStatus()
+            "SIGNED_IN" -> {
+                WechatAuthResultContract.SignedIn(
+                    session = AccountSessionResponseContract(
+                        primaryIdentifier = root.parseIdentifier("primaryIdentifier"),
+                        identifiers = root.parseIdentifiers("identifiers"),
+                        token = root["token"]?.jsonPrimitive?.contentOrNull,
+                        wechatLinked = root["wechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
+                        nickname = root["nickname"]?.jsonPrimitive?.contentOrNull,
+                        avatarUrl = root["avatarUrl"]?.jsonPrimitive?.contentOrNull,
+                        deletionStatus = root.parseDeletionStatus()
+                    )
                 )
-            )
+            }
             "REGISTRATION_REQUIRED" -> WechatAuthResultContract.RegistrationRequired(
                 wechatTicket = root.requiredString("wechatTicket"),
                 nickname = root["nickname"]?.jsonPrimitive?.contentOrNull,
                 avatarUrl = root["avatarUrl"]?.jsonPrimitive?.contentOrNull,
                 ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
             )
-            "MERGE_REQUIRED" -> WechatAuthResultContract.MergeRequired(
-                mergeTicket = root.requiredString("mergeTicket"),
-                sourceNickname = root["sourceNickname"]?.jsonPrimitive?.contentOrNull,
-                sourcePhone = root["sourcePhone"]?.jsonPrimitive?.contentOrNull,
-                ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
-            )
+            "MERGE_REQUIRED" -> {
+                WechatAuthResultContract.MergeRequired(
+                    mergeTicket = root.requiredString("mergeTicket"),
+                    sourceNickname = root["sourceNickname"]?.jsonPrimitive?.contentOrNull,
+                    sourceIdentifiers = root.parseIdentifiers("sourceIdentifiers"),
+                    ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
+                )
+            }
             else -> throw IllegalArgumentException("Unknown WeChat auth status: $status")
         }
         return WechatExchangeResponseContract(result)
     }
 
-    // -- Phone link prepare response --
+    // -- Identifier link prepare response --
 
-    fun encodePhoneLinkPrepareResponse(response: PhoneLinkPrepareResponseContract): String {
+    fun encodeIdentifierLinkPrepareResponse(response: IdentifierLinkPrepareResponseContract): String {
         return buildJsonObject {
             put("ok", true)
             when (response) {
-                is PhoneLinkPrepareResponseContract.PhoneTicketIssued -> {
-                    put("status", "PHONE_TICKET_ISSUED")
-                    put("phoneTicket", response.phoneTicket)
+                IdentifierLinkPrepareResponseContract.AlreadyLinked -> {
+                    put("status", "ALREADY_LINKED")
+                }
+                is IdentifierLinkPrepareResponseContract.LinkTicketIssued -> {
+                    put("status", "LINK_TICKET_ISSUED")
+                    put("linkTicket", response.linkTicket)
                     put("ticketExpiresAtMillis", response.ticketExpiresAtMillis)
                 }
-                is PhoneLinkPrepareResponseContract.MergeRequired -> {
+                is IdentifierLinkPrepareResponseContract.MergeRequired -> {
                     put("status", "MERGE_REQUIRED")
                     put("mergeTicket", response.mergeTicket)
-                    if (response.sourcePhone != null) put("sourcePhone", response.sourcePhone) else put("sourcePhone", JsonNull)
+                    if (response.sourceIdentifiers.isNotEmpty()) {
+                        putIdentifiers("sourceIdentifiers", response.sourceIdentifiers)
+                    }
                     put("sourceWechatLinked", response.sourceWechatLinked)
                     put("ticketExpiresAtMillis", response.ticketExpiresAtMillis)
                 }
@@ -250,20 +281,23 @@ object AccountApiJsonContracts {
         }.toString()
     }
 
-    fun parsePhoneLinkPrepareResponse(body: String): PhoneLinkPrepareResponseContract {
+    fun parseIdentifierLinkPrepareResponse(body: String): IdentifierLinkPrepareResponseContract {
         val root = parseSuccessfulRoot(body)
         return when (val status = root.requiredString("status")) {
-            "PHONE_TICKET_ISSUED" -> PhoneLinkPrepareResponseContract.PhoneTicketIssued(
-                phoneTicket = root.requiredString("phoneTicket"),
+            "ALREADY_LINKED" -> IdentifierLinkPrepareResponseContract.AlreadyLinked
+            "LINK_TICKET_ISSUED" -> IdentifierLinkPrepareResponseContract.LinkTicketIssued(
+                linkTicket = root.requiredString("linkTicket"),
                 ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
             )
-            "MERGE_REQUIRED" -> PhoneLinkPrepareResponseContract.MergeRequired(
-                mergeTicket = root.requiredString("mergeTicket"),
-                sourcePhone = root["sourcePhone"]?.jsonPrimitive?.contentOrNull,
-                sourceWechatLinked = root["sourceWechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
-                ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
-            )
-            else -> throw IllegalArgumentException("Unknown phone link prepare status: $status")
+            "MERGE_REQUIRED" -> {
+                IdentifierLinkPrepareResponseContract.MergeRequired(
+                    mergeTicket = root.requiredString("mergeTicket"),
+                    sourceIdentifiers = root.parseIdentifiers("sourceIdentifiers"),
+                    sourceWechatLinked = root["sourceWechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis")
+                )
+            }
+            else -> throw IllegalArgumentException("Unknown identifier link prepare status: $status")
         }
     }
 
@@ -274,10 +308,14 @@ object AccountApiJsonContracts {
             put("ok", true)
             put("mergeTicket", response.mergeTicket)
             put("ticketExpiresAtMillis", response.ticketExpiresAtMillis)
-            if (response.currentPhone != null) put("currentPhone", response.currentPhone) else put("currentPhone", JsonNull)
+            if (response.currentIdentifiers.isNotEmpty()) {
+                putIdentifiers("currentIdentifiers", response.currentIdentifiers)
+            }
             put("currentWechatLinked", response.currentWechatLinked)
             if (response.currentNickname != null) put("currentNickname", response.currentNickname) else put("currentNickname", JsonNull)
-            if (response.sourcePhone != null) put("sourcePhone", response.sourcePhone) else put("sourcePhone", JsonNull)
+            if (response.sourceIdentifiers.isNotEmpty()) {
+                putIdentifiers("sourceIdentifiers", response.sourceIdentifiers)
+            }
             put("sourceWechatLinked", response.sourceWechatLinked)
             if (response.sourceNickname != null) put("sourceNickname", response.sourceNickname) else put("sourceNickname", JsonNull)
         }.toString()
@@ -288,13 +326,64 @@ object AccountApiJsonContracts {
         return MergePreviewResponseContract(
             mergeTicket = root.requiredString("mergeTicket"),
             ticketExpiresAtMillis = root.requiredLong("ticketExpiresAtMillis"),
-            currentPhone = root["currentPhone"]?.jsonPrimitive?.contentOrNull,
+            currentIdentifiers = root.parseIdentifiers("currentIdentifiers"),
             currentWechatLinked = root["currentWechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
             currentNickname = root["currentNickname"]?.jsonPrimitive?.contentOrNull,
-            sourcePhone = root["sourcePhone"]?.jsonPrimitive?.contentOrNull,
+            sourceIdentifiers = root.parseIdentifiers("sourceIdentifiers"),
             sourceWechatLinked = root["sourceWechatLinked"]?.jsonPrimitive?.booleanOrNull ?: false,
             sourceNickname = root["sourceNickname"]?.jsonPrimitive?.contentOrNull
         )
+    }
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putIdentifier(
+        key: String,
+        identifier: AccountIdentifierContract?
+    ) {
+        if (identifier == null) {
+            put(key, JsonNull)
+        } else {
+            put(key, buildJsonObject {
+                put("type", identifier.type.name)
+                put("value", identifier.value)
+                put("verified", identifier.verified)
+            })
+        }
+    }
+
+    private fun JsonObject.parseIdentifier(key: String): AccountIdentifierContract? {
+        val obj = this[key]?.jsonObject ?: return null
+        return AccountIdentifierContract(
+            type = AccountIdentifierTypeContract.valueOf(obj.requiredString("type")),
+            value = obj.requiredString("value"),
+            verified = obj["verified"]?.jsonPrimitive?.booleanOrNull ?: true
+        )
+    }
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putIdentifiers(
+        key: String,
+        identifiers: List<AccountIdentifierContract>
+    ) {
+        put(key, buildJsonArray {
+            for (id in identifiers) {
+                add(buildJsonObject {
+                    put("type", id.type.name)
+                    put("value", id.value)
+                    put("verified", id.verified)
+                })
+            }
+        })
+    }
+
+    private fun JsonObject.parseIdentifiers(key: String): List<AccountIdentifierContract> {
+        val array = this[key]?.jsonArray ?: return emptyList()
+        return array.map { elem ->
+            val obj = elem.jsonObject
+            AccountIdentifierContract(
+                type = AccountIdentifierTypeContract.valueOf(obj.requiredString("type")),
+                value = obj.requiredString("value"),
+                verified = obj["verified"]?.jsonPrimitive?.booleanOrNull ?: true
+            )
+        }
     }
 
     fun encodeDeletionStatusResponse(status: AccountDeletionStatusContract): String {

@@ -2,7 +2,7 @@
 
 ## 1. 系统形态
 
-本产品是一款**本地优先 (Local-first)** 的 Android 应用，配有一个轻量级的后端，用于处理身份认证、设备注册、云端配置、短信验证、账号注销以及 AI 分类代理/日志记录。
+本产品是一款**本地优先 (Local-first)** 的 Android 应用，配有一个轻量级的后端，用于处理统一标识认证、设备注册、云端配置、短信/邮件验证、账号注销以及 AI 分类代理/日志记录。
 
 Android 应用掌控所有账本数据的真实源（Owns all ledger-book truth）。首版后端绝对不得同步或存储用户的账本及账目数据。
 
@@ -45,7 +45,7 @@ flowchart LR
 - `feature:capture-accessibility`: 支付结果自动捕获与手动账单导入。
 - `feature:billsync`: 共享的 `ManualBillImportHost`、导入会话状态、来源启动、受支持页面解析及无障碍捕获接管。
 - `feature:categorization`: 本地分类规则及 AI 分类客户端。
-- `feature:account`: 手机号/微信登录注册、身份绑定与合并、Session、本地模式及账号注销。
+- `feature:account`: 用户名/邮箱/手机号与微信登录注册、身份绑定与合并、Session、本地模式及账号注销。
 - `feature:monitoring`: 自动记账状态、紧凑权限与后台稳定性设置、服务健康度及支付页面观察决策。
 - `feature:settings`: 数据与备份及相关设置。
 - `feature:diagnostics`: 敏感事件契约、密钥脱敏、加密本地分段、诊断 UI、清除及口令导出。
@@ -156,8 +156,8 @@ flowchart LR
 ## 7. 后端服务 (Backend Services)
 
 Ktor 服务构成：
-- **认证服务 (Auth Service)**：内部账号 ID、手机号/密码、微信 OAuth、身份绑定与合并、安全解绑、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
-- **短信验证服务 (SMS Service)**：发送、校验、过期及限流短信验证码。
+- **认证服务 (Auth Service)**：内部账号 ID、用户名/邮箱/手机号共享密码、微信 OAuth、身份绑定与合并、安全解绑、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
+- **验证码服务 (Verification Service)**：按手机号或邮箱分发短信/SMTP 验证码，并统一处理用途隔离、过期、错误次数及限流。
 - **设备服务 (Device Service)**：已注册设备及设备状态管理。
 - **云端配置服务 (Cloud Config Service)**：同意状态、功能开关、AI 设置及注销冷静期状态。
 - **AI 分类代理服务 (AI Categorization Service)**：向 AI 服务商转发请求并保留内测日志。
@@ -166,11 +166,12 @@ Ktor 服务构成：
 
 PostgreSQL 数据表：
 - `accounts`
-- `account_phone_credentials`
+- `account_password_credentials`
+- `account_identifiers`
 - `account_wechat_identities`
 - `account_one_time_tickets`
-- `account_sms_codes`
-- `account_sms_issues`
+- `verification_codes`
+- `verification_code_send_logs`
 - `account_sessions`
 - `registered_devices`
 - `cloud_config`
@@ -185,26 +186,27 @@ PostgreSQL 数据表：
 
 Session 与传输边界：
 - Android 应用在构建时获取后端 URL。Debug 默认使用 `http://10.0.2.2:8080` 且是唯一允许明文流量的构建版本；Release 仅使用显式配置的 HTTPS URL，否则保持账号网络不可用。
-- Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、短信、退出登录及注销操作不会自动重试。
-- 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的手机号或表单 Token 绝不用于选取受保护账号。
-- 短信验证码作为以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥的 HMAC-SHA-256 值存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
-- Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v2：业务 Token、可空手机号、微信绑定状态、昵称和 HTTPS 头像 URL；继续读取旧 v1 手机号 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
+- Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、验证码、退出登录及注销操作不会自动重试。
+- 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的标识或表单 Token 绝不用于选取受保护账号。
+- 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
+- Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v3：业务 Token、主标识、全部登录标识、微信绑定状态、昵称和 HTTPS 头像 URL；继续读取旧 v1/v2 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
 - 启动时在后台校验前先恢复加密凭据。网络/配置故障保留离线未校验 Session 和本地账本访问权；仅当显式收到无效 Session 时才清除密文并返回持久化本地模式。
 - 微信 OpenSDK 仅使用可公开 AppID。AppSecret、微信 access/refresh token、OpenID、UnionID 和 Provider 原始响应不进入 APK、Android Session、日志或诊断导出；授权 code 只发送自有后端并立即从回调 Intent 移除。
-- 微信授权、手机号新增及账号合并票据有效期均为 5 分钟、只能消费一次，数据库只保存 SHA-256 哈希。绑定、合并和解绑轮换业务 Session；Android 保存新 Session 失败时尝试撤销新 Token 并回到本地模式。
+- 微信授权、标识绑定及账号合并票据有效期均为 5 分钟、只能消费一次，数据库只保存 SHA-256 哈希。绑定、合并和解绑轮换业务 Session；Android 保存新 Session 失败时尝试撤销新 Token 并回到本地模式。
 
 身份与合并边界：
-- 账号内部以 `accountId` 关联 Session、设备、云配置和 AI 日志；手机号与微信都是可选且唯一的凭据。
+- 账号内部以 `accountId` 关联 Session、设备、云配置和 AI 日志；每个账号至多绑定一个用户名、一个邮箱、一个手机号和一个微信身份，所有密码标识共享一份密码与锁定状态。
+- 用户名、邮箱和手机号按统一解析规则规范化；v6 在单事务中将 v5 手机号凭据迁移为账号级密码凭据和 `PHONE` 标识。
 - 微信身份优先用 UnionID 识别，缺失时使用唯一 `(appId, openid)`；每次成功授权刷新昵称和 HTTPS 头像 URL。
-- 合并仅允许互补凭据并始终保留当前账号；当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除、双方旧 Session 撤销并删除来源账号。
-- 解绑微信要求账号仍有手机号凭据并完成密码或专项短信二次验证。所有身份操作不读取、删除或重新分配 Android Room 账本。
+- 合并仅用于微信纯账号与已有密码账号的互补凭据，并始终保留当前账号；密码账号之间发生标识冲突时禁止转移或合并。当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除、双方旧 Session 撤销并删除来源账号。
+- 解绑微信要求账号仍有密码凭据及至少一个登录标识，可使用共享密码，或选择已绑定手机号/邮箱接收专项验证码。所有身份操作不读取、删除或重新分配 Android Room 账本。
 
 登录失败处理：
-- 连续 5 次密码错误后，临时锁定登录并建议使用短信找回。
-- 登录错误信息绝不透露手机号是否存在。
+- 从任一绑定标识连续 5 次密码错误后，账号级密码凭据临时锁定 15 分钟，并建议使用手机号或邮箱找回。
+- 登录错误信息绝不透露标识是否存在。
 
-短信限制：
-- 同一手机号：60 秒内 1 条，1 小时内 5 条，24 小时内 10 条。
+验证码限制：
+- 同一规范化手机号或邮箱：60 秒内 1 条，1 小时内 5 条，24 小时内 10 条。
 - 同一设备/IP：1 小时内 5 条，24 小时内 10 条。
 - 验证码有效期：5 分钟。
 - 同一验证码：尝试失败 3 次后作废。
@@ -261,7 +263,7 @@ Android 端检查：
 - 实用条件下的权限状态与本地数据库流程仪表化测试。
 
 后端检查：
-- 认证、密码策略、短信限流、注销状态机的单元测试。
+- 统一标识、密码策略、短信/邮件验证码限流、注销状态机的单元测试。
 - 基于 PostgreSQL 测试容器或本地测试数据库的集成测试。
 - 应用/后端 API Payload 的契约测试。
 

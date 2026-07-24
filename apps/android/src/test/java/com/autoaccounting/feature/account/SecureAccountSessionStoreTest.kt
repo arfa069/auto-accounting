@@ -48,7 +48,7 @@ class SecureAccountSessionStoreTest {
     }
 
     @Test
-    fun versionTwoRestoresWechatOnlyProfileWithoutPlaintextFields() {
+    fun versionThreeRestoresWechatOnlyProfileWithoutPlaintextFields() {
         val credentials = AccountCredentials(
             phone = null,
             token = "wechat-sensitive-token",
@@ -67,6 +67,75 @@ class SecureAccountSessionStoreTest {
             AccountSessionRestoreResult.Restored(credentials),
             SecureAccountSessionStore(context, ReversibleTestCipher()).restore()
         )
+    }
+
+    @Test
+    fun legacyVersionTwoWechatSessionRestoresAndUpgradesToVersionThree() {
+        val token = "legacy-wechat-token".toByteArray()
+        val nickname = "微信小张".toByteArray()
+        val legacyPlaintext = ByteBuffer.allocate(
+            1 + Int.SIZE_BYTES + Int.SIZE_BYTES + token.size + 1 +
+                Int.SIZE_BYTES + nickname.size + Int.SIZE_BYTES
+        )
+            .put(2.toByte())
+            .putInt(-1)
+            .putInt(token.size)
+            .put(token)
+            .put(1.toByte())
+            .putInt(nickname.size)
+            .put(nickname)
+            .putInt(-1)
+            .array()
+        val encrypted = ReversibleTestCipher().encrypt(legacyPlaintext)
+        preferences.edit()
+            .putString(
+                "encrypted_session",
+                android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)
+            )
+            .commit()
+        val store = SecureAccountSessionStore(context, ReversibleTestCipher())
+
+        val expected = AccountCredentials(
+            phone = null,
+            token = "legacy-wechat-token",
+            wechatLinked = true,
+            nickname = "微信小张"
+        )
+        assertEquals(AccountSessionRestoreResult.Restored(expected), store.restore())
+        assertTrue(store.save(expected))
+        val upgraded = android.util.Base64.decode(
+            preferences.getString("encrypted_session", null),
+            android.util.Base64.NO_WRAP
+        )
+        assertEquals(3.toByte(), ReversibleTestCipher().decrypt(upgraded).first())
+    }
+
+    @Test
+    fun versionThreeUsernameAndEmailSessionsRestoreAcrossStoreInstances() {
+        val cases = listOf(
+            com.autoaccounting.api.AccountIdentifierContract(
+                com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME,
+                "User_One"
+            ),
+            com.autoaccounting.api.AccountIdentifierContract(
+                com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL,
+                "user@example.com"
+            )
+        )
+
+        cases.forEachIndexed { index, identifier ->
+            preferences.edit().clear().commit()
+            val credentials = AccountCredentials(
+                primaryIdentifier = identifier,
+                identifiers = listOf(identifier),
+                token = "token-$index"
+            )
+            assertTrue(SecureAccountSessionStore(context, ReversibleTestCipher()).save(credentials))
+            assertEquals(
+                AccountSessionRestoreResult.Restored(credentials),
+                SecureAccountSessionStore(context, ReversibleTestCipher()).restore()
+            )
+        }
     }
 
     @Test
@@ -98,7 +167,7 @@ class SecureAccountSessionStoreTest {
             preferences.getString("encrypted_session", null),
             android.util.Base64.NO_WRAP
         )
-        assertEquals(2.toByte(), ReversibleTestCipher().decrypt(upgradedCiphertext).first())
+        assertEquals(3.toByte(), ReversibleTestCipher().decrypt(upgradedCiphertext).first())
         assertEquals(
             restored.credentials.copy(nickname = "ignored-without-wechat"),
             (store.restore() as AccountSessionRestoreResult.Restored).credentials

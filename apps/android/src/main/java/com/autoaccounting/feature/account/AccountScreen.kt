@@ -267,7 +267,12 @@ private fun AccountUiState.isReadyFor(action: AccountAction): Boolean = when (ac
 private suspend fun AccountUiState.submitSmsCodeRequest(
     accountRepository: AccountRepository
 ): AccountUiState {
-    return when (val result = accountRepository.requestSmsCode(phone)) {
+    val purpose = when (flow) {
+        AccountFlow.Register -> AccountVerificationPurpose.Register
+        AccountFlow.Recovery -> AccountVerificationPurpose.Recovery
+        else -> return copy(errorMessage = "当前页面不能获取验证码")
+    }
+    return when (val result = accountRepository.requestVerificationCode(phone, purpose)) {
         is AccountRepositoryResult.Success -> copy(smsCountdownSeconds = 60)
         is AccountRepositoryResult.Failure -> copy(
             smsCountdownSeconds = 0,
@@ -331,13 +336,7 @@ private suspend fun AccountUiState.completeAuthentication(
             )
         ) {
             copy(
-            session = AccountSession.SignedIn(
-                phone = result.value.phone,
-                token = result.value.token,
-                wechatLinked = result.value.wechatLinked,
-                nickname = result.value.nickname,
-                avatarUrl = result.value.avatarUrl
-            )
+                session = result.value.toSignedInSession()
             )
         } else {
             copy(errorMessage = "无法安全保存登录状态，已尝试撤销新会话，请重试")
@@ -557,7 +556,7 @@ private fun PhoneField(
     OutlinedTextField(
         value = state.phone,
         onValueChange = { onAction(AccountAction.UpdatePhone(it)) },
-        label = { Text("手机号") },
+        label = { Text("用户名 / 邮箱 / 手机号") },
         singleLine = true,
         isError = state.phoneError != null,
         supportingText = { state.phoneError?.let { Text(it) } },
@@ -572,7 +571,11 @@ private fun SmsCodeRow(
     state: AccountUiState,
     onAction: (AccountAction) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (!state.requiresVerificationCode) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
         OutlinedTextField(
             value = state.verificationCode,
             onValueChange = { onAction(AccountAction.UpdateVerificationCode(it)) },
@@ -581,13 +584,15 @@ private fun SmsCodeRow(
             isError = state.verificationCodeError != null,
             supportingText = { state.verificationCodeError?.let { Text(it) } },
             modifier = Modifier
-                .fillMaxWidth()
+                .weight(2f)
                 .testTag("account-code")
         )
         OutlinedButton(
             onClick = { onAction(AccountAction.RequestSmsCode) },
             enabled = state.smsCountdownSeconds == 0 && !state.operationInProgress,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .weight(1f)
+                .testTag("account-code-request")
         ) {
             Text(
                 if (state.operationInProgress) {
@@ -596,7 +601,8 @@ private fun SmsCodeRow(
                     "${state.smsCountdownSeconds} 秒后重试"
                 } else {
                     "获取验证码"
-                }
+                },
+                maxLines = 1
             )
         }
     }

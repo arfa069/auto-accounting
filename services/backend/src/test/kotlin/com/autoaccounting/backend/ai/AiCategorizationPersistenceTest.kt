@@ -43,8 +43,7 @@ class AiCategorizationPersistenceTest {
         val databaseUrl = h2DatabaseUrl()
         val accountId1 = setupAccountTables(databaseUrl)
         val store = JdbcAccountStore(databaseUrl)
-        val user2 = store.findUser("13900139000")!!
-        val accountId2 = user2.accountId
+        val accountId2 = store.findAccountByIdentifier("PHONE", "13900139000")!!.accountId
 
         val logStore = JdbcAiCategorizationLogStore(databaseUrl)
         logStore.insertLog(
@@ -138,31 +137,29 @@ class AiCategorizationPersistenceTest {
 
     private fun setupAccountTables(databaseUrl: String): Long {
         val store = JdbcAccountStore(databaseUrl)
-        store.createUser(
-            com.autoaccounting.backend.account.StoredUser(
-                accountId = 0L,
-                phone = "13800138000",
+        val firstAccount = requireNotNull(
+            store.createAccountWithIdentifier(
+                primaryIdentifierType = "PHONE",
+                rawValue = "13800138000",
+                normalizedValue = "13800138000",
                 passwordSalt = "salt",
                 passwordHash = "hash",
-                failedLoginCount = 0,
-                lockedUntilMillis = 0,
-                deletionRequestedAtMillis = null,
-                createdAtMillis = 1000
+                verified = true,
+                now = 1000
             )
         )
-        store.createUser(
-            com.autoaccounting.backend.account.StoredUser(
-                accountId = 0L,
-                phone = "13900139000",
+        requireNotNull(
+            store.createAccountWithIdentifier(
+                primaryIdentifierType = "PHONE",
+                rawValue = "13900139000",
+                normalizedValue = "13900139000",
                 passwordSalt = "salt",
                 passwordHash = "hash",
-                failedLoginCount = 0,
-                lockedUntilMillis = 0,
-                deletionRequestedAtMillis = null,
-                createdAtMillis = 1000
+                verified = true,
+                now = 1000
             )
         )
-        return store.findUser("13800138000")!!.accountId
+        return firstAccount.accountId
     }
 
     private fun h2DatabaseUrl(): String {

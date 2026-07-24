@@ -209,35 +209,36 @@ Account model:
 - Users can skip login and use local mode.
 - Cloud-linked capabilities require a backend-verified Session; a restored but offline-unverified Session keeps local bookkeeping available and pauses cloud writes and account deletion.
 - Android uses a random persisted installation UUID and does not read hardware identifiers.
-- The backend uses an internal account ID. Phone credentials and one WeChat identity are optional login methods attached to that account; local Room ledger books never change ownership or sync to the account.
+- The backend uses an internal account ID. Each account can have one username, one email, one phone number, one shared password credential, and one WeChat identity; local Room ledger books never change ownership or sync to the account.
 
 Login method:
-- Phone number + password.
+- Username, email, or phone number + the account's shared password.
 - WeChat OpenSDK OAuth, when a public AppID is configured; the entry is hidden otherwise.
-- SMS verification for account recovery.
+- SMS or email verification for account recovery.
 
 Registration:
-- Phone number -> SMS verification code -> set password -> complete.
-- An unbound WeChat authorization can create a WeChat-only account, or bind an existing phone account by password or dedicated SMS verification.
+- Username -> set password -> complete, without requesting or submitting a verification code.
+- Email or phone number -> SMTP email or SMS verification code -> set password -> complete.
+- An unbound WeChat authorization can create a WeChat-only account, or bind an existing password account by password or a dedicated code sent to a bound phone/email.
 
 Identity management:
-- A WeChat-only account can add an unregistered phone number and password. If the phone belongs to another account, the user must review and explicitly confirm an account merge.
-- Merging always keeps the current account, accepts only complementary credentials, keeps current cloud configuration values, deduplicates devices, deletes source AI logs and source account Sessions, and never changes the local ledger.
-- A WeChat identity can be unlinked only when a phone login remains and password or dedicated SMS re-verification succeeds. Binding, merging and unlinking rotate Sessions.
+- A password account can bind at most one phone number and one email; either becomes an additional login and recovery identifier without changing the primary identifier.
+- Identifier conflicts between password accounts are rejected without transfer or merge. A WeChat-only account can explicitly merge an existing password account; merging keeps the current account, accepts only complementary credentials, keeps current cloud configuration values, deduplicates devices, deletes source AI logs and source account Sessions, and never changes the local ledger.
+- A WeChat identity can be unlinked only when a password credential and another login identifier remain. Verification uses the shared password or a code sent to the user-selected bound phone/email. Binding, merging and unlinking rotate Sessions.
 - WeChat nickname and HTTPS avatar URL refresh after successful authorization; an unavailable or unsafe avatar uses the local placeholder.
-- The client never stores AppSecret, WeChat tokens, OpenID, UnionID or raw provider responses. Android Session v2 is Keystore-encrypted and contains only the business Session plus display fields.
+- The client never stores AppSecret, SMTP credentials, WeChat tokens, OpenID, UnionID or raw provider responses. Android Session v3 is Keystore-encrypted and contains only the business Session, primary identifier, identifier list and display fields; v1/v2 can be restored and upgraded.
 
 Password:
 - 8-32 characters.
 - Must include uppercase letters, lowercase letters, numbers, and symbols.
 
 Login failure:
-- Generic login error: "手机号或密码不正确".
-- After 5 consecutive failed password attempts, temporarily lock login and prompt SMS recovery.
+- Generic login error: "账号或密码不正确".
+- After 5 consecutive failed password attempts across any bound identifier, temporarily lock the shared account credential and prompt phone/email recovery.
 
 Account recovery:
 - Entry: bottom of password input page.
-- Flow: phone confirmation -> SMS verification code -> set new password.
+- Flow: bound phone/email confirmation -> SMS/email verification code -> set new password.
 - Successful recovery revokes older Sessions before issuing the new Session.
 
 Deletion:
@@ -368,17 +369,19 @@ Copy:
 
 Account form error copy:
 - Phone format: "请输入 11 位手机号".
+- Username format: "用户名需 4-20 位，以字母开头，仅包含字母、数字和下划线".
+- Email format: "请输入有效的邮箱地址".
 - Password rule: "密码需 8-32 位，包含大小写字母、数字和符号".
 - Verification code wrong: "验证码不正确，请重新输入".
 - Verification code expired: "验证码已过期，请重新获取".
 - Too frequent verification-code request: "获取太频繁，请稍后再试".
-- Password/login failed: "手机号或密码不正确".
-- Temporary account lock: "尝试次数过多，请稍后再试，或使用短信找回密码".
+- Password/login failed: "账号或密码不正确".
+- Temporary account lock: "尝试次数过多，请稍后再试，或使用手机号或邮箱找回密码".
 - Network failed: "网络连接失败，请检查后重试".
 - Agreement unchecked: "请先阅读并同意用户协议和隐私政策".
-- SMS send failed: "验证码发送失败，请稍后重试".
-- Phone already registered: "该手机号已注册，请直接登录".
-- Phone not registered: "该手机号尚未注册，请先创建账号".
+- Verification-code send failed: "验证码发送失败，请稍后重试".
+- Identifier already registered: "该账号标识已注册，请直接登录".
+- Identifier not registered: "该账号标识尚未注册，请先创建账号".
 - Password confirmation mismatch: "两次输入的密码不一致".
 
 ## 8. Internal Beta Success Metrics

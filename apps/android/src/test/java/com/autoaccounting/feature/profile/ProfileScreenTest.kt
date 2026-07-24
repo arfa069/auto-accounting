@@ -131,7 +131,7 @@ class ProfileScreenTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("退出登录").performClick()
+        composeRule.onNodeWithTag("account-sign-out").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.waitUntil { signedOut }

@@ -59,22 +59,55 @@ internal class SecureAccountSessionStore(
     fun clear(): Boolean = preferences.edit().remove(ENCRYPTED_SESSION_KEY).commit()
 
     private fun AccountCredentials.encode(): ByteArray {
-        val phoneBytes = phone?.toByteArray(Charsets.UTF_8)
         val tokenBytes = token.toByteArray(Charsets.UTF_8)
         val nicknameBytes = nickname?.toByteArray(Charsets.UTF_8)
         val avatarUrlBytes = avatarUrl?.toByteArray(Charsets.UTF_8)
-        require(tokenBytes.isNotEmpty() && (phoneBytes?.isNotEmpty() == true || wechatLinked))
-        return ByteBuffer.allocate(
-            1 + phoneBytes.encodedSize() + tokenBytes.encodedSize() + 1 +
-                nicknameBytes.encodedSize() + avatarUrlBytes.encodedSize()
-        )
-            .put(SESSION_FORMAT_VERSION_V2)
-            .putNullableUtf8(phoneBytes)
-            .putSizedUtf8(tokenBytes)
-            .put(if (wechatLinked) 1.toByte() else 0.toByte())
-            .putNullableUtf8(nicknameBytes)
-            .putNullableUtf8(avatarUrlBytes)
-            .array()
+        val rawPhoneBytes = rawPhone?.toByteArray(Charsets.UTF_8)
+        require(tokenBytes.isNotEmpty())
+
+        val primaryTypeBytes = primaryIdentifier?.type?.name?.toByteArray(Charsets.UTF_8)
+        val primaryValBytes = primaryIdentifier?.value?.toByteArray(Charsets.UTF_8)
+
+        val identsData = identifiers.map { id ->
+            val tBytes = id.type.name.toByteArray(Charsets.UTF_8)
+            val vBytes = id.value.toByteArray(Charsets.UTF_8)
+            Triple(tBytes, vBytes, id.verified)
+        }
+
+        var identsSize = Int.SIZE_BYTES
+        for ((t, v, _) in identsData) {
+            identsSize += t.encodedSize() + v.encodedSize() + 1
+        }
+
+        val totalSize = 1 +
+            primaryTypeBytes.encodedSize() +
+            primaryValBytes.encodedSize() +
+            identsSize +
+            rawPhoneBytes.encodedSize() +
+            tokenBytes.encodedSize() +
+            1 +
+            nicknameBytes.encodedSize() +
+            avatarUrlBytes.encodedSize()
+
+        val buf = ByteBuffer.allocate(totalSize)
+            .put(SESSION_FORMAT_VERSION_V3)
+            .putNullableUtf8(primaryTypeBytes)
+            .putNullableUtf8(primaryValBytes)
+
+        buf.putInt(identsData.size)
+        for ((t, v, ver) in identsData) {
+            buf.putSizedUtf8(t)
+            buf.putSizedUtf8(v)
+            buf.put(if (ver) 1.toByte() else 0.toByte())
+        }
+
+        buf.putNullableUtf8(rawPhoneBytes)
+        buf.putSizedUtf8(tokenBytes)
+        buf.put(if (wechatLinked) 1.toByte() else 0.toByte())
+        buf.putNullableUtf8(nicknameBytes)
+        buf.putNullableUtf8(avatarUrlBytes)
+
+        return buf.array()
     }
 
     private fun ByteArray.decodeCredentials(): AccountCredentials {
@@ -82,6 +115,7 @@ internal class SecureAccountSessionStore(
         return when (buffer.get()) {
             SESSION_FORMAT_VERSION_V1 -> buffer.decodeVersionOne()
             SESSION_FORMAT_VERSION_V2 -> buffer.decodeVersionTwo()
+            SESSION_FORMAT_VERSION_V3 -> buffer.decodeVersionThree()
             else -> error("Unsupported account session format")
         }
     }
@@ -103,6 +137,50 @@ internal class SecureAccountSessionStore(
         require(phone?.isNotBlank() == true || wechatLinked)
         return AccountCredentials(
             phone = phone,
+            token = token,
+            wechatLinked = wechatLinked,
+            nickname = nickname,
+            avatarUrl = avatarUrl
+        )
+    }
+
+    private fun ByteBuffer.decodeVersionThree(): AccountCredentials {
+        val primaryTypeStr = readNullableSizedUtf8()
+        val primaryValStr = readNullableSizedUtf8()
+        val primaryIdentifier = if (primaryTypeStr != null && primaryValStr != null) {
+            com.autoaccounting.api.AccountIdentifierContract(
+                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(primaryTypeStr),
+                value = primaryValStr
+            )
+        } else null
+
+        val identsCount = int
+        require(identsCount in 0..100)
+        val idents = ArrayList<com.autoaccounting.api.AccountIdentifierContract>(identsCount)
+        repeat(identsCount) {
+            val tStr = readSizedUtf8()
+            val vStr = readSizedUtf8()
+            val verified = get().toInt() != 0
+            idents.add(
+                com.autoaccounting.api.AccountIdentifierContract(
+                    type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(tStr),
+                    value = vStr,
+                    verified = verified
+                )
+            )
+        }
+
+        val rawPhone = readNullableSizedUtf8()
+        val token = readSizedUtf8()
+        val wechatLinked = get().toInt() != 0
+        val nickname = readNullableSizedUtf8()
+        val avatarUrl = readNullableSizedUtf8()
+        require(!hasRemaining() && token.isNotBlank())
+
+        return AccountCredentials(
+            primaryIdentifier = primaryIdentifier,
+            identifiers = idents,
+            rawPhone = rawPhone,
             token = token,
             wechatLinked = wechatLinked,
             nickname = nickname,
@@ -134,6 +212,7 @@ internal class SecureAccountSessionStore(
         const val ENCRYPTED_SESSION_KEY = "encrypted_session"
         const val SESSION_FORMAT_VERSION_V1: Byte = 1
         const val SESSION_FORMAT_VERSION_V2: Byte = 2
+        const val SESSION_FORMAT_VERSION_V3: Byte = 3
         const val NULL_FIELD_SIZE = -1
     }
 }

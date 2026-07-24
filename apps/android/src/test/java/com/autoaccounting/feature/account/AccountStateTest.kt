@@ -35,7 +35,7 @@ class AccountStateTest {
 
         val result = reduceAccountState(state, AccountAction.SubmitRegister)
 
-        assertEquals("请输入 11 位手机号", result.phoneError)
+        assertEquals("标识格式不正确", result.phoneError)
         assertEquals("请输入验证码", result.verificationCodeError)
         assertEquals("密码需 8-32 位，包含大小写字母、数字和符号", result.passwordError)
         assertEquals("两次输入的密码不一致", result.confirmPasswordError)
@@ -108,5 +108,49 @@ class AccountStateTest {
 
         assertEquals(AccountSessionVerificationDecision.KeepOfflineSession, networkDecision)
         assertEquals(AccountSessionVerificationDecision.ClearInvalidSession, invalidDecision)
+    }
+
+    @Test
+    fun usernameRegistrationHidesVerificationCodeRequirement() {
+        val state = AccountUiState(
+            flow = AccountFlow.Register,
+            agreementAccepted = true,
+            phone = "username123",
+            verificationCode = "",
+            password = "Aa123456!",
+            confirmPassword = "Aa123456!"
+        )
+
+        val result = reduceAccountState(state, AccountAction.SubmitRegister)
+
+        assertNull(result.phoneError)
+        assertNull(result.verificationCodeError)
+        assertNull(result.passwordError)
+        assertNull(result.confirmPasswordError)
+        assertTrue(result.hasNoFieldErrors)
+    }
+
+    @Test
+    fun usernameRecoveryIsBlockedWithFriendlyError() {
+        val state = AccountUiState(
+            flow = AccountFlow.Recovery,
+            phone = "username123"
+        )
+
+        val result = reduceAccountState(state, AccountAction.SubmitRecovery)
+
+        assertEquals("用户名不支持找回密码，请使用已绑定的手机号或邮箱", result.phoneError)
+    }
+
+    @Test
+    fun usernameSmsCodeRequestIsBlocked() {
+        val state = AccountUiState(
+            flow = AccountFlow.Register,
+            phone = "username123"
+        )
+
+        val result = reduceAccountState(state, AccountAction.RequestSmsCode)
+
+        assertEquals("用户名不支持获取验证码，请使用手机号或邮箱", result.phoneError)
     }
 }

@@ -75,7 +75,7 @@ class WechatLoginControllerTest {
         passwordController.bindExistingAccount()
 
         assertEquals(1, passwordRepository.linkWechatWithPasswordCalls)
-        assertEquals(0, passwordRepository.linkWechatWithSmsCalls)
+        assertEquals(0, passwordRepository.linkWechatWithCodeCalls)
 
         val smsRepository = TestAccountRepository()
         val smsController = previewController(smsRepository)
@@ -86,14 +86,14 @@ class WechatLoginControllerTest {
         smsController.requestBindingSms()
 
         assertEquals(1, smsRepository.smsCalls)
-        assertEquals(AccountSmsPurpose.WechatLink, smsRepository.lastSmsPurpose)
+        assertEquals(AccountVerificationPurpose.WechatLink, smsRepository.lastSmsPurpose)
         assertEquals("ticket", smsRepository.lastSmsContextKey)
         assertTrue(smsController.state.smsRequested)
 
         smsController.updateCode("123456")
         smsController.bindExistingAccount()
 
-        assertEquals(1, smsRepository.linkWechatWithSmsCalls)
+        assertEquals(1, smsRepository.linkWechatWithCodeCalls)
         assertEquals(0, smsRepository.linkWechatWithPasswordCalls)
     }
 

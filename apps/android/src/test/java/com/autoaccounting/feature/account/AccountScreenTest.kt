@@ -1,6 +1,13 @@
 package com.autoaccounting.feature.account
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -11,6 +18,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -106,7 +117,7 @@ class AccountScreenTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("获取验证码").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("请输入 11 位手机号").assertIsDisplayed()
+        composeRule.onNodeWithText("标识格式不正确").assertIsDisplayed()
 
         composeRule.onNodeWithTag("account-phone").performTextClearance()
         composeRule.waitForIdle()
@@ -119,6 +130,44 @@ class AccountScreenTest {
         composeRule.onNodeWithText("完成注册").performScrollTo().performClick()
         composeRule.waitForIdle()
         composeRule.onAllNodesWithText("请先阅读并同意用户协议和隐私政策").assertCountEquals(1)
+    }
+
+    @Test
+    fun verificationCodeRowKeepsTwoToOneLayoutAcrossTargetWindowSizes() {
+        var forcedSize by mutableStateOf(DpSize(400.dp, 700.dp))
+        var fontScale by mutableFloatStateOf(1f)
+        composeRule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(forcedSize) then
+                    DeviceConfigurationOverride.FontScale(fontScale)
+            ) {
+                AccountScreen(accountRepository = FakeAccountRepository())
+            }
+        }
+        composeRule.onNodeWithText("创建账号").performClick()
+        composeRule.onNodeWithTag("account-phone").performTextInput("13800138000")
+
+        listOf(
+            DpSize(400.dp, 700.dp) to 1f,
+            DpSize(610.dp, 700.dp) to 1f,
+            DpSize(900.dp, 1_000.dp) to 1f,
+            DpSize(400.dp, 700.dp) to 1.5f
+        ).forEach { (size, scale) ->
+            composeRule.runOnIdle {
+                forcedSize = size
+                fontScale = scale
+            }
+            composeRule.waitForIdle()
+            val codeBounds = composeRule.onNodeWithTag("account-code")
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            val buttonBounds = composeRule.onNodeWithTag("account-code-request")
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            val ratio = codeBounds.width / buttonBounds.width
+            assertTrue("Expected approximately 2:1, got $ratio at $size / $scale", ratio in 1.9f..2.1f)
+            assertTrue(kotlin.math.abs(codeBounds.top - buttonBounds.top) < 1f)
+        }
     }
 
     @Test

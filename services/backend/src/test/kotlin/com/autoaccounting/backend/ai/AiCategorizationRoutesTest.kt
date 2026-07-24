@@ -156,8 +156,8 @@ class AiCategorizationRoutesTest {
             tokenGenerator = { token },
             clock = MutableClock(0)
         )
-        service.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        service.register("13800138000", "123456", "Aa123456!")
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        service.registerIdentifier("13800138000", "123456", "Aa123456!")
         return service
     }
 }

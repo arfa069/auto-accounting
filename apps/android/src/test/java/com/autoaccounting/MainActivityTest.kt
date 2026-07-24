@@ -126,7 +126,7 @@ class MainActivityTest {
 
         composeRule.onNodeWithTag("app-bottom-navigation").assertIsDisplayed()
         listOf("Review", "Ledger", "Reports", "Profile").forEach { tab ->
-            composeRule.onNodeWithTag("app-tab-$tab").performClick()
+            composeRule.onNodeWithTag("app-tab-$tab", useUnmergedTree = true).performClick()
             composeRule.onNodeWithTag("app-bottom-navigation").assertDoesNotExist()
             composeRule.onNodeWithTag("return-home").assertIsDisplayed().performClick()
             composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
@@ -140,14 +140,14 @@ class MainActivityTest {
             AutoAccountingApp()
         }
 
-        composeRule.onNodeWithTag("app-tab-Review").performClick()
+        composeRule.onNodeWithTag("app-tab-Review", useUnmergedTree = true).performClick()
         val reviewTitleTop = composeRule.onNodeWithText("待确认")
             .fetchSemanticsNode()
             .boundsInRoot
             .top
 
         composeRule.onNodeWithTag("return-home").performClick()
-        composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+        composeRule.onNodeWithTag("app-tab-Ledger", useUnmergedTree = true).performClick()
         val ledgerTitleTop = composeRule.onNodeWithText("默认账本")
             .fetchSemanticsNode()
             .boundsInRoot
@@ -163,7 +163,7 @@ class MainActivityTest {
         }
 
         listOf("Review", "Ledger", "Reports", "Profile").forEach { tab ->
-            composeRule.onNodeWithTag("app-tab-$tab").performClick()
+            composeRule.onNodeWithTag("app-tab-$tab", useUnmergedTree = true).performClick()
 
             composeRule.runOnIdle {
                 composeRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -197,11 +197,11 @@ class MainActivityTest {
                 AutoAccountingApp()
             }
 
-            composeRule.onNodeWithTag("app-tab-Reports").performClick()
-            composeRule.onNodeWithText("本月支出 ¥1.00").assertIsDisplayed()
+            composeRule.onNodeWithTag("app-tab-Reports", useUnmergedTree = true).performClick()
+            waitUntilTextIsDisplayed("本月支出 ¥1.00")
 
             composeRule.onNodeWithTag("return-home").performClick()
-            composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+            composeRule.onNodeWithTag("app-tab-Ledger", useUnmergedTree = true).performClick()
             composeRule.onNodeWithTag(LedgerTestTags.MORE_MENU).performClick()
             composeRule.onNodeWithTag(LedgerTestTags.MANAGE_LEDGERS).performClick()
             composeRule.onNodeWithTag(LedgerTestTags.selectLedger(travelLedgerId))
@@ -215,8 +215,8 @@ class MainActivityTest {
             composeRule.onNodeWithText("旅行账本").assertIsDisplayed()
 
             composeRule.onNodeWithTag("return-home").performClick()
-            composeRule.onNodeWithTag("app-tab-Reports").performClick()
-            composeRule.onNodeWithText("本月支出 ¥2.00").assertIsDisplayed()
+            composeRule.onNodeWithTag("app-tab-Reports", useUnmergedTree = true).performClick()
+            waitUntilTextIsDisplayed("本月支出 ¥2.00")
             composeRule.onNodeWithText("本月支出 ¥1.00").assertDoesNotExist()
         } finally {
             runBlocking {
@@ -281,7 +281,7 @@ class MainActivityTest {
 
         try {
             composeRule.setContent { AutoAccountingApp() }
-            composeRule.onNodeWithTag("app-tab-Review").performClick()
+            composeRule.onNodeWithTag("app-tab-Review", useUnmergedTree = true).performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithTag("review-queue-list")
                     .fetchSemanticsNodes()
@@ -312,7 +312,7 @@ class MainActivityTest {
             assertEquals("shopping", ledgerEntry.categoryId)
 
             composeRule.onNodeWithTag("return-home").performClick()
-            composeRule.onNodeWithTag("app-tab-Ledger").performClick()
+            composeRule.onNodeWithTag("app-tab-Ledger", useUnmergedTree = true).performClick()
             composeRule.onNodeWithTag(LedgerTestTags.ENTRY_LIST).performScrollToIndex(1)
             composeRule.onNodeWithText("修改后商户").assertIsDisplayed()
             composeRule.onNodeWithText("购物 · 支付宝", substring = true).assertIsDisplayed()
@@ -384,7 +384,7 @@ class MainActivityTest {
             )
         }
 
-        composeRule.onNodeWithTag("app-tab-Review").performClick()
+        composeRule.onNodeWithTag("app-tab-Review", useUnmergedTree = true).performClick()
         composeRule.onNodeWithText("补录账单").performClick()
         composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
         composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
@@ -576,10 +576,18 @@ class MainActivityTest {
 
     private fun openProfileTab() {
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("app-tab-Profile")
+            composeRule.onAllNodesWithTag("app-tab-Profile", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        composeRule.onNodeWithTag("app-tab-Profile").performClick()
+        composeRule.onNodeWithTag("app-tab-Profile", useUnmergedTree = true).performClick()
+    }
+
+    private fun waitUntilTextIsDisplayed(text: String) {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            runCatching {
+                composeRule.onNodeWithText(text).assertIsDisplayed()
+            }.isSuccess
+        }
     }
 }

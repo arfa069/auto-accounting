@@ -9,12 +9,11 @@ import org.junit.Test
 
 class AccountContractsTest {
 
-    // ── Session response backward compatibility ──
+    // ── Session response ──
 
     @Test
     fun sessionResponseRoundTripsPendingDeletion() {
         val expected = AccountSessionResponseContract(
-            phone = "13800138000",
             token = "session-token",
             deletionStatus = AccountDeletionStatusContract(
                 pending = true,
@@ -23,11 +22,11 @@ class AccountContractsTest {
             )
         )
 
-        val decoded = AccountApiJsonContracts.parseSessionResponse(
-            AccountApiJsonContracts.encodeSessionResponse(expected)
-        )
+        val encoded = AccountApiJsonContracts.encodeSessionResponse(expected)
+        val decoded = AccountApiJsonContracts.parseSessionResponse(encoded)
 
         assertEquals(expected, decoded)
+        assertFalse(encoded.contains("\"phone\""))
     }
 
     @Test
@@ -66,41 +65,15 @@ class AccountContractsTest {
         assertTrue(error.message.orEmpty().contains("timestamps"))
     }
 
-    // ── Old phone-only JSON backward compatibility ──
-
     @Test
-    fun legacyPhoneJsonWithoutNewFieldsStillParses() {
-        // Simulate a JSON from a server that doesn't yet include wechat fields
-        val legacyJson = """{"ok":true,"phone":"13800138000","token":"tok","deletionPending":false,"requestedAtMillis":null,"finalDeletionAtMillis":null}"""
-
-        val decoded = AccountApiJsonContracts.parseSessionResponse(legacyJson)
-
-        assertEquals("13800138000", decoded.phone)
-        assertEquals("tok", decoded.token)
-        assertFalse(decoded.wechatLinked)
-        assertNull(decoded.nickname)
-        assertNull(decoded.avatarUrl)
-    }
-
-    @Test
-    fun newFieldsInResponseDoNotBreakLegacyPhoneClient() {
-        // A response with all new fields should still carry phone correctly
-        val response = AccountSessionResponseContract(
-            phone = "13800138000",
-            token = "tok",
-            wechatLinked = true,
-            nickname = "微信用户",
-            avatarUrl = "https://wx.example.com/avatar.jpg"
+    fun removedTopLevelPhoneFieldIsIgnored() {
+        val decoded = AccountApiJsonContracts.parseSessionResponse(
+            """{"ok":true,"phone":"13800138000","token":"tok","deletionPending":false}"""
         )
 
-        val json = AccountApiJsonContracts.encodeSessionResponse(response)
-        val decoded = AccountApiJsonContracts.parseSessionResponse(json)
-
-        assertEquals("13800138000", decoded.phone)
+        assertNull(decoded.primaryIdentifier)
+        assertTrue(decoded.identifiers.isEmpty())
         assertEquals("tok", decoded.token)
-        assertTrue(decoded.wechatLinked)
-        assertEquals("微信用户", decoded.nickname)
-        assertEquals("https://wx.example.com/avatar.jpg", decoded.avatarUrl)
     }
 
     // ── WeChat account with phone=null ──
@@ -108,7 +81,6 @@ class AccountContractsTest {
     @Test
     fun wechatAccountWithNullPhoneRoundTrips() {
         val expected = AccountSessionResponseContract(
-            phone = null,
             token = "wechat-token",
             wechatLinked = true,
             nickname = "TestUser",
@@ -120,7 +92,7 @@ class AccountContractsTest {
         )
 
         assertEquals(expected, decoded)
-        assertNull(decoded.phone)
+        assertNull(decoded.primaryIdentifier)
         assertTrue(decoded.wechatLinked)
     }
 
@@ -129,7 +101,8 @@ class AccountContractsTest {
     @Test
     fun sessionResponseFullRoundTrip() {
         val expected = AccountSessionResponseContract(
-            phone = "13900139000",
+            primaryIdentifier = AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13900139000"),
+            identifiers = listOf(AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13900139000")),
             token = "full-token",
             wechatLinked = true,
             nickname = "完整用户",
@@ -153,7 +126,8 @@ class AccountContractsTest {
     @Test
     fun wechatExchangeSignedInRoundTrips() {
         val session = AccountSessionResponseContract(
-            phone = "13800138000",
+            primaryIdentifier = AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000"),
+            identifiers = listOf(AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000")),
             token = "session-tok",
             wechatLinked = true,
             nickname = "WxUser",
@@ -173,7 +147,6 @@ class AccountContractsTest {
     @Test
     fun wechatExchangeSignedInWithNullPhoneRoundTrips() {
         val session = AccountSessionResponseContract(
-            phone = null,
             token = "wechat-tok",
             wechatLinked = true,
             nickname = null,
@@ -239,7 +212,9 @@ class AccountContractsTest {
             result = WechatAuthResultContract.MergeRequired(
                 mergeTicket = "merge-ticket-xyz",
                 sourceNickname = "来源用户",
-                sourcePhone = "138****8000",
+                sourceIdentifiers = listOf(
+                    AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000")
+                ),
                 ticketExpiresAtMillis = 2_000_000L
             )
         )
@@ -257,7 +232,6 @@ class AccountContractsTest {
             result = WechatAuthResultContract.MergeRequired(
                 mergeTicket = "merge-ticket-null",
                 sourceNickname = null,
-                sourcePhone = null,
                 ticketExpiresAtMillis = 3_000_000L
             )
         )
@@ -317,64 +291,6 @@ class AccountContractsTest {
         }
     }
 
-    // ── Phone link prepare response ──
-
-    @Test
-    fun phoneLinkPreparePhoneTicketRoundTrips() {
-        val expected = PhoneLinkPrepareResponseContract.PhoneTicketIssued(
-            phoneTicket = "phone-ticket-123",
-            ticketExpiresAtMillis = 5_000_000L
-        )
-
-        val decoded = AccountApiJsonContracts.parsePhoneLinkPrepareResponse(
-            AccountApiJsonContracts.encodePhoneLinkPrepareResponse(expected)
-        )
-
-        assertEquals(expected, decoded)
-    }
-
-    @Test
-    fun phoneLinkPrepareMergeRequiredRoundTrips() {
-        val expected = PhoneLinkPrepareResponseContract.MergeRequired(
-            mergeTicket = "phone-merge-ticket",
-            sourcePhone = "139****9000",
-            sourceWechatLinked = true,
-            ticketExpiresAtMillis = 6_000_000L
-        )
-
-        val decoded = AccountApiJsonContracts.parsePhoneLinkPrepareResponse(
-            AccountApiJsonContracts.encodePhoneLinkPrepareResponse(expected)
-        )
-
-        assertEquals(expected, decoded)
-    }
-
-    @Test
-    fun phoneLinkPrepareMergeRequiredNullPhoneRoundTrips() {
-        val expected = PhoneLinkPrepareResponseContract.MergeRequired(
-            mergeTicket = "phone-merge-null",
-            sourcePhone = null,
-            sourceWechatLinked = false,
-            ticketExpiresAtMillis = 7_000_000L
-        )
-
-        val decoded = AccountApiJsonContracts.parsePhoneLinkPrepareResponse(
-            AccountApiJsonContracts.encodePhoneLinkPrepareResponse(expected)
-        )
-
-        assertEquals(expected, decoded)
-    }
-
-    @Test
-    fun phoneLinkPrepareUnknownStatusFails() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            AccountApiJsonContracts.parsePhoneLinkPrepareResponse(
-                """{"ok":true,"status":"INVALID"}"""
-            )
-        }
-        assertTrue(error.message.orEmpty().contains("Unknown phone link prepare status"))
-    }
-
     // ── Merge preview response ──
 
     @Test
@@ -382,19 +298,24 @@ class AccountContractsTest {
         val expected = MergePreviewResponseContract(
             mergeTicket = "merge-preview-ticket",
             ticketExpiresAtMillis = 8_000_000L,
-            currentPhone = "13800138000",
+            currentIdentifiers = listOf(
+                AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000")
+            ),
             currentWechatLinked = true,
             currentNickname = "当前用户",
-            sourcePhone = "13900139000",
+            sourceIdentifiers = listOf(
+                AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13900139000")
+            ),
             sourceWechatLinked = false,
             sourceNickname = "来源用户"
         )
 
-        val decoded = AccountApiJsonContracts.parseMergePreviewResponse(
-            AccountApiJsonContracts.encodeMergePreviewResponse(expected)
-        )
+        val encoded = AccountApiJsonContracts.encodeMergePreviewResponse(expected)
+        val decoded = AccountApiJsonContracts.parseMergePreviewResponse(encoded)
 
         assertEquals(expected, decoded)
+        assertFalse(encoded.contains("sourcePhone"))
+        assertFalse(encoded.contains("currentPhone"))
     }
 
     @Test
@@ -402,10 +323,8 @@ class AccountContractsTest {
         val expected = MergePreviewResponseContract(
             mergeTicket = "merge-null-ticket",
             ticketExpiresAtMillis = 9_000_000L,
-            currentPhone = null,
             currentWechatLinked = false,
             currentNickname = null,
-            sourcePhone = null,
             sourceWechatLinked = false,
             sourceNickname = null
         )
@@ -479,5 +398,64 @@ class AccountContractsTest {
         assertEquals("ACCOUNT_LOCKED", AccountErrorCodeContract.ACCOUNT_LOCKED.name)
         assertEquals("ACCOUNT_DELETION_PENDING", AccountErrorCodeContract.ACCOUNT_DELETION_PENDING.name)
         assertEquals("ACCOUNT_DELETION_NOT_PENDING", AccountErrorCodeContract.ACCOUNT_DELETION_NOT_PENDING.name)
+        assertEquals("IDENTIFIER_ALREADY_REGISTERED", AccountErrorCodeContract.IDENTIFIER_ALREADY_REGISTERED.name)
+        assertEquals("IDENTIFIER_NOT_REGISTERED", AccountErrorCodeContract.IDENTIFIER_NOT_REGISTERED.name)
+        assertEquals("IDENTIFIER_ALREADY_LINKED", AccountErrorCodeContract.IDENTIFIER_ALREADY_LINKED.name)
+        assertEquals("IDENTIFIER_CONFLICT", AccountErrorCodeContract.IDENTIFIER_CONFLICT.name)
+        assertEquals("EMAIL_PROVIDER_UNCONFIGURED", AccountErrorCodeContract.EMAIL_PROVIDER_UNCONFIGURED.name)
+        assertEquals("EMAIL_SEND_FAILED", AccountErrorCodeContract.EMAIL_SEND_FAILED.name)
+        assertEquals("CODE_SEND_TOO_FREQUENT", AccountErrorCodeContract.CODE_SEND_TOO_FREQUENT.name)
+    }
+
+    // ── Unified identifiers contract round-trip ──
+
+    @Test
+    fun sessionResponseWithUnifiedIdentifiersRoundTrips() {
+        val primary = AccountIdentifierContract(AccountIdentifierTypeContract.USERNAME, "User_01", true)
+        val phoneId = AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000", true)
+        val emailId = AccountIdentifierContract(AccountIdentifierTypeContract.EMAIL, "user@example.com", true)
+        val expected = AccountSessionResponseContract(
+            primaryIdentifier = primary,
+            identifiers = listOf(primary, phoneId, emailId),
+            token = "unified-tok",
+            wechatLinked = true,
+            nickname = "UnifiedUser"
+        )
+
+        val json = AccountApiJsonContracts.encodeSessionResponse(expected)
+        val decoded = AccountApiJsonContracts.parseSessionResponse(json)
+
+        assertEquals(expected, decoded)
+    }
+
+    @Test
+    fun identifierLinkPrepareRoundTrips() {
+        val ticketIssued = IdentifierLinkPrepareResponseContract.LinkTicketIssued(
+            linkTicket = "link-t-1",
+            ticketExpiresAtMillis = 1000L
+        )
+        val json1 = AccountApiJsonContracts.encodeIdentifierLinkPrepareResponse(ticketIssued)
+        assertEquals(ticketIssued, AccountApiJsonContracts.parseIdentifierLinkPrepareResponse(json1))
+
+        val mergeReq = IdentifierLinkPrepareResponseContract.MergeRequired(
+            mergeTicket = "merge-t-1",
+            sourceIdentifiers = listOf(AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000", true)),
+            sourceWechatLinked = true,
+            ticketExpiresAtMillis = 2000L
+        )
+        val json2 = AccountApiJsonContracts.encodeIdentifierLinkPrepareResponse(mergeReq)
+        assertEquals(mergeReq, AccountApiJsonContracts.parseIdentifierLinkPrepareResponse(json2))
+    }
+
+    @Test
+    fun identifierLinkAlreadyLinkedRoundTrips() {
+        assertEquals(
+            IdentifierLinkPrepareResponseContract.AlreadyLinked,
+            AccountApiJsonContracts.parseIdentifierLinkPrepareResponse(
+                AccountApiJsonContracts.encodeIdentifierLinkPrepareResponse(
+                    IdentifierLinkPrepareResponseContract.AlreadyLinked
+                )
+            )
+        )
     }
 }

@@ -125,21 +125,20 @@ class WechatOAuthServiceTest {
         val service = AccountService(store = store, wechatOAuthClient = fakeClient)
 
         // Pre-create an account and bind a WeChat identity
-        val created = store.createUser(
-            StoredUser(
-                accountId = 100L,
-                phone = "13800138000",
-                passwordSalt = "salt",
-                passwordHash = "hash",
-                createdAtMillis = 1000L
-            )
+        val account = store.createAccountWithIdentifier(
+            primaryIdentifierType = "PHONE",
+            rawValue = "13800138000",
+            normalizedValue = "13800138000",
+            passwordSalt = "salt",
+            passwordHash = "hash",
+            verified = true,
+            now = 1000L
         )
-        assertTrue(created)
-        val user = store.findUser("13800138000")!!
+        assertNotNull(account)
 
         store.upsertWechatIdentity(
             StoredWechatIdentity(
-                accountId = user.accountId,
+                accountId = account!!.accountId,
                 appId = "wx_fake_appid",
                 openid = "fake_openid",
                 unionid = "fake_unionid",
@@ -158,14 +157,14 @@ class WechatOAuthServiceTest {
         assertTrue(response.result is WechatAuthResultContract.SignedIn)
 
         val signedIn = response.result as WechatAuthResultContract.SignedIn
-        assertEquals("13800138000", signedIn.session.phone)
+        assertEquals("13800138000", signedIn.session.primaryIdentifier?.value)
         assertNotNull(signedIn.session.token)
         assertTrue(signedIn.session.wechatLinked)
         assertEquals("微信小张", signedIn.session.nickname)
         assertEquals("https://example.com/avatar.jpg", signedIn.session.avatarUrl)
 
         // Check updated profile in store
-        val identity = store.findWechatIdentityByAccountId(user.accountId)
+        val identity = store.findWechatIdentityByAccountId(account.accountId)
         assertNotNull(identity)
         assertEquals("微信小张", identity?.nickname)
     }
@@ -180,8 +179,8 @@ class WechatOAuthServiceTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "device_1", "127.0.0.1")
-        val regResult = service.register("13800138000", "123456", "Pass1234!", "device_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device_1", "127.0.0.1")
+        val regResult = service.registerIdentifier("13800138000", "123456", "Pass1234!", "device_1", "127.0.0.1")
         assertTrue(regResult is AccountResult.Success)
         val token = (regResult as AccountResult.Success).value.token
 
@@ -192,7 +191,7 @@ class WechatOAuthServiceTest {
         assertTrue(response.result is WechatAuthResultContract.SignedIn)
 
         val signedIn = response.result as WechatAuthResultContract.SignedIn
-        assertEquals("13800138000", signedIn.session.phone)
+        assertEquals("13800138000", signedIn.session.primaryIdentifier?.value)
         assertEquals(token, signedIn.session.token)
         assertTrue(signedIn.session.wechatLinked)
         assertEquals("微信小张", signedIn.session.nickname)
@@ -207,10 +206,10 @@ class WechatOAuthServiceTest {
             smsCodeGenerator = { "123456" },
             wechatOAuthClient = fakeClient
         )
-        service.issueSmsCode("13800138000", "device_1", "127.0.0.1")
-        val registration = service.register("13800138000", "123456", "Pass1234!", "device_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "device_1", "127.0.0.1")
+        val registration = service.registerIdentifier("13800138000", "123456", "Pass1234!", "device_1", "127.0.0.1")
             as AccountResult.Success<AccountToken>
-        val accountId = store.findUser("13800138000")!!.accountId
+        val accountId = store.findAccountByIdentifier("PHONE", "13800138000")!!.accountId
         val originalIdentity = StoredWechatIdentity(
             accountId = accountId,
             appId = "wx_fake_appid",
@@ -231,16 +230,17 @@ class WechatOAuthServiceTest {
     @Test
     fun testExchangeWechatCodeMapsConcurrentClaimConflictToMergeRequired() {
         val delegate = InMemoryAccountStore()
-        delegate.createUser(
-            StoredUser(
-                accountId = 0L,
-                phone = "13800138002",
+        val sourceAccount = requireNotNull(
+            delegate.createAccountWithIdentifier(
+                primaryIdentifierType = "PHONE",
+                rawValue = "13800138002",
+                normalizedValue = "13800138002",
                 passwordSalt = "salt",
                 passwordHash = "hash",
-                createdAtMillis = 1000L
+                verified = true,
+                now = 1000L
             )
         )
-        val sourceAccount = delegate.findUser("13800138002")!!
         val concurrentlyClaimedIdentity = StoredWechatIdentity(
             accountId = sourceAccount.accountId,
             appId = "wx_fake_appid",
@@ -260,8 +260,8 @@ class WechatOAuthServiceTest {
             smsCodeGenerator = { "123456" },
             wechatOAuthClient = FakeWechatOAuthClient(configured = true)
         )
-        service.issueSmsCode("13800138001", "device_1", "127.0.0.1")
-        val registration = service.register("13800138001", "123456", "Pass1234!", "device_1", "127.0.0.1")
+        service.issueVerificationCode("13800138001", "device_1", "127.0.0.1")
+        val registration = service.registerIdentifier("13800138001", "123456", "Pass1234!", "device_1", "127.0.0.1")
             as AccountResult.Success<AccountToken>
 
         val result = service.exchangeWechatCode("good_code", bearerToken = registration.value.token)
@@ -270,7 +270,10 @@ class WechatOAuthServiceTest {
         val response = (result as AccountResult.Success).value
         assertTrue(response.result is WechatAuthResultContract.MergeRequired)
         val mergeRequired = response.result as WechatAuthResultContract.MergeRequired
-        assertEquals("13800138002", mergeRequired.sourcePhone)
+        assertEquals(
+            "13800138002",
+            mergeRequired.sourceIdentifiers.single { it.type.name == "PHONE" }.value
+        )
         assertEquals("并发来源账号", mergeRequired.sourceNickname)
     }
 
@@ -285,8 +288,8 @@ class WechatOAuthServiceTest {
         )
 
         // Account 1: Target account logged in with Bearer token
-        service.issueSmsCode("13800138001", "device_1", "127.0.0.1")
-        val regResult = service.register("13800138001", "123456", "Pass1234!", "device_1", "127.0.0.1")
+        service.issueVerificationCode("13800138001", "device_1", "127.0.0.1")
+        val regResult = service.registerIdentifier("13800138001", "123456", "Pass1234!", "device_1", "127.0.0.1")
         val regSuccess = regResult as AccountResult.Success
         val token1 = regSuccess.value.token
 
@@ -296,17 +299,17 @@ class WechatOAuthServiceTest {
 
 
         // Account 2: Source account with phone 13800138002, bound to WeChat identity
-        val created2 = store.createUser(
-            StoredUser(
-                accountId = 0L,
-                phone = "13800138002",
+        val user2 = requireNotNull(
+            store.createAccountWithIdentifier(
+                primaryIdentifierType = "PHONE",
+                rawValue = "13800138002",
+                normalizedValue = "13800138002",
                 passwordSalt = "salt",
                 passwordHash = "hash",
-                createdAtMillis = 1000L
+                verified = true,
+                now = 1000L
             )
         )
-        assertTrue(created2)
-        val user2 = store.findUser("13800138002")!!
         store.upsertWechatIdentity(
             StoredWechatIdentity(
                 accountId = user2.accountId,
@@ -329,7 +332,7 @@ class WechatOAuthServiceTest {
 
         val mergeReq = response.result as WechatAuthResultContract.MergeRequired
         assertNotNull(mergeReq.mergeTicket)
-        assertEquals("13800138002", mergeReq.sourcePhone)
+        assertEquals("13800138002", mergeReq.sourceIdentifiers.single { it.type.name == "PHONE" }.value)
         assertEquals("微信原昵称", mergeReq.sourceNickname)
     }
 }

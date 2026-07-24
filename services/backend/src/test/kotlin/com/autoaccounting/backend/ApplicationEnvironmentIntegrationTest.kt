@@ -32,8 +32,8 @@ class ApplicationEnvironmentIntegrationTest {
                 module(env = env, accountService = accountService)
             }
 
-            accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-            accountService.register("13800138000", "123456", "Aa123456!")
+            accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+            accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
             val writeConfigResponse = client.submitForm(
                 url = "/account/cloud-config/write",

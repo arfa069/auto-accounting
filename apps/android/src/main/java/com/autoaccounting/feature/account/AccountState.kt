@@ -11,12 +11,51 @@ enum class AccountFlow {
 sealed interface AccountSession {
     data object LocalMode : AccountSession
     data class SignedIn(
-        val phone: String?,
+        val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
+        val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
+        val rawPhone: String? = null,
         val token: String = "",
         val wechatLinked: Boolean = false,
         val nickname: String? = null,
         val avatarUrl: String? = null
-    ) : AccountSession
+    ) : AccountSession {
+        constructor(
+            phone: String?,
+            token: String = "",
+            wechatLinked: Boolean = false,
+            nickname: String? = null,
+            avatarUrl: String? = null
+        ) : this(
+            primaryIdentifier = phone?.let {
+                com.autoaccounting.api.AccountIdentifierContract(
+                    type = com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
+                    value = it
+                )
+            },
+            identifiers = phone?.let {
+                listOf(
+                    com.autoaccounting.api.AccountIdentifierContract(
+                        type = com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
+                        value = it
+                    )
+                )
+            } ?: emptyList(),
+            rawPhone = phone,
+            token = token,
+            wechatLinked = wechatLinked,
+            nickname = nickname,
+            avatarUrl = avatarUrl
+        )
+
+        val phone: String?
+            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE }?.value ?: rawPhone
+
+        val email: String?
+            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL }?.value
+
+        val username: String?
+            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME }?.value
+    }
 }
 
 enum class AccountRuntimeStatus {
@@ -101,6 +140,18 @@ sealed interface AccountAction {
     data object SubmitRecovery : AccountAction
 }
 
+val AccountUiState.identifierType: com.autoaccounting.api.AccountIdentifierTypeContract
+    get() = try {
+        com.autoaccounting.api.AccountIdentifierParser.parse(phone).type
+    } catch (e: Exception) {
+        if (phone.contains("@")) com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL
+        else if (phone.all { it.isDigit() }) com.autoaccounting.api.AccountIdentifierTypeContract.PHONE
+        else com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME
+    }
+
+val AccountUiState.requiresVerificationCode: Boolean
+    get() = identifierType != com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME
+
 fun reduceAccountState(
     state: AccountUiState,
     action: AccountAction
@@ -115,6 +166,9 @@ fun reduceAccountState(
     )
     is AccountAction.UpdatePhone -> state.copy(
         phone = action.phone,
+        verificationCode = "",
+        verificationCodeError = null,
+        smsCountdownSeconds = 0,
         phoneError = null,
         errorMessage = null
     )
@@ -140,11 +194,15 @@ fun reduceAccountState(
     }
     AccountAction.ConfirmLocalMode -> state.copy(session = AccountSession.LocalMode)
     AccountAction.RequestSmsCode -> {
-        val phoneError = validatePhone(state.phone)
-        if (phoneError != null) {
-            state.copy(phoneError = phoneError)
+        if (!state.requiresVerificationCode) {
+            state.copy(phoneError = "用户名不支持获取验证码，请使用手机号或邮箱")
         } else {
-            state.clearErrors()
+            val phoneError = validateIdentifier(state.phone, state.flow)
+            if (phoneError != null) {
+                state.copy(phoneError = phoneError)
+            } else {
+                state.clearErrors()
+            }
         }
     }
     AccountAction.TickSmsCountdown -> state.copy(
@@ -166,9 +224,9 @@ private fun AccountUiState.switchFlow(flow: AccountFlow): AccountUiState {
 
 private fun AccountUiState.submitLogin(): AccountUiState {
     if (!agreementAccepted) return withAgreementError()
-    val phoneError = validatePhone(phone)
+    val phoneError = validateIdentifier(phone, flow)
     if (phoneError != null) return copy(phoneError = phoneError)
-    if (password.isBlank()) return copy(errorMessage = "手机号或密码不正确")
+    if (password.isBlank()) return copy(errorMessage = "账号或密码不正确")
     return clearErrors()
 }
 
@@ -184,8 +242,8 @@ private fun AccountUiState.submitRecovery(): AccountUiState {
 }
 
 private fun AccountUiState.withRegistrationFieldErrors(): AccountUiState {
-    val phoneError = validatePhone(phone)
-    val verificationCodeError = if (verificationCode.isBlank()) "请输入验证码" else null
+    val phoneError = validateIdentifier(phone, flow)
+    val verificationCodeError = if (requiresVerificationCode && verificationCode.isBlank()) "请输入验证码" else null
     val passwordError = validatePassword(password)
     val confirmPasswordError = if (
         confirmPassword.isNotBlank() &&
@@ -219,8 +277,17 @@ private fun AccountUiState.clearErrors(): AccountUiState {
     )
 }
 
-private fun validatePhone(phone: String): String? {
-    return if (Regex("^\\d{11}$").matches(phone)) null else "请输入 11 位手机号"
+private fun validateIdentifier(identifier: String, flow: AccountFlow = AccountFlow.Landing): String? {
+    if (identifier.isBlank()) return "请输入手机号、邮箱或用户名"
+    val parseResult = try {
+        com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
+    } catch (e: Exception) {
+        return "标识格式不正确"
+    }
+    if (flow == AccountFlow.Recovery && parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
+        return "用户名不支持找回密码，请使用已绑定的手机号或邮箱"
+    }
+    return null
 }
 
 private fun validatePassword(password: String): String? {

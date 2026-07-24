@@ -11,50 +11,54 @@ import kotlinx.serialization.json.longOrNull
 
 /**
  * Core account record keyed by internal account_id.
- * Holds deletion state and creation timestamp.
+ * Holds primary identifier type, deletion state and creation timestamp.
  */
 data class StoredAccount(
     val accountId: Long,
+    val primaryIdentifierType: String? = null,
     val deletionRequestedAtMillis: Long? = null,
     val createdAtMillis: Long
 )
 
 /**
- * Phone credential linked to an account.
+ * Account-level password credential (shared across all identifiers).
  */
-data class StoredPhoneCredential(
+data class StoredPasswordCredential(
     val accountId: Long,
-    val phone: String,
-    val passwordSalt: String,
-    val passwordHash: String,
-    val failedLoginCount: Int = 0,
-    val lockedUntilMillis: Long = 0
-)
-
-/**
- * Convenience composite for service-layer operations that need
- * both account-level and phone-credential-level fields.
- */
-data class StoredUser(
-    val accountId: Long,
-    val phone: String,
     val passwordSalt: String,
     val passwordHash: String,
     val failedLoginCount: Int = 0,
     val lockedUntilMillis: Long = 0,
-    val deletionRequestedAtMillis: Long? = null,
-    val createdAtMillis: Long
+    val updatedAtMillis: Long
 )
 
-data class StoredSmsCode(
-    val phone: String,
+/**
+ * Account identifier record.
+ */
+data class StoredAccountIdentifier(
+    val id: Long = 0,
+    val accountId: Long,
+    val identifierType: String,
+    val rawValue: String,
+    val normalizedValue: String,
+    val verified: Boolean = true,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long
+)
+
+/**
+ * Verification code record for SMS and Email.
+ */
+data class StoredVerificationCode(
+    val identifierType: String,
+    val normalizedIdentifier: String,
+    val purpose: String,
     val codeHash: String,
     val expiresAtMillis: Long,
     val failedAttempts: Int = 0,
     val invalidated: Boolean = false,
     val deviceId: String = "",
     val ipAddress: String = "",
-    val purpose: String = "DEFAULT",
     val contextKey: String? = null
 )
 
@@ -99,21 +103,63 @@ data class StoredOneTimeTicket(
 )
 
 interface AccountStore {
-    fun findUser(phone: String): StoredUser?
-    fun findUserByAccountId(accountId: Long): StoredUser?
     fun findAccount(accountId: Long): StoredAccount?
-    fun createUser(user: StoredUser): Boolean
-    fun updateUser(user: StoredUser)
+    fun updateAccountDeletionRequestedAt(accountId: Long, requestedAtMillis: Long?)
     fun accountsPendingDeletion(): List<StoredAccount>
     fun deleteAccount(accountId: Long)
 
-    fun upsertSmsCode(record: StoredSmsCode)
-    fun findSmsCode(phone: String): StoredSmsCode?
-    fun updateSmsCode(record: StoredSmsCode)
-    fun deleteSmsCode(phone: String)
-    fun recordSmsIssue(scopeType: String, scopeValue: String, issuedAtMillis: Long)
-    fun countSmsIssues(scopeType: String, scopeValue: String, sinceMillis: Long): Int
-    fun latestSmsIssueMillis(scopeType: String, scopeValue: String): Long?
+    fun findAccountByIdentifier(identifierType: String, normalizedValue: String): StoredAccount?
+    fun findPasswordCredentialByAccountId(accountId: Long): StoredPasswordCredential?
+    fun findIdentifiersByAccountId(accountId: Long): List<StoredAccountIdentifier>
+    fun findIdentifierByValue(identifierType: String, normalizedValue: String): StoredAccountIdentifier?
+    fun updatePasswordCredential(credential: StoredPasswordCredential)
+    fun resetPasswordAndRotateSession(
+        credential: StoredPasswordCredential,
+        verificationIdentifierType: String,
+        verificationNormalizedIdentifier: String,
+        verificationPurpose: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
+    fun createAccountWithIdentifier(
+        primaryIdentifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        passwordSalt: String?,
+        passwordHash: String?,
+        verified: Boolean,
+        now: Long
+    ): StoredAccount?
+    fun addIdentifierToAccount(
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        verified: Boolean,
+        now: Long
+    ): Boolean
+    fun completeIdentifierLink(
+        ticketHash: String,
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        newPasswordSalt: String?,
+        newPasswordHash: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken>
+
+    fun upsertVerificationCode(code: StoredVerificationCode)
+    fun findVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String): StoredVerificationCode?
+    fun deleteVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String)
+    fun recordVerificationSendLog(channelType: String, scopeType: String, scopeValue: String, issuedAtMillis: Long)
+    fun countVerificationSendLogs(channelType: String, scopeType: String, scopeValue: String, sinceMillis: Long): Int
+    fun latestVerificationSendLogMillis(channelType: String, scopeType: String, scopeValue: String): Long?
 
     fun createSession(session: StoredSession)
     fun findSession(tokenHash: String): StoredSession?
@@ -158,19 +204,7 @@ interface AccountStore {
         avatarUrl: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
-        now: Long,
-        tokenGenerator: () -> String
-    ): AccountResult<AccountToken>
-
-    fun completePhoneLink(
-        ticketHash: String,
-        targetAccountId: Long,
-        phone: String,
-        passwordSalt: String,
-        passwordHash: String,
-        deviceId: String,
-        ipAddress: String,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken>
@@ -186,10 +220,10 @@ interface AccountStore {
 
     fun unlinkWechatIdentity(
         accountId: Long,
-        phone: String,
+        phone: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken>
@@ -199,76 +233,238 @@ interface AccountStore {
 class InMemoryAccountStore : AccountStore {
     private var nextAccountId = 1L
     private val accounts = mutableMapOf<Long, StoredAccount>()
-    private val phoneCredentials = mutableMapOf<Long, StoredPhoneCredential>()
-    private val phoneIndex = mutableMapOf<String, Long>() // phone -> accountId
-    private val smsCodes = mutableMapOf<String, StoredSmsCode>()
-    private val smsIssues = mutableListOf<SmsIssue>()
+    private val passwordCredentials = mutableMapOf<Long, StoredPasswordCredential>()
+    private val accountIdentifiers = mutableMapOf<Pair<String, String>, StoredAccountIdentifier>()
+    private val verificationCodes = mutableMapOf<Triple<String, String, String>, StoredVerificationCode>()
+    private val verificationSendLogs = mutableListOf<VerificationSendLog>()
     private val sessions = mutableMapOf<String, StoredSession>()
     private val devices = mutableMapOf<Pair<Long, String>, StoredRegisteredDevice>()
     private val wechatIdentities = mutableMapOf<Long, StoredWechatIdentity>()
     private val oneTimeTickets = mutableMapOf<String, StoredOneTimeTicket>()
 
-    override fun findUser(phone: String): StoredUser? {
+    private data class VerificationSendLog(
+        val channelType: String,
+        val scopeType: String,
+        val scopeValue: String,
+        val issuedAtMillis: Long
+    )
 
-        val accountId = phoneIndex[phone] ?: return null
-        return findUserByAccountId(accountId)
+    override fun findAccountByIdentifier(identifierType: String, normalizedValue: String): StoredAccount? {
+        val id = accountIdentifiers[identifierType to normalizedValue] ?: return null
+        return accounts[id.accountId]
     }
 
-    override fun findUserByAccountId(accountId: Long): StoredUser? {
-        val account = accounts[accountId] ?: return null
-        val credential = phoneCredentials[accountId]
-        return StoredUser(
-            accountId = account.accountId,
-            phone = credential?.phone.orEmpty(),
-            passwordSalt = credential?.passwordSalt.orEmpty(),
-            passwordHash = credential?.passwordHash.orEmpty(),
-            failedLoginCount = credential?.failedLoginCount ?: 0,
-            lockedUntilMillis = credential?.lockedUntilMillis ?: 0,
-            deletionRequestedAtMillis = account.deletionRequestedAtMillis,
-            createdAtMillis = account.createdAtMillis
+    override fun findPasswordCredentialByAccountId(accountId: Long): StoredPasswordCredential? {
+        return passwordCredentials[accountId]
+    }
+
+    override fun findIdentifiersByAccountId(accountId: Long): List<StoredAccountIdentifier> {
+        return accountIdentifiers.values.filter { it.accountId == accountId }
+    }
+
+    override fun findIdentifierByValue(identifierType: String, normalizedValue: String): StoredAccountIdentifier? {
+        return accountIdentifiers[identifierType to normalizedValue]
+    }
+
+    override fun updatePasswordCredential(credential: StoredPasswordCredential) {
+        passwordCredentials[credential.accountId] = credential
+    }
+
+    @Synchronized
+    override fun resetPasswordAndRotateSession(
+        credential: StoredPasswordCredential,
+        verificationIdentifierType: String,
+        verificationNormalizedIdentifier: String,
+        verificationPurpose: String,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        if (accounts[credential.accountId] == null) return AccountResult.Failure(AccountError.LOGIN_FAILED)
+        updatePasswordCredential(credential)
+        sessions.entries.removeAll { it.value.accountId == credential.accountId }
+        verificationCodes.remove(
+            Triple(verificationIdentifierType, verificationNormalizedIdentifier, verificationPurpose)
         )
+        if (deviceId.isNotBlank()) {
+            val key = credential.accountId to deviceId
+            val existing = devices[key]
+            devices[key] = StoredRegisteredDevice(
+                accountId = credential.accountId,
+                deviceId = deviceId,
+                firstSeenAtMillis = existing?.firstSeenAtMillis ?: now,
+                lastSeenAtMillis = now,
+                ipAddress = ipAddress
+            )
+        }
+        val token = tokenGenerator()
+        val tokenHash = hashStoredToken(token)
+        sessions[tokenHash] = StoredSession(tokenHash, credential.accountId, deviceId, now)
+        return AccountResult.Success(AccountToken(accountId = credential.accountId, token = token))
+    }
+
+    @Synchronized
+    override fun createAccountWithIdentifier(
+        primaryIdentifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        passwordSalt: String?,
+        passwordHash: String?,
+        verified: Boolean,
+        now: Long
+    ): StoredAccount? {
+        val key = primaryIdentifierType to normalizedValue
+        if (accountIdentifiers.containsKey(key)) return null
+
+        val accountId = nextAccountId++
+        val account = StoredAccount(
+            accountId = accountId,
+            primaryIdentifierType = primaryIdentifierType,
+            createdAtMillis = now
+        )
+        accounts[accountId] = account
+
+        val identifier = StoredAccountIdentifier(
+            id = accountId * 10,
+            accountId = accountId,
+            identifierType = primaryIdentifierType,
+            rawValue = rawValue,
+            normalizedValue = normalizedValue,
+            verified = verified,
+            createdAtMillis = now,
+            updatedAtMillis = now
+        )
+        accountIdentifiers[key] = identifier
+
+        if (passwordSalt != null && passwordHash != null) {
+            val pwd = StoredPasswordCredential(
+                accountId = accountId,
+                passwordSalt = passwordSalt,
+                passwordHash = passwordHash,
+                failedLoginCount = 0,
+                lockedUntilMillis = 0,
+                updatedAtMillis = now
+            )
+            passwordCredentials[accountId] = pwd
+        }
+        return account
+    }
+
+    @Synchronized
+    override fun addIdentifierToAccount(
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        verified: Boolean,
+        now: Long
+    ): Boolean {
+        if (!accounts.containsKey(accountId)) return false
+        val key = identifierType to normalizedValue
+        if (accountIdentifiers.containsKey(key)) return false
+        if (accountIdentifiers.values.any { it.accountId == accountId && it.identifierType == identifierType }) return false
+
+        accountIdentifiers[key] = StoredAccountIdentifier(
+            id = accountId * 10 + accountIdentifiers.size,
+            accountId = accountId,
+            identifierType = identifierType,
+            rawValue = rawValue,
+            normalizedValue = normalizedValue,
+            verified = verified,
+            createdAtMillis = now,
+            updatedAtMillis = now
+        )
+        return true
+    }
+
+    @Synchronized
+    override fun completeIdentifierLink(
+        ticketHash: String,
+        accountId: Long,
+        identifierType: String,
+        rawValue: String,
+        normalizedValue: String,
+        newPasswordSalt: String?,
+        newPasswordHash: String?,
+        deviceId: String,
+        ipAddress: String,
+        now: Long,
+        tokenGenerator: () -> String
+    ): AccountResult<AccountToken> {
+        val ticket = oneTimeTickets[ticketHash]
+            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (ticket.ticketType != "IDENTIFIER_LINK" || ticket.accountId != accountId ||
+            ticket.usedAtMillis != null || ticket.expiresAtMillis < now
+        ) return AccountResult.Failure(AccountError.TICKET_EXPIRED)
+        if (accountIdentifiers.containsKey(identifierType to normalizedValue) ||
+            accountIdentifiers.values.any { it.accountId == accountId && it.identifierType == identifierType }
+        ) return AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+
+        val account = accounts[accountId] ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        val existingPassword = passwordCredentials[accountId]
+        if (existingPassword == null && (newPasswordSalt == null || newPasswordHash == null)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val token = tokenGenerator()
+        if (existingPassword == null) {
+            passwordCredentials[accountId] = StoredPasswordCredential(
+                accountId = accountId,
+                passwordSalt = requireNotNull(newPasswordSalt),
+                passwordHash = requireNotNull(newPasswordHash),
+                updatedAtMillis = now
+            )
+        }
+        val added = addIdentifierToAccount(accountId, identifierType, rawValue, normalizedValue, true, now)
+        check(added) { "Identifier link preconditions changed while holding the store lock" }
+        if (account.primaryIdentifierType == null) {
+            accounts[accountId] = account.copy(primaryIdentifierType = identifierType)
+        }
+        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
+        verificationCodes.remove(Triple(identifierType, normalizedValue, "IDENTIFIER_LINK"))
+        sessions.entries.removeAll { it.value.accountId == accountId }
+        if (deviceId.isNotBlank()) {
+            devices[accountId to deviceId] = StoredRegisteredDevice(accountId, deviceId, now, now, ipAddress)
+        }
+        val tokenHash = hashStoredToken(token)
+        sessions[tokenHash] = StoredSession(tokenHash, accountId, deviceId, now)
+        return AccountResult.Success(AccountToken(accountId = accountId, token = token))
+    }
+
+    override fun upsertVerificationCode(code: StoredVerificationCode) {
+        verificationCodes[Triple(code.identifierType, code.normalizedIdentifier, code.purpose)] = code
+    }
+
+    override fun findVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String): StoredVerificationCode? {
+        return verificationCodes[Triple(identifierType, normalizedIdentifier, purpose)]
+    }
+
+    override fun deleteVerificationCode(identifierType: String, normalizedIdentifier: String, purpose: String) {
+        verificationCodes.remove(Triple(identifierType, normalizedIdentifier, purpose))
+    }
+
+    override fun recordVerificationSendLog(channelType: String, scopeType: String, scopeValue: String, issuedAtMillis: Long) {
+        verificationSendLogs += VerificationSendLog(channelType, scopeType, scopeValue, issuedAtMillis)
+    }
+
+    override fun countVerificationSendLogs(channelType: String, scopeType: String, scopeValue: String, sinceMillis: Long): Int {
+        return verificationSendLogs.count {
+            it.channelType == channelType && it.scopeType == scopeType && it.scopeValue == scopeValue && it.issuedAtMillis >= sinceMillis
+        }
+    }
+
+    override fun latestVerificationSendLogMillis(channelType: String, scopeType: String, scopeValue: String): Long? {
+        return verificationSendLogs
+            .filter { it.channelType == channelType && it.scopeType == scopeType && it.scopeValue == scopeValue }
+            .maxOfOrNull { it.issuedAtMillis }
     }
 
     override fun findAccount(accountId: Long): StoredAccount? = accounts[accountId]
 
-    override fun createUser(user: StoredUser): Boolean {
-        if (phoneIndex.containsKey(user.phone)) return false
-        val accountId = nextAccountId++
-        accounts[accountId] = StoredAccount(
-            accountId = accountId,
-            deletionRequestedAtMillis = user.deletionRequestedAtMillis,
-            createdAtMillis = user.createdAtMillis
-        )
-        phoneCredentials[accountId] = StoredPhoneCredential(
-            accountId = accountId,
-            phone = user.phone,
-            passwordSalt = user.passwordSalt,
-            passwordHash = user.passwordHash,
-            failedLoginCount = user.failedLoginCount,
-            lockedUntilMillis = user.lockedUntilMillis
-        )
-        phoneIndex[user.phone] = accountId
-        return true
-    }
-
-    override fun updateUser(user: StoredUser) {
-        val accountId = user.accountId.takeIf { it > 0 } ?: phoneIndex[user.phone] ?: return
-        accounts[accountId] = StoredAccount(
-            accountId = accountId,
-            deletionRequestedAtMillis = user.deletionRequestedAtMillis,
-            createdAtMillis = user.createdAtMillis
-        )
-        if (user.phone.isNotBlank()) {
-            phoneCredentials[accountId] = StoredPhoneCredential(
-                accountId = accountId,
-                phone = user.phone,
-                passwordSalt = user.passwordSalt,
-                passwordHash = user.passwordHash,
-                failedLoginCount = user.failedLoginCount,
-                lockedUntilMillis = user.lockedUntilMillis
-            )
-            phoneIndex[user.phone] = accountId
-        }
+    @Synchronized
+    override fun updateAccountDeletionRequestedAt(accountId: Long, requestedAtMillis: Long?) {
+        val account = accounts[accountId] ?: return
+        accounts[accountId] = account.copy(deletionRequestedAtMillis = requestedAtMillis)
     }
 
     override fun accountsPendingDeletion(): List<StoredAccount> {
@@ -276,46 +472,14 @@ class InMemoryAccountStore : AccountStore {
     }
 
     override fun deleteAccount(accountId: Long) {
-        val credential = phoneCredentials.remove(accountId)
-        if (credential != null) phoneIndex.remove(credential.phone)
+        passwordCredentials.remove(accountId)
+        accountIdentifiers.entries.removeIf { it.value.accountId == accountId }
         accounts.remove(accountId)
         sessions.values.removeAll { it.accountId == accountId }
         devices.keys.removeAll { it.first == accountId }
         wechatIdentities.remove(accountId)
     }
 
-
-    override fun upsertSmsCode(record: StoredSmsCode) {
-        smsCodes[record.phone] = record
-    }
-
-    override fun findSmsCode(phone: String): StoredSmsCode? = smsCodes[phone]
-
-    override fun updateSmsCode(record: StoredSmsCode) {
-        smsCodes[record.phone] = record
-    }
-
-    override fun deleteSmsCode(phone: String) {
-        smsCodes.remove(phone)
-    }
-
-    override fun recordSmsIssue(scopeType: String, scopeValue: String, issuedAtMillis: Long) {
-        smsIssues += SmsIssue(scopeType, scopeValue, issuedAtMillis)
-    }
-
-    override fun countSmsIssues(scopeType: String, scopeValue: String, sinceMillis: Long): Int {
-        return smsIssues.count {
-            it.scopeType == scopeType &&
-                it.scopeValue == scopeValue &&
-                it.issuedAtMillis >= sinceMillis
-        }
-    }
-
-    override fun latestSmsIssueMillis(scopeType: String, scopeValue: String): Long? {
-        return smsIssues
-            .filter { it.scopeType == scopeType && it.scopeValue == scopeValue }
-            .maxOfOrNull { it.issuedAtMillis }
-    }
 
     override fun createSession(session: StoredSession) {
         sessions[session.tokenHash] = session
@@ -328,7 +492,7 @@ class InMemoryAccountStore : AccountStore {
     }
 
     override fun deleteSessionsForAccount(accountId: Long) {
-        sessions.values.removeAll { it.accountId == accountId }
+        sessions.entries.removeIf { it.value.accountId == accountId }
     }
 
     override fun upsertRegisteredDevice(device: StoredRegisteredDevice) {
@@ -456,6 +620,7 @@ class InMemoryAccountStore : AccountStore {
             )
         }
 
+        sessions.entries.removeAll { it.value.accountId == accountId }
         createSession(
             StoredSession(
                 tokenHash = tokenHash,
@@ -489,7 +654,7 @@ class InMemoryAccountStore : AccountStore {
         avatarUrl: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken> {
@@ -542,6 +707,7 @@ class InMemoryAccountStore : AccountStore {
             )
         }
 
+        sessions.entries.removeAll { it.value.accountId == targetAccountId }
         createSession(
             StoredSession(
                 tokenHash = tokenHash,
@@ -550,7 +716,9 @@ class InMemoryAccountStore : AccountStore {
                 issuedAtMillis = now
             )
         )
-        smsCodePhoneToDelete?.let(smsCodes::remove)
+        verificationCodeToDelete?.let { code ->
+            deleteVerificationCode(code.identifierType, code.normalizedIdentifier, code.purpose)
+        }
 
         val account = accounts[targetAccountId]
         val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
@@ -571,94 +739,6 @@ class InMemoryAccountStore : AccountStore {
                 wechatLinked = true,
                 nickname = nickname,
                 avatarUrl = avatarUrl
-            )
-        )
-    }
-
-    @Synchronized
-    override fun completePhoneLink(
-        ticketHash: String,
-        targetAccountId: Long,
-        phone: String,
-        passwordSalt: String,
-        passwordHash: String,
-        deviceId: String,
-        ipAddress: String,
-        now: Long,
-        tokenGenerator: () -> String
-    ): AccountResult<AccountToken> {
-        val ticket = oneTimeTickets[ticketHash]
-            ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        if (ticket.ticketType != "PHONE_LINK" || ticket.expiresAtMillis < now || ticket.accountId != targetAccountId) {
-            return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        }
-        if (ticket.usedAtMillis != null) {
-            return AccountResult.Failure(AccountError.TICKET_ALREADY_USED)
-        }
-        if (phoneCredentials.containsKey(targetAccountId)) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_LINKED)
-        }
-        if (phoneIndex.containsKey(phone)) {
-            return AccountResult.Failure(AccountError.PHONE_ALREADY_REGISTERED)
-        }
-
-        val token = tokenGenerator()
-        val tokenHash = hashStoredToken(token)
-
-        oneTimeTickets[ticketHash] = ticket.copy(usedAtMillis = now)
-        phoneCredentials[targetAccountId] = StoredPhoneCredential(
-            accountId = targetAccountId,
-            phone = phone,
-            passwordSalt = passwordSalt,
-            passwordHash = passwordHash,
-            failedLoginCount = 0,
-            lockedUntilMillis = 0
-        )
-        phoneIndex[phone] = targetAccountId
-
-        deleteSessionsForAccount(targetAccountId)
-
-        if (deviceId.isNotBlank()) {
-            upsertRegisteredDevice(
-                StoredRegisteredDevice(
-                    accountId = targetAccountId,
-                    deviceId = deviceId,
-                    firstSeenAtMillis = now,
-                    lastSeenAtMillis = now,
-                    ipAddress = ipAddress
-                )
-            )
-        }
-
-        createSession(
-            StoredSession(
-                tokenHash = tokenHash,
-                accountId = targetAccountId,
-                deviceId = deviceId,
-                issuedAtMillis = now
-            )
-        )
-
-        val account = accounts[targetAccountId]
-        val wechatIdentity = wechatIdentities[targetAccountId]
-        val deletionStatus = account?.deletionRequestedAtMillis?.let { requestedAt ->
-            AccountDeletionStatus(
-                accountId = targetAccountId,
-                phone = phone,
-                requestedAtMillis = requestedAt,
-                finalDeletionAtMillis = requestedAt + AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS
-            )
-        }
-
-        return AccountResult.Success(
-            AccountToken(
-                accountId = targetAccountId,
-                phone = phone,
-                token = token,
-                deletionStatus = deletionStatus,
-                wechatLinked = wechatIdentity != null,
-                nickname = wechatIdentity?.nickname,
-                avatarUrl = wechatIdentity?.avatarUrl
             )
         )
     }
@@ -702,9 +782,9 @@ class InMemoryAccountStore : AccountStore {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
         }
 
-        val targetPhoneCred = phoneCredentials[targetAccountId]
-        val sourcePhoneCred = phoneCredentials[sourceAccountId]
-        if (targetPhoneCred != null && sourcePhoneCred != null) {
+        val targetPassCred = passwordCredentials[targetAccountId]
+        val sourcePassCred = passwordCredentials[sourceAccountId]
+        if (targetPassCred != null && sourcePassCred != null) {
             return AccountResult.Failure(AccountError.MERGE_BLOCKED)
         }
 
@@ -714,11 +794,29 @@ class InMemoryAccountStore : AccountStore {
             return AccountResult.Failure(AccountError.MERGE_BLOCKED)
         }
 
+        val targetIdents = accountIdentifiers.values.filter { it.accountId == targetAccountId }
+        val sourceIdents = accountIdentifiers.values.filter { it.accountId == sourceAccountId }
+        if (targetIdents.any { t -> sourceIdents.any { s -> s.identifierType == t.identifierType } }) {
+            return AccountResult.Failure(AccountError.MERGE_BLOCKED)
+        }
+
         // Transfer credentials
-        if (sourcePhoneCred != null) {
-            phoneCredentials[targetAccountId] = sourcePhoneCred.copy(accountId = targetAccountId)
-            phoneCredentials.remove(sourceAccountId)
-            phoneIndex[sourcePhoneCred.phone] = targetAccountId
+        if (sourcePassCred != null) {
+            passwordCredentials[targetAccountId] = sourcePassCred.copy(accountId = targetAccountId)
+            passwordCredentials.remove(sourceAccountId)
+        }
+        for (sourceIdent in sourceIdents) {
+            val key = Pair(sourceIdent.identifierType, sourceIdent.normalizedValue)
+            accountIdentifiers[key] = sourceIdent.copy(accountId = targetAccountId)
+        }
+        if (targetAccount.primaryIdentifierType == null && sourceAccount.primaryIdentifierType != null) {
+            accounts[targetAccountId] = targetAccount.copy(primaryIdentifierType = sourceAccount.primaryIdentifierType)
+        }
+        verificationCodes.entries.removeAll { entry ->
+            sourceIdents.any { sourceIdentifier ->
+                entry.key.first == sourceIdentifier.identifierType &&
+                    entry.key.second == sourceIdentifier.normalizedValue
+            }
         }
 
         if (sourceWechat != null) {
@@ -778,13 +876,15 @@ class InMemoryAccountStore : AccountStore {
         oneTimeTickets.values.removeAll { it.accountId == sourceAccountId }
         accounts.remove(sourceAccountId)
 
-        val finalPhoneCred = phoneCredentials[targetAccountId]
+        val finalPhone = accountIdentifiers.values.firstOrNull {
+            it.accountId == targetAccountId && it.identifierType == "PHONE"
+        }?.rawValue
         val finalWechat = wechatIdentities[targetAccountId]
 
         return AccountResult.Success(
             AccountToken(
                 accountId = targetAccountId,
-                phone = finalPhoneCred?.phone,
+                phone = finalPhone,
                 token = token,
                 wechatLinked = finalWechat != null,
                 nickname = finalWechat?.nickname,
@@ -796,20 +896,19 @@ class InMemoryAccountStore : AccountStore {
     @Synchronized
     override fun unlinkWechatIdentity(
         accountId: Long,
-        phone: String,
+        phone: String?,
         deviceId: String,
         ipAddress: String,
-        smsCodePhoneToDelete: String?,
+        verificationCodeToDelete: StoredVerificationCode?,
         now: Long,
         tokenGenerator: () -> String
     ): AccountResult<AccountToken> {
         val account = accounts[accountId]
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val phoneCredential = phoneCredentials[accountId]
+        passwordCredentials[accountId]
             ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
-        if (phoneCredential.phone != phone) {
-            return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        }
+        val currentIdentifiers = accountIdentifiers.values.filter { it.accountId == accountId }
+        if (currentIdentifiers.isEmpty()) return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
         if (account.deletionRequestedAtMillis != null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_PENDING)
         }
@@ -841,12 +940,14 @@ class InMemoryAccountStore : AccountStore {
                 issuedAtMillis = now
             )
         )
-        smsCodePhoneToDelete?.let(smsCodes::remove)
+        verificationCodeToDelete?.let { code ->
+            deleteVerificationCode(code.identifierType, code.normalizedIdentifier, code.purpose)
+        }
 
         return AccountResult.Success(
             AccountToken(
                 accountId = accountId,
-                phone = phone,
+                phone = currentIdentifiers.firstOrNull { it.identifierType == "PHONE" }?.normalizedValue,
                 token = token,
                 wechatLinked = false
             )
@@ -855,12 +956,6 @@ class InMemoryAccountStore : AccountStore {
 
 
 
-
-    private data class SmsIssue(
-        val scopeType: String,
-        val scopeValue: String,
-        val issuedAtMillis: Long
-    )
 
     private fun hashStoredToken(token: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")

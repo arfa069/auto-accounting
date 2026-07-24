@@ -42,7 +42,7 @@ class WechatRegisterAndLinkTest {
         val repeatExchange = service.exchangeWechatCode("good_code") as AccountResult.Success
         assertTrue(repeatExchange.value.result is WechatAuthResultContract.SignedIn)
         val signedIn = repeatExchange.value.result as WechatAuthResultContract.SignedIn
-        assertNull(signedIn.session.phone)
+        assertNull(signedIn.session.primaryIdentifier)
         assertTrue(signedIn.session.wechatLinked)
         assertEquals("微信小张", signedIn.session.nickname)
     }
@@ -57,8 +57,8 @@ class WechatRegisterAndLinkTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "dev_1", "127.0.0.1")
-        val phoneReg = service.register("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        val phoneReg = service.registerIdentifier("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
         assertTrue(phoneReg is AccountResult.Success)
 
         val exchangeRes = service.exchangeWechatCode("good_code") as AccountResult.Success
@@ -66,7 +66,7 @@ class WechatRegisterAndLinkTest {
 
         val linkResult = service.linkWechatWithPassword(
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             password = "Pass1234!",
             deviceId = "dev_1"
         )
@@ -76,8 +76,8 @@ class WechatRegisterAndLinkTest {
         assertTrue(token.wechatLinked)
         assertEquals("微信小张", token.nickname)
 
-        val user = store.findUser("13800138000")!!
-        val identity = store.findWechatIdentityByAccountId(user.accountId)
+        val account = store.findAccountByIdentifier("PHONE", "13800138000")!!
+        val identity = store.findWechatIdentityByAccountId(account.accountId)
         assertNotNull(identity)
         assertEquals("fake_openid", identity?.openid)
     }
@@ -92,8 +92,8 @@ class WechatRegisterAndLinkTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "dev_1", "127.0.0.1")
-        service.register("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        service.registerIdentifier("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
 
         val exchangeRes = service.exchangeWechatCode("good_code") as AccountResult.Success
         val regReq = exchangeRes.value.result as WechatAuthResultContract.RegistrationRequired
@@ -101,7 +101,7 @@ class WechatRegisterAndLinkTest {
         // Wrong password
         val wrongPwResult = service.linkWechatWithPassword(
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             password = "WrongPassword1!",
             deviceId = "dev_1"
         )
@@ -111,22 +111,23 @@ class WechatRegisterAndLinkTest {
         // Non-existent phone
         val noPhoneResult = service.linkWechatWithPassword(
             wechatTicket = regReq.wechatTicket,
-            phone = "13900000000",
+            identifier = "13900000000",
             password = "Pass1234!",
             deviceId = "dev_1"
         )
         assertTrue(noPhoneResult is AccountResult.Failure)
         assertEquals(AccountError.LOGIN_FAILED, (noPhoneResult as AccountResult.Failure).error)
 
-        val failedCountBeforeInvalidTicket = store.findUser("13800138000")!!.failedLoginCount
+        val accountId = store.findAccountByIdentifier("PHONE", "13800138000")!!.accountId
+        val failedCountBeforeInvalidTicket = store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount
         val invalidTicketResult = service.linkWechatWithPassword(
             wechatTicket = "invalid_ticket",
-            phone = "13800138000",
+            identifier = "13800138000",
             password = "WrongPassword1!",
             deviceId = "dev_1"
         )
         assertEquals(AccountError.TICKET_EXPIRED, (invalidTicketResult as AccountResult.Failure).error)
-        assertEquals(failedCountBeforeInvalidTicket, store.findUser("13800138000")!!.failedLoginCount)
+        assertEquals(failedCountBeforeInvalidTicket, store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount)
     }
 
     @Test
@@ -139,24 +140,24 @@ class WechatRegisterAndLinkTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "dev_1", "127.0.0.1")
-        service.register("13800138000", "654321", "Pass1234!", "dev_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        service.registerIdentifier("13800138000", "654321", "Pass1234!", "dev_1", "127.0.0.1")
 
         val exchangeRes = service.exchangeWechatCode("good_code") as AccountResult.Success
         val regReq = exchangeRes.value.result as WechatAuthResultContract.RegistrationRequired
 
         service.advanceTimeBy(60_001L)
-        service.issueSmsCode(
-            phone = "13800138000",
+        service.issueVerificationCode(
+            identifier = "13800138000",
             deviceId = "dev_1",
             ipAddress = "127.0.0.1",
             purpose = "WECHAT_LINK",
             contextKey = regReq.wechatTicket
         )
-        val linkResult = service.linkWechatWithSms(
+        val linkResult = service.linkWechatWithCode(
 
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             code = "654321",
             deviceId = "dev_1"
         )
@@ -164,11 +165,15 @@ class WechatRegisterAndLinkTest {
         val token = (linkResult as AccountResult.Success).value
         assertEquals("13800138000", token.phone)
         assertTrue(token.wechatLinked)
+        assertEquals(
+            null,
+            store.findVerificationCode("PHONE", "13800138000", "WECHAT_LINK")
+        )
 
         // SMS code was consumed
-        val secondTry = service.linkWechatWithSms(
+        val secondTry = service.linkWechatWithCode(
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             code = "654321",
             deviceId = "dev_1"
         )
@@ -185,32 +190,32 @@ class WechatRegisterAndLinkTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "dev_1", "127.0.0.1")
-        service.register("13800138000", "654321", "Pass1234!", "dev_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        service.registerIdentifier("13800138000", "654321", "Pass1234!", "dev_1", "127.0.0.1")
 
         val exchangeRes = service.exchangeWechatCode("good_code") as AccountResult.Success
         val regReq = exchangeRes.value.result as WechatAuthResultContract.RegistrationRequired
 
         // Account existence is not disclosed before proving phone control.
-        val unregResult = service.linkWechatWithSms(
+        val unregResult = service.linkWechatWithCode(
             wechatTicket = regReq.wechatTicket,
-            phone = "13900000000",
+            identifier = "13900000000",
             code = "654321"
         )
         assertTrue(unregResult is AccountResult.Failure)
         assertEquals(AccountError.VERIFICATION_CODE_WRONG, (unregResult as AccountResult.Failure).error)
 
         // A default-purpose code cannot authorize WeChat linking.
-        val defaultCodeResult = service.linkWechatWithSms(
+        val defaultCodeResult = service.linkWechatWithCode(
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             code = "654321"
         )
         assertEquals(AccountError.VERIFICATION_CODE_WRONG, (defaultCodeResult as AccountResult.Failure).error)
 
         service.advanceTimeBy(60_001L)
-        service.issueSmsCode(
-            phone = "13800138000",
+        service.issueVerificationCode(
+            identifier = "13800138000",
             deviceId = "dev_1",
             ipAddress = "127.0.0.1",
             purpose = "WECHAT_LINK",
@@ -218,15 +223,15 @@ class WechatRegisterAndLinkTest {
         )
         val secondExchange = service.exchangeWechatCode("good_code") as AccountResult.Success
         val secondTicket = (secondExchange.value.result as WechatAuthResultContract.RegistrationRequired).wechatTicket
-        val wrongTicketResult = service.linkWechatWithSms(
+        val wrongTicketResult = service.linkWechatWithCode(
             wechatTicket = secondTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             code = "654321"
         )
         assertEquals(AccountError.VERIFICATION_CODE_WRONG, (wrongTicketResult as AccountResult.Failure).error)
-        val wrongCodeResult = service.linkWechatWithSms(
+        val wrongCodeResult = service.linkWechatWithCode(
             wechatTicket = regReq.wechatTicket,
-            phone = "13800138000",
+            identifier = "13800138000",
             code = "000000"
         )
         assertTrue(wrongCodeResult is AccountResult.Failure)
@@ -271,8 +276,8 @@ class WechatRegisterAndLinkTest {
             wechatOAuthClient = fakeClient
         )
 
-        service.issueSmsCode("13800138000", "dev_1", "127.0.0.1")
-        service.register("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        service.registerIdentifier("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
 
         // First WeChat identity link
         val ex1 = service.exchangeWechatCode("good_code") as AccountResult.Success

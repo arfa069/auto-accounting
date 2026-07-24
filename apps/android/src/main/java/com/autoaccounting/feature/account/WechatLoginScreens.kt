@@ -82,7 +82,7 @@ fun WechatLoginFlowContent(
                 }
             }
             WechatLoginPage.BindExisting -> {
-                Text("绑定已有手机号账号", style = MaterialTheme.typography.titleLarge)
+                Text("绑定已有账号", style = MaterialTheme.typography.titleLarge)
                 Text("可使用当前密码或短信验证码。绑定成功后将签发新的登录 Session。")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BindMethodButton(
@@ -101,7 +101,7 @@ fun WechatLoginFlowContent(
                 OutlinedTextField(
                     value = state.phone,
                     onValueChange = controller::updatePhone,
-                    label = { Text("手机号") },
+                    label = { Text("用户名 / 邮箱 / 手机号") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("wechat-bind-phone")
                 )

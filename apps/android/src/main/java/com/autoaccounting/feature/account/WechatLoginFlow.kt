@@ -104,12 +104,12 @@ class WechatLoginController(
 
     suspend fun requestBindingSms() {
         val ticket = state.wechatTicket ?: return fail("微信授权已失效，请重新授权")
-        if (state.operationInProgress || !validPhone()) return
+        if (state.operationInProgress || !validIdentifier(requireContact = true)) return
         state = state.copy(operationInProgress = true, errorMessage = null)
         state = when (
-            val result = accountRepository.requestSmsCode(
-                phone = state.phone,
-                purpose = AccountSmsPurpose.WechatLink,
+            val result = accountRepository.requestVerificationCode(
+                identifier = state.phone,
+                purpose = AccountVerificationPurpose.WechatLink,
                 contextKey = ticket
             )
         ) {
@@ -126,7 +126,7 @@ class WechatLoginController(
 
     suspend fun bindExistingAccount() {
         val ticket = state.wechatTicket ?: return fail("微信授权已失效，请重新授权")
-        if (state.operationInProgress || !validPhone()) return
+        if (state.operationInProgress || !validIdentifier(requireContact = state.bindMethod == WechatBindMethod.Sms)) return
         if (state.bindMethod == WechatBindMethod.Password && state.password.isBlank()) {
             return fail("请输入当前密码")
         }
@@ -140,7 +140,7 @@ class WechatLoginController(
                 state.phone,
                 state.password
             )
-            WechatBindMethod.Sms -> accountRepository.linkWechatWithSms(
+            WechatBindMethod.Sms -> accountRepository.linkWechatWithCode(
                 ticket,
                 state.phone,
                 state.code
@@ -197,9 +197,12 @@ class WechatLoginController(
         }
     }
 
-    private fun validPhone(): Boolean {
-        if (Regex("^\\d{11}$").matches(state.phone)) return true
-        fail("请输入 11 位手机号")
+    private fun validIdentifier(requireContact: Boolean): Boolean {
+        val parsed = runCatching { com.autoaccounting.api.AccountIdentifierParser.parse(state.phone) }.getOrNull()
+        if (parsed != null && (!requireContact || parsed.type != com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME)) {
+            return true
+        }
+        fail(if (requireContact) "请输入有效的手机号或邮箱" else "请输入有效的用户名、邮箱或手机号")
         return false
     }
 
@@ -209,7 +212,9 @@ class WechatLoginController(
 }
 
 internal fun AccountCredentials.toSignedInSession(): AccountSession.SignedIn = AccountSession.SignedIn(
-    phone = phone,
+    primaryIdentifier = primaryIdentifier,
+    identifiers = identifiers,
+    rawPhone = rawPhone,
     token = token,
     wechatLinked = wechatLinked,
     nickname = nickname,

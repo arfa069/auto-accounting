@@ -13,8 +13,8 @@ class CloudConfigServiceTest {
     @Test
     fun readConfigReturnsDefaultsForNewUser() {
         val service = cloudConfigService()
-        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
         val config = service.configService.readConfig(reg.accountId)
 
@@ -27,8 +27,8 @@ class CloudConfigServiceTest {
     @Test
     fun writeConfigPersistsAndSurvivesRead() {
         val service = cloudConfigService()
-        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
 
         val result = service.configService.writeConfig(
             StoredCloudConfig(
@@ -50,8 +50,8 @@ class CloudConfigServiceTest {
     @Test
     fun writeConfigBlockedDuringDeletionPending() {
         val service = cloudConfigService()
-        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
         service.accountService.requestAccountDeletion(reg.token)
 
         val result = service.configService.writeConfig(
@@ -70,8 +70,8 @@ class CloudConfigServiceTest {
     @Test
     fun deleteConfigRemovesPersistedData() {
         val service = cloudConfigService()
-        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
         service.configService.writeConfig(
             StoredCloudConfig(
                 accountId = reg.accountId,
@@ -91,8 +91,8 @@ class CloudConfigServiceTest {
     @Test
     fun mergeAndWriteConfigDoesNotClearMissingFields() {
         val service = cloudConfigService()
-        service.accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        val reg = (service.accountService.register("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier("13800138000", "123456", "Aa123456!") as AccountResult.Success<AccountToken>).value
         service.configService.writeConfig(
             StoredCloudConfig(
                 accountId = reg.accountId,

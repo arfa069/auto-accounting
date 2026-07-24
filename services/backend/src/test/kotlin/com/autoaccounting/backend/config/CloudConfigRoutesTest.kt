@@ -30,8 +30,8 @@ class CloudConfigRoutesTest {
             )
         }
 
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         val response = client.submitForm(
             url = "/account/cloud-config/read",
@@ -60,8 +60,8 @@ class CloudConfigRoutesTest {
             )
         }
 
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         val writeResponse = client.submitForm(
             url = "/account/cloud-config/write",
@@ -130,8 +130,8 @@ class CloudConfigRoutesTest {
             )
         }
 
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
         accountService.requestAccountDeletion("token-1")
 
         val response = client.submitForm(
@@ -159,8 +159,8 @@ class CloudConfigRoutesTest {
             )
         }
 
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         client.submitForm(
             url = "/account/cloud-config/write",
@@ -204,8 +204,8 @@ class CloudConfigRoutesTest {
             )
         }
 
-        accountService.issueSmsCode("13800138000", "device-a", "127.0.0.1")
-        accountService.register("13800138000", "123456", "Aa123456!")
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        accountService.registerIdentifier("13800138000", "123456", "Aa123456!")
 
         val response = client.submitForm(
             url = "/account/cloud-config/write",
