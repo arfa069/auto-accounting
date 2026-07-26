@@ -355,7 +355,7 @@
 - `2026-07-23`：完成 Task 13 的计划停止边界。`:shared:api:test`、后端账号专项、后端 config/AI/环境/密钥扫描、Android 账号专项、Profile/MainActivity/诊断/合规/备份/本机数据删除定向测试、完整 `:services:backend:test` 和完整 `:apps:android:testDebugUnitTest` 均成功；Android 完整单元测试耗时 6 分 21 秒。根 `detekt` 成功，保留既有复杂度和命名类非阻断提示。禁用配置缓存后根 `build` 以 286 个任务在 13 分 19 秒内成功，单独 Debug/Release 构建以 96 个任务在 3 分 28 秒内成功；`android-release.apk` 经 Android SDK 37.0.0 `apksigner verify --verbose` 验证为 v2 签名有效且仅有 1 个签名者。OpenSDK `6.8.40` 在 D8/R8 中仍输出第三方 stack-map 警告，但未阻断编译、混淆、资源优化、签名或打包。验收标准已在 H2/JDBC、假 Provider/SDK 和自动化范围内通过；未连接或迁移真实 PostgreSQL，未配置真实微信凭据，未安装或操作真机，未声明真实微信端到端完成。
 
 ## 未完成
-未连接真实 PostgreSQL、未配置真实微信凭据、未操作真机；因此 Issue 仍保持“进行中”，等待开放平台审核和真实端到端验收。
+Issue 026 自身未完成发布部署 PostgreSQL、真实微信凭据和微信真机端到端验收；后续 Issue 027 已补做本地真实 PostgreSQL v5→v6 迁移与 Xiaomi 账号验收，但不能替代微信开放平台审核、真实 Provider 和微信端到端证据。因此本 Issue 仍保持“进行中”。
 
 ## 依赖
 

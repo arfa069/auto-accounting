@@ -5,7 +5,7 @@
 ## 项目结构
 
 - `apps/android`: Kotlin + Jetpack Compose + Room Android 客户端。
-- `services/backend`: Ktor 后端骨架。
+- `services/backend`: Ktor 后端，提供统一账号认证、云配置、AI 代理和账户级账本同步。
 - `shared/api`: 共享 Kotlin API 模型。
 - `docs`: PRD、架构、UI、合规、ADR 与迭代切片。
 
@@ -41,6 +41,7 @@
 - Slice 13: 隐私政策、个人信息收集清单、第三方服务清单、权限说明、商店审核说明和构建依赖合规扫描已建立。
 - Slice 14: 连续监控高级模式、账单同步后提示、可随时关闭的控制项、权限中心状态和支付页面观察边界已建立。
 - Slice 15: 内测就绪检查、核心质量指标计算、设备矩阵、已知风险、合规复核清单和源码密钥扫描已建立。
+- Slice 16: 用户名/邮箱/手机号统一账号、可选微信身份、账户级离线优先账本同步和人工冲突处理已建立。
 
 ## 当前 Phase 2 状态
 
@@ -48,9 +49,14 @@ Phase 2 已将本地账本、待确认队列、规则与 AI 同意、备份恢�
 
 “自动记账”页当前以紧凑清单展示通知监听、无障碍及后台运行、自启动、电池优化、省电模式引导；后四项只用于提升国产 ROM 后台稳定性，不阻断自动记账启用。Android 13 及以上的记账结果通知在开启自动记账时按需申请，拒绝不影响本地采集与持久化。
 
-当前仍不具备向更广泛测试者分发的条件：目标 ROM 设备矩阵尚未完成，云端 AI 仍使用本地 `DemoAiCategorizationGateway`，而 Release 只有在本地提供 keystore 与完整签名凭据时才是可安装的已签名 APK。没有签名凭据时，构建会产出未签名的 `android-release-unsigned.apk`，仅用于编译与 lint 验证。
+当前账号入口支持用户名、邮箱或手机号加密码登录；用户名注册和真实 SMTP 邮箱注册已完成验收。短信验证码直接登录不在产品范围内，真实短信 Provider 未配置，因此手机号注册、找回及短信验证类绑定暂不可用。微信代码与假 Provider 自动化已完成，但未配置 Android AppID 和后端 AppID/AppSecret，入口保持隐藏，真实微信登录/注册不可用。
+
+账户同步已完成一台 Xiaomi 真机与受控模拟客户端的账号切换、两种冲突处理及局域网 HTTP Release 验收。两台真实设备与生产式 HTTPS Release 验收仍未完成。目标 ROM 设备矩阵也尚未全部覆盖，云端 AI 仍使用本地 `DemoAiCategorizationGateway`。
+
+Release 只有在本地提供 keystore 与完整签名凭据时才是可安装的已签名 APK。没有签名凭据时，构建会产出未签名的 `android-release-unsigned.apk`，仅用于编译与 lint 验证。
 
 - 当前执行状态与未完成手工验证见 [Phase 2 Issue Files](docs/issues/phase-2/) 和 [可选真机验证清单](docs/issues/phase-2/OPTIONAL-VALIDATIONS.md)。
+- 当前仍需外部服务、真实设备或生产环境完成的事项见 [todos.md](todos.md)。
 - 内测发布、设备矩阵、签名和风险记录见 [Internal Beta Release](docs/INTERNAL-BETA-RELEASE.md)。
 - 诊断日志的隐私边界、导出与本机解密方式见 [诊断日志操作手册](docs/DIAGNOSTIC-LOGS.md)。
 - [Phase 2 Baseline Audit](docs/PHASE-2-BASELINE-AUDIT.md) 是 `cfa42ec` 时的历史审计，不代表当前工作树状态。

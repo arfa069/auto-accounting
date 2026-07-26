@@ -1,5 +1,7 @@
 # 阶段 2 Issue 规划 (Phase 2 Issues)
 
+> **历史规划说明（截至 2026-07-26）**：本文保留最初的 Phase 2 Issue 拆解，不作为当前完成状态。权威状态、验证记录与剩余阻断项请查看 [Phase 2 Issue 索引](./issues/phase-2/README.md) 和 [当前未完成事项](../todos.md)。
+
 来源切片规划：[阶段 2 切片规划](./PHASE-2-SLICES.md)。
 
 这些 Issue 被设计为可独立领取的 Tracer Bullet 任务。每个 Issue 都应使应用保持在功能自恰、可测试的状态，并避免大范围的无直接关联重构。
