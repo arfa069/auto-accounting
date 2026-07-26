@@ -46,6 +46,7 @@ fun ProfileOverviewScreen(
     session: AccountSession,
     onDestinationSelected: (ProfileDestination) -> Unit,
     onNavigateHome: () -> Unit = {},
+    ledgerSyncEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -76,7 +77,7 @@ fun ProfileOverviewScreen(
             .forEach { destination ->
                 ProfileEntry(
                     destination = destination,
-                    summary = destination.summary(session),
+                    summary = destination.summary(session, ledgerSyncEnabled),
                     onClick = { onDestinationSelected(destination) }
                 )
             }
@@ -135,11 +136,11 @@ private fun ProfileEntry(
     }
 }
 
-private fun ProfileDestination.summary(session: AccountSession): String = when (this) {
+private fun ProfileDestination.summary(session: AccountSession, ledgerSyncEnabled: Boolean): String = when (this) {
     ProfileDestination.AccountManagement -> session.accountSummary()
     ProfileDestination.AutomaticBookkeeping -> "查看自动记账状态"
     ProfileDestination.CategorizationRules -> "管理本地分类规则"
-    ProfileDestination.DataAndBackup -> "导入、导出与备份"
+    ProfileDestination.DataAndBackup -> if (ledgerSyncEnabled) "账户同步已启用 · 导入、导出与备份" else "导入、导出与备份"
     ProfileDestination.ComplianceAndPrivacy -> "查看隐私与权限说明"
 }
 

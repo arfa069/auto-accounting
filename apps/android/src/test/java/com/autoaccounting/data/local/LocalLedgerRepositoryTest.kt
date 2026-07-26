@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import java.time.ZoneOffset
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -100,7 +101,7 @@ class LocalLedgerRepositoryTest {
         )
 
         assertNull(database.pendingEntryDao().getById("pending-1"))
-        assertEquals("generated-1", ledgerEntry.id)
+        assertEquals("generated-2", ledgerEntry.id)
         assertEquals("pending-1", ledgerEntry.originPendingEntryId)
         assertEquals("food", ledgerEntry.categoryId)
         assertEquals("午餐", ledgerEntry.note)
@@ -889,7 +890,7 @@ class LocalLedgerRepositoryTest {
 
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(7, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(8, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
@@ -927,6 +928,7 @@ class LocalLedgerRepositoryTest {
         )
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -1110,6 +1112,7 @@ class LocalLedgerRepositoryTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -1144,6 +1147,25 @@ class LocalLedgerRepositoryTest {
         assertNull(ledger?.deletedAtEpochMillis)
         assertEquals(FundingAccountSourceScope.ALIPAY, fundingAccount.sourceScope)
         assertEquals(PaymentSource.ALIPAY, fundingAccount.paymentSource)
+        assertNotNull(fundingAccount.syncId)
+        assertTrue(fundingAccount.syncId?.matches(
+            Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+        ) == true)
+        val syncTables = mutableSetOf<String>()
+        migratedDatabase.openHelper.writableDatabase.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'account_sync_%'"
+        ).use { cursor ->
+            while (cursor.moveToNext()) syncTables += cursor.getString(0)
+        }
+        assertEquals(
+            setOf(
+                "account_sync_state",
+                "account_sync_metadata",
+                "account_sync_outbox",
+                "account_sync_conflicts"
+            ),
+            syncTables
+        )
 
         runBlocking {
             assertEquals(
@@ -1224,6 +1246,7 @@ class LocalLedgerRepositoryTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_4_5)
             .addMigrations(AutoAccountingDatabase.MIGRATION_5_6)
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -1262,6 +1285,8 @@ class LocalLedgerRepositoryTest {
             ),
             fundingAccounts.map { it.sourceScope to it.paymentSource }
         )
+        assertTrue(fundingAccounts.all { it.syncId != null })
+        assertEquals(fundingAccounts.size, fundingAccounts.map { it.syncId }.toSet().size)
 
         migrated.close()
         context.deleteDatabase(databaseName)

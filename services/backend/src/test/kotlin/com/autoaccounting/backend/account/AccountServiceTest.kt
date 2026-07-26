@@ -1,5 +1,8 @@
 package com.autoaccounting.backend.account
 
+import com.autoaccounting.api.LedgerSyncEntityTypeContract
+import com.autoaccounting.api.LedgerSyncMutationContract
+import com.autoaccounting.api.LedgerSyncPayloadContract
 import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.ai.AiCategorizationService
 import com.autoaccounting.backend.ai.InMemoryAiCategorizationLogStore
@@ -7,6 +10,8 @@ import com.autoaccounting.backend.config.CloudConfigService
 import com.autoaccounting.backend.config.CloudConfigStore
 import com.autoaccounting.backend.config.InMemoryCloudConfigStore
 import com.autoaccounting.backend.config.StoredCloudConfig
+import com.autoaccounting.backend.sync.InMemoryLedgerSyncStore
+import com.autoaccounting.backend.sync.LedgerSyncService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -291,6 +296,46 @@ class AccountServiceTest {
         assertTrue(aiService.logs.isEmpty())
         assertEquals(emptyMap<String, Boolean>(), cloudConfigService.readConfig(accountId).featureFlags)
         assertTrue(deletionJob.runDueDeletion().isEmpty())
+    }
+
+    @Test
+    fun finalDeletionJobPurgesLedgerSyncState() {
+        val accountService = accountService(startMillis = 0)
+        val syncStore = InMemoryLedgerSyncStore()
+        val syncService = LedgerSyncService(syncStore, accountService)
+        accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val token = (accountService.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!"
+        ) as AccountResult.Success<AccountToken>).value
+        syncService.initialize(token.accountId)
+        syncService.push(
+            token.accountId,
+            "device-a",
+            listOf(
+                LedgerSyncMutationContract(
+                    mutationId = "mutation-a",
+                    entityType = LedgerSyncEntityTypeContract.LEDGER_BOOK,
+                    entityId = "book-a",
+                    baseVersion = 0,
+                    deleted = false,
+                    payload = LedgerSyncPayloadContract.LedgerBook("book-a", "日常账本", 1)
+                )
+            )
+        )
+        accountService.requestAccountDeletion(token.token)
+        accountService.advanceTimeBy(AccountService.ACCOUNT_DELETION_COOLING_OFF_MILLIS)
+        val deletionJob = AccountDeletionJob(
+            accountService,
+            AiCategorizationService(),
+            CloudConfigService(InMemoryCloudConfigStore(), accountService),
+            syncService
+        )
+
+        assertEquals(listOf(token.accountId), deletionJob.runDueDeletion())
+        assertEquals(0, syncStore.recordCount(token.accountId))
+        assertEquals(0, syncStore.currentCursor(token.accountId))
     }
 
     @Test

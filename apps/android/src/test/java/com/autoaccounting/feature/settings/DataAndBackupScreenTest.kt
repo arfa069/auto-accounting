@@ -7,7 +7,14 @@ import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
@@ -21,7 +28,19 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
+import com.autoaccounting.api.LedgerSyncConflictChoiceContract
+import com.autoaccounting.api.LedgerSyncEntityTypeContract
+import com.autoaccounting.api.LedgerSyncJsonContracts
+import com.autoaccounting.api.LedgerSyncPayloadContract
+import com.autoaccounting.data.local.AccountSyncConflictEntity
+import com.autoaccounting.feature.sync.LedgerSyncInitialMode
+import com.autoaccounting.feature.sync.LedgerSyncOperationResult
+import com.autoaccounting.feature.sync.LedgerSyncPreview
+import com.autoaccounting.feature.sync.LedgerSyncUiState
 import java.io.ByteArrayInputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,6 +58,133 @@ import org.robolectric.annotation.Config
 class DataAndBackupScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun firstEnableExplainsReadableStorageTransportAndDeletionBeforeMerge() {
+        var enabledMode: LedgerSyncInitialMode? = null
+        composeRule.setContent {
+            DataAndBackupScreen(
+                ledgerEntries = emptyList(),
+                onExportEncryptedBackup = { "backup" },
+                onValidateEncryptedBackup = { _, _ -> },
+                onImportEncryptedBackup = { _, _ -> },
+                onDeleteLocalData = {},
+                onBack = {},
+                ledgerSyncState = LedgerSyncUiState(signedIn = true),
+                onPreviewLedgerSync = {
+                    LedgerSyncOperationResult.Success(
+                        LedgerSyncPreview("profile-a", localRecordCount = 2, cloudRecordCount = 3, insecureHttpTestMode = false)
+                    )
+                },
+                onEnableLedgerSync = { mode ->
+                    enabledMode = mode
+                    LedgerSyncOperationResult.Success(Unit)
+                }
+            )
+        }
+
+        composeRule.onNodeWithTag("ledger-sync-enable").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("确认并合并").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("服务端可读取", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("生产环境仅通过 HTTPS", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("账号最终注销将删除云端同步数据", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("确认并合并").performClick()
+        composeRule.waitUntil(5_000) { enabledMode != null }
+
+        assertEquals(LedgerSyncInitialMode.MERGE, enabledMode)
+    }
+
+    @Test
+    fun enabledTestModeShowsHttpRiskAndConflictChoices() {
+        var resolvedChoice: LedgerSyncConflictChoiceContract? = null
+        val canonical = LedgerSyncPayloadContract.LedgerBook("book-a", "云端账本", 1)
+        val candidate = LedgerSyncPayloadContract.LedgerBook("book-a", "本机账本", 1)
+        composeRule.setContent {
+            DataAndBackupScreen(
+                ledgerEntries = emptyList(),
+                onExportEncryptedBackup = { "backup" },
+                onValidateEncryptedBackup = { _, _ -> },
+                onImportEncryptedBackup = { _, _ -> },
+                onDeleteLocalData = {},
+                onBack = {},
+                ledgerSyncState = LedgerSyncUiState(
+                    signedIn = true,
+                    enabled = true,
+                    insecureHttpTestMode = true,
+                    conflicts = listOf(
+                        AccountSyncConflictEntity(
+                            conflictId = "conflict-a",
+                            entityType = LedgerSyncEntityTypeContract.LEDGER_BOOK.name,
+                            entityId = "book-a",
+                            canonicalVersion = 2,
+                            canonicalDeleted = false,
+                            canonicalPayload = LedgerSyncJsonContracts.encodePayload(
+                                LedgerSyncEntityTypeContract.LEDGER_BOOK,
+                                canonical
+                            ),
+                            candidateDeleted = false,
+                            candidatePayload = LedgerSyncJsonContracts.encodePayload(
+                                LedgerSyncEntityTypeContract.LEDGER_BOOK,
+                                candidate
+                            ),
+                            createdAtMillis = 1
+                        )
+                    )
+                ),
+                onResolveLedgerSyncConflict = { _, _, choice ->
+                    resolvedChoice = choice
+                    LedgerSyncOperationResult.Success(Unit)
+                }
+            )
+        }
+
+        composeRule.onNodeWithText("当前为局域网 HTTP 测试同步", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("云端：云端账本").assertIsDisplayed()
+        composeRule.onNodeWithText("本机：本机账本").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("保留本机").performScrollTo().performClick()
+        composeRule.waitUntil(5_000) { resolvedChoice != null }
+
+        assertEquals(LedgerSyncConflictChoiceContract.CANDIDATE, resolvedChoice)
+    }
+
+    @Test
+    fun syncControlsRemainReachableAcrossTargetWidthsAndLargeFont() {
+        var forcedSize by mutableStateOf(DpSize(400.dp, 700.dp))
+        var fontScale by mutableFloatStateOf(1f)
+        composeRule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(forcedSize) then
+                    DeviceConfigurationOverride.FontScale(fontScale)
+            ) {
+                DataAndBackupScreen(
+                    ledgerEntries = emptyList(),
+                    onExportEncryptedBackup = { "backup" },
+                    onValidateEncryptedBackup = { _, _ -> },
+                    onImportEncryptedBackup = { _, _ -> },
+                    onDeleteLocalData = {},
+                    onBack = {},
+                    ledgerSyncState = LedgerSyncUiState(signedIn = true, enabled = true)
+                )
+            }
+        }
+
+        listOf(
+            DpSize(400.dp, 700.dp) to 1f,
+            DpSize(610.dp, 700.dp) to 1f,
+            DpSize(900.dp, 1_000.dp) to 1f,
+            DpSize(400.dp, 700.dp) to 1.5f
+        ).forEach { (size, scale) ->
+            composeRule.runOnIdle {
+                forcedSize = size
+                fontScale = scale
+            }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("ledger-sync-now").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("危险区").performScrollTo().assertIsDisplayed()
+        }
+    }
 
     @Test
     fun exportCopyDistinguishesCurrentLedgerCsvFromFullBackup() {

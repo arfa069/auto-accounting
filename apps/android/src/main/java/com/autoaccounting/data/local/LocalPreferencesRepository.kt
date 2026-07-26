@@ -26,12 +26,26 @@ class LocalPreferencesRepository(
         }
 
     suspend fun replaceCategorizationRules(rules: List<CategorizationRule>) = database.withTransaction {
+        val previous = database.categorizationRuleDao().listRules()
+        val recorder = LocalSyncMutationRecorder(database, System::currentTimeMillis)
+        val entities = rules.map { it.toEntity() }
         database.categorizationRuleDao().deleteAll()
-        database.categorizationRuleDao().upsertAll(rules.map { it.toEntity() })
+        database.categorizationRuleDao().upsertAll(entities)
+        previous.filter { old -> entities.none { it.id == old.id } }.forEach { old ->
+            recorder.recordDelete(
+                com.autoaccounting.api.LedgerSyncEntityTypeContract.CATEGORIZATION_RULE,
+                old.id
+            )
+        }
+        entities.forEach { recorder.record(it) }
     }
 
     suspend fun seedDefaultCategorizationRules() = database.withTransaction {
         database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
+        val recorder = LocalSyncMutationRecorder(database, System::currentTimeMillis)
+        DefaultCategorizationRules.rules.forEach { rule ->
+            database.categorizationRuleDao().getById(rule.id)?.let { recorder.record(it) }
+        }
     }
 
     suspend fun updateAiSettings(aiSettings: AiCategorizationSettings) = database.withTransaction {
@@ -72,6 +86,10 @@ class LocalPreferencesRepository(
                 continuousMonitoringEnabled = false
             )
         )
+        database.ledgerSyncDao().upsertState(AccountSyncStateEntity())
+        database.ledgerSyncDao().deleteAllMetadata()
+        database.ledgerSyncDao().deleteAllOutbox()
+        database.ledgerSyncDao().deleteAllConflicts()
     }
 
     private suspend fun currentSettingsEntity(): LocalSettingsEntity =

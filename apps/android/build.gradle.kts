@@ -23,6 +23,10 @@ val debugBackendUrl = configuredBackendUrl?.takeIf { it.isNotBlank() }
 val releaseBackendUrl = configuredBackendUrl
     ?.trim()
     .orEmpty()
+val allowHttpLedgerSync = (
+    localBuildProperties.getProperty("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
+        ?: System.getenv("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
+    )?.equals("true", ignoreCase = true) == true
 val wechatAppId = (localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID")
     ?: System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID"))
     ?.trim()
@@ -52,6 +56,11 @@ android {
             "String",
             "AUTO_ACCOUNTING_WECHAT_APP_ID",
             wechatAppId.asBuildConfigString()
+        )
+        buildConfigField(
+            "boolean",
+            "AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC",
+            allowHttpLedgerSync.toString()
         )
     }
 
@@ -223,6 +232,7 @@ dependencies {
     implementation(project(":shared:api"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.foundation)
@@ -246,6 +256,7 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

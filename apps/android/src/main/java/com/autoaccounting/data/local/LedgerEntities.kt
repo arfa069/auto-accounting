@@ -24,11 +24,13 @@ data class CategoryEntity(
 @Entity(
     tableName = "funding_accounts",
     indices = [
-        Index(value = ["source", "label"], unique = true)
+        Index(value = ["source", "label"], unique = true),
+        Index(value = ["sync_id"], unique = true)
     ]
 )
 data class FundingAccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "sync_id") val syncId: String? = null,
     @ColumnInfo(name = "source") val sourceScope: FundingAccountSourceScope,
     @ColumnInfo(name = "payment_source") val paymentSource: PaymentSource?,
     val label: String,

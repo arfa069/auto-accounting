@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.autoaccounting.data.local.AccountSyncMetadataEntity
+import com.autoaccounting.data.local.AccountSyncStateEntity
 import com.autoaccounting.data.local.AutoAccountingDatabase
 import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.CategorizationRuleEntity
@@ -111,6 +113,29 @@ class LocalDataBackupRepositoryTest {
         database.openHelper.writableDatabase.query("PRAGMA foreign_key_check").use { cursor ->
             assertEquals(0, cursor.count)
         }
+    }
+
+    @Test
+    fun importingBackupCreatesOutboxWhenAccountSyncIsEnabled() = runBlocking {
+        populateDatabase()
+        val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
+        database.ledgerSyncDao().upsertState(AccountSyncStateEntity(profileKey = "profile-a", enabled = true))
+        database.ledgerSyncDao().upsertMetadata(
+            AccountSyncMetadataEntity(
+                entityType = "LEDGER_BOOK",
+                entityId = "obsolete-book",
+                serverVersion = 3,
+                syncedPayload = "{}",
+                deleted = false
+            )
+        )
+
+        backupRepository.importEncryptedBackup(backup, PASSPHRASE)
+
+        val mutations = database.ledgerSyncDao().listOutbox(100)
+        assertTrue(mutations.any { it.entityType == "LEDGER_ENTRY" && !it.deleted })
+        assertTrue(mutations.any { it.entityId == "obsolete-book" && it.deleted && it.baseVersion == 3L })
+        assertTrue(database.fundingAccountDao().getAllFundingAccounts().all { it.syncId != null })
     }
 
     @Test

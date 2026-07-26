@@ -21,8 +21,10 @@ interface FundingAccountRepository {
 
 internal class RoomFundingAccountRepository(
     private val database: AutoAccountingDatabase,
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val idGenerator: () -> String
 ) : FundingAccountRepository {
+    private val syncRecorder = LocalSyncMutationRecorder(database, clock, idGenerator)
     override val fundingAccounts = database.fundingAccountDao().observeFundingAccounts()
 
     override suspend fun ensureFundingAccount(
@@ -38,6 +40,7 @@ internal class RoomFundingAccountRepository(
         }
 
         val newAccount = FundingAccountEntity(
+            syncId = idGenerator(),
             sourceScope = sourceScope,
             paymentSource = source,
             label = normalizedLabel,
@@ -47,7 +50,7 @@ internal class RoomFundingAccountRepository(
         if (id == -1L) {
             requireNotNull(database.fundingAccountDao().findByScopeAndLabel(sourceScope, normalizedLabel))
         } else {
-            newAccount.copy(id = id)
+            newAccount.copy(id = id).also { syncRecorder.record(it) }
         }
     }
 
@@ -61,6 +64,7 @@ internal class RoomFundingAccountRepository(
             "Funding account already exists for this payment source"
         }
         val account = FundingAccountEntity(
+            syncId = idGenerator(),
             sourceScope = sourceScope,
             paymentSource = paymentSource,
             label = normalizedLabel,
@@ -68,7 +72,7 @@ internal class RoomFundingAccountRepository(
         )
         val id = database.fundingAccountDao().insertIgnore(account)
         require(id != -1L) { "Funding account already exists for this payment source" }
-        account.copy(id = id)
+        account.copy(id = id).also { syncRecorder.record(it) }
     }
 
     override suspend fun updateFundingAccount(
@@ -100,7 +104,7 @@ internal class RoomFundingAccountRepository(
             sourceScope = sourceScope,
             paymentSource = paymentSource,
             label = normalizedLabel
-        )
+        ).also { syncRecorder.record(it) }
     }
 
     override suspend fun deleteFundingAccount(
@@ -130,7 +134,14 @@ internal class RoomFundingAccountRepository(
                 ignoredEntryCount = ignoredEntryCount
             )
         }
+        val target = requireNotNull(database.fundingAccountDao().getById(fundingAccountId))
         check(database.fundingAccountDao().deleteById(fundingAccountId) == 1)
+        target.syncId?.let {
+            syncRecorder.recordDelete(
+                com.autoaccounting.api.LedgerSyncEntityTypeContract.FUNDING_ACCOUNT,
+                it
+            )
+        }
         FundingAccountDeleteResult.Deleted
     }
 
@@ -154,6 +165,7 @@ internal class RoomFundingAccountRepository(
             return existing.id
         }
         val account = FundingAccountEntity(
+            syncId = idGenerator(),
             sourceScope = scope,
             paymentSource = input.paymentSource,
             label = label,
@@ -163,6 +175,7 @@ internal class RoomFundingAccountRepository(
         return if (id == -1L) {
             requireNotNull(database.fundingAccountDao().findByScopeAndLabel(scope, label)).id
         } else {
+            syncRecorder.record(account.copy(id = id))
             id
         }
     }

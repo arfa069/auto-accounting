@@ -20,10 +20,10 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 - Automatic capture is the primary flow after explicit opt-in; user-started bill import (`补录账单`) remains a limited backfill and fallback path.
 - Selecting a source for one manual-import session automatically authorizes local OCR for that session. The current fallback is limited to supported visible pages with no usable accessibility text and does not broaden automatic OCR. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
 - All automatically captured transactions first become pending entries.
-- Ledger books are local-first; future cloud sync is reserved but not implemented in the first backend.
+- Ledger books are local-first in Room and can be explicitly bound to the signed-in account for automatic multi-device synchronization.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
-- Local mode and signed-in mode use the same on-device ledger books; signing in or out does not replace or reassign them.
-- The first backend supports account, registered device, cloud configuration, AI categorization proxy, and AI categorization logs.
+- Signing out preserves the on-device ledger and pauses sync. Switching to a different account requires confirmation and atomically replaces only the formal synchronized scope after the previous account outbox is empty.
+- The backend supports account, registered device, cloud configuration, account-scoped ledger sync, AI categorization proxy, and AI categorization logs.
 - Cloud AI categorization is opt-in. Local rules run first.
 - AI categorization uploads minimal fields by default; users may opt into enhanced context.
 - AI categorization logs are retained during internal beta and must be revisited before public store submission.

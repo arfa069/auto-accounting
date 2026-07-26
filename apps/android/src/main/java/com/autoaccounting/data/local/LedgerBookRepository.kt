@@ -21,6 +21,7 @@ internal class RoomLedgerBookRepository(
     private val clock: () -> Long,
     private val idGenerator: () -> String
 ) : LedgerBookRepository {
+    private val syncRecorder = LocalSyncMutationRecorder(database, clock, idGenerator)
     override val ledgerBooks = database.ledgerBookDao().observeAll()
     override val activeLedgerBook = database.ledgerBookDao().observeActive()
 
@@ -44,6 +45,7 @@ internal class RoomLedgerBookRepository(
         database.localSettingsDao().upsert(
             currentSettingsEntity(ledgerBook.id).copy(activeLedgerId = ledgerBook.id)
         )
+        syncRecorder.record(ledgerBook)
         ledgerBook
     }
 
@@ -93,6 +95,10 @@ internal class RoomLedgerBookRepository(
                 )
             }
             check(database.ledgerBookDao().deleteById(target.id) == 1)
+            syncRecorder.recordDelete(
+                com.autoaccounting.api.LedgerSyncEntityTypeContract.LEDGER_BOOK,
+                target.id
+            )
             LedgerBookDeleteResult.Deleted
         }
 
@@ -109,6 +115,7 @@ internal class RoomLedgerBookRepository(
                     activeLedgerId = defaultLedgerBook.id
                 )
             )
+            syncRecorder.record(defaultLedgerBook)
             return defaultLedgerBook
         }
         error("Ledger book not found: $ledgerBookId")
@@ -123,7 +130,10 @@ internal class RoomLedgerBookRepository(
     private suspend fun ensureLedgerBookState(): LedgerBookEntity {
         val ledgerBooks = database.ledgerBookDao().getAll()
         val fallback = if (ledgerBooks.isEmpty()) {
-            defaultLedgerBook().also { database.ledgerBookDao().insert(it) }
+            defaultLedgerBook().also {
+                database.ledgerBookDao().insert(it)
+                syncRecorder.record(it)
+            }
         } else {
             ledgerBooks.first()
         }

@@ -40,6 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.feature.ledger.LedgerUiEntry
+import com.autoaccounting.api.LedgerSyncConflictChoiceContract
+import com.autoaccounting.api.LedgerSyncEntityTypeContract
+import com.autoaccounting.api.LedgerSyncJsonContracts
+import com.autoaccounting.api.LedgerSyncPayloadContract
+import com.autoaccounting.feature.sync.LedgerSyncInitialMode
+import com.autoaccounting.feature.sync.LedgerSyncOperationResult
+import com.autoaccounting.feature.sync.LedgerSyncPreview
+import com.autoaccounting.feature.sync.LedgerSyncUiState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,6 +60,37 @@ private data class PendingRestore(
     val passphrase: String
 )
 
+private fun formatSyncTime(epochMillis: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(epochMillis))
+
+private fun syncEntityLabel(entityType: String): String = when (
+    runCatching { LedgerSyncEntityTypeContract.valueOf(entityType) }.getOrNull()
+) {
+    LedgerSyncEntityTypeContract.CATEGORY -> "分类冲突"
+    LedgerSyncEntityTypeContract.FUNDING_ACCOUNT -> "资金账户冲突"
+    LedgerSyncEntityTypeContract.LEDGER_BOOK -> "账本冲突"
+    LedgerSyncEntityTypeContract.LEDGER_ENTRY -> "账目冲突"
+    LedgerSyncEntityTypeContract.CATEGORIZATION_RULE -> "分类规则冲突"
+    null -> "同步冲突"
+}
+
+private fun syncPayloadSummary(entityType: String, payload: String?, deleted: Boolean): String {
+    if (deleted || payload == null) return "已删除"
+    val type = runCatching { LedgerSyncEntityTypeContract.valueOf(entityType) }.getOrNull()
+        ?: return "数据已更新"
+    return runCatching {
+        when (val parsed = LedgerSyncJsonContracts.parsePayload(type, payload)) {
+            is LedgerSyncPayloadContract.Category -> parsed.name
+            is LedgerSyncPayloadContract.FundingAccount -> parsed.label
+            is LedgerSyncPayloadContract.LedgerBook -> parsed.name
+            is LedgerSyncPayloadContract.LedgerEntry ->
+                "${parsed.merchantTitle} · ${parsed.amountMinor / 100.0} ${parsed.currency}"
+            is LedgerSyncPayloadContract.CategorizationRule ->
+                "${parsed.merchantContains.ifBlank { parsed.titleContains }} → ${parsed.category}"
+        }
+    }.getOrDefault("数据已更新")
+}
+
 @Composable
 fun DataAndBackupScreen(
     ledgerEntries: List<LedgerUiEntry>,
@@ -62,7 +101,20 @@ fun DataAndBackupScreen(
     onDeleteLocalData: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    snackbarHostState: SnackbarHostState = SnackbarHostState()
+    snackbarHostState: SnackbarHostState = SnackbarHostState(),
+    ledgerSyncState: LedgerSyncUiState = LedgerSyncUiState(),
+    onPreviewLedgerSync: suspend () -> LedgerSyncOperationResult<LedgerSyncPreview> = {
+        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+    },
+    onEnableLedgerSync: suspend (LedgerSyncInitialMode) -> LedgerSyncOperationResult<Unit> = {
+        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+    },
+    onSyncNow: suspend () -> LedgerSyncOperationResult<Unit> = {
+        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+    },
+    onDisableLedgerSync: suspend () -> Unit = {},
+    onResolveLedgerSyncConflict: suspend (String, Long, LedgerSyncConflictChoiceContract) -> LedgerSyncOperationResult<Unit> =
+        { _, _, _ -> LedgerSyncOperationResult.Failure(null, "请先登录账户", false) }
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -78,6 +130,8 @@ fun DataAndBackupScreen(
     var isReadingBackup by remember { mutableStateOf(false) }
     var isValidatingBackup by remember { mutableStateOf(false) }
     var isImportingBackup by remember { mutableStateOf(false) }
+    var syncPreview by remember { mutableStateOf<LedgerSyncPreview?>(null) }
+    var syncBusy by remember { mutableStateOf(false) }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -110,6 +164,102 @@ fun DataAndBackupScreen(
     ) {
         TextButton(onClick = onBack) { Text("返回") }
         Text("数据与备份", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        CardSection(title = "账户同步") {
+            when {
+                !ledgerSyncState.signedIn -> Text("登录账户后可在多台设备间同步正式账本数据。")
+                !ledgerSyncState.enabled -> {
+                    Text("同步账本、正式及最近删除账目、分类、资金账户和分类规则。待确认记录与设备设置不会上传。")
+                    Button(
+                        onClick = {
+                            syncBusy = true
+                            coroutineScope.launch {
+                                when (val result = onPreviewLedgerSync()) {
+                                    is LedgerSyncOperationResult.Success -> syncPreview = result.value
+                                    is LedgerSyncOperationResult.Failure -> snackbarHostState.showSnackbar(result.message)
+                                }
+                                syncBusy = false
+                            }
+                        },
+                        enabled = !syncBusy,
+                        modifier = Modifier.testTag("ledger-sync-enable")
+                    ) { Text(if (syncBusy) "正在检查" else "启用账户同步") }
+                }
+                else -> {
+                    Text(
+                        ledgerSyncState.lastSuccessAtMillis?.let {
+                            "最近同步：${formatSyncTime(it)}"
+                        } ?: "尚未完成首次同步"
+                    )
+                    Text("待上传 ${ledgerSyncState.pendingCount} 项 · 冲突 ${ledgerSyncState.conflicts.size} 项")
+                    ledgerSyncState.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (ledgerSyncState.insecureHttpTestMode) {
+                        Text(
+                            "当前为局域网 HTTP 测试同步，账本内容未经过传输加密。",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                syncBusy = true
+                                coroutineScope.launch {
+                                    val result = onSyncNow()
+                                    snackbarHostState.showSnackbar(
+                                        when (result) {
+                                            is LedgerSyncOperationResult.Success -> "同步完成"
+                                            is LedgerSyncOperationResult.Failure -> result.message
+                                        }
+                                    )
+                                    syncBusy = false
+                                }
+                            },
+                            enabled = !syncBusy,
+                            modifier = Modifier.testTag("ledger-sync-now")
+                        ) { Text(if (syncBusy) "同步中" else "立即同步") }
+                        OutlinedButton(
+                            onClick = { coroutineScope.launch { onDisableLedgerSync() } },
+                            enabled = !syncBusy
+                        ) { Text("关闭同步") }
+                    }
+                    ledgerSyncState.conflicts.forEach { conflict ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("ledger-sync-conflict-${conflict.conflictId}"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(syncEntityLabel(conflict.entityType), fontWeight = FontWeight.SemiBold)
+                                Text("云端：${syncPayloadSummary(conflict.entityType, conflict.canonicalPayload, conflict.canonicalDeleted)}")
+                                Text("本机：${syncPayloadSummary(conflict.entityType, conflict.candidatePayload, conflict.candidateDeleted)}")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick = {
+                                        coroutineScope.launch {
+                                            onResolveLedgerSyncConflict(
+                                                conflict.conflictId,
+                                                conflict.canonicalVersion,
+                                                LedgerSyncConflictChoiceContract.CANONICAL
+                                            )
+                                        }
+                                    }) { Text("保留云端") }
+                                    Button(onClick = {
+                                        coroutineScope.launch {
+                                            onResolveLedgerSyncConflict(
+                                                conflict.conflictId,
+                                                conflict.canonicalVersion,
+                                                LedgerSyncConflictChoiceContract.CANDIDATE
+                                            )
+                                        }
+                                    }) { Text("保留本机") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         CardSection(title = "导出与恢复") {
             Text(
                 "CSV 仅导出当前账本「$currentLedgerName」，且是明文表格；" +
@@ -159,6 +309,48 @@ fun DataAndBackupScreen(
                 Text("删除本机数据")
             }
         }
+    }
+
+    syncPreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { if (!syncBusy) syncPreview = null },
+            title = { Text("启用账户同步") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("本机 ${preview.localRecordCount} 项，云端 ${preview.cloudRecordCount} 项。")
+                    Text("正式账本数据将上传并以服务端可读取的形式保存；待确认记录、设备设置和诊断日志不会上传。")
+                    Text("生产环境仅通过 HTTPS 传输；账号最终注销将删除云端同步数据，本机账本仍会保留。")
+                    if (preview.insecureHttpTestMode) {
+                        Text("当前使用局域网 HTTP，仅适用于受控测试环境。", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        syncBusy = true
+                        coroutineScope.launch {
+                            val mode = if (preview.localRecordCount == 0 && preview.cloudRecordCount > 0) {
+                                LedgerSyncInitialMode.REPLACE_LOCAL
+                            } else {
+                                LedgerSyncInitialMode.MERGE
+                            }
+                            val result = onEnableLedgerSync(mode)
+                            if (result is LedgerSyncOperationResult.Success) syncPreview = null
+                            snackbarHostState.showSnackbar(
+                                when (result) {
+                                    is LedgerSyncOperationResult.Success -> "账户同步已启用"
+                                    is LedgerSyncOperationResult.Failure -> result.message
+                                }
+                            )
+                            syncBusy = false
+                        }
+                    },
+                    enabled = !syncBusy
+                ) { Text(if (preview.localRecordCount > 0 && preview.cloudRecordCount > 0) "确认并合并" else "确认启用") }
+            },
+            dismissButton = { TextButton(onClick = { syncPreview = null }) { Text("取消") } }
+        )
     }
 
     if (showExportPasswordDialog) {

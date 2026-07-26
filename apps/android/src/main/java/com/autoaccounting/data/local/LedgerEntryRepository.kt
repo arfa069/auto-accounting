@@ -26,6 +26,7 @@ internal class RoomLedgerEntryRepository(
     private val ledgerBookRepository: RoomLedgerBookRepository,
     private val fundingAccountRepository: RoomFundingAccountRepository
 ) : LedgerEntryRepository {
+    private val syncRecorder = LocalSyncMutationRecorder(database, clock, idGenerator)
     override fun ledgerEntries(ledgerBookId: String): Flow<List<LedgerEntryEntity>> =
         database.ledgerEntryDao().observeLedgerEntriesForBook(ledgerBookId)
 
@@ -69,6 +70,7 @@ internal class RoomLedgerEntryRepository(
             deletedAtEpochMillis = null
         )
         database.ledgerEntryDao().upsert(entry)
+        syncRecorder.record(entry)
         entry
     }
 
@@ -95,6 +97,7 @@ internal class RoomLedgerEntryRepository(
             updatedAtEpochMillis = clock()
         )
         database.ledgerEntryDao().upsert(updated)
+        syncRecorder.record(updated)
         updated
     }
 
@@ -106,7 +109,7 @@ internal class RoomLedgerEntryRepository(
             require(existing.deletedAtEpochMillis == null) { "Ledger entry is already deleted" }
             val deletedAt = clock()
             check(database.ledgerEntryDao().moveToDeleted(ledgerEntryId, deletedAt) == 1)
-            existing.copy(deletedAtEpochMillis = deletedAt)
+            existing.copy(deletedAtEpochMillis = deletedAt).also { syncRecorder.record(it) }
         }
 
     override suspend fun restoreDeletedLedgerEntry(ledgerEntryId: String): LedgerEntryEntity =
@@ -121,19 +124,32 @@ internal class RoomLedgerEntryRepository(
                 "Ledger entry recovery period has expired"
             }
             check(database.ledgerEntryDao().restoreDeleted(ledgerEntryId) == 1)
-            existing.copy(deletedAtEpochMillis = null)
+            existing.copy(deletedAtEpochMillis = null).also { syncRecorder.record(it) }
         }
 
-    override suspend fun permanentlyDeleteLedgerEntry(ledgerEntryId: String) {
+    override suspend fun permanentlyDeleteLedgerEntry(ledgerEntryId: String) = database.withTransaction {
         check(database.ledgerEntryDao().permanentlyDelete(ledgerEntryId) == 1) {
             "Only a deleted ledger entry can be permanently deleted"
         }
+        syncRecorder.recordDelete(
+            com.autoaccounting.api.LedgerSyncEntityTypeContract.LEDGER_ENTRY,
+            ledgerEntryId
+        )
     }
 
     override suspend fun purgeExpiredDeletedLedgerEntries(nowEpochMillis: Long): Int =
-        database.ledgerEntryDao().purgeDeletedBefore(
-            nowEpochMillis - LocalLedgerRepository.DELETED_RETENTION_MILLIS
-        )
+        database.withTransaction {
+            val cutoff = nowEpochMillis - LocalLedgerRepository.DELETED_RETENTION_MILLIS
+            val expired = database.ledgerEntryDao().listDeletedBefore(cutoff)
+            expired.forEach { entry ->
+                database.ledgerEntryDao().deleteById(entry.id)
+                syncRecorder.recordDelete(
+                    com.autoaccounting.api.LedgerSyncEntityTypeContract.LEDGER_ENTRY,
+                    entry.id
+                )
+            }
+            expired.size
+        }
 }
 
 private fun LedgerEntryInput.validated(now: Long): LedgerEntryInput {

@@ -15,6 +15,34 @@ private val v6TestSchemaPattern = Regex("codex_v6_data_test_[0-9a-f]{32}")
 
 class PostgresV6DataMigrationIntegrationTest {
     @Test
+    fun populatedVersion6SchemaMigratesToVersion7WithoutDataLoss() {
+        val config = postgresTestConfig()
+        val schemaName = "codex_v6_data_test_${UUID.randomUUID().toString().replace("-", "")}"
+        val schemaUrl = schemaUrl(config.jdbcUrl, schemaName)
+        var schemaCreated = false
+
+        try {
+            createSchema(config, schemaName)
+            schemaCreated = true
+            runMigrations(
+                jdbcUrl = schemaUrl,
+                username = config.username,
+                password = config.password,
+                migrations = allBackendMigrations.filter { it.version <= 6 }
+            )
+            val accountId = seedVersion6Account(schemaUrl, config)
+
+            runBackendMigrations(schemaUrl, config.username, config.password)
+            val firstMigrationTime = verifyVersion7SyncSchema(schemaUrl, config, accountId)
+
+            runBackendMigrations(schemaUrl, config.username, config.password)
+            assertEquals(firstMigrationTime, verifyVersion7SyncSchema(schemaUrl, config, accountId))
+        } finally {
+            if (schemaCreated) dropSchema(config, schemaName)
+        }
+    }
+
+    @Test
     fun populatedVersion5SchemaMigratesToVersion6WithoutDataLoss() {
         val config = postgresTestConfig()
         val schemaName = "codex_v6_data_test_${UUID.randomUUID().toString().replace("-", "")}"
@@ -32,14 +60,121 @@ class PostgresV6DataMigrationIntegrationTest {
             )
             seedVersion5Data(schemaUrl, config)
 
-            runBackendMigrations(schemaUrl, config.username, config.password)
+            runMigrations(
+                jdbcUrl = schemaUrl,
+                username = config.username,
+                password = config.password,
+                migrations = allBackendMigrations.filter { it.version <= 6 }
+            )
             val firstMigrationTime = verifyVersion6Data(schemaUrl, config)
 
-            runBackendMigrations(schemaUrl, config.username, config.password)
+            runMigrations(
+                jdbcUrl = schemaUrl,
+                username = config.username,
+                password = config.password,
+                migrations = allBackendMigrations.filter { it.version <= 6 }
+            )
             assertEquals(firstMigrationTime, verifyVersion6Data(schemaUrl, config))
         } finally {
             if (schemaCreated) dropSchema(config, schemaName)
         }
+    }
+
+    private fun seedVersion6Account(schemaUrl: String, config: V6PostgresTestConfig): Long =
+        jdbcConnection(schemaUrl, config.username, config.password).use { connection ->
+            val accountId = connection.createStatement().use { statement ->
+                statement.executeQuery(
+                    """
+                    INSERT INTO accounts (primary_identifier_type, created_at_millis)
+                    VALUES ('PHONE', 123456789)
+                    RETURNING account_id
+                    """.trimIndent()
+                ).use { result ->
+                    assertTrue(result.next())
+                    result.getLong("account_id")
+                }
+            }
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    INSERT INTO account_identifiers (
+                        account_id, identifier_type, raw_value, normalized_value,
+                        verified, created_at_millis, updated_at_millis
+                    ) VALUES (
+                        $accountId, 'PHONE', '13800138000', '13800138000',
+                        TRUE, 123456789, 123456789
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    INSERT INTO account_password_credentials (
+                        account_id, password_salt, password_hash,
+                        failed_login_count, locked_until_millis, updated_at_millis
+                    ) VALUES ($accountId, 'salt-v6', 'hash-v6', 0, 0, 123456789)
+                    """.trimIndent()
+                )
+            }
+            accountId
+        }
+
+    private fun verifyVersion7SyncSchema(
+        schemaUrl: String,
+        config: V6PostgresTestConfig,
+        accountId: Long
+    ): Long = jdbcConnection(schemaUrl, config.username, config.password).use { connection ->
+        assertEquals(
+            "1,2,3,4,5,6,7",
+            queryString(
+                connection,
+                "SELECT string_agg(version::text, ',' ORDER BY version) FROM schema_migrations"
+            )
+        )
+        assertEquals(
+            "13800138000|salt-v6|hash-v6",
+            queryString(
+                connection,
+                """
+                SELECT identifiers.normalized_value || '|' || credentials.password_salt || '|' ||
+                       credentials.password_hash
+                FROM account_identifiers identifiers
+                JOIN account_password_credentials credentials USING (account_id)
+                WHERE identifiers.account_id = $accountId
+                """.trimIndent()
+            )
+        )
+        listOf(
+            "ledger_sync_profiles",
+            "ledger_sync_records",
+            "ledger_sync_changes",
+            "ledger_sync_conflicts",
+            "ledger_sync_mutations"
+        ).forEach { table -> assertTrue(tableExists(connection, table)) }
+        assertEquals(
+            1L,
+            queryLong(
+                connection,
+                """
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'ledger_sync_records'
+                  AND column_name = 'business_key'
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            1L,
+            queryLong(
+                connection,
+                """
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'ledger_sync_mutations'
+                  AND column_name = 'canonical_entity_id'
+                """.trimIndent()
+            )
+        )
+        queryLong(connection, "SELECT applied_at_millis FROM schema_migrations WHERE version = 7")
     }
 
     private fun seedVersion5Data(schemaUrl: String, config: V6PostgresTestConfig) {

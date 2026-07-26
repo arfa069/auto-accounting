@@ -75,6 +75,20 @@ class ProfileScreenTest {
     }
 
     @Test
+    fun enabledLedgerSyncIsSummarizedOnlyOnDataAndBackupEntry() {
+        composeRule.setContent {
+            ProfileOverviewScreen(
+                session = AccountSession.SignedIn(phone = "13800138000"),
+                ledgerSyncEnabled = true,
+                onDestinationSelected = {}
+            )
+        }
+
+        composeRule.onNodeWithText("账户同步已启用", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("账户同步已启用", substring = true).assertCountEquals(1)
+    }
+
+    @Test
     fun overviewRemainsReachableAcrossWindowWidthsAndLargeFonts() {
         var forcedSize by mutableStateOf(DpSize(400.dp, 500.dp))
         var fontScale by mutableFloatStateOf(1f)

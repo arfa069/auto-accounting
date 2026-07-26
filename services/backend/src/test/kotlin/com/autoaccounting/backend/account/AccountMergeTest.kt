@@ -1,6 +1,9 @@
 package com.autoaccounting.backend.account
 
 import com.autoaccounting.api.AccountApiJsonContracts
+import com.autoaccounting.api.LedgerSyncEntityTypeContract
+import com.autoaccounting.api.LedgerSyncMutationContract
+import com.autoaccounting.api.LedgerSyncPayloadContract
 import com.autoaccounting.api.WechatAuthResultContract
 import com.autoaccounting.backend.ai.JdbcAiCategorizationLogStore
 import com.autoaccounting.backend.ai.StoredAiCategorizationLog
@@ -8,6 +11,7 @@ import com.autoaccounting.backend.config.CloudConfigService
 import com.autoaccounting.backend.config.CloudConfigUpdate
 import com.autoaccounting.backend.config.JdbcCloudConfigStore
 import com.autoaccounting.backend.module
+import com.autoaccounting.backend.sync.JdbcLedgerSyncStore
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
@@ -389,6 +393,72 @@ class AccountMergeTest {
     }
 
     @Test
+    fun jdbcMergeUsesTargetBusinessIdsRemapsEntriesAndPreservesDifferentCandidates() {
+        val databaseUrl = h2DatabaseUrl()
+        val accountStore = JdbcAccountStore(databaseUrl)
+        val syncStore = JdbcLedgerSyncStore(databaseUrl)
+        val clock = createClock()
+        val service = AccountService(
+            store = accountStore,
+            smsCodeGenerator = { "123456" },
+            clock = clock,
+            wechatOAuthClient = FakeWechatOAuthClient()
+        )
+        val source = registerPhoneUser(service, clock, "13800000003", deviceId = "source-device")
+        val exchange = service.exchangeWechatCode("code_wx", null, "target-device") as AccountResult.Success
+        val registration = exchange.value.result as WechatAuthResultContract.RegistrationRequired
+        val target = (service.registerWithWechat(
+            registration.wechatTicket,
+            "target-device"
+        ) as AccountResult.Success).value
+        val targetProfile = syncStore.getOrCreateProfile(target.accountId, 100)
+        syncStore.getOrCreateProfile(source.accountId, 100)
+        syncStore.push(
+            target.accountId,
+            "target-device",
+            listOf(
+                categorySyncMutation("target-food", "餐饮", "EXPENSE", "target-food-mutation"),
+                categorySyncMutation("target-transit", "交通", "EXPENSE", "target-transit-mutation"),
+                fundingSyncMutation("target-cash", "现金", "target-cash-mutation")
+            ),
+            200
+        )
+        syncStore.push(
+            source.accountId,
+            "source-device",
+            listOf(
+                categorySyncMutation("source-food", "餐饮", "EXPENSE", "source-food-mutation"),
+                categorySyncMutation("source-transit", "交通", "INCOME", "source-transit-mutation"),
+                fundingSyncMutation("source-cash", "现金", "source-cash-mutation"),
+                entrySyncMutation("source-entry", "source-food", "source-cash", "source-entry-mutation")
+            ),
+            300
+        )
+
+        val preview = service.prepareMergeWithIdentifierPassword(
+            target.token,
+            "13800000003",
+            "Pass123456!"
+        ) as AccountResult.Success
+        val merged = service.confirmMerge(target.token, preview.value.mergeTicket, "合并账号")
+
+        assertTrue(merged is AccountResult.Success)
+        assertEquals(targetProfile.profileKey, syncStore.getOrCreateProfile(target.accountId, 500).profileKey)
+        assertEquals(0, syncStore.recordCount(source.accountId))
+        val snapshot = syncStore.snapshot(target.accountId, 0, 100)
+        assertTrue(snapshot.none { it.entityId == "source-food" || it.entityId == "source-cash" })
+        val entry = snapshot.single { it.entityId == "source-entry" }.payload as LedgerSyncPayloadContract.LedgerEntry
+        assertEquals("target-food", entry.categoryId)
+        assertEquals("target-cash", entry.fundingAccountSyncId)
+        val conflict = syncStore.pull(target.accountId, 0, 100).conflicts.single {
+            it.entityId == "target-transit"
+        }
+        val candidate = conflict.candidatePayload as LedgerSyncPayloadContract.Category
+        assertEquals("target-transit", candidate.id)
+        assertEquals("INCOME", candidate.kind)
+    }
+
+    @Test
     fun testKtorEndToEndHttpEndpointsForAccountMerge() = testApplication {
         val store = InMemoryAccountStore()
         val clock = createClock()
@@ -523,4 +593,60 @@ class AccountMergeTest {
         val loginRes = service.loginIdentifier("user@example.com", "Pass123456!", "dev-wx")
         assertTrue("Login with transferred email should succeed", loginRes is AccountResult.Success)
     }
+
+    private fun categorySyncMutation(
+        entityId: String,
+        name: String,
+        kind: String,
+        mutationId: String
+    ) = LedgerSyncMutationContract(
+        mutationId = mutationId,
+        entityType = LedgerSyncEntityTypeContract.CATEGORY,
+        entityId = entityId,
+        baseVersion = 0,
+        deleted = false,
+        payload = LedgerSyncPayloadContract.Category(entityId, name, kind, 1, false, 100)
+    )
+
+    private fun fundingSyncMutation(entityId: String, label: String, mutationId: String) =
+        LedgerSyncMutationContract(
+            mutationId = mutationId,
+            entityType = LedgerSyncEntityTypeContract.FUNDING_ACCOUNT,
+            entityId = entityId,
+            baseVersion = 0,
+            deleted = false,
+            payload = LedgerSyncPayloadContract.FundingAccount(entityId, "MANUAL", null, label, 100)
+        )
+
+    private fun entrySyncMutation(
+        entityId: String,
+        categoryId: String,
+        fundingAccountSyncId: String,
+        mutationId: String
+    ) = LedgerSyncMutationContract(
+        mutationId = mutationId,
+        entityType = LedgerSyncEntityTypeContract.LEDGER_ENTRY,
+        entityId = entityId,
+        baseVersion = 0,
+        deleted = false,
+        payload = LedgerSyncPayloadContract.LedgerEntry(
+            id = entityId,
+            ledgerBookId = "source-book",
+            paymentSource = null,
+            originalCaptureSource = null,
+            entryOrigin = "MANUAL",
+            flowDirection = "OUTFLOW",
+            transactionKind = "EXPENSE",
+            amountMinor = 100,
+            currency = "CNY",
+            merchantTitle = "测试账目",
+            transactionTimeMillis = 100,
+            categoryId = categoryId,
+            fundingAccountSyncId = fundingAccountSyncId,
+            note = null,
+            confirmedAtMillis = 100,
+            updatedAtMillis = 100,
+            deletedAtMillis = null
+        )
+    )
 }

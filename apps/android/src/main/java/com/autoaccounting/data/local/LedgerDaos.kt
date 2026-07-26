@@ -47,8 +47,46 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getCategory(id: String): CategoryEntity?
 
+    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): CategoryEntity?
+
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM categories WHERE id = :id")
+    suspend fun deleteById(id: String): Int
+
+    @Query("UPDATE categories SET name = :name WHERE id = :id")
+    suspend fun updateName(id: String, name: String): Int
+
+    @Query(
+        """
+        UPDATE categories
+        SET name = :name,
+            kind = :kind,
+            sort_order = :sortOrder,
+            is_system = :isSystem,
+            created_at_epoch_millis = :createdAtEpochMillis
+        WHERE id = :id
+        """
+    )
+    suspend fun updateSynced(
+        id: String,
+        name: String,
+        kind: TransactionKind?,
+        sortOrder: Int,
+        isSystem: Boolean,
+        createdAtEpochMillis: Long
+    ): Int
+
+    @Query("UPDATE ledger_entries SET category_id = :canonicalId WHERE category_id = :localId")
+    suspend fun remapLedgerEntries(localId: String, canonicalId: String): Int
+
+    @Query("UPDATE pending_entries SET suggested_category_id = :canonicalId WHERE suggested_category_id = :localId")
+    suspend fun remapPendingEntries(localId: String, canonicalId: String): Int
+
+    @Query("UPDATE ignored_entries SET suggested_category_id = :canonicalId WHERE suggested_category_id = :localId")
+    suspend fun remapIgnoredEntries(localId: String, canonicalId: String): Int
 }
 
 @Dao
@@ -59,11 +97,28 @@ interface LedgerBookDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(ledgerBooks: List<LedgerBookEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(ledgerBook: LedgerBookEntity)
+
     @Query("SELECT * FROM ledger_books WHERE id = :id")
     suspend fun getById(id: String): LedgerBookEntity?
 
     @Query("SELECT * FROM ledger_books WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): LedgerBookEntity?
+
+    @Query(
+        """
+        UPDATE ledger_books
+        SET name = :name,
+            created_at_epoch_millis = :createdAtEpochMillis
+        WHERE id = :id
+        """
+    )
+    suspend fun updateSynced(
+        id: String,
+        name: String,
+        createdAtEpochMillis: Long
+    ): Int
 
     @Query("SELECT * FROM ledger_books ORDER BY created_at_epoch_millis ASC, id ASC")
     suspend fun getAll(): List<LedgerBookEntity>
@@ -143,6 +198,12 @@ interface FundingAccountDao {
     @Query("SELECT * FROM funding_accounts WHERE id = :id")
     suspend fun getById(id: Long): FundingAccountEntity?
 
+    @Query("SELECT * FROM funding_accounts WHERE sync_id = :syncId LIMIT 1")
+    suspend fun findBySyncId(syncId: String): FundingAccountEntity?
+
+    @Query("UPDATE funding_accounts SET sync_id = :syncId WHERE id = :id")
+    suspend fun setSyncId(id: Long, syncId: String): Int
+
     @Query(
         """
         UPDATE funding_accounts
@@ -157,6 +218,26 @@ interface FundingAccountDao {
         sourceScope: FundingAccountSourceScope,
         paymentSource: PaymentSource?,
         label: String
+    ): Int
+
+    @Query(
+        """
+        UPDATE funding_accounts
+        SET sync_id = :syncId,
+            source = :sourceScope,
+            payment_source = :paymentSource,
+            label = :label,
+            created_at_epoch_millis = :createdAtEpochMillis
+        WHERE id = :id
+        """
+    )
+    suspend fun updateSynced(
+        id: Long,
+        syncId: String,
+        sourceScope: FundingAccountSourceScope,
+        paymentSource: PaymentSource?,
+        label: String,
+        createdAtEpochMillis: Long
     ): Int
 
     @Query("DELETE FROM funding_accounts WHERE id = :id")
@@ -303,8 +384,14 @@ interface LedgerEntryDao {
     @Query("DELETE FROM ledger_entries WHERE id = :id AND deleted_at_epoch_millis IS NOT NULL")
     suspend fun permanentlyDelete(id: String): Int
 
+    @Query("DELETE FROM ledger_entries WHERE id = :id")
+    suspend fun deleteById(id: String): Int
+
     @Query("DELETE FROM ledger_entries WHERE deleted_at_epoch_millis IS NOT NULL AND deleted_at_epoch_millis <= :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long): Int
+
+    @Query("SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NOT NULL AND deleted_at_epoch_millis <= :cutoff")
+    suspend fun listDeletedBefore(cutoff: Long): List<LedgerEntryEntity>
 
     @Query("DELETE FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId")
     suspend fun deleteByOriginPendingEntryId(pendingEntryId: String)
@@ -362,6 +449,15 @@ interface CategorizationRuleDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rules: List<CategorizationRuleEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(rule: CategorizationRuleEntity)
+
+    @Query("SELECT * FROM categorization_rules WHERE id = :id")
+    suspend fun getById(id: String): CategorizationRuleEntity?
+
+    @Query("DELETE FROM categorization_rules WHERE id = :id")
+    suspend fun deleteById(id: String): Int
 
     @Query(
         """

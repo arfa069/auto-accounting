@@ -49,7 +49,7 @@ private fun createLedgerRepositoryComponents(
     idGenerator: () -> String
 ): LedgerRepositoryComponents {
     val ledgerBooks = RoomLedgerBookRepository(database, clock, idGenerator)
-    val fundingAccounts = RoomFundingAccountRepository(database, clock)
+    val fundingAccounts = RoomFundingAccountRepository(database, clock, idGenerator)
     return LedgerRepositoryComponents(
         ledgerBooks = ledgerBooks,
         ledgerEntries = RoomLedgerEntryRepository(
@@ -112,6 +112,7 @@ class LocalLedgerRepository private constructor(
     suspend fun seedSystemCategories() {
         val defaults = DefaultCategories.systemDefaults(clock())
         database.withTransaction {
+            val recorder = LocalSyncMutationRecorder(database, clock, idGenerator)
             database.categoryDao().insertIgnore(defaults)
             defaults.forEach { category ->
                 database.categoryDao().updateSystemCategory(
@@ -120,6 +121,7 @@ class LocalLedgerRepository private constructor(
                     kind = category.kind,
                     sortOrder = category.sortOrder
                 )
+                database.categoryDao().getCategory(category.id)?.let { recorder.record(it) }
             }
         }
     }
@@ -199,6 +201,7 @@ class LocalLedgerRepository private constructor(
 
         database.ledgerEntryDao().upsert(ledgerEntry)
         database.pendingEntryDao().deleteById(pendingEntryId)
+        LocalSyncMutationRecorder(database, clock, idGenerator).record(ledgerEntry)
         ledgerEntry
     }
 
@@ -278,6 +281,10 @@ class LocalLedgerRepository private constructor(
                 activeLedgerId = DEFAULT_LEDGER_BOOK_ID
             )
         )
+        database.ledgerSyncDao().upsertState(AccountSyncStateEntity())
+        database.ledgerSyncDao().deleteAllMetadata()
+        database.ledgerSyncDao().deleteAllOutbox()
+        database.ledgerSyncDao().deleteAllConflicts()
     }
 
     companion object {

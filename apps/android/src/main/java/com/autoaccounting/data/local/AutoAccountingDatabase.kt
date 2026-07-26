@@ -15,7 +15,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LedgerEntryEntity::class,
         IgnoredEntryEntity::class,
         CategorizationRuleEntity::class,
-        LocalSettingsEntity::class
+        LocalSettingsEntity::class,
+        AccountSyncStateEntity::class,
+        AccountSyncMetadataEntity::class,
+        AccountSyncOutboxEntity::class,
+        AccountSyncConflictEntity::class
     ],
     version = AutoAccountingDatabase.SCHEMA_VERSION,
     exportSchema = true
@@ -30,9 +34,10 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun ignoredEntryDao(): IgnoredEntryDao
     abstract fun categorizationRuleDao(): CategorizationRuleDao
     abstract fun localSettingsDao(): LocalSettingsDao
+    abstract fun ledgerSyncDao(): LedgerSyncDao
 
     companion object {
-        const val SCHEMA_VERSION = 7
+        const val SCHEMA_VERSION = 8
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -273,6 +278,84 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                         "index_ledger_entries_book_deleted_transaction_time " +
                         "ON ledger_entries(" +
                         "ledger_book_id, deleted_at_epoch_millis, transaction_time_epoch_millis)"
+                )
+            }
+        }
+
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE funding_accounts ADD COLUMN sync_id TEXT")
+                db.execSQL(
+                    """
+                    UPDATE funding_accounts
+                    SET sync_id = lower(hex(randomblob(4))) || '-' ||
+                        lower(hex(randomblob(2))) || '-' ||
+                        lower(hex(randomblob(2))) || '-' ||
+                        lower(hex(randomblob(2))) || '-' ||
+                        lower(hex(randomblob(6)))
+                    WHERE sync_id IS NULL
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_funding_accounts_sync_id " +
+                        "ON funding_accounts(sync_id)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS account_sync_state (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        profile_key TEXT,
+                        enabled INTEGER NOT NULL,
+                        cursor INTEGER NOT NULL,
+                        last_success_at_millis INTEGER,
+                        last_error TEXT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS account_sync_metadata (
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        server_version INTEGER NOT NULL,
+                        synced_payload TEXT,
+                        deleted INTEGER NOT NULL,
+                        blocked_by_conflict INTEGER NOT NULL,
+                        PRIMARY KEY(entity_type, entity_id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS account_sync_outbox (
+                        mutation_id TEXT NOT NULL PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        base_version INTEGER NOT NULL,
+                        deleted INTEGER NOT NULL,
+                        payload TEXT,
+                        created_at_millis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_account_sync_outbox_entity_type_entity_id " +
+                        "ON account_sync_outbox(entity_type, entity_id)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS account_sync_conflicts (
+                        conflict_id TEXT NOT NULL PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        canonical_version INTEGER NOT NULL,
+                        canonical_deleted INTEGER NOT NULL,
+                        canonical_payload TEXT,
+                        candidate_deleted INTEGER NOT NULL,
+                        candidate_payload TEXT,
+                        created_at_millis INTEGER NOT NULL
+                    )
+                    """.trimIndent()
                 )
             }
         }

@@ -7,6 +7,8 @@ import com.autoaccounting.backend.ai.AiCategorizationService
 import com.autoaccounting.backend.ai.aiCategorizationRoutes
 import com.autoaccounting.backend.config.CloudConfigService
 import com.autoaccounting.backend.config.cloudConfigRoutes
+import com.autoaccounting.backend.sync.LedgerSyncService
+import com.autoaccounting.backend.sync.ledgerSyncRoutes
 import io.ktor.http.ContentType
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -34,7 +36,8 @@ fun Application.module(
     env: Map<String, String>? = null,
     accountService: AccountService? = null,
     aiCategorizationService: AiCategorizationService? = null,
-    cloudConfigService: CloudConfigService? = null
+    cloudConfigService: CloudConfigService? = null,
+    ledgerSyncService: LedgerSyncService? = null
 ) {
     val resolvedEnv = env ?: System.getenv()
     val resolvedAccountService = accountService ?: AccountService.fromEnvironment(resolvedEnv)
@@ -49,10 +52,16 @@ fun Application.module(
     } else {
         CloudConfigService(accountService = resolvedAccountService)
     }
+    val resolvedLedgerSyncService = ledgerSyncService ?: if (shouldUseEnvironmentDefaults) {
+        LedgerSyncService.fromEnvironment(resolvedAccountService, resolvedEnv)
+    } else {
+        LedgerSyncService(accountService = resolvedAccountService)
+    }
     val deletionJob = AccountDeletionJob(
         accountService = resolvedAccountService,
         aiCategorizationService = resolvedAiCategorizationService,
-        cloudConfigService = resolvedCloudConfigService
+        cloudConfigService = resolvedCloudConfigService,
+        ledgerSyncService = resolvedLedgerSyncService
     )
     launch {
         while (isActive) {
@@ -75,5 +84,6 @@ fun Application.module(
         accountRoutes(resolvedAccountService)
         aiCategorizationRoutes(resolvedAiCategorizationService, resolvedAccountService)
         cloudConfigRoutes(resolvedCloudConfigService, resolvedAccountService)
+        ledgerSyncRoutes(resolvedLedgerSyncService, resolvedAccountService)
     }
 }

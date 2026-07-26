@@ -2,9 +2,9 @@
 
 ## 1. 系统形态
 
-本产品是一款**本地优先 (Local-first)** 的 Android 应用，配有一个轻量级的后端，用于处理统一标识认证、设备注册、云端配置、短信/邮件验证、账号注销以及 AI 分类代理/日志记录。
+本产品是一款**本地优先 (Local-first)** 的 Android 应用，配有一个后端，用于处理统一标识认证、设备注册、云端配置、账户级账本同步、短信/邮件验证、账号注销以及 AI 分类代理/日志记录。
 
-Android 应用掌控所有账本数据的真实源（Owns all ledger-book truth）。首版后端绝对不得同步或存储用户的账本及账目数据。
+Room 是设备端离线真实源；用户明确启用后，后端按账号保存可读的正式同步范围，并作为多设备共享中心。待确认、已忽略、采集证据和设备设置仍只属于设备端。
 
 ```mermaid
 flowchart LR
@@ -23,6 +23,8 @@ flowchart LR
   Books["所有账本 + 共享本地数据"] --> Backup["加密备份"]
   Ledger -. "属于" .-> Books
   App["Android 应用"] --> Backend["Ktor 后端"]
+  Ledger --> Sync["账户同步 outbox / 增量"]
+  Sync <--> Backend
   App --> WechatSdk["微信 OpenSDK"]
   Backend --> WechatOauth["微信开放平台 OAuth"]
   Backend --> PG["PostgreSQL"]
@@ -48,6 +50,7 @@ flowchart LR
 - `feature:account`: 用户名/邮箱/手机号与微信登录注册、身份绑定与合并、Session、本地模式及账号注销。
 - `feature:monitoring`: 自动记账状态、紧凑权限与后台稳定性设置、服务健康度及支付页面观察决策。
 - `feature:settings`: 数据与备份及相关设置。
+- `feature:sync`: 账户同步协调器、HTTPS 客户端、Room outbox、远端应用器与 WorkManager 调度。
 - `feature:diagnostics`: 敏感事件契约、密钥脱敏、加密本地分段、诊断 UI、清除及口令导出。
 
 确保捕获解析与去重逻辑脱离 Android UI 即可进行单元测试。
@@ -77,6 +80,7 @@ flowchart LR
 - `funding_accounts`: 跨账本共享的可复用资金账户（来源透出或用户创建）；手动账户的支付来源可为空。
 - `ignored_entries`: 已忽略的待确认条目，保留 30 天可恢复。
 - `local_settings`: 当前账本 ID、AI 同意状态、增强上下文同意状态及连续同步/监控设置。
+- `account_sync_state`、`account_sync_metadata`、`account_sync_outbox`、`account_sync_conflicts`: 账号绑定、游标、记录版本、持久化待上传变更及人工冲突；不包含 Token。
 - `backup_metadata`: 备份时间戳与恢复历史记录。
 
 敏感本地数据处理：
@@ -161,6 +165,7 @@ Ktor 服务构成：
 - **设备服务 (Device Service)**：已注册设备及设备状态管理。
 - **云端配置服务 (Cloud Config Service)**：同意状态、功能开关、AI 设置及注销冷静期状态。
 - **AI 分类代理服务 (AI Categorization Service)**：向 AI 服务商转发请求并保留内测日志。
+- **账本同步服务 (Ledger Sync Service)**：提供初始化、分页快照、幂等推送、游标增量拉取和冲突解决，并按 `accountId` 隔离。
 - **账号注销服务 (Account Deletion Service)**：注销申请、冷静期状态管理、取消注销及最终清理任务。
 - **合规服务 (Compliance Service)**：提供隐私政策、收集清单、第三方清单及权限说明。
 
@@ -176,6 +181,7 @@ PostgreSQL 数据表：
 - `registered_devices`
 - `cloud_config`
 - `ai_categorization_logs`
+- `ledger_sync_profiles`、`ledger_sync_records`、`ledger_sync_changes`、`ledger_sync_mutations`、`ledger_sync_conflicts`
 
 ## 8. 账号与安全 (Account And Security)
 
@@ -186,6 +192,7 @@ PostgreSQL 数据表：
 
 Session 与传输边界：
 - Android 应用在构建时获取后端 URL。Debug 默认使用 `http://10.0.2.2:8080`；Debug 与 Release 均可使用显式配置的 HTTP 或 HTTPS URL，Release 未配置 URL 时保持账号网络不可用。HTTP 仅用于受控测试网络和专用测试账号，因为账号凭据、验证码与 Session Token 不具备传输加密。
+- 账本同步单独默认拒绝 HTTP；仅当本地忽略配置 `AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC=true` 且目标为回环或 RFC1918 地址时允许受控测试，并在界面持续显示明文风险。生产同步必须使用 HTTPS。
 - Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、验证码、退出登录及注销操作不会自动重试。
 - 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的标识或表单 Token 绝不用于选取受保护账号。
 - 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
@@ -198,8 +205,8 @@ Session 与传输边界：
 - 账号内部以 `accountId` 关联 Session、设备、云配置和 AI 日志；每个账号至多绑定一个用户名、一个邮箱、一个手机号和一个微信身份，所有密码标识共享一份密码与锁定状态。
 - 用户名、邮箱和手机号按统一解析规则规范化；v6 在单事务中将 v5 手机号凭据迁移为账号级密码凭据和 `PHONE` 标识。
 - 微信身份优先用 UnionID 识别，缺失时使用唯一 `(appId, openid)`；每次成功授权刷新昵称和 HTTPS 头像 URL。
-- 合并仅用于微信纯账号与已有密码账号的互补凭据，并始终保留当前账号；密码账号之间发生标识冲突时禁止转移或合并。当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除、双方旧 Session 撤销并删除来源账号。
-- 解绑微信要求账号仍有密码凭据及至少一个登录标识，可使用共享密码，或选择已绑定手机号/邮箱接收专项验证码。所有身份操作不读取、删除或重新分配 Android Room 账本。
+- 合并仅用于微信纯账号与已有密码账号的互补凭据，并始终保留当前账号；密码账号之间发生标识冲突时禁止转移或合并。当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除；同步记录迁移到目标账号，同一记录的不同版本保留为冲突；双方旧 Session 撤销并删除来源账号。
+- 解绑微信要求账号仍有密码凭据及至少一个登录标识，可使用共享密码，或选择已绑定手机号/邮箱接收专项验证码。身份操作不删除 Android Room 账本；只有用户确认换账号时才原子替换正式同步范围。
 
 登录失败处理：
 - 从任一绑定标识连续 5 次密码错误后，账号级密码凭据临时锁定 15 分钟，并建议使用手机号或邮箱找回。
@@ -213,8 +220,8 @@ Session 与传输边界：
 
 账号注销：
 - 7 天冷静期。
-- 冷静期内：允许登录、允许取消注销，暂停云端 AI 与设备配置写入。
-- 执行清理时：以幂等方式先删除 AI 日志和云端配置；仅当两者均成功后，才删除账号、设备及 Session。清理失败将保留等待中账号以便后续重试。
+- 冷静期内：允许登录、同步读取和取消注销，暂停云端 AI、设备配置及账本同步写入；本机 outbox 继续保留。
+- 执行清理时：以幂等方式先删除 AI 日志、云端配置和全部同步 Profile/记录/增量/幂等结果/冲突；仅当清理成功后，才删除账号、设备及 Session。清理失败将保留等待中账号以便后续重试。
 - 清除所有本地账本仍属于独立的受保护本地数据操作。
 
 ## 9. 权限架构 (Permission Architecture)

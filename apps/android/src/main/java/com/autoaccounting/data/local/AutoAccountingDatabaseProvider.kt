@@ -22,7 +22,8 @@ object AutoAccountingDatabaseProvider {
                     AutoAccountingDatabase.MIGRATION_3_4,
                     AutoAccountingDatabase.MIGRATION_4_5,
                     AutoAccountingDatabase.MIGRATION_5_6,
-                    AutoAccountingDatabase.MIGRATION_6_7
+                    AutoAccountingDatabase.MIGRATION_6_7,
+                    AutoAccountingDatabase.MIGRATION_7_8
                 )
                 .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
                 .build()

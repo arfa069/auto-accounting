@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -25,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
@@ -91,7 +97,15 @@ import com.autoaccounting.feature.review.ReviewQueueScreen
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.settings.DataAndBackupScreen
 import com.autoaccounting.feature.settings.LocalDataBackupRepository
+import com.autoaccounting.feature.sync.HttpLedgerSyncRepository
+import com.autoaccounting.feature.sync.LedgerSyncCoordinator
+import com.autoaccounting.feature.sync.LedgerSyncLocalStore
+import com.autoaccounting.feature.sync.LedgerSyncOperationResult
+import com.autoaccounting.feature.sync.LedgerSyncScheduler
+import com.autoaccounting.feature.sync.LedgerSyncUiState
 import com.autoaccounting.ui.components.AppBottomNavigationBar
+import com.autoaccounting.ui.components.Button
+import com.autoaccounting.ui.components.TextButton
 import com.autoaccounting.ui.components.SlidePageTransition
 import com.autoaccounting.ui.rememberAutoAccountingAppState
 import com.autoaccounting.ui.requestHighRefreshRate
@@ -99,6 +113,7 @@ import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -199,10 +214,12 @@ fun AutoAccountingApp(
     onWechatAuthCallbackConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val database = remember { AutoAccountingDatabaseProvider.get(context) }
     val localLedgerRepository = remember(database) { LocalLedgerRepository(database) }
     val localPreferencesRepository = remember(database) { LocalPreferencesRepository(database) }
     val localDataBackupRepository = remember(database) { LocalDataBackupRepository(database) }
+    val ledgerSyncLocalStore = remember(database) { LedgerSyncLocalStore(database) }
     val localModeSessionStore = remember(context.applicationContext) { LocalModeSessionStore(context.applicationContext) }
     val secureAccountSessionStore = remember(context.applicationContext) { SecureAccountSessionStore(context.applicationContext) }
     val installationIdStore = remember(context.applicationContext) { InstallationIdStore(context.applicationContext) }
@@ -213,6 +230,19 @@ fun AutoAccountingApp(
         )
     }
     val accountRepository = accountRepositoryOverride ?: productionAccountRepository
+    val ledgerSyncRepository = remember {
+        HttpLedgerSyncRepository(
+            backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
+            allowHttp = BuildConfig.AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC
+        )
+    }
+    val ledgerSyncCoordinator = remember(ledgerSyncLocalStore, ledgerSyncRepository, installationIdStore) {
+        LedgerSyncCoordinator(
+            localStore = ledgerSyncLocalStore,
+            repository = ledgerSyncRepository,
+            deviceId = installationIdStore::getOrCreate
+        )
+    }
     val productionWechatAuthGateway = remember(context.applicationContext) {
         BuildConfig.AUTO_ACCOUNTING_WECHAT_APP_ID
             .takeIf(String::isNotBlank)
@@ -240,6 +270,9 @@ fun AutoAccountingApp(
     var reviewTransitionInFlight by remember { mutableStateOf(false) }
     var ledgerState by remember { mutableStateOf(LedgerRepositoryState()) }
     var categorizationRules by remember { mutableStateOf(emptyList<CategorizationRule>()) }
+    var ledgerSyncUiState by remember { mutableStateOf(LedgerSyncUiState()) }
+    var showLedgerSyncAccountSwitch by remember { mutableStateOf(false) }
+    var ledgerSyncAccountSwitchBusy by remember { mutableStateOf(false) }
 
     val activeLedgerName = ledgerState.activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
     val ledgerEntries = remember(ledgerState.ledgerEntries) {
@@ -271,12 +304,105 @@ fun AutoAccountingApp(
     }
 
     fun moveAccountToLocalMode() {
+        LedgerSyncScheduler.cancel(context)
         secureAccountSessionStore.clear()
         wechatAvatarCache.clear()
         localModeSessionStore.confirmLocalMode()
         accountSession = AccountSession.LocalMode
         accountDeletionState = AccountDeletionUiState()
         accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.LocalMode)
+    }
+
+    DisposableEffect(
+        database,
+        context,
+        ledgerSyncUiState.enabled,
+        accountSession,
+        accountRuntimeState.status
+    ) {
+        val observer = object : androidx.room.InvalidationTracker.Observer(
+            "categories",
+            "funding_accounts",
+            "ledger_books",
+            "ledger_entries",
+            "categorization_rules"
+        ) {
+            override fun onInvalidated(tables: Set<String>) {
+                if (
+                    ledgerSyncUiState.enabled &&
+                    accountSession is AccountSession.SignedIn &&
+                    accountRuntimeState.status == AccountRuntimeStatus.Verified
+                ) {
+                    LedgerSyncScheduler.enqueueNow(context)
+                }
+            }
+        }
+        database.invalidationTracker.addObserver(observer)
+        onDispose { database.invalidationTracker.removeObserver(observer) }
+    }
+
+    LaunchedEffect(ledgerSyncLocalStore, accountSession) {
+        combine(
+            ledgerSyncLocalStore.state,
+            ledgerSyncLocalStore.outboxCount,
+            ledgerSyncLocalStore.conflicts
+        ) { state, outboxCount, conflicts ->
+            LedgerSyncUiState(
+                signedIn = accountSession is AccountSession.SignedIn,
+                enabled = state?.enabled == true,
+                profileKey = state?.profileKey,
+                lastSuccessAtMillis = state?.lastSuccessAtMillis,
+                lastError = state?.lastError,
+                pendingCount = outboxCount,
+                conflicts = conflicts,
+                insecureHttpTestMode = ledgerSyncRepository.insecureHttpTestMode
+            )
+        }.collect { ledgerSyncUiState = it }
+    }
+
+    LaunchedEffect(accountSession, accountRuntimeState.status, ledgerSyncUiState.enabled) {
+        val signedIn = accountSession as? AccountSession.SignedIn
+        if (
+            signedIn != null &&
+            accountRuntimeState.status == AccountRuntimeStatus.Verified &&
+            ledgerSyncUiState.enabled
+        ) {
+            when (val preview = ledgerSyncCoordinator.preview(signedIn.token)) {
+                is LedgerSyncOperationResult.Success -> {
+                    if (
+                        ledgerSyncUiState.profileKey != null &&
+                        ledgerSyncUiState.profileKey != preview.value.profileKey
+                    ) {
+                        LedgerSyncScheduler.cancel(context)
+                        showLedgerSyncAccountSwitch = true
+                    } else {
+                        LedgerSyncScheduler.ensurePeriodic(context)
+                        LedgerSyncScheduler.enqueueNow(context)
+                    }
+                }
+                is LedgerSyncOperationResult.Failure -> Unit
+            }
+        }
+    }
+
+    DisposableEffect(
+        lifecycleOwner,
+        accountSession,
+        accountRuntimeState.status,
+        ledgerSyncUiState.enabled
+    ) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (
+                event == Lifecycle.Event.ON_RESUME &&
+                accountSession is AccountSession.SignedIn &&
+                accountRuntimeState.status == AccountRuntimeStatus.Verified &&
+                ledgerSyncUiState.enabled
+            ) {
+                LedgerSyncScheduler.enqueueNow(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     fun applyVerifiedCredentials(credentials: AccountCredentials) {
@@ -718,6 +844,7 @@ fun AutoAccountingApp(
                                                     selectedTab = null
                                                     profileDestination = null
                                                 },
+                                                ledgerSyncEnabled = ledgerSyncUiState.enabled,
                                                 modifier = Modifier.padding(innerPadding)
                                             )
 
@@ -810,6 +937,7 @@ fun AutoAccountingApp(
                                                     ledgerState = LedgerRepositoryState()
                                                     coroutineScope.launch {
                                                         try {
+                                                            LedgerSyncScheduler.cancel(context)
                                                             localLedgerRepository.clearLocalData()
                                                         } finally {
                                                             diagnosticLogs.clear(keepEnabledPreference = false)
@@ -818,6 +946,54 @@ fun AutoAccountingApp(
                                                 },
                                                 onBack = { profileDestination = null },
                                                 snackbarHostState = appState.snackbarHostState,
+                                                ledgerSyncState = ledgerSyncUiState.copy(
+                                                    signedIn = activeAccountSession is AccountSession.SignedIn
+                                                ),
+                                                onPreviewLedgerSync = {
+                                                    val signedIn = activeAccountSession as? AccountSession.SignedIn
+                                                    if (signedIn == null) {
+                                                        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+                                                    } else {
+                                                        ledgerSyncCoordinator.preview(signedIn.token)
+                                                    }
+                                                },
+                                                onEnableLedgerSync = { mode ->
+                                                    val signedIn = activeAccountSession as? AccountSession.SignedIn
+                                                    if (signedIn == null) {
+                                                        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+                                                    } else {
+                                                        ledgerSyncCoordinator.enable(signedIn.token, mode).also { result ->
+                                                            if (result is LedgerSyncOperationResult.Success) {
+                                                                LedgerSyncScheduler.ensurePeriodic(context)
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                onSyncNow = {
+                                                    val signedIn = activeAccountSession as? AccountSession.SignedIn
+                                                    if (signedIn == null) {
+                                                        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+                                                    } else {
+                                                        ledgerSyncCoordinator.synchronize(signedIn.token)
+                                                    }
+                                                },
+                                                onDisableLedgerSync = {
+                                                    LedgerSyncScheduler.cancel(context)
+                                                    ledgerSyncLocalStore.disableAndUnbind()
+                                                },
+                                                onResolveLedgerSyncConflict = { conflictId, version, choice ->
+                                                    val signedIn = activeAccountSession as? AccountSession.SignedIn
+                                                    if (signedIn == null) {
+                                                        LedgerSyncOperationResult.Failure(null, "请先登录账户", false)
+                                                    } else {
+                                                        ledgerSyncCoordinator.resolveConflict(
+                                                            signedIn.token,
+                                                            conflictId,
+                                                            version,
+                                                            choice
+                                                        )
+                                                    }
+                                                },
                                                 modifier = Modifier.padding(innerPadding)
                                             )
 
@@ -850,6 +1026,57 @@ fun AutoAccountingApp(
                 }
             }
         }
+    }
+
+    if (showLedgerSyncAccountSwitch) {
+        val signedIn = accountSession as? AccountSession.SignedIn
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("切换账户同步数据") },
+            text = {
+                Text(
+                    if (ledgerSyncUiState.pendingCount > 0) {
+                        "原账户仍有 ${ledgerSyncUiState.pendingCount} 项待上传。为避免丢失，请先恢复原账户完成同步或导出加密备份。"
+                    } else {
+                        "确认后，本机正式账本将切换为当前账户的云端数据。待确认记录和设备设置会保留，原账户数据仍保存在其云端。"
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (signedIn != null) {
+                            ledgerSyncAccountSwitchBusy = true
+                            coroutineScope.launch {
+                                when (val result = ledgerSyncCoordinator.switchAccount(signedIn.token)) {
+                                    is LedgerSyncOperationResult.Success -> {
+                                        showLedgerSyncAccountSwitch = false
+                                        LedgerSyncScheduler.ensurePeriodic(context)
+                                        appState.snackbarHostState.showSnackbar("账户同步数据已切换")
+                                    }
+                                    is LedgerSyncOperationResult.Failure ->
+                                        appState.snackbarHostState.showSnackbar(result.message)
+                                }
+                                ledgerSyncAccountSwitchBusy = false
+                            }
+                        }
+                    },
+                    enabled = signedIn != null && ledgerSyncUiState.pendingCount == 0 && !ledgerSyncAccountSwitchBusy
+                ) { Text(if (ledgerSyncAccountSwitchBusy) "切换中" else "确认切换") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        if (signedIn != null) {
+                            coroutineScope.launch { accountRepository.signOut(signedIn.token) }
+                        }
+                        showLedgerSyncAccountSwitch = false
+                        moveAccountToLocalMode()
+                    },
+                    enabled = !ledgerSyncAccountSwitchBusy
+                ) { Text("取消并退出当前账户") }
+            }
+        )
     }
 }
 

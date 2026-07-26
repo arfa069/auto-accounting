@@ -15,6 +15,7 @@ import com.autoaccounting.data.local.IgnoredEntryEntity
 import com.autoaccounting.data.local.LedgerBookEntity
 import com.autoaccounting.data.local.LedgerEntryEntity
 import com.autoaccounting.data.local.LocalSettingsEntity
+import com.autoaccounting.data.local.LocalSyncMutationRecorder
 import com.autoaccounting.data.local.LOCAL_SETTINGS_ID
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_ID
 import com.autoaccounting.data.local.DEFAULT_LEDGER_BOOK_NAME
@@ -89,6 +90,7 @@ class LocalDataBackupRepository(
                 database.ignoredEntryDao().upsertAll(snapshot.ignoredEntries)
                 database.categorizationRuleDao().upsertAll(snapshot.categorizationRules)
                 database.localSettingsDao().upsert(requireNotNull(snapshot.settings))
+                LocalSyncMutationRecorder(database, System::currentTimeMillis).reconcileAll()
             }
         }
     }
