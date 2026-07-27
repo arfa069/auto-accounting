@@ -17,7 +17,7 @@
 
 1. 用户从“我的”进入“自动记账”，开启持久化开关。
 2. 微信/支付宝的支付通知，或支付结果页/支付记录页的无障碍事件，进入各自的解析流水线。
-3. 用户也可从“待确认”发起补录账单；手动会话优先消费目标来源的无障碍/OCR 结果。
+3. 用户也可从“待确认”发起补录账单；支付宝手动会话消费目标来源的无障碍结果，微信手动会话只使用本机 OCR。
 4. 候选先应用本地分类规则，再与已确认账本及待确认队列去重。
 5. 结果先写入本机 Room 的 `pending_entries`；不会直接写入账本。
 6. 用户在“待确认”中确认后，才在同一个 Room 事务中写入 `ledger_entries` 并删除原待确认记录。
@@ -94,7 +94,7 @@
 - 仅当包名是微信、节点文本为空且 Android 11 以上时才考虑 OCR；正式截屏前还要求屏幕亮起且未锁屏，并再次检查开关、权限和当前窗口（[`BillSyncAccessibilityService.kt:109-117`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L109-L117)、[`BillSyncAccessibilityService.kt:158-218`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L158-L218)、[`BillSyncAccessibilityService.kt:378-389`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L378-L389)）。
 - Android 14 以上截当前窗口，Android 11-13 截默认显示器；Bitmap 在识别后立即回收（[`BillSyncAccessibilityService.kt:269-299`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L269-L299)）。
 - OCR 结果仍走相同的页面判定、解析、去重和待确认流程，但调用 `processAutomatic(..., retainRawEvidence=false)`，不会把 OCR 原文写入待确认记录。若用户另行开启敏感诊断日志，已通过支付边界或当前补录会话的 OCR 文字会写入设备内加密诊断仓库；截图本身始终不保存、不上传。
-- 手动补录的 OCR 是另一条会话授权路径：用户选择微信或支付宝来源时自动授权，只随当前会话存活；当前微信历史账单详情不依赖具体 Activity，自动 OCR 的窄 Activity 白名单不变。只有“当前状态”和“支付成功”构成同一字段关系（同行或相邻键值行）且金额唯一时放行；出现“确认支付、立即支付、收银台、支付密码、待支付、处理中、支付失败、已取消”任一词即优先拒绝。OCR 图片和原文不进入账本数据库；诊断日志开启时，仅当前会话允许加密记录 OCR 文字。
+- 手动补录的 OCR 是另一条会话授权路径：用户选择微信或支付宝来源时自动授权，只随当前会话存活；微信手动补录只使用 OCR，当前微信历史账单详情不依赖具体 Activity，自动 OCR 的窄 Activity 白名单不变。只有 OCR 命中“当前状态 + 支付成功”“当前状态 + 对方已收”或“退款状态 + 已退款”任一完整签名且金额唯一时放行；出现“确认支付、立即支付、收银台、支付密码、待支付、处理中、支付失败、已取消”任一词即优先拒绝。OCR 图片和原文不进入账本数据库；诊断日志开启时，仅当前会话允许加密记录 OCR 文字。
 
 ### 4. 独立核心分支：补录账单
 
@@ -202,7 +202,7 @@ POST /ai/categorize（表单参数）
 - **无障碍自动捕获和手动补录共用 Service，但入口和会话不同**：自动分支看持久化开关与权限健康；手动分支看用户启动的 `BillSyncSession`。
 - **补录账单和手动新增账目不是同一功能**：补录读取外部账单页并进入待确认；手动新增由用户完整填写后直接写入当前账本。
 - **页面白名单与安全排除**：仅微信/支付宝，且付款发起、收银台、聊天输入等页面被拒绝；解析失败不创建待确认项。
-- **OCR 是受限兜底**：仅微信空节点、Android 11 以上、解锁亮屏；自动路径保持窄 Activity 白名单，手动路径仅在用户明确授权的当前会话内覆盖可见历史账单详情且不限定 Activity；图片立即释放，OCR 原文不落入账本数据库。诊断开关开启时，仅允许范围内的 OCR 文字进入设备内加密日志。
+- **OCR 是受限路径**：仅微信、Android 11 以上、解锁亮屏；自动路径只处理缺少完整可读账单字段的页面并保持窄 Activity 白名单，手动路径仅在用户明确授权的当前会话内覆盖可见历史账单详情且不限定 Activity；图片立即释放，OCR 原文不落入账本数据库。诊断开关开启时，仅允许范围内的 OCR 文字进入设备内加密日志。
 
 ### 9. 敏感诊断日志（本机例外）
 

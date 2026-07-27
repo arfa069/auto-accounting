@@ -337,6 +337,7 @@ private fun String.inferTransactionKindLabel(): String? = when {
     hasWechatSentRedPacketSuccessSignature(this) -> "支出"
     hasWechatReceivedRedPacketSuccessSignature(this) -> "收入"
     contains("退款") -> "退款"
+    contains("对方已收") && contains("转账") -> "支出"
     hasCurrentStatusPaymentSuccessPair(this) -> "支出"
     contains("收入") ||
         contains("收款到账") ||
@@ -436,6 +437,7 @@ private fun extractP2pTitle(windowText: String): String? {
         Regex("""(?:^|\n)([^\n]+?)的红包(?:\n|$)"""),
         Regex("""收到(.+?)的转账"""),
         Regex("""([^\s]+?)向你转账"""),
+        Regex("""(?:^|\n)转账[-－—]?转给([^\n]+)(?:\n|$)"""),
         Regex("""转账给(.+?)(?:\s|$)"""),
         Regex("""向([^\s]+?)转账""")
     )
@@ -620,6 +622,8 @@ private val PAYMENT_COMPLETION_KEYWORDS = listOf(
     "转账成功",
     "收款成功",
     "退款成功",
+    "对方已收",
+    "已退款",
     "红包发送成功",
     "已支付",
     "已付款",
@@ -678,6 +682,7 @@ private val MERCHANT_LABELS = listOf(
 private val FUNDING_LABELS = listOf(
     "付款方式",
     "支付方式",
+    "退款方式",
     "扣款方式",
     "资金渠道",
     "支付账户",
@@ -691,9 +696,9 @@ private val PRODUCT_LABELS = listOf(
 
 private val RECEIPT_NOTE_LABELS = listOf("收款方备注")
 
-private val STATUS_LABELS = listOf("当前状态", "交易状态")
+private val STATUS_LABELS = listOf("当前状态", "交易状态", "退款状态")
 
-private val TRANSACTION_ORDER_LABELS = listOf("交易单号", "转账单号")
+private val TRANSACTION_ORDER_LABELS = listOf("交易单号", "转账单号", "退款单号")
 
 private val MERCHANT_ORDER_LABELS = listOf("商户单号")
 
@@ -705,7 +710,9 @@ private val FIELD_LABELS = MERCHANT_LABELS + FUNDING_LABELS + PRODUCT_LABELS +
     "付款金额",
     "交易时间",
     "转账时间",
+    "收款时间",
     "支付时间",
+    "退款时间",
     "创建时间",
     "收单机构"
 )

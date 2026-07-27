@@ -9,6 +9,7 @@ import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
+import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
@@ -231,6 +232,7 @@ class BillSyncCaptureProcessorTest {
         val pageText = requireNotNull(
             prepareManualWechatOcrResultText(
                 """
+                    账单服务
                     肯德基
                     -¥10.40
                     当前状态
@@ -282,6 +284,65 @@ class BillSyncCaptureProcessorTest {
             "WX10012651367114169061602",
             diagnosticFields[DiagnosticSensitiveField.MerchantOrderNumber]
         )
+    }
+
+    @Test
+    fun manualWechatOcrPersistsCompletedTransferAndRefundKinds() = runBlocking {
+        val transferText = requireNotNull(
+            prepareManualWechatOcrResultText(
+                """
+                    转账-转给测试对象
+                    ¥-7.00
+                    当前状态
+                    对方已收钱
+                    转账时间
+                    2026年7月19日 15:10:21
+                    支付方式
+                    测试银行卡
+                    转账单号
+                    10000000000000000001
+                """.trimIndent()
+            )
+        )
+        val refundText = requireNotNull(
+            prepareManualWechatOcrResultText(
+                """
+                    转账-退款
+                    ¥+0.05
+                    退款状态
+                    已退款
+                    退款时间
+                    2026年7月15日 04:54:51
+                    退款方式
+                    零钱
+                    退款单号
+                    10000000000000000002
+                """.trimIndent()
+            )
+        )
+
+        val transferResult = processor.processManualOcr(
+            source = BillSyncSource.WeChat,
+            pageText = transferText
+        )
+        val refundResult = processor.processManualOcr(
+            source = BillSyncSource.WeChat,
+            pageText = refundText
+        )
+
+        assertEquals(1, transferResult.createdEntries.size)
+        assertEquals(1, refundResult.createdEntries.size)
+        val entries = database.pendingEntryDao().listPendingEntries()
+        assertEquals(2, entries.size)
+        assertEquals(
+            TransactionKind.EXPENSE,
+            entries.single { it.amountMinor == 700L }.transactionKind
+        )
+        assertEquals(
+            TransactionKind.REFUND,
+            entries.single { it.amountMinor == 5L }.transactionKind
+        )
+        assertTrue(entries.all { it.evidenceSummary == null })
     }
 
     @Test

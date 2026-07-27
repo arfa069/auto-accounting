@@ -17,7 +17,7 @@ class PaymentScreenOcrFallbackTest {
         assertTrue(
             shouldAttemptManualWechatOcrFallback(
                 packageName = BillSyncSource.WeChat.packageName,
-                pageText = "",
+                pageText = "账单服务",
                 sdkInt = Build.VERSION_CODES.R,
                 windowEvidence = historyDetailWindow
             )
@@ -67,7 +67,7 @@ class PaymentScreenOcrFallbackTest {
     }
 
     @Test
-    fun manualOcrResultRequiresExactStatusPairAndOneUnambiguousAmount() {
+    fun manualOcrResultAcceptsCompletedPaymentTransferOrRefundWithOneAmount() {
         val prepared = requireNotNull(
             prepareManualWechatOcrResultText(
                 "当前状态\n支付成功\n¥10.40"
@@ -85,13 +85,37 @@ class PaymentScreenOcrFallbackTest {
         assertTrue(parsed.single().merchantTitleFromFallback)
         assertTrue(hasCurrentStatusPaymentSuccessPair("当前状态：支付成功"))
         assertTrue(hasCurrentStatusPaymentSuccessPair("当前状态\n支付成功"))
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "当前状态\n对方已收钱\n¥-7.00"
+            ) != null
+        )
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "当前状态\n对方已收\n¥-7.00"
+            ) != null
+        )
+        val correctedTransferText = requireNotNull(
+            prepareManualWechatOcrResultText(
+                "当前状态\n对方己收线\n¥-7.00"
+            )
+        )
+        assertTrue(correctedTransferText.contains("对方已收钱"))
+        assertFalse(correctedTransferText.contains("对方己收线"))
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "退款状态\n已退款\n¥+0.05"
+            ) != null
+        )
         assertEquals(
             null,
             prepareManualWechatOcrResultText("当前状态\n支付成功")
         )
         assertEquals(
             null,
-            prepareManualWechatOcrResultText("当前状态\n支付成功\n¥10.40\n¥20.00")
+            prepareManualWechatOcrResultText(
+                "当前状态\n支付成功\n¥10.40\n¥20.00"
+            )
         )
         assertTrue(
             prepareManualWechatOcrResultText(
@@ -102,9 +126,43 @@ class PaymentScreenOcrFallbackTest {
             null,
             prepareManualWechatOcrResultText("成功\n¥10.40\n交易详情")
         )
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "账单服务\n当前状态\n支付成功\n¥10.40"
+            ) != null
+        )
         assertEquals(
             null,
-            prepareManualWechatOcrResultText("当前状态\n商品\n支付成功\n¥10.40")
+            prepareManualWechatOcrResultText("支付成功\n¥10.40")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("当前状态\n¥10.40")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("对方已收\n¥7.00")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("已退款\n¥0.05")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("退款状态\n¥0.05")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("当前状态\n待对方收钱\n¥7.00")
+        )
+        assertEquals(
+            null,
+            prepareManualWechatOcrResultText("退款状态\n退款处理中\n¥0.05")
+        )
+        assertTrue(
+            prepareManualWechatOcrResultText(
+                "当前状态\n商品\n支付成功\n¥10.40"
+            ) != null
         )
         listOf(
             "确认支付",
@@ -315,6 +373,7 @@ class PaymentScreenOcrFallbackTest {
     fun visualRowOrderingReconstructsWechatTwoColumnHistoryDetail() {
         val normalizedText = normalizePaymentScreenOcrText(
             lines = listOf(
+                OcrLineObservation("账单服务", 40, left = 90, top = 40, bottom = 80),
                 OcrLineObservation("-10.40", 100, left = 390, top = 120, bottom = 220),
                 OcrLineObservation("当前状态", 36, left = 90, top = 320, bottom = 356),
                 OcrLineObservation("支付时间", 36, left = 90, top = 390, bottom = 426),
@@ -342,6 +401,7 @@ class PaymentScreenOcrFallbackTest {
 
         assertEquals(
             listOf(
+                "账单服务",
                 "¥10.40",
                 "当前状态",
                 "支付成功",

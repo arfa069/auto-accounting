@@ -49,6 +49,21 @@ class BookkeepingResultNotifierTest {
         assertEquals("自动记账失败", failure.publicText)
     }
 
+    @Test
+    fun manualImportSuccessUsesManualRecognitionTitle() {
+        val notification = result(
+            createdEntries = listOf(ReviewQueueEntry(id = "pending-1"))
+        ).toBookkeepingResultNotification(
+            sourceLabel = "微信",
+            origin = BookkeepingResultNotificationOrigin.ManualImport
+        )
+        val content = requireNotNull(notification).content()
+
+        assertEquals("补录识别成功", content.title)
+        assertEquals("补录账单", content.publicTitle)
+        assertEquals("识别到 1 笔账目，待确认", content.text)
+    }
+
     private fun result(
         createdEntries: List<ReviewQueueEntry> = emptyList(),
         mergedEntries: List<ReviewQueueEntry> = emptyList(),

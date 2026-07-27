@@ -423,6 +423,66 @@ class BillPageParserTest {
     }
 
     @Test
+    fun parsesCompletedWechatTransferAsExpense() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                转账-转给测试对象
+                ¥-7.00
+                当前状态
+                对方已收钱
+                转账说明
+                微信转账
+                转账时间
+                2026年7月19日 15:10:21
+                收款时间
+                2026年7月19日 15:11:38
+                支付方式
+                测试银行卡
+                转账单号
+                10000000000000000001
+            """.trimIndent()
+        ).single()
+
+        assertEquals("测试对象", entry.merchantTitle)
+        assertEquals(700L, entry.amountMinor)
+        assertEquals("支出", entry.transactionKindLabel)
+        assertEquals("2026-07-19 15:10", entry.transactionTimeText)
+        assertEquals("测试银行卡", entry.fundingAccountLabel)
+        assertTrue(entry.parsedFields.contains("当前状态=对方已收钱"))
+        assertTrue(entry.parsedFields.contains("交易单号=10000000000000000001"))
+    }
+
+    @Test
+    fun parsesCompletedWechatRefundFields() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.WeChat,
+            pageText = """
+                转账-退款
+                ¥+0.05
+                退款状态
+                已退款
+                退款时间
+                2026年7月15日 04:54:51
+                退款方式
+                零钱
+                退款单号
+                10000000000000000002
+                原订单
+                查看原订单
+            """.trimIndent()
+        ).single()
+
+        assertEquals("转账-退款", entry.merchantTitle)
+        assertEquals(5L, entry.amountMinor)
+        assertEquals("退款", entry.transactionKindLabel)
+        assertEquals("2026-07-15 04:54", entry.transactionTimeText)
+        assertEquals("零钱", entry.fundingAccountLabel)
+        assertTrue(entry.parsedFields.contains("当前状态=已退款"))
+        assertTrue(entry.parsedFields.contains("交易单号=10000000000000000002"))
+    }
+
+    @Test
     fun currentStatusPaymentSuccessOverridesUnrelatedIncomeText() {
         val entry = BillPageParser().parse(
             source = BillSyncSource.WeChat,

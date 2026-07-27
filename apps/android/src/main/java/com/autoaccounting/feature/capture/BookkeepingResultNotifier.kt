@@ -15,6 +15,11 @@ import com.autoaccounting.feature.billsync.BillSyncResult
 
 private const val RESULT_CHANNEL_ID = "bookkeeping-results"
 
+enum class BookkeepingResultNotificationOrigin {
+    Automatic,
+    ManualImport
+}
+
 object BookkeepingResultNotificationPermission {
     const val permission: String = Manifest.permission.POST_NOTIFICATIONS
 
@@ -34,7 +39,9 @@ sealed interface BookkeepingResultNotification {
     data class PendingCreated(
         override val key: String,
         val count: Int,
-        val category: String? = null
+        val category: String? = null,
+        val origin: BookkeepingResultNotificationOrigin =
+            BookkeepingResultNotificationOrigin.Automatic
     ) : BookkeepingResultNotification
 
     data class RecognitionFailed(
@@ -43,7 +50,9 @@ sealed interface BookkeepingResultNotification {
 }
 
 fun BillSyncResult.toBookkeepingResultNotification(
-    sourceLabel: String
+    sourceLabel: String,
+    origin: BookkeepingResultNotificationOrigin =
+        BookkeepingResultNotificationOrigin.Automatic
 ): BookkeepingResultNotification? {
     if (errorMessage != null) {
         return BookkeepingResultNotification.RecognitionFailed("failure-$sourceLabel")
@@ -53,7 +62,8 @@ fun BillSyncResult.toBookkeepingResultNotification(
         return BookkeepingResultNotification.PendingCreated(
             key = singleEntry?.id ?: "pending-$sourceLabel",
             count = createdEntries.size,
-            category = singleEntry?.category?.takeIf { it.isNotBlank() }
+            category = singleEntry?.category?.takeIf { it.isNotBlank() },
+            origin = origin
         )
     }
     return null
@@ -61,6 +71,7 @@ fun BillSyncResult.toBookkeepingResultNotification(
 
 internal data class BookkeepingNotificationContent(
     val title: String,
+    val publicTitle: String,
     val text: String,
     val publicText: String
 )
@@ -72,8 +83,10 @@ internal fun BookkeepingResultNotification.content(): BookkeepingNotificationCon
             category != null -> "已归类为$category，待确认"
             else -> "识别到 1 笔账目，待确认"
         }
+        val isManualImport = origin == BookkeepingResultNotificationOrigin.ManualImport
         BookkeepingNotificationContent(
-            title = "自动记账成功",
+            title = if (isManualImport) "补录识别成功" else "自动记账成功",
+            publicTitle = if (isManualImport) "补录账单" else "自动记账",
             text = privateText,
             publicText = "识别到待确认账目"
         )
@@ -81,6 +94,7 @@ internal fun BookkeepingResultNotification.content(): BookkeepingNotificationCon
 
     is BookkeepingResultNotification.RecognitionFailed -> BookkeepingNotificationContent(
         title = "自动记账失败",
+        publicTitle = "自动记账",
         text = "未能创建待确认记录",
         publicText = "自动记账失败"
     )
@@ -112,7 +126,7 @@ class BookkeepingResultNotifier(
         )
         val publicNotification = NotificationCompat.Builder(appContext, RESULT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("自动记账")
+            .setContentTitle(content.publicTitle)
             .setContentText(content.publicText)
             .build()
         val notification = NotificationCompat.Builder(appContext, RESULT_CHANNEL_ID)
@@ -138,7 +152,7 @@ class BookkeepingResultNotifier(
                 "记账结果",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "显示自动记账成功或失败结果"
+                description = "显示账单识别成功或失败结果"
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
             }
         )

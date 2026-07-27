@@ -15,6 +15,7 @@ import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.BookkeepingResultNotificationOrigin
 import com.autoaccounting.feature.capture.toBookkeepingResultNotification
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticEvent
@@ -167,8 +168,11 @@ class BillSyncAccessibilityService : AccessibilityService() {
         val windowEvidence = activeRoot
             ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
             ?.let { root -> currentWechatWindowEvidence(root.windowId, windowIdentity) }
-        val shouldEvaluateManualOcr = manualBillSyncAcceptsPackage &&
-            BillSyncSessions.controller.acceptsManualOcr(packageName) &&
+        val isManualWechatPackage = manualBillSyncAcceptsPackage &&
+            packageName == BillSyncSource.WeChat.packageName
+        val isManualWechatOcrSession = isManualWechatPackage &&
+            BillSyncSessions.controller.acceptsManualOcr(packageName)
+        val shouldEvaluateManualOcr = isManualWechatOcrSession &&
             windowEvidence != null &&
             shouldAttemptManualWechatOcrFallback(
                 packageName = packageName,
@@ -180,6 +184,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
             captureManualWechatOcrFallback(packageName)
             return
         }
+        if (isManualWechatPackage) return
         val shouldEvaluateOcr = shouldConsiderContinuousMonitoring &&
             windowEvidence != null &&
             isWechatOcrFallbackCandidate(
@@ -428,13 +433,37 @@ class BillSyncAccessibilityService : AccessibilityService() {
                         )
                         return@launch
                     }
-                    BillSyncSessions.controller.submitBillPage(
+                    var processedResult: BillSyncResult? = null
+                    val completed = BillSyncSessions.controller.submitBillPage(
                         packageName = packageName,
                         pageText = preparedPageText,
                         process = { billSource, text ->
-                            processor.processManualOcr(billSource, text, traceId, sessionId)
+                            processor.processManualOcr(
+                                billSource,
+                                text,
+                                traceId,
+                                sessionId
+                            ).also { processedResult = it }
                         }
                     )
+                    if (completed) {
+                        processedResult?.toBookkeepingResultNotification(
+                            sourceLabel = BillSyncSource.WeChat.label,
+                            origin = BookkeepingResultNotificationOrigin.ManualImport
+                        )?.let { notification ->
+                            recordMetadata(
+                                "result_notification_requested",
+                                "requested",
+                                notification.javaClass.simpleName.ifBlank {
+                                    "bookkeeping_result"
+                                },
+                                traceId = traceId,
+                                sessionId = sessionId,
+                                source = DiagnosticSource.WeChat
+                            )
+                            resultNotifier.notify(notification)
+                        }
+                    }
                 } finally {
                     screenshot.recycle()
                 }
@@ -1130,7 +1159,12 @@ internal fun shouldAttemptManualWechatOcrFallback(
 ): Boolean = packageName == BillSyncSource.WeChat.packageName &&
     sdkInt >= Build.VERSION_CODES.R &&
     windowEvidence.isApplicationWindow &&
-    hasOnlyGenericWechatAccessibilityText(pageText)
+    (
+        hasOnlyGenericWechatAccessibilityText(pageText) ||
+            pageText.contains(MANUAL_WECHAT_BILL_SERVICE_KEYWORD)
+        )
+
+private const val MANUAL_WECHAT_BILL_SERVICE_KEYWORD = "账单服务"
 
 private fun isWechatOcrFallbackCandidate(
     packageName: String,

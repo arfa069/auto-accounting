@@ -66,7 +66,7 @@ Capture output:
 - The flow checks accessibility grant and live service connection separately before source selection or app launch.
 - After source launch, the user has 90 seconds to enter and remain on a bill, transaction-detail, or payment-result page. Timeout affects only the matching session while it is still waiting.
 - The accessibility processor and `ReviewQueuePersistence` are the only manual-import write path; UI observes the Room Flow and never creates pending entries a second time.
-- Manual WeChat OCR creates a candidate only when `当前状态` and `支付成功` form the same field relationship and one unambiguous amount is present. Any of `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, or `已取消` rejects the page.
+- Manual WeChat import uses OCR only and creates a candidate when one complete signature is recognized—`当前状态 + 支付成功`, `当前状态 + 对方已收`, or `退款状态 + 已退款`—and one unambiguous amount is present. Any of `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, or `已取消` rejects the page.
 - When present, normalized output includes payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id.
 - Confidence state: high confidence, needs review, duplicate suspect.
 
