@@ -16,6 +16,7 @@
 - [诊断日志操作手册](./DIAGNOSTIC-LOGS.md)
 - [Android 性能审计与 Trace 分析](./performance-audit/)
 - [领域语言与术语表](../CONTEXT.md)
+- [微信与支付宝交易识别规则](./PAYMENT-RECOGNITION-RULES.md)
 - [自动记账流程研究](./research/auto-bookkeeping-flow.md)
 - [架构决策记录 (ADR)](./adr/)
 

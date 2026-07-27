@@ -18,7 +18,7 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 - Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
 - Automatic capture is the primary flow after explicit opt-in; user-started bill import (`补录账单`) remains a limited backfill and fallback path.
-- Selecting a source for one manual-import session automatically authorizes local OCR for that session. The current fallback is limited to supported visible pages with no usable accessibility text and does not broaden automatic OCR. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
+- Selecting a source starts one source-scoped manual-import session. WeChat manual import uses local OCR only; Alipay manual import reads accessibility node text and does not take screenshots. The current fallback does not broaden automatic OCR. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
 - All automatically captured transactions first become pending entries.
 - Ledger books are local-first in Room and can be explicitly bound to the signed-in account for automatic multi-device synchronization.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
