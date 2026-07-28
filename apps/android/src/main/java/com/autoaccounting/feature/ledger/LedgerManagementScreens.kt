@@ -571,6 +571,8 @@ private fun FundingAccountDeleteResult.Referenced.referenceMessage(): String =
 
 internal object LedgerTestTags {
     const val ENTRY_LIST = "ledger-entry-list"
+    const val SEARCH_FIELD = "ledger-search-field"
+    const val FILTER_BUTTON = "ledger-filter-button"
     const val MORE_MENU = "ledger-more"
     const val MANAGE_LEDGERS = "ledger-manage-ledgers"
     const val MANAGE_FUNDING_ACCOUNTS = "ledger-manage-funding-accounts"

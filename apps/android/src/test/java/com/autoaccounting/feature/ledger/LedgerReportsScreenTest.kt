@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertCountEquals
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
 import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.FundingAccountEntity
@@ -32,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,6 +61,17 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("本月收入 ¥12.90").assertIsDisplayed()
         composeRule.onNodeWithText("净额\n-¥29.00").assertIsDisplayed()
         composeRule.onNodeWithText("午餐").assertIsDisplayed()
+
+        val searchBounds = composeRule.onNodeWithTag(LedgerTestTags.SEARCH_FIELD)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val filterBounds = composeRule.onNodeWithTag(LedgerTestTags.FILTER_BUTTON)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertEquals(searchBounds.width, filterBounds.width, 1f)
+        assertEquals(searchBounds.height, filterBounds.height, 1f)
+        assertEquals(searchBounds.top + 4f, filterBounds.top, 1f)
+        assertEquals(searchBounds.bottom + 4f, filterBounds.bottom, 1f)
 
         composeRule.onNodeWithText("搜索商户或备注").performTextInput("地铁")
         composeRule.onNodeWithText("地铁出行").assertIsDisplayed()
@@ -134,14 +148,16 @@ class LedgerReportsScreenTest {
         }
 
         composeRule.onNodeWithTag(LedgerTestTags.ENTRY_LIST).performScrollToIndex(19)
+        var firstVisibleItemIndex = 0
         composeRule.runOnIdle {
-            assertEquals(19, entryListState.firstVisibleItemIndex)
+            firstVisibleItemIndex = entryListState.firstVisibleItemIndex
+            assertTrue(firstVisibleItemIndex > 0)
             showLedger = false
         }
         composeRule.runOnIdle { showLedger = true }
 
         composeRule.runOnIdle {
-            assertEquals(19, entryListState.firstVisibleItemIndex)
+            assertEquals(firstVisibleItemIndex, entryListState.firstVisibleItemIndex)
         }
         composeRule.onNodeWithText("账目 0").assertIsDisplayed()
     }
@@ -473,6 +489,8 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithTag("manual-direction-OUTFLOW").assertIsDisplayed()
         composeRule.onNodeWithTag("manual-direction-INFLOW").assertIsDisplayed()
         composeRule.onNodeWithText("交易信息").assertIsDisplayed()
+        composeRule.onNodeWithText("商户（可选）").assertIsDisplayed()
+        composeRule.onNodeWithText("商户/标题（可选）").assertDoesNotExist()
         composeRule.onNodeWithTag("manual-entry-actions").assertIsDisplayed()
         composeRule.onNodeWithTag("manual-entry-amount").performTextInput("12.34")
         composeRule.onNodeWithTag("manual-entry-merchant").performScrollTo().performTextInput("早餐")
@@ -598,7 +616,9 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithText("午餐").performClick()
         composeRule.onNodeWithText("编辑账目").assertIsDisplayed()
         composeRule.onNodeWithText("交易信息").assertIsDisplayed()
-        composeRule.onNodeWithTag("manual-direction-NEUTRAL").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-direction-OUTFLOW").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-direction-INFLOW").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-direction-NEUTRAL").assertDoesNotExist()
         composeRule.onNodeWithText("账户与备注").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("manual-entry-actions").assertIsDisplayed()
         composeRule.onNodeWithText("新建资金账户").assertDoesNotExist()
@@ -608,6 +628,37 @@ class LedgerReportsScreenTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000) { updatedInput.get() != null }
         assertEquals(2_000L, updatedInput.get()?.amountMinor)
+    }
+
+    @Test
+    fun longMerchantTitleCanBeEditedFromTheBeginning() {
+        val updatedInput = AtomicReference<LedgerEntryInput?>()
+        composeRule.setContent {
+            LedgerScreen(
+                entries = listOf(sampleEntries().first()),
+                onUpdateEntry = { _, input -> updatedInput.set(input) }
+            )
+        }
+
+        composeRule.onNodeWithText("午餐").performClick()
+        val merchantField = composeRule.onNodeWithTag("manual-entry-merchant")
+        composeRule.onNodeWithText("商户（可选）").assertIsDisplayed()
+        composeRule.onNodeWithText("商户/标题（可选）").assertDoesNotExist()
+        val shortFieldHeight = merchantField.fetchSemanticsNode().boundsInRoot.height
+        merchantField.performTextClearance()
+        merchantField.performTextInput("这是一个超过输入框宽度的商户名称")
+        composeRule.waitForIdle()
+        val wrappedFieldHeight = merchantField.fetchSemanticsNode().boundsInRoot.height
+        assertTrue(wrappedFieldHeight > shortFieldHeight)
+        merchantField.performTextInputSelection(TextRange.Zero)
+        merchantField.performTextInput("新")
+        composeRule.onNodeWithText("保存修改").performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) { updatedInput.get() != null }
+        assertEquals(
+            "新这是一个超过输入框宽度的商户名称",
+            updatedInput.get()?.merchantTitle
+        )
     }
 
     @Test

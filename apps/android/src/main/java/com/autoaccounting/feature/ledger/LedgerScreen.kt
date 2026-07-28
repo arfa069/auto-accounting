@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -367,14 +369,34 @@ private fun LedgerList(
                 }
             }
             LedgerSummary(summary)
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = { searchText = it },
-                label = { Text("搜索商户或备注") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedButton(onClick = { showFilters = !showFilters }) { Text("筛选") }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    label = { Text("搜索商户或备注") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag(LedgerTestTags.SEARCH_FIELD)
+                )
+                OutlinedButton(
+                    onClick = { showFilters = !showFilters },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .offset(y = 4.dp)
+                        .testTag(LedgerTestTags.FILTER_BUTTON)
+                ) {
+                    Text("筛选")
+                }
+            }
             if (showFilters) {
                 FilterPanel(
                     sourceFilter = sourceFilter,

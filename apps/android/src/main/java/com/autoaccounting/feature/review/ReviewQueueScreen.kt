@@ -783,7 +783,7 @@ private fun ReviewPendingEntryEditor(
             initial = initial,
             categories = availableCategories,
             fundingAccounts = fundingAccounts,
-            flowDirections = FlowDirection.entries,
+            flowDirections = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
             allowCreateFundingAccount = false,
             saveLabel = "确认入账",
             onExit = onExit,

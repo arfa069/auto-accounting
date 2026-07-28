@@ -351,8 +351,8 @@ private fun ManualTransactionCard(
             OutlinedTextField(
                 value = state.merchantTitle,
                 onValueChange = { onStateChange(state.copy(merchantTitle = it)) },
-                label = { Text("商户/标题（可选）") },
-                singleLine = true,
+                label = { Text("商户（可选）") },
+                maxLines = 2,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 72.dp)
@@ -651,7 +651,7 @@ internal fun LedgerEntryForm(
         initial = initial,
         categories = categories,
         fundingAccounts = fundingAccounts,
-        flowDirections = FlowDirection.entries,
+        flowDirections = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
         allowCreateFundingAccount = false,
         saveLabel = "保存修改",
         onExit = onExit,

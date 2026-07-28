@@ -133,7 +133,7 @@ Ledger management:
 - Users can create a manual entry directly in the current ledger book without passing through the review queue.
 - Manual entry requires flow direction, transaction kind, amount, and transaction time; the first version supports CNY only.
 - Merchant/title, category, funding account, note, and payment source are optional; an omitted category uses the uncategorized category.
-- The funding-account selector lists reusable existing accounts and offers inline creation of a named account with an optional payment source.
+- The funding-account selector lists reusable existing accounts. New accounts are created only from the separate Funding Accounts page.
 - A separate Funding Accounts page lists shared accounts and supports create, edit, and delete without opening a ledger-entry form.
 - Funding-account names are trimmed and must be non-empty. The same normalized name cannot repeat within the same payment source, while equal names under different payment sources remain valid.
 - Editing a funding account preserves its identity and creation time and does not rewrite the payment source stored on historical entries.
@@ -141,7 +141,8 @@ Ledger management:
 - Automatic confirmation preserves an existing funding-account ID when present; otherwise it may match an existing account by exact normalized name and payment source, but never creates an account automatically.
 - Creating, selecting, or managing a funding account does not introduce account balances or reconciliation.
 - The form can select existing categories or the uncategorized category; creating, editing, or deleting categories is outside this ledger CRUD scope.
-- Users can edit flow direction, transaction kind, amount, transaction time, merchant/title, category, funding account, note, and payment source on both manual and automatically captured ledger entries.
+- Manual creation, ledger-entry editing, and pending-entry editing expose outflow and inflow only; neutral remains a persisted reporting value for existing data.
+- Users can edit transaction kind, amount, transaction time, merchant, category, funding account, note, and payment source on both manual and automatically captured ledger entries. The shared merchant field is labeled `商户（可选）` and supports two visible lines.
 - Amounts are stored as positive minor-unit values; flow direction independently determines whether an entry is an inflow, outflow, or neutral for reports.
 - Amount input must be greater than zero, use at most two decimal places, and fit safely in the stored minor-unit integer; users do not enter a sign.
 - Transaction time cannot be later than the current device time; future planned transactions are outside the ledger CRUD scope.
@@ -150,7 +151,7 @@ Ledger management:
 - Editing replaces the current user-visible fields and records the last-modified time; the first version does not keep per-edit versions or provide history rollback.
 - Ledger entries retain their creation or first-confirmation time in addition to the last-modified time.
 - Ledger display, search, and reports use the corrected payment source; Debug provenance views use the original capture source.
-- Tapping a ledger row opens a read-only detail view; editing starts only after an explicit edit action.
+- Tapping a ledger row opens the shared ledger-entry editor directly.
 - Manual creation and ledger-entry editing share the same transaction form while keeping their entry points and save actions distinct.
 - Creation and editing keep changes in the form until the user explicitly saves; saving validates and writes the complete entry as one operation.
 - Leaving a dirty form requires the user to choose between discarding changes and continuing editing.
@@ -162,8 +163,8 @@ Ledger management:
 - Deleting from the detail screen first confirms that the entry will remain recoverable for 30 days, then returns to the ledger and offers an immediate undo action.
 
 Search and filters:
-- Search icon.
-- Filter panel with time, source, category, transaction kind, and amount range.
+- The `搜索商户或备注` field and `筛选` button share one row at a 1:1 width ratio, with equal visible height and aligned top and bottom edges.
+- The expandable filter panel contains source, category, and transaction-kind fields.
 
 ### 5.4 Reports
 
