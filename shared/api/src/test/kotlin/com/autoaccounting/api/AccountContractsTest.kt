@@ -14,6 +14,8 @@ class AccountContractsTest {
     @Test
     fun sessionResponseRoundTripsPendingDeletion() {
         val expected = AccountSessionResponseContract(
+            accountId = 42,
+            accountUuid = "d061c044-86c0-4673-8b07-3bd605ced1bc",
             token = "session-token",
             deletionStatus = AccountDeletionStatusContract(
                 pending = true,
@@ -126,6 +128,8 @@ class AccountContractsTest {
     @Test
     fun wechatExchangeSignedInRoundTrips() {
         val session = AccountSessionResponseContract(
+            accountId = 42,
+            accountUuid = "d061c044-86c0-4673-8b07-3bd605ced1bc",
             primaryIdentifier = AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000"),
             identifiers = listOf(AccountIdentifierContract(AccountIdentifierTypeContract.PHONE, "13800138000")),
             token = "session-tok",

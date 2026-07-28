@@ -100,7 +100,18 @@ fun AccountManagementScreen(
                             coroutineScope.launch {
                                 when (
                                     val result = accountRepository.verifySession(
-                                        AccountCredentials(session.phone, session.token)
+                                        AccountCredentials(
+                                            accountId = session.accountId,
+                                            accountUuid = session.accountUuid,
+                                            primaryIdentifier = session.primaryIdentifier,
+                                            identifiers = session.identifiers,
+                                            rawPhone = session.rawPhone,
+                                            token = session.token,
+                                            deletionState = deletionState,
+                                            wechatLinked = session.wechatLinked,
+                                            nickname = session.nickname,
+                                            avatarUrl = session.avatarUrl
+                                        )
                                     )
                                 ) {
                                     is AccountRepositoryResult.Success -> {
@@ -116,6 +127,7 @@ fun AccountManagementScreen(
                 }
                 WechatAccountManagementPanel(
                     session = session,
+                    deletionState = deletionState,
                     accountRepository = accountRepository,
                     wechatAuthGateway = wechatAuthGateway,
                     wechatAuthCallback = wechatAuthCallback,

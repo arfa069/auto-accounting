@@ -9,8 +9,9 @@ import java.nio.charset.StandardCharsets
 
 interface SmsProvider {
     fun sendCode(phone: String, code: String): SmsProviderResult
-}
 
+    companion object
+}
 sealed interface SmsProviderResult {
     data object Sent : SmsProviderResult
     data class Failed(val error: AccountError) : SmsProviderResult
@@ -62,17 +63,136 @@ class WebhookSmsProvider(
 
     companion object {
         fun fromEnvironment(env: Map<String, String> = System.getenv()): SmsProvider {
-            val provider = env["AUTO_ACCOUNTING_SMS_PROVIDER"].orEmpty().lowercase()
-            if (provider.isBlank()) return MissingSmsProvider
-            if (provider != "webhook") return MissingSmsProvider
+            return SmsProvider.fromEnvironment(env)
+        }
+    }
+}
 
+class AliyunPnvsSmsProvider(
+    private val accessKeyId: String,
+    private val accessKeySecret: String,
+    private val signName: String,
+    private val templateCode: String,
+    private val schemeName: String = "",
+    private val endpoint: String = "https://dypnsapi.aliyuncs.com",
+    private val httpClient: HttpClient = HttpClient.newHttpClient()
+) : SmsProvider {
+    override fun sendCode(phone: String, code: String): SmsProviderResult {
+        return try {
+            val timestamp = ISO_INSTANT_FORMATTER.format(java.time.Instant.now())
+            val nonce = java.util.UUID.randomUUID().toString()
+
+            val params = mutableMapOf(
+                "AccessKeyId" to accessKeyId,
+                "Action" to "SendSmsVerifyCode",
+                "Format" to "JSON",
+                "PhoneNumber" to phone,
+                "SignName" to signName,
+                "SignatureMethod" to "HMAC-SHA1",
+                "SignatureNonce" to nonce,
+                "SignatureVersion" to "1.0",
+                "TemplateCode" to templateCode,
+                "TemplateParam" to "{\"code\":\"$code\",\"min\":\"5\"}",
+                "Timestamp" to timestamp,
+                "Version" to "2017-05-25"
+            )
+            if (schemeName.isNotBlank()) {
+                params["SchemeName"] = schemeName
+            }
+
+            val canonicalizedQueryString = params.entries
+                .sortedBy { it.key }
+                .joinToString("&") { (k, v) ->
+                    "${percentEncode(k)}=${percentEncode(v)}"
+                }
+
+            val stringToSign = "POST&${percentEncode("/")}&${percentEncode(canonicalizedQueryString)}"
+            val signature = computeHmacSha1(stringToSign, "$accessKeySecret&")
+            val requestBody = "Signature=${percentEncode(signature)}&$canonicalizedQueryString"
+
+            val request = HttpRequest.newBuilder(URI.create(endpoint))
+                .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+            val body = response.body().orEmpty()
+            if (response.statusCode() in 200..299 && isSuccessResponse(body)) {
+                SmsProviderResult.Sent
+            } else {
+                SmsProviderResult.Failed(AccountError.SMS_SEND_FAILED)
+            }
+        } catch (_: RuntimeException) {
+            SmsProviderResult.Failed(AccountError.SMS_SEND_FAILED)
+        } catch (_: java.io.IOException) {
+            SmsProviderResult.Failed(AccountError.SMS_SEND_FAILED)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            SmsProviderResult.Failed(AccountError.SMS_SEND_FAILED)
+        }
+    }
+
+    companion object {
+        private val ISO_INSTANT_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(java.time.ZoneOffset.UTC)
+
+        fun percentEncode(value: String): String {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8)
+                .replace("+", "%20")
+                .replace("*", "%2A")
+                .replace("%7E", "~")
+        }
+
+        fun computeHmacSha1(data: String, key: String): String {
+            val mac = javax.crypto.Mac.getInstance("HmacSHA1")
+            val secretKey = javax.crypto.spec.SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "HmacSHA1")
+            mac.init(secretKey)
+            val signData = mac.doFinal(data.toByteArray(StandardCharsets.UTF_8))
+            return java.util.Base64.getEncoder().encodeToString(signData)
+        }
+
+        private fun isSuccessResponse(body: String?): Boolean {
+            if (body.isNullOrBlank()) return false
+            return body.contains("\"Code\":\"OK\"") || body.contains("\"code\":\"OK\"")
+        }
+    }
+}
+
+fun SmsProvider.Companion.fromEnvironment(env: Map<String, String> = System.getenv()): SmsProvider {
+    val provider = env["AUTO_ACCOUNTING_SMS_PROVIDER"].orEmpty().lowercase()
+    if (provider.isBlank()) return MissingSmsProvider
+
+    return when (provider) {
+        "webhook" -> {
             val url = env["AUTO_ACCOUNTING_SMS_WEBHOOK_URL"].orEmpty()
             val key = env["AUTO_ACCOUNTING_SMS_API_KEY"].orEmpty()
-            return if (url.isBlank() || key.isBlank()) {
+            if (url.isBlank() || key.isBlank()) MissingSmsProvider else WebhookSmsProvider(url, key)
+        }
+        "aliyun_pnvs", "aliyun" -> {
+            val keyId = env["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_ID"]
+                ?: env["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_ID"]
+                ?: env["ALIYUN_ACCESS_KEY_ID"]
+                .orEmpty()
+            val keySecret = env["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_SECRET"]
+                ?: env["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_SECRET"]
+                ?: env["ALIYUN_ACCESS_KEY_SECRET"]
+                .orEmpty()
+            val signName = env["AUTO_ACCOUNTING_SMS_SIGN_NAME"].orEmpty()
+            val templateCode = env["AUTO_ACCOUNTING_SMS_TEMPLATE_CODE"].orEmpty()
+            val schemeName = env["AUTO_ACCOUNTING_SMS_SCHEME_NAME"].orEmpty()
+
+            if (keyId.isBlank() || keySecret.isBlank() || signName.isBlank() || templateCode.isBlank()) {
                 MissingSmsProvider
             } else {
-                WebhookSmsProvider(url, key)
+                AliyunPnvsSmsProvider(
+                    accessKeyId = keyId,
+                    accessKeySecret = keySecret,
+                    signName = signName,
+                    templateCode = templateCode,
+                    schemeName = schemeName
+                )
             }
         }
+        else -> MissingSmsProvider
     }
 }

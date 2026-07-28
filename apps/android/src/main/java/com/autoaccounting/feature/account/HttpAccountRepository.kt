@@ -181,9 +181,57 @@ internal class HttpAccountRepository(
         ) { body ->
             val response = AccountApiJsonContracts.parseSessionResponse(body)
             credentials.copy(
+                accountId = response.accountId ?: credentials.accountId,
+                accountUuid = response.accountUuid ?: credentials.accountUuid,
                 primaryIdentifier = response.primaryIdentifier ?: credentials.primaryIdentifier,
                 identifiers = response.identifiers.ifEmpty { credentials.identifiers },
                 rawPhone = credentials.rawPhone,
+                deletionState = response.deletionStatus.toUiState(),
+                wechatLinked = response.wechatLinked,
+                nickname = response.nickname,
+                avatarUrl = response.avatarUrl
+            )
+        }
+    }
+
+    override suspend fun updateNickname(
+        credentials: AccountCredentials,
+        nickname: String
+    ): AccountRepositoryResult<AccountCredentials> {
+        return execute(
+            path = "/account/profile/nickname",
+            form = mapOf("nickname" to nickname),
+            bearerToken = credentials.token
+        ) { body ->
+            val response = AccountApiJsonContracts.parseSessionResponse(body)
+            credentials.copy(
+                accountId = response.accountId ?: credentials.accountId,
+                accountUuid = response.accountUuid ?: credentials.accountUuid,
+                primaryIdentifier = response.primaryIdentifier ?: credentials.primaryIdentifier,
+                identifiers = response.identifiers.ifEmpty { credentials.identifiers },
+                deletionState = response.deletionStatus.toUiState(),
+                wechatLinked = response.wechatLinked,
+                nickname = response.nickname,
+                avatarUrl = response.avatarUrl
+            )
+        }
+    }
+
+    override suspend fun updateAvatar(
+        credentials: AccountCredentials,
+        avatarDataUrl: String
+    ): AccountRepositoryResult<AccountCredentials> {
+        return execute(
+            path = "/account/profile/avatar",
+            form = mapOf("avatarDataUrl" to avatarDataUrl),
+            bearerToken = credentials.token
+        ) { body ->
+            val response = AccountApiJsonContracts.parseSessionResponse(body)
+            credentials.copy(
+                accountId = response.accountId ?: credentials.accountId,
+                accountUuid = response.accountUuid ?: credentials.accountUuid,
+                primaryIdentifier = response.primaryIdentifier ?: credentials.primaryIdentifier,
+                identifiers = response.identifiers.ifEmpty { credentials.identifiers },
                 deletionState = response.deletionStatus.toUiState(),
                 wechatLinked = response.wechatLinked,
                 nickname = response.nickname,
@@ -287,10 +335,14 @@ internal class HttpAccountRepository(
 
     override suspend fun prepareIdentifierLink(
         token: String,
-        identifier: String
+        identifier: String,
+        replaceExisting: Boolean
     ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract> = execute(
         path = "/account/identifier/link/prepare",
-        form = mapOf("identifier" to identifier, "deviceId" to installationId()),
+        form = mapOf(
+            "identifier" to identifier,
+            "deviceId" to installationId()
+        ) + if (replaceExisting) mapOf("replaceExisting" to "true") else emptyMap(),
         bearerToken = token,
         parse = AccountApiJsonContracts::parseIdentifierLinkPrepareResponse
     )
@@ -469,6 +521,8 @@ private fun AccountDeletionStatusContract.toUiState(): AccountDeletionUiState =
 private fun AccountSessionResponseContract.toCredentials(): AccountCredentials {
     val sessionToken = requireNotNull(token) { "Account response did not include a token." }
     return AccountCredentials(
+        accountId = accountId,
+        accountUuid = accountUuid,
         primaryIdentifier = primaryIdentifier,
         identifiers = identifiers,
         rawPhone = null,

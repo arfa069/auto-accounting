@@ -32,6 +32,16 @@ interface AccountRepository {
         credentials: AccountCredentials
     ): AccountRepositoryResult<AccountCredentials>
 
+    suspend fun updateNickname(
+        credentials: AccountCredentials,
+        nickname: String
+    ): AccountRepositoryResult<AccountCredentials>
+
+    suspend fun updateAvatar(
+        credentials: AccountCredentials,
+        avatarDataUrl: String
+    ): AccountRepositoryResult<AccountCredentials>
+
     suspend fun signOut(token: String): AccountRepositoryResult<Unit>
 
     suspend fun getDeletionStatus(token: String): AccountRepositoryResult<AccountDeletionUiState>
@@ -61,7 +71,8 @@ interface AccountRepository {
 
     suspend fun prepareIdentifierLink(
         token: String,
-        identifier: String
+        identifier: String,
+        replaceExisting: Boolean = false
     ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract>
 
     suspend fun completeIdentifierLink(
@@ -96,10 +107,12 @@ interface AccountRepository {
 }
 
 data class AccountCredentials(
+    val accountId: Long? = null,
     val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
     val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
     val rawPhone: String? = null,
     val token: String,
+    val accountUuid: String? = null,
     val deletionState: AccountDeletionUiState = AccountDeletionUiState(),
     val wechatLinked: Boolean = false,
     val nickname: String? = null,
@@ -224,6 +237,26 @@ class FakeAccountRepository : AccountRepository {
         credentials.copy(deletionState = deletionState)
     )
 
+    override suspend fun updateNickname(
+        credentials: AccountCredentials,
+        nickname: String
+    ): AccountRepositoryResult<AccountCredentials> = AccountRepositoryResult.Success(
+        credentials.copy(
+            deletionState = deletionState,
+            nickname = nickname
+        )
+    )
+
+    override suspend fun updateAvatar(
+        credentials: AccountCredentials,
+        avatarDataUrl: String
+    ): AccountRepositoryResult<AccountCredentials> = AccountRepositoryResult.Success(
+        credentials.copy(
+            deletionState = deletionState,
+            avatarUrl = avatarDataUrl
+        )
+    )
+
     override suspend fun signOut(token: String): AccountRepositoryResult<Unit> =
         AccountRepositoryResult.Success(Unit)
 
@@ -276,7 +309,8 @@ class FakeAccountRepository : AccountRepository {
 
     override suspend fun prepareIdentifierLink(
         token: String,
-        identifier: String
+        identifier: String,
+        replaceExisting: Boolean
     ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract> = AccountRepositoryResult.Success(
         IdentifierLinkPrepareResponseContract.LinkTicketIssued("mock-link-ticket", 300_000L)
     )

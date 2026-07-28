@@ -20,6 +20,91 @@ import org.junit.Test
 
 class AccountRoutesTest {
     @Test
+    fun nicknameUpdatePersistsStableAccountIdAndDeletionState() = testApplication {
+        val store = InMemoryAccountStore()
+        val clock = MutableClock(1_000)
+        application {
+            module(
+                accountService = AccountService(
+                    store = store,
+                    smsCodeGenerator = { "123456" },
+                    tokenGenerator = { "token-1" },
+                    clock = clock
+                )
+            )
+        }
+
+        client.submitForm(
+            url = "/account/verification-code",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("deviceId", "device-a")
+                append("purpose", "REGISTER")
+            }
+        )
+        val registered = client.submitForm(
+            url = "/account/register",
+            formParameters = Parameters.build {
+                append("identifier", "13800138000")
+                append("code", "123456")
+                append("password", "Aa123456!")
+                append("deviceId", "device-a")
+            }
+        )
+        val accountId = requireNotNull(
+            AccountApiJsonContracts.parseSessionResponse(registered.bodyAsText()).accountId
+        )
+        client.submitForm(
+            url = "/account/delete/request",
+            formParameters = Parameters.Empty
+        ) { header(HttpHeaders.Authorization, "Bearer token-1") }
+
+        val updated = client.submitForm(
+            url = "/account/profile/nickname",
+            formParameters = Parameters.build {
+                append("nickname", " 新昵称 ")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-1") }
+
+        assertEquals(HttpStatusCode.OK, updated.status)
+        val updatedContract = AccountApiJsonContracts.parseSessionResponse(updated.bodyAsText())
+        assertEquals(accountId, updatedContract.accountId)
+        assertEquals("新昵称", updatedContract.nickname)
+        assertTrue(updatedContract.deletionStatus.pending)
+        assertNull(updatedContract.token)
+
+        val verified = client.submitForm(
+            url = "/account/token/verify",
+            formParameters = Parameters.Empty
+        ) { header(HttpHeaders.Authorization, "Bearer token-1") }
+        val verifiedContract = AccountApiJsonContracts.parseSessionResponse(verified.bodyAsText())
+        assertEquals(accountId, verifiedContract.accountId)
+        assertEquals("新昵称", verifiedContract.nickname)
+        assertTrue(verifiedContract.deletionStatus.pending)
+
+        val avatar = client.submitForm(
+            url = "/account/profile/avatar",
+            formParameters = Parameters.build {
+                append("avatarDataUrl", "data:image/jpeg;base64,/9j/")
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer token-1") }
+        assertEquals(HttpStatusCode.OK, avatar.status)
+        assertEquals(
+            "data:image/jpeg;base64,/9j/",
+            AccountApiJsonContracts.parseSessionResponse(avatar.bodyAsText()).avatarUrl
+        )
+
+        val avatarVerified = client.submitForm(
+            url = "/account/token/verify",
+            formParameters = Parameters.Empty
+        ) { header(HttpHeaders.Authorization, "Bearer token-1") }
+        assertEquals(
+            "data:image/jpeg;base64,/9j/",
+            AccountApiJsonContracts.parseSessionResponse(avatarVerified.bodyAsText()).avatarUrl
+        )
+    }
+
+    @Test
     fun smsRateLimitUsesObservedRemoteIpAndIgnoresSubmittedIp() = testApplication {
         application {
             module(

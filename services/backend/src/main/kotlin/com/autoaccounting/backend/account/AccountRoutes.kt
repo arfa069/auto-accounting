@@ -82,6 +82,28 @@ fun Route.accountRoutes(accountService: AccountService) {
         )
     }
 
+    post("/account/profile/nickname") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.updateNickname(
+                token = call.accountBearerToken().orEmpty(),
+                nickname = parameters["nickname"].orEmpty()
+            ),
+            includeToken = false
+        )
+    }
+
+    post("/account/profile/avatar") {
+        val parameters = call.receiveParameters()
+        call.respondAccountResult(
+            accountService.updateAvatar(
+                token = call.accountBearerToken().orEmpty(),
+                avatarDataUrl = parameters["avatarDataUrl"].orEmpty()
+            ),
+            includeToken = false
+        )
+    }
+
     post("/account/logout") {
         call.respondAccountResult(accountService.signOut(call.accountBearerToken().orEmpty()))
     }
@@ -182,7 +204,8 @@ fun Route.accountRoutes(accountService: AccountService) {
                 bearerToken = call.accountBearerToken().orEmpty(),
                 identifier = identifier,
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.local.remoteHost,
+                replaceExisting = parameters["replaceExisting"].toBoolean()
             )
         )
     }
@@ -287,6 +310,8 @@ private suspend fun ApplicationCall.respondJson(body: String, status: HttpStatus
 
 private fun AccountToken.toContract(includeToken: Boolean): AccountSessionResponseContract {
     return AccountSessionResponseContract(
+        accountId = accountId,
+        accountUuid = accountUuid,
         primaryIdentifier = primaryIdentifier,
         identifiers = identifiers,
         token = token.takeIf { includeToken },

@@ -13,6 +13,8 @@
 
 当前工作区使用 Android SDK: `C:\Users\Arfa\AppData\Local\Android\Sdk`。
 
+后端环境变量模板位于 `services/backend/.env.example`。Android 的 `AUTO_ACCOUNTING_BACKEND_URL` 可放在被 Git 忽略的根目录 `local.properties` 或进程环境变量中；Debug 未配置时使用 `http://10.0.2.2:8080`，Release 未配置时保持账号网络不可用。局域网 HTTP 只用于受控测试账号，生产环境必须使用 HTTPS。
+
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest
 .\gradlew.bat coverageReport
@@ -50,6 +52,8 @@ Phase 2 已将本地账本、待确认队列、规则与 AI 同意、备份恢�
 “自动记账”页当前以紧凑清单展示通知监听、无障碍及后台运行、自启动、电池优化、省电模式引导；后四项只用于提升国产 ROM 后台稳定性，不阻断自动记账启用。Android 13 及以上的记账结果通知在开启自动记账时按需申请，拒绝不影响本地采集与持久化。
 
 当前账号入口支持用户名、邮箱或手机号加密码登录；用户名注册和真实 SMTP 邮箱注册已完成验收。短信验证码直接登录不在产品范围内，真实短信 Provider 未配置，因此手机号注册、找回及短信验证类绑定暂不可用。微信代码与假 Provider 自动化已完成，但未配置 Android AppID 和后端 AppID/AppSecret，入口保持隐藏，真实微信登录/注册不可用。
+
+已登录账户管理使用后端生成的公开 UUID 作为稳定账号 ID，界面仅显示脱敏短格式，复制时保留完整 UUID；不得从 Session Token 派生账号 ID。昵称、相册头像和相机头像通过账号 Profile 接口持久化，手机号与邮箱支持经验证码换绑。
 
 账户同步已完成一台 Xiaomi 真机与受控模拟客户端的账号切换、两种冲突处理及局域网 HTTP Release 验收。两台真实设备与生产式 HTTPS Release 验收仍未完成。目标 ROM 设备矩阵也尚未全部覆盖，云端 AI 仍使用本地 `DemoAiCategorizationGateway`。
 

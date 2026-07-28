@@ -9,12 +9,14 @@
 - 用户名注册和密码登录可用，已完成签名 Release 真机验收。
 - 邮箱验证码注册可用，当前 SMTP 已配置并完成真实邮件发送验收。
 - 已有手机号账号可使用“手机号 + 密码”登录。
-- 当前没有“短信验证码直接登录”流程；真实短信 Provider 未配置，因此手机号注册、找回密码和短信验证类绑定目前不可用。
+- 已接入真实短信 Provider 架构，后端支持阿里云个人开发者“短信认证”（号码认证服务 PNVS / Dypnsapi 2017-05-25）与 Webhook 双方案；未配置私有凭据前维持安全阻断。
 - 微信登录/注册代码和假 Provider 自动化已完成；当前 Android AppID、后端 AppID/AppSecret 均未配置，入口隐藏，真实微信能力不可用。
 
 ## P0：启用真实短信能力
 
-- [ ] 选择并接入真实短信服务商，通过后端环境变量配置 Provider、Webhook URL 和 API Key，不把凭据写入代码、文档或版本库。
+- [ ] 选择并接入真实短信服务商，通过后端环境变量配置 Provider 及相应凭据（不得写入代码、文档或版本库）：
+  - 阿里云短信认证服务（推荐个人开发者）：配置 `AUTO_ACCOUNTING_SMS_PROVIDER=aliyun_pnvs`（或 `aliyun`），并配置 `AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_ID`、`AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_SECRET`、`AUTO_ACCOUNTING_SMS_SIGN_NAME`（预置签名名称）和 `AUTO_ACCOUNTING_SMS_TEMPLATE_CODE`（预置模板 Code）。
+  - Webhook 短信网关：配置 `AUTO_ACCOUNTING_SMS_PROVIDER=webhook`、`AUTO_ACCOUNTING_SMS_WEBHOOK_URL` 和 `AUTO_ACCOUNTING_SMS_API_KEY`。
 - [ ] 使用签名 Release 真机验证手机号注册、找回密码、绑定手机号及其他短信二次验证流程。
 - [ ] 验证验证码 5 分钟有效、最多错误 3 次、用途隔离、不可重放、发送限流及 Provider 故障提示。
 - [ ] 检查日志、诊断导出、截图和服务端错误均不泄露手机号原文、验证码或短信凭据。

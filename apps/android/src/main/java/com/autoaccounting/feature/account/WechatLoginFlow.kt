@@ -212,6 +212,8 @@ class WechatLoginController(
 }
 
 internal fun AccountCredentials.toSignedInSession(): AccountSession.SignedIn = AccountSession.SignedIn(
+    accountId = accountId,
+    accountUuid = accountUuid,
     primaryIdentifier = primaryIdentifier,
     identifiers = identifiers,
     rawPhone = rawPhone,

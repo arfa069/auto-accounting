@@ -51,6 +51,8 @@ enum class AccountErrorCodeContract {
 const val TICKET_VALIDITY_MILLIS: Long = 5 * 60 * 1000L
 
 data class AccountSessionResponseContract(
+    val accountId: Long? = null,
+    val accountUuid: String? = null,
     val primaryIdentifier: AccountIdentifierContract? = null,
     val identifiers: List<AccountIdentifierContract> = emptyList(),
     val token: String? = null,
@@ -151,6 +153,8 @@ object AccountApiJsonContracts {
     fun encodeSessionResponse(response: AccountSessionResponseContract): String {
         return buildJsonObject {
             put("ok", true)
+            response.accountId?.let { put("accountId", it) }
+            response.accountUuid?.let { put("accountUuid", it) }
             if (response.primaryIdentifier != null) {
                 putIdentifier("primaryIdentifier", response.primaryIdentifier)
             }
@@ -168,6 +172,8 @@ object AccountApiJsonContracts {
     fun parseSessionResponse(body: String): AccountSessionResponseContract {
         val root = parseSuccessfulRoot(body)
         return AccountSessionResponseContract(
+            accountId = root["accountId"]?.jsonPrimitive?.longOrNull,
+            accountUuid = root["accountUuid"]?.jsonPrimitive?.contentOrNull,
             primaryIdentifier = root.parseIdentifier("primaryIdentifier"),
             identifiers = root.parseIdentifiers("identifiers"),
             token = root["token"]?.jsonPrimitive?.contentOrNull,
@@ -186,6 +192,8 @@ object AccountApiJsonContracts {
             when (val r = response.result) {
                 is WechatAuthResultContract.SignedIn -> {
                     put("status", "SIGNED_IN")
+                    r.session.accountId?.let { put("accountId", it) }
+                    r.session.accountUuid?.let { put("accountUuid", it) }
                     if (r.session.primaryIdentifier != null) {
                         putIdentifier("primaryIdentifier", r.session.primaryIdentifier)
                     }
@@ -225,6 +233,8 @@ object AccountApiJsonContracts {
             "SIGNED_IN" -> {
                 WechatAuthResultContract.SignedIn(
                     session = AccountSessionResponseContract(
+                        accountId = root["accountId"]?.jsonPrimitive?.longOrNull,
+                        accountUuid = root["accountUuid"]?.jsonPrimitive?.contentOrNull,
                         primaryIdentifier = root.parseIdentifier("primaryIdentifier"),
                         identifiers = root.parseIdentifiers("identifiers"),
                         token = root["token"]?.jsonPrimitive?.contentOrNull,

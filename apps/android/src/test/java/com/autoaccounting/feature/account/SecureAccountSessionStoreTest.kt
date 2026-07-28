@@ -48,10 +48,12 @@ class SecureAccountSessionStoreTest {
     }
 
     @Test
-    fun versionThreeRestoresWechatOnlyProfileWithoutPlaintextFields() {
+    fun versionFiveRestoresUuidAccountIdAndDeletionStateWithoutPlaintextFields() {
         val credentials = AccountCredentials(
-            phone = null,
+            accountId = 42,
+            accountUuid = "d061c044-86c0-4673-8b07-3bd605ced1bc",
             token = "wechat-sensitive-token",
+            deletionState = AccountDeletionUiState(1_000, 604_801_000),
             wechatLinked = true,
             nickname = "微信小张",
             avatarUrl = "https://example.com/avatar.jpg"
@@ -70,7 +72,7 @@ class SecureAccountSessionStoreTest {
     }
 
     @Test
-    fun legacyVersionTwoWechatSessionRestoresAndUpgradesToVersionThree() {
+    fun legacyVersionTwoWechatSessionRestoresAndUpgradesToVersionFive() {
         val token = "legacy-wechat-token".toByteArray()
         val nickname = "微信小张".toByteArray()
         val legacyPlaintext = ByteBuffer.allocate(
@@ -107,11 +109,11 @@ class SecureAccountSessionStoreTest {
             preferences.getString("encrypted_session", null),
             android.util.Base64.NO_WRAP
         )
-        assertEquals(3.toByte(), ReversibleTestCipher().decrypt(upgraded).first())
+        assertEquals(5.toByte(), ReversibleTestCipher().decrypt(upgraded).first())
     }
 
     @Test
-    fun versionThreeUsernameAndEmailSessionsRestoreAcrossStoreInstances() {
+    fun versionFourUsernameAndEmailSessionsRestoreAcrossStoreInstances() {
         val cases = listOf(
             com.autoaccounting.api.AccountIdentifierContract(
                 com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME,
@@ -167,7 +169,7 @@ class SecureAccountSessionStoreTest {
             preferences.getString("encrypted_session", null),
             android.util.Base64.NO_WRAP
         )
-        assertEquals(3.toByte(), ReversibleTestCipher().decrypt(upgradedCiphertext).first())
+        assertEquals(5.toByte(), ReversibleTestCipher().decrypt(upgradedCiphertext).first())
         assertEquals(
             restored.credentials.copy(nickname = "ignored-without-wechat"),
             (store.restore() as AccountSessionRestoreResult.Restored).credentials

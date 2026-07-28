@@ -15,6 +15,7 @@ import kotlinx.serialization.json.longOrNull
  */
 data class StoredAccount(
     val accountId: Long,
+    val publicId: String = java.util.UUID.randomUUID().toString(),
     val primaryIdentifierType: String? = null,
     val deletionRequestedAtMillis: Long? = null,
     val createdAtMillis: Long
@@ -88,6 +89,13 @@ data class StoredWechatIdentity(
     val updatedAtMillis: Long
 )
 
+data class StoredAccountProfile(
+    val accountId: Long,
+    val nickname: String? = null,
+    val avatarUrl: String? = null,
+    val updatedAtMillis: Long
+)
+
 sealed interface WechatIdentityClaimResult {
     data object Claimed : WechatIdentityClaimResult
     data class Conflict(val existingIdentity: StoredWechatIdentity) : WechatIdentityClaimResult
@@ -112,6 +120,8 @@ interface AccountStore {
     fun findPasswordCredentialByAccountId(accountId: Long): StoredPasswordCredential?
     fun findIdentifiersByAccountId(accountId: Long): List<StoredAccountIdentifier>
     fun findIdentifierByValue(identifierType: String, normalizedValue: String): StoredAccountIdentifier?
+    fun findProfileByAccountId(accountId: Long): StoredAccountProfile?
+    fun upsertProfile(profile: StoredAccountProfile)
     fun updatePasswordCredential(credential: StoredPasswordCredential)
     fun resetPasswordAndRotateSession(
         credential: StoredPasswordCredential,
@@ -151,7 +161,8 @@ interface AccountStore {
         deviceId: String,
         ipAddress: String,
         now: Long,
-        tokenGenerator: () -> String
+        tokenGenerator: () -> String,
+        replaceExisting: Boolean = false
     ): AccountResult<AccountToken>
 
     fun upsertVerificationCode(code: StoredVerificationCode)
@@ -240,6 +251,7 @@ class InMemoryAccountStore : AccountStore {
     private val sessions = mutableMapOf<String, StoredSession>()
     private val devices = mutableMapOf<Pair<Long, String>, StoredRegisteredDevice>()
     private val wechatIdentities = mutableMapOf<Long, StoredWechatIdentity>()
+    private val profiles = mutableMapOf<Long, StoredAccountProfile>()
     private val oneTimeTickets = mutableMapOf<String, StoredOneTimeTicket>()
 
     private data class VerificationSendLog(
@@ -264,6 +276,13 @@ class InMemoryAccountStore : AccountStore {
 
     override fun findIdentifierByValue(identifierType: String, normalizedValue: String): StoredAccountIdentifier? {
         return accountIdentifiers[identifierType to normalizedValue]
+    }
+
+    override fun findProfileByAccountId(accountId: Long): StoredAccountProfile? = profiles[accountId]
+
+    override fun upsertProfile(profile: StoredAccountProfile) {
+        check(accounts.containsKey(profile.accountId))
+        profiles[profile.accountId] = profile
     }
 
     override fun updatePasswordCredential(credential: StoredPasswordCredential) {
@@ -390,16 +409,23 @@ class InMemoryAccountStore : AccountStore {
         deviceId: String,
         ipAddress: String,
         now: Long,
-        tokenGenerator: () -> String
+        tokenGenerator: () -> String,
+        replaceExisting: Boolean
     ): AccountResult<AccountToken> {
         val ticket = oneTimeTickets[ticketHash]
             ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        if (ticket.ticketType != "IDENTIFIER_LINK" || ticket.accountId != accountId ||
+        if (ticket.ticketType !in setOf("IDENTIFIER_LINK", "IDENTIFIER_REPLACE") || ticket.accountId != accountId ||
             ticket.usedAtMillis != null || ticket.expiresAtMillis < now
         ) return AccountResult.Failure(AccountError.TICKET_EXPIRED)
-        if (accountIdentifiers.containsKey(identifierType to normalizedValue) ||
-            accountIdentifiers.values.any { it.accountId == accountId && it.identifierType == identifierType }
-        ) return AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+        if (accountIdentifiers.containsKey(identifierType to normalizedValue)) {
+            return AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+        }
+        val existingOfType = accountIdentifiers.values.find {
+            it.accountId == accountId && it.identifierType == identifierType
+        }
+        if (replaceExisting != (existingOfType != null)) {
+            return AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+        }
 
         val account = accounts[accountId] ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val existingPassword = passwordCredentials[accountId]
@@ -415,8 +441,17 @@ class InMemoryAccountStore : AccountStore {
                 updatedAtMillis = now
             )
         }
-        val added = addIdentifierToAccount(accountId, identifierType, rawValue, normalizedValue, true, now)
-        check(added) { "Identifier link preconditions changed while holding the store lock" }
+        if (existingOfType == null) {
+            val added = addIdentifierToAccount(accountId, identifierType, rawValue, normalizedValue, true, now)
+            check(added) { "Identifier link preconditions changed while holding the store lock" }
+        } else {
+            accountIdentifiers.remove(existingOfType.identifierType to existingOfType.normalizedValue)
+            accountIdentifiers[identifierType to normalizedValue] = existingOfType.copy(
+                rawValue = rawValue,
+                normalizedValue = normalizedValue,
+                updatedAtMillis = now
+            )
+        }
         if (account.primaryIdentifierType == null) {
             accounts[accountId] = account.copy(primaryIdentifierType = identifierType)
         }
@@ -478,6 +513,7 @@ class InMemoryAccountStore : AccountStore {
         sessions.values.removeAll { it.accountId == accountId }
         devices.keys.removeAll { it.first == accountId }
         wechatIdentities.remove(accountId)
+        profiles.remove(accountId)
     }
 
 

@@ -5,6 +5,7 @@ package com.autoaccounting.backend
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -143,7 +144,58 @@ fun runBackendMigrations(
     username: String = "",
     password: String = ""
 ) {
-    runMigrations(jdbcUrl, username, password, allBackendMigrations)
+    runMigrations(
+        jdbcUrl,
+        username,
+        password,
+        allBackendMigrations.filter { it.version <= ACCOUNT_PUBLIC_ID_BACKFILL_VERSION }
+    )
+    backfillAccountPublicIds(jdbcUrl, username, password)
+    runMigrations(
+        jdbcUrl,
+        username,
+        password,
+        allBackendMigrations.filter { it.version > ACCOUNT_PUBLIC_ID_BACKFILL_VERSION }
+    )
+}
+
+private fun backfillAccountPublicIds(
+    jdbcUrl: String,
+    username: String,
+    password: String
+) {
+    jdbcConnection(jdbcUrl, username, password).use { connection ->
+        val accountIds = connection.prepareStatement(
+            "SELECT account_id FROM accounts WHERE public_id IS NULL"
+        ).use { statement ->
+            statement.executeQuery().use { result ->
+                buildList {
+                    while (result.next()) add(result.getLong("account_id"))
+                }
+            }
+        }
+        if (accountIds.isEmpty()) return
+
+        connection.autoCommit = false
+        try {
+            connection.prepareStatement(
+                "UPDATE accounts SET public_id = ? WHERE account_id = ? AND public_id IS NULL"
+            ).use { statement ->
+                accountIds.forEach { accountId ->
+                    statement.setString(1, UUID.randomUUID().toString())
+                    statement.setLong(2, accountId)
+                    statement.addBatch()
+                }
+                statement.executeBatch()
+            }
+            connection.commit()
+        } catch (error: SQLException) {
+            connection.rollback()
+            throw error
+        } finally {
+            connection.autoCommit = true
+        }
+    }
 }
 
 val allBackendMigrations = listOf(
@@ -577,5 +629,39 @@ val allBackendMigrations = listOf(
             )
             """.trimIndent()
         )
+    ),
+    Migration(
+        version = 8,
+        statements = listOf(
+            """
+            CREATE TABLE account_profiles (
+                account_id BIGINT PRIMARY KEY REFERENCES accounts(account_id) ON DELETE CASCADE,
+                nickname TEXT,
+                avatar_url TEXT,
+                updated_at_millis BIGINT NOT NULL
+            )
+            """.trimIndent(),
+            """
+            INSERT INTO account_profiles (account_id, nickname, avatar_url, updated_at_millis)
+            SELECT account_id, nickname, avatar_url, updated_at_millis
+            FROM account_wechat_identities
+            WHERE nickname IS NOT NULL OR avatar_url IS NOT NULL
+            """.trimIndent()
+        )
+    ),
+    Migration(
+        version = 9,
+        statements = listOf(
+            "ALTER TABLE accounts ADD COLUMN public_id VARCHAR(36)",
+            "CREATE UNIQUE INDEX accounts_public_id_idx ON accounts(public_id)"
+        )
+    ),
+    Migration(
+        version = 10,
+        statements = listOf(
+            "ALTER TABLE accounts ALTER COLUMN public_id SET NOT NULL"
+        )
     )
 )
+
+private const val ACCOUNT_PUBLIC_ID_BACKFILL_VERSION = 9

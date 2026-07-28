@@ -12,6 +12,7 @@
 - 后端按统一规则识别、规范化和查询用户名、邮箱或手机号。
 - 每个账号拥有一份共享密码和登录锁定状态，可绑定至多一个用户名、一个邮箱和一个手机号。
 - 用户名账号可补充手机号和邮箱；补充后均可用于登录和找回密码。
+- 已绑定手机号或邮箱可通过对应渠道验证码显式换绑；普通补绑请求不得覆盖已有同类型标识。
 - 微信绑定、合并与解绑逻辑同步识别新的密码登录方式，但无 AppID 时隐藏微信入口的行为不变。
 - 通过数据库 v6 将现有手机号凭据无损迁移为账号级密码凭据和 `PHONE` 登录标识。
 - 最终直接切换到统一标识协议，不保留旧 `phone` 请求参数及手机号专用认证端点。
@@ -60,7 +61,7 @@
 
 - 新增 `AccountIdentifierTypeContract`：`USERNAME`、`EMAIL`、`PHONE`。
 - 新增 `AccountIdentifierContract`：`type`、`value`、`verified`。
-- Session 返回 `primaryIdentifier`、`identifiers`、`token`、微信资料和注销状态；微信纯账号允许主标识为空、标识列表为空。
+- Session 返回 `accountUuid`、`primaryIdentifier`、`identifiers`、`token`、账号 Profile、微信资料和注销状态；微信纯账号允许主标识为空、标识列表为空。
 - 新协议端点：
   - `POST /account/verification-code`
   - `POST /account/register`
@@ -94,7 +95,7 @@
 
 - `shared/api`：统一标识类型、解析规则、Session、绑定、合并和错误契约。
 - `services/backend`：v6 迁移、Store、验证码 Provider、SMTP、注册登录找回、绑定、微信与 Ktor Routes。
-- `apps/android`：Repository、加密 Session V3、注册登录找回状态、验证码布局、账号管理及微信界面。
+- `apps/android`：Repository、加密 Session V5（兼容读取 V1–V4）、注册登录找回状态、验证码布局、账号管理及微信界面。
 - `docs`：API、架构、UI、合规、后端配置示例、Phase 2 索引及本 Issue 的执行证据。
 
 ## 执行规则
@@ -286,6 +287,7 @@
 - [x] 验证码为 6 位、5 分钟有效、最多错误 3 次，不能跨目标、渠道或用途复用。
 - [x] 验证码输入框和获取按钮位于同一行，输入框与按钮宽度约为 2:1。
 - [x] 用户名账号可分别绑定一个手机号和一个邮箱。
+- [x] 已绑定手机号和邮箱可通过单次票据与对应验证码换绑，普通补绑不会静默覆盖。
 - [x] 绑定后的手机号和邮箱均可登录和找回密码。
 - [x] 任一绑定标识共享密码、失败次数和锁定状态。
 - [x] 密码重置后全部旧 Session 失效。
@@ -356,6 +358,7 @@
 - **Task 11**：状态：已完成；完成日期：2026-07-23；变更摘要：账号管理页改为单一优先身份摘要，隐藏健康状态连接卡，离线未验证时保留精简“重新验证”入口，并移除重复用户名明细和登录方式行；绑定与微信门控保持协议边界；验证命令与结果：账号管理及相关 Wechat Compose 测试通过，定向回归 13/13 通过，Xiaomi 真机确认页面符合预期；遗留风险或停止边界：微信真实流程仍待 AppID/真实微信条件。
 - **Task 12**：状态：已完成；完成日期：2026-07-24；变更摘要：删除 Store、JDBC、Service、Route、共享契约和 Android Repository 中的旧手机号双轨兼容层；运行时代码仅保留统一标识协议，微信解绑验证码改为显式提交并校验手机号或邮箱标识；验证命令与结果：共享、后端及 Android 账号定向测试全部通过，旧端点、旧响应字段、旧 Store 类型和方法的生产代码 `rg` 扫描无匹配；遗留风险或停止边界：无。
 - **Task 13**：状态：已完成；完成日期：2026-07-24；变更摘要：同步 API、架构、产品、UI、合规、SMTP 示例及 Phase 2 索引，完成完整回归、静态检查、构建、签名与密钥扫描；验证命令与结果：Android 完整套件曾有 1 个 `MainActivityTest.firstLocalModeSelectionNavigatesToHome` 时序失败，单独重跑通过；账号/UI 定向测试 13/13 通过；Release 构建成功并经 v2 签名校验，安装到 Xiaomi 测试机成功；真实 PostgreSQL 18.4 v5→v6 备份、迁移、健康检查与重复启动验证通过；163 SMTP 真实发送成功；遗留风险或停止边界：微信真实验收仍待 AppID/真实微信条件，真实目标库本次迁移前为空；detekt 与 Release R8 仅保留既有告警，未导致任务失败。
+- **后续账户管理扩展**：状态：已完成；完成日期：2026-07-28；变更摘要：显式 `replaceExisting` 票据支持手机号/邮箱换绑，保持验证码用途隔离、Session 轮换和主标识不变；同时补齐公开账号 UUID 与账号 Profile。验证命令与结果：Backend 路由/持久化及 Android Repository/Compose 回归已覆盖，Android 全量单测、Release 构建、v2 签名与 Xiaomi 覆盖安装通过；遗留风险或停止边界：真实短信 Provider 仍未配置，换绑真实短信端到端继续记录在根 `todos.md`。
 
 ## 依赖
 

@@ -1,5 +1,15 @@
 package com.autoaccounting.feature.account
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -7,12 +17,18 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTextInput
+import androidx.core.app.ActivityOptionsCompat
+import androidx.test.core.app.ApplicationProvider
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -99,7 +115,8 @@ class AccountWechatUiTest {
         composeRule.setContent {
             AccountManagementScreen(
                 session = AccountSession.SignedIn(
-                    phone = "13800138000",
+                    accountId = 42,
+                    rawPhone = "13800138000",
                     token = "token",
                     wechatLinked = true,
                     nickname = "微信小张"
@@ -122,7 +139,7 @@ class AccountWechatUiTest {
         composeRule.onNodeWithText("手机号登录").assertDoesNotExist()
         composeRule.onNodeWithText("微信登录").assertDoesNotExist()
         composeRule.onNodeWithTag("unlink-wechat").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("bind-phone").assertIsDisplayed()
+        composeRule.onNodeWithTag("bind-phone").assertDoesNotExist()
     }
 
     @Test
@@ -158,7 +175,7 @@ class AccountWechatUiTest {
 
         assertEquals("token-1", verified?.token)
         assertEquals("Aa123456!", repository.lastCompleteIdentifierPassword)
-        composeRule.onNodeWithTag("unlink-wechat").assertIsDisplayed()
+        composeRule.onNodeWithTag("unlink-wechat").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -304,7 +321,7 @@ class AccountWechatUiTest {
 
         assertEquals(1, consumed)
         assertEquals(0, repository.exchangeWechatCalls)
-        composeRule.onNodeWithText("登录状态已变化", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("登录状态已变化", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -338,6 +355,185 @@ class AccountWechatUiTest {
         composeRule.waitUntil { invalidSessionCalls == 1 }
 
         assertEquals(1, repository.unlinkWechatWithPasswordCalls)
+    }
+
+    @Test
+    fun editNicknameUpdatesSession() {
+        val repository = TestAccountRepository()
+        val deletionState = AccountDeletionUiState(1_000, 604_801_000)
+        var updatedCredentials: AccountCredentials? = null
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(
+                    accountId = 42,
+                    rawPhone = "13800138000",
+                    token = "token",
+                    wechatLinked = false,
+                    nickname = "旧昵称"
+                ),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.DeletionCoolingOff),
+                deletionState = deletionState,
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = { credentials -> updatedCredentials = credentials },
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("btn-edit-nickname").performScrollTo().performClick()
+        composeRule.onNodeWithText("修改昵称").assertIsDisplayed()
+        composeRule.onNodeWithTag("input-edit-nickname").performTextReplacement("新极客酷昵称")
+        composeRule.onNodeWithTag("confirm-edit-nickname").performClick()
+        composeRule.waitUntil { updatedCredentials != null }
+
+        assertEquals(1, repository.updateNicknameCalls)
+        assertEquals("新极客酷昵称", repository.lastNickname)
+        assertEquals("新极客酷昵称", updatedCredentials?.nickname)
+        assertEquals(42L, updatedCredentials?.accountId)
+        assertEquals(deletionState, updatedCredentials?.deletionState)
+    }
+
+    @Test
+    fun stableAccountIdAndSupportedProfileAndReplacementActionsAreShown() {
+        val phone = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
+            "13800138000"
+        )
+        val email = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL,
+            "user@example.com"
+        )
+        val repository = TestAccountRepository()
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(
+                    accountId = 42,
+                    accountUuid = "d061c044-86c0-4673-8b07-3bd605ced1bc",
+                    primaryIdentifier = phone,
+                    identifiers = listOf(phone, email),
+                    token = "secret-session-token"
+                ),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithText("d061c044****d1bc").assertIsDisplayed()
+        composeRule.onNodeWithText("d061c044-86c0-4673-8b07-3bd605ced1bc").assertDoesNotExist()
+        composeRule.onNodeWithText("42").assertDoesNotExist()
+        composeRule.onNodeWithText("secret-session-token").assertDoesNotExist()
+        composeRule.onNodeWithTag("copy-account-id").assertIsDisplayed().performClick()
+        val clipboard = ApplicationProvider.getApplicationContext<Context>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        assertEquals(
+            "d061c044-86c0-4673-8b07-3bd605ced1bc",
+            clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+        )
+        composeRule.onNodeWithTag("btn-edit-avatar").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-edit-nickname").assertIsDisplayed()
+        composeRule.onNodeWithTag("bind-phone").assertDoesNotExist()
+        composeRule.onNodeWithTag("replace-phone").assertIsDisplayed()
+        composeRule.onNodeWithTag("replace-email").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("replace-phone").performScrollTo().performClick()
+        composeRule.onNodeWithTag("identity-phone").performTextInput("13900139000")
+        composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitUntil { repository.prepareIdentifierLinkCalls == 1 }
+        assertTrue(repository.lastReplaceExisting)
+    }
+
+    @Test
+    fun avatarSourceDialogOffersCameraAndGallery() {
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(phone = "13800138000", token = "token"),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = TestAccountRepository(),
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("btn-edit-avatar").performClick()
+
+        composeRule.onNodeWithText("修改头像").assertIsDisplayed()
+        composeRule.onNodeWithTag("take-avatar-photo").assertIsDisplayed()
+        composeRule.onNodeWithTag("pick-avatar-gallery").assertIsDisplayed()
+    }
+
+    @Test
+    fun galleryAvatarResultUploadsAndRefreshesSession() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val uri = Uri.parse("content://test/avatar.jpg")
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val bytes = ByteArrayOutputStream().also {
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)
+        }.toByteArray()
+        bitmap.recycle()
+        shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(bytes))
+        val registry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(
+                requestCode: Int,
+                contract: ActivityResultContract<I, O>,
+                input: I,
+                options: ActivityOptionsCompat?
+            ) {
+                @Suppress("UNCHECKED_CAST")
+                dispatchResult(requestCode, uri as O)
+            }
+        }
+        val owner = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = registry
+        }
+        val repository = TestAccountRepository()
+        val session = mutableStateOf<AccountSession>(
+            AccountSession.SignedIn(phone = "13800138000", token = "token")
+        )
+        composeRule.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
+                AccountManagementScreen(
+                    session = session.value,
+                    runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                    deletionState = AccountDeletionUiState(),
+                    accountRepository = repository,
+                    onSignInOrRegister = {},
+                    onSessionVerified = { session.value = it.toSignedInSession() },
+                    onInvalidSession = {},
+                    clearPersistedSession = { true },
+                    onSignedOut = {},
+                    onDeletionStateChange = {},
+                    onBack = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("btn-edit-avatar").performClick()
+        composeRule.onNodeWithTag("pick-avatar-gallery").performClick()
+        composeRule.waitUntil {
+            repository.updateAvatarCalls == 1 &&
+                (session.value as? AccountSession.SignedIn)?.avatarUrl == repository.lastAvatarDataUrl
+        }
+
+        val updated = session.value as AccountSession.SignedIn
+        assertTrue(repository.lastAvatarDataUrl.orEmpty().startsWith("data:image/jpeg;base64,"))
+        assertEquals(repository.lastAvatarDataUrl, updated.avatarUrl)
     }
 
     private class RecordingGateway : WechatAuthGateway {

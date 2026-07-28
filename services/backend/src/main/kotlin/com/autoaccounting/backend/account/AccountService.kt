@@ -80,6 +80,7 @@ val AccountResult<*>.error: AccountError?
 
 data class AccountToken(
     val accountId: Long = 0L,
+    val accountUuid: String? = null,
     val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
     val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
     val phone: String? = null,
@@ -202,6 +203,8 @@ class AccountService(
             val account = store.findAccount(currentAccountId)
             val deletionStatus = account?.deletionRequestedAtMillis?.let { account.deletionStatus(phone, it) }
             val sessionContract = AccountSessionResponseContract(
+                accountId = currentAccountId,
+                accountUuid = account?.publicId,
                 primaryIdentifier = primaryIdentifierForAccount(currentAccountId),
                 identifiers = identifierContracts(currentAccountId),
                 token = bearerToken,
@@ -240,6 +243,8 @@ class AccountService(
                 }
 
                 val sessionContract = AccountSessionResponseContract(
+                    accountId = sessionToken.accountId,
+                    accountUuid = sessionToken.accountUuid,
                     primaryIdentifier = sessionToken.primaryIdentifier,
                     identifiers = sessionToken.identifiers,
                     token = sessionToken.token,
@@ -1131,7 +1136,8 @@ class AccountService(
         bearerToken: String,
         identifier: String,
         deviceId: String = "",
-        ipAddress: String = ""
+        ipAddress: String = "",
+        replaceExisting: Boolean = false
     ): AccountResult<com.autoaccounting.api.IdentifierLinkPrepareResponseContract> {
         val currentAccount = verifiedAccount(bearerToken)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
@@ -1158,7 +1164,8 @@ class AccountService(
         }
 
         val currentIdentifiers = store.findIdentifiersByAccountId(currentAccount.accountId)
-        if (currentIdentifiers.any { it.identifierType == parseResult.type.name }) {
+        val currentIdentifierOfType = currentIdentifiers.find { it.identifierType == parseResult.type.name }
+        if (currentIdentifierOfType != null && !replaceExisting) {
             return AccountResult.Failure(AccountError.IDENTIFIER_ALREADY_LINKED)
         }
 
@@ -1185,7 +1192,7 @@ class AccountService(
         store.createOneTimeTicket(
             StoredOneTimeTicket(
                 ticketHash = ticketHash,
-                ticketType = "IDENTIFIER_LINK",
+                ticketType = if (currentIdentifierOfType == null) "IDENTIFIER_LINK" else "IDENTIFIER_REPLACE",
                 accountId = currentAccount.accountId,
                 payloadJson = payloadObj.toString(),
                 expiresAtMillis = expiresAt
@@ -1216,7 +1223,7 @@ class AccountService(
             ?: return AccountResult.Failure(AccountError.TICKET_EXPIRED)
 
         val now = clock.millis()
-        if (ticket.ticketType != "IDENTIFIER_LINK" || ticket.expiresAtMillis < now) {
+        if (ticket.ticketType !in setOf("IDENTIFIER_LINK", "IDENTIFIER_REPLACE") || ticket.expiresAtMillis < now) {
             return AccountResult.Failure(AccountError.TICKET_EXPIRED)
         }
         if (ticket.usedAtMillis != null) {
@@ -1258,7 +1265,8 @@ class AccountService(
             deviceId = deviceId,
             ipAddress = ipAddress,
             now = now,
-            tokenGenerator = tokenGenerator
+            tokenGenerator = tokenGenerator,
+            replaceExisting = ticket.ticketType == "IDENTIFIER_REPLACE"
         )
         return linked.mapAccountToken(::enrichAccountToken)
     }
@@ -1271,10 +1279,12 @@ class AccountService(
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val phone = phoneIdentifier(account.accountId)
         val wechatIdentity = store.findWechatIdentityByAccountId(account.accountId)
+        val profile = store.findProfileByAccountId(account.accountId)
         val identifiers = identifierContracts(account.accountId)
         return AccountResult.Success(
             AccountToken(
                 accountId = account.accountId,
+                accountUuid = account.publicId,
                 primaryIdentifier = primaryIdentifierForAccount(account.accountId),
                 identifiers = identifiers,
                 phone = phone,
@@ -1283,10 +1293,62 @@ class AccountService(
                     account.deletionStatus(phone, requestedAt)
                 },
                 wechatLinked = wechatIdentity != null,
-                nickname = wechatIdentity?.nickname,
-                avatarUrl = wechatIdentity?.avatarUrl
+                nickname = profile?.nickname ?: wechatIdentity?.nickname,
+                avatarUrl = profile?.avatarUrl ?: wechatIdentity?.avatarUrl
             )
         )
+    }
+
+    fun updateNickname(token: String, nickname: String): AccountResult<AccountToken> {
+        val normalizedNickname = nickname.trim()
+        if (normalizedNickname.isBlank() || normalizedNickname.length > MAX_NICKNAME_LENGTH) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val verified = verifyToken(token)
+        if (verified is AccountResult.Failure) return verified
+        val current = (verified as AccountResult.Success).value
+        store.upsertProfile(
+            StoredAccountProfile(
+                accountId = current.accountId,
+                nickname = normalizedNickname,
+                avatarUrl = current.avatarUrl,
+                updatedAtMillis = clock.millis()
+            )
+        )
+        return verifyToken(token)
+    }
+
+    fun updateAvatar(token: String, avatarDataUrl: String): AccountResult<AccountToken> {
+        if (!isValidAvatarDataUrl(avatarDataUrl)) {
+            return AccountResult.Failure(AccountError.INVALID_REQUEST)
+        }
+        val verified = verifyToken(token)
+        if (verified is AccountResult.Failure) return verified
+        val current = (verified as AccountResult.Success).value
+        store.upsertProfile(
+            StoredAccountProfile(
+                accountId = current.accountId,
+                nickname = current.nickname,
+                avatarUrl = avatarDataUrl,
+                updatedAtMillis = clock.millis()
+            )
+        )
+        return verifyToken(token)
+    }
+
+    private fun isValidAvatarDataUrl(value: String): Boolean {
+        val prefix = AVATAR_DATA_PREFIXES.firstOrNull(value::startsWith) ?: return false
+        val encoded = value.substring(prefix.length)
+        if (encoded.isBlank() || encoded.length > MAX_AVATAR_BASE64_LENGTH) return false
+        val bytes = runCatching { Base64.getDecoder().decode(encoded) }.getOrNull() ?: return false
+        if (bytes.isEmpty() || bytes.size > MAX_AVATAR_BYTES) return false
+        return when (prefix) {
+            "data:image/jpeg;base64," -> bytes.size >= 3 &&
+                bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()
+            "data:image/png;base64," -> bytes.size >= PNG_SIGNATURE.size &&
+                PNG_SIGNATURE.indices.all { bytes[it] == PNG_SIGNATURE[it] }
+            else -> false
+        }
     }
 
     fun signOut(token: String): AccountResult<Unit> {
@@ -1520,6 +1582,7 @@ class AccountService(
         return AccountResult.Success(
             AccountToken(
                 accountId = accountId,
+                accountUuid = account?.publicId,
                 primaryIdentifier = primaryIdentifierForAccount(accountId),
                 identifiers = identifiers,
                 phone = phone,
@@ -1555,6 +1618,7 @@ class AccountService(
         }?.value
         val wechat = store.findWechatIdentityByAccountId(token.accountId)
         return token.copy(
+            accountUuid = account?.publicId,
             primaryIdentifier = primaryIdentifierForAccount(token.accountId),
             identifiers = identifiers,
             phone = phone,
@@ -1600,6 +1664,16 @@ class AccountService(
         private const val SMS_CODE_TTL_MILLIS = 5 * 60_000L
         private const val MAX_SMS_CODE_FAILURES = 3
         private const val MAX_LOGIN_FAILURES = 5
+        private const val MAX_NICKNAME_LENGTH = 20
+        private const val MAX_AVATAR_BYTES = 256 * 1024
+        private const val MAX_AVATAR_BASE64_LENGTH = 350_000
+        private val AVATAR_DATA_PREFIXES = listOf(
+            "data:image/jpeg;base64,",
+            "data:image/png;base64,"
+        )
+        private val PNG_SIGNATURE = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+        )
         private const val SMS_PURPOSE_DEFAULT = "DEFAULT"
         private const val SMS_PURPOSE_WECHAT_LINK = "WECHAT_LINK"
         private const val SMS_PURPOSE_WECHAT_UNLINK = "WECHAT_UNLINK"
@@ -1622,7 +1696,7 @@ class AccountService(
                     username = jdbcConfig.username,
                     password = jdbcConfig.password
                 ),
-                smsProvider = WebhookSmsProvider.fromEnvironment(env),
+                smsProvider = SmsProvider.fromEnvironment(env),
                 emailProvider = SmtpEmailProvider.fromEnvironment(env),
                 verificationCodeHasher = VerificationCodeHasher.fromSecret(authPepper),
                 wechatOAuthClient = WechatOAuthClient.fromEnvironment(env)

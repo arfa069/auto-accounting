@@ -1,5 +1,4 @@
 import java.util.Properties
-import java.io.FileInputStream
 import org.gradle.api.tasks.testing.Test
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.testing.jacoco.tasks.JacocoReport
@@ -12,9 +11,11 @@ plugins {
     jacoco
 }
 
+val localPropertiesText = providers.fileContents(
+    rootProject.layout.projectDirectory.file("local.properties")
+).asText.orNull
 val localBuildProperties = Properties().apply {
-    val file = project.rootProject.file("local.properties")
-    if (file.exists()) load(FileInputStream(file))
+    localPropertiesText?.reader()?.use(::load)
 }
 val configuredBackendUrl = localBuildProperties.getProperty("AUTO_ACCOUNTING_BACKEND_URL")
     ?: System.getenv("AUTO_ACCOUNTING_BACKEND_URL")

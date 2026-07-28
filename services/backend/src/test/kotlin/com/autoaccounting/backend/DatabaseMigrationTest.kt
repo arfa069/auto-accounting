@@ -6,6 +6,7 @@ import com.autoaccounting.backend.ai.JdbcAiCategorizationLogStore
 import com.autoaccounting.backend.ai.StoredAiCategorizationLog
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -15,6 +16,26 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class DatabaseMigrationTest {
+
+    @Test
+    fun publicIdMigrationBackfillsStableUuidAndRejectsNulls() {
+        val databaseUrl = h2DatabaseUrl()
+        setupV4Database(databaseUrl)
+
+        runBackendMigrations(databaseUrl)
+        val firstPublicId = readOnlyAccountPublicId(databaseUrl)
+        assertEquals(firstPublicId, UUID.fromString(firstPublicId).toString())
+
+        runBackendMigrations(databaseUrl)
+        assertEquals(firstPublicId, readOnlyAccountPublicId(databaseUrl))
+        assertThrows(SQLException::class.java) {
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("INSERT INTO accounts (created_at_millis) VALUES (1)")
+                }
+            }
+        }
+    }
 
     @Test
     fun migratesFromVersion4ToVersion5PreservingAllRecordsAndHashes() {
@@ -429,6 +450,16 @@ class DatabaseMigrationTest {
             }
         }
     }
+
+    private fun readOnlyAccountPublicId(databaseUrl: String): String =
+        DriverManager.getConnection(databaseUrl).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT public_id FROM accounts").use { result ->
+                    assertTrue(result.next())
+                    result.getString("public_id")
+                }
+            }
+        }
 
     private fun h2DatabaseUrl(): String {
         return "jdbc:h2:mem:${System.nanoTime()};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"

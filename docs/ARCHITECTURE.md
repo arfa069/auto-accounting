@@ -47,7 +47,7 @@ flowchart LR
 - `feature:capture-accessibility`: 支付结果自动捕获与手动账单导入。
 - `feature:billsync`: 共享的 `ManualBillImportHost`、导入会话状态、来源启动、受支持页面解析及无障碍捕获接管。
 - `feature:categorization`: 本地分类规则及 AI 分类客户端。
-- `feature:account`: 用户名/邮箱/手机号与微信登录注册、身份绑定与合并、Session、本地模式及账号注销。
+- `feature:account`: 用户名/邮箱/手机号与微信登录注册、公开账号 UUID、账号 Profile、身份绑定/换绑与合并、Session、本地模式及账号注销。
 - `feature:monitoring`: 自动记账状态、紧凑权限与后台稳定性设置、服务健康度及支付页面观察决策。
 - `feature:settings`: 数据与备份及相关设置。
 - `feature:sync`: 账户同步协调器、HTTPS 客户端、Room outbox、远端应用器与 WorkManager 调度。
@@ -160,7 +160,7 @@ flowchart LR
 ## 7. 后端服务 (Backend Services)
 
 Ktor 服务构成：
-- **认证服务 (Auth Service)**：内部账号 ID、用户名/邮箱/手机号共享密码、微信 OAuth、身份绑定与合并、安全解绑、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
+- **认证服务 (Auth Service)**：内部账号 ID、公开账号 UUID、账号 Profile、用户名/邮箱/手机号共享密码、微信 OAuth、身份绑定/换绑与合并、安全解绑、Session 校验及当前 Session 退出登录。刷新 Token 和固定 Token 过期不包含在本版本中。
 - **验证码服务 (Verification Service)**：按手机号或邮箱分发短信/SMTP 验证码，并统一处理用途隔离、过期、错误次数及限流。
 - **设备服务 (Device Service)**：已注册设备及设备状态管理。
 - **云端配置服务 (Cloud Config Service)**：同意状态、功能开关、AI 设置及注销冷静期状态。
@@ -170,7 +170,8 @@ Ktor 服务构成：
 - **合规服务 (Compliance Service)**：提供隐私政策、收集清单、第三方清单及权限说明。
 
 PostgreSQL 数据表：
-- `accounts`
+- `accounts`：内部自增 `account_id` 与对外稳定 `public_id` UUID。
+- `account_profiles`：账号级昵称、头像值及更新时间。
 - `account_password_credentials`
 - `account_identifiers`
 - `account_wechat_identities`
@@ -196,15 +197,18 @@ Session 与传输边界：
 - Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、验证码、退出登录及注销操作不会自动重试。
 - 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的标识或表单 Token 绝不用于选取受保护账号。
 - 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
-- Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v3：业务 Token、主标识、全部登录标识、微信绑定状态、昵称和 HTTPS 头像 URL；继续读取旧 v1/v2 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
+- Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v5：业务 Token、公开账号 UUID、主标识、全部登录标识、微信绑定状态、注销状态、昵称和头像值；继续读取旧 v1-v4 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
 - 启动时在后台校验前先恢复加密凭据。网络/配置故障保留离线未校验 Session 和本地账本访问权；仅当显式收到无效 Session 时才清除密文并返回持久化本地模式。
 - 微信 OpenSDK 仅使用可公开 AppID。AppSecret、微信 access/refresh token、OpenID、UnionID 和 Provider 原始响应不进入 APK、Android Session、日志或诊断导出；授权 code 只发送自有后端并立即从回调 Intent 移除。
 - 微信授权、标识绑定及账号合并票据有效期均为 5 分钟、只能消费一次，数据库只保存 SHA-256 哈希。绑定、合并和解绑轮换业务 Session；Android 保存新 Session 失败时尝试撤销新 Token 并回到本地模式。
 
 身份与合并边界：
-- 账号内部以 `accountId` 关联 Session、设备、云配置和 AI 日志；每个账号至多绑定一个用户名、一个邮箱、一个手机号和一个微信身份，所有密码标识共享一份密码与锁定状态。
+- 账号内部以数据库自增 `accountId` 关联 Session、设备、云配置和 AI 日志；对外使用不可变 `accountUuid` 供展示和复制。两者都不能替代 Bearer Token 进行认证。
+- 每个账号至多绑定一个用户名、一个邮箱、一个手机号和一个微信身份，所有密码标识共享一份密码与锁定状态。补绑与换绑共用验证码和五分钟单次票据；换绑必须显式标记并在事务中替换同类型旧标识。
 - 用户名、邮箱和手机号按统一解析规则规范化；v6 在单事务中将 v5 手机号凭据迁移为账号级密码凭据和 `PHONE` 标识。
 - 微信身份优先用 UnionID 识别，缺失时使用唯一 `(appId, openid)`；每次成功授权刷新昵称和 HTTPS 头像 URL。
+- 账号级 `account_profiles` 优先于微信资料提供显示昵称和头像。`POST /account/profile/nickname` 与 `POST /account/profile/avatar` 只接受 Bearer 身份；昵称最多 20 个字符，头像仅接受签名和大小均合法、解码后不超过 256 KiB 的 JPEG/PNG Data URL。
+- Android 相册与相机入口共用单源 `ImageDecoder`，在 IO 调度器上缩放为最长边 256 像素并压缩为 JPEG；相机临时文件只通过未导出的 `FileProvider` 授予单次 URI 权限，读取后删除。
 - 合并仅用于微信纯账号与已有密码账号的互补凭据，并始终保留当前账号；密码账号之间发生标识冲突时禁止转移或合并。当前配置优先、来源独有开关补入、设备按安装 UUID 去重、来源 AI 日志删除；同步记录迁移到目标账号，同一记录的不同版本保留为冲突；双方旧 Session 撤销并删除来源账号。
 - 解绑微信要求账号仍有密码凭据及至少一个登录标识，可使用共享密码，或选择已绑定手机号/邮箱接收专项验证码。身份操作不删除 Android Room 账本；只有用户确认换账号时才原子替换正式同步范围。
 

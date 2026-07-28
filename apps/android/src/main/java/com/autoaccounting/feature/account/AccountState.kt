@@ -11,10 +11,12 @@ enum class AccountFlow {
 sealed interface AccountSession {
     data object LocalMode : AccountSession
     data class SignedIn(
+        val accountId: Long? = null,
         val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
         val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
         val rawPhone: String? = null,
         val token: String = "",
+        val accountUuid: String? = null,
         val wechatLinked: Boolean = false,
         val nickname: String? = null,
         val avatarUrl: String? = null
@@ -26,6 +28,8 @@ sealed interface AccountSession {
             nickname: String? = null,
             avatarUrl: String? = null
         ) : this(
+            accountId = null,
+            accountUuid = null,
             primaryIdentifier = phone?.let {
                 com.autoaccounting.api.AccountIdentifierContract(
                     type = com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,

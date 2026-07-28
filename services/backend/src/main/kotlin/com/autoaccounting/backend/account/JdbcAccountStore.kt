@@ -32,7 +32,7 @@ class JdbcAccountStore(
     override fun findAccount(accountId: Long): StoredAccount? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -42,6 +42,7 @@ class JdbcAccountStore(
                 if (rs.next()) {
                     StoredAccount(
                         accountId = rs.getLong("account_id"),
+                        publicId = rs.getString("public_id"),
                         primaryIdentifierType = rs.getString("primary_identifier_type"),
                         deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
                         createdAtMillis = rs.getLong("created_at_millis")
@@ -69,7 +70,7 @@ class JdbcAccountStore(
     override fun accountsPendingDeletion(): List<StoredAccount> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE deletion_requested_at_millis IS NOT NULL
             """.trimIndent()
@@ -80,6 +81,7 @@ class JdbcAccountStore(
                         add(
                             StoredAccount(
                                 accountId = rs.getLong("account_id"),
+                                publicId = rs.getString("public_id"),
                                 primaryIdentifierType = rs.getString("primary_identifier_type"),
                                 deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
                                 createdAtMillis = rs.getLong("created_at_millis")
@@ -107,7 +109,7 @@ class JdbcAccountStore(
     override fun findAccountByIdentifier(identifierType: String, normalizedValue: String): StoredAccount? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT a.account_id, a.primary_identifier_type, a.deletion_requested_at_millis, a.created_at_millis
+            SELECT a.account_id, a.public_id, a.primary_identifier_type, a.deletion_requested_at_millis, a.created_at_millis
             FROM account_identifiers i
             JOIN accounts a ON a.account_id = i.account_id
             WHERE i.identifier_type = ? AND i.normalized_value = ?
@@ -119,6 +121,7 @@ class JdbcAccountStore(
                 if (rs.next()) {
                     StoredAccount(
                         accountId = rs.getLong("account_id"),
+                        publicId = rs.getString("public_id"),
                         primaryIdentifierType = rs.getString("primary_identifier_type"),
                         deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
                         createdAtMillis = rs.getLong("created_at_millis")
@@ -206,6 +209,62 @@ class JdbcAccountStore(
                         updatedAtMillis = rs.getLong("updated_at_millis")
                     )
                 } else null
+            }
+        }
+    }
+
+    override fun findProfileByAccountId(accountId: Long): StoredAccountProfile? = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            SELECT account_id, nickname, avatar_url, updated_at_millis
+            FROM account_profiles
+            WHERE account_id = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) {
+                    StoredAccountProfile(
+                        accountId = rs.getLong("account_id"),
+                        nickname = rs.getString("nickname"),
+                        avatarUrl = rs.getString("avatar_url"),
+                        updatedAtMillis = rs.getLong("updated_at_millis")
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    override fun upsertProfile(profile: StoredAccountProfile) {
+        connection().use { connection ->
+            val updated = connection.prepareStatement(
+                """
+                UPDATE account_profiles
+                SET nickname = ?, avatar_url = ?, updated_at_millis = ?
+                WHERE account_id = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setNullableString(1, profile.nickname)
+                statement.setNullableString(2, profile.avatarUrl)
+                statement.setLong(3, profile.updatedAtMillis)
+                statement.setLong(4, profile.accountId)
+                statement.executeUpdate()
+            }
+            if (updated == 0) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO account_profiles (account_id, nickname, avatar_url, updated_at_millis)
+                    VALUES (?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setLong(1, profile.accountId)
+                    statement.setNullableString(2, profile.nickname)
+                    statement.setNullableString(3, profile.avatarUrl)
+                    statement.setLong(4, profile.updatedAtMillis)
+                    statement.executeUpdate()
+                }
             }
         }
     }
@@ -312,15 +371,17 @@ class JdbcAccountStore(
         connection.autoCommit = false
         try {
             var accountId: Long = -1
+            val publicId = UUID.randomUUID().toString()
             connection.prepareStatement(
                 """
-                INSERT INTO accounts (primary_identifier_type, created_at_millis)
-                VALUES (?, ?)
+                INSERT INTO accounts (public_id, primary_identifier_type, created_at_millis)
+                VALUES (?, ?, ?)
                 """.trimIndent(),
                 Statement.RETURN_GENERATED_KEYS
             ).use { statement ->
-                statement.setString(1, primaryIdentifierType)
-                statement.setLong(2, now)
+                statement.setString(1, publicId)
+                statement.setString(2, primaryIdentifierType)
+                statement.setLong(3, now)
                 statement.executeUpdate()
                 statement.generatedKeys.use { keys ->
                     if (keys.next()) accountId = keys.getLong(1)
@@ -363,7 +424,12 @@ class JdbcAccountStore(
             }
 
             connection.commit()
-            StoredAccount(accountId = accountId, primaryIdentifierType = primaryIdentifierType, createdAtMillis = now)
+            StoredAccount(
+                accountId = accountId,
+                publicId = publicId,
+                primaryIdentifierType = primaryIdentifierType,
+                createdAtMillis = now
+            )
         } catch (error: SQLException) {
             connection.rollback()
             if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) null else throw error
@@ -413,7 +479,8 @@ class JdbcAccountStore(
         deviceId: String,
         ipAddress: String,
         now: Long,
-        tokenGenerator: () -> String
+        tokenGenerator: () -> String,
+        replaceExisting: Boolean
     ): AccountResult<AccountToken> = connection().use { connection ->
         connection.autoCommit = false
         try {
@@ -426,7 +493,7 @@ class JdbcAccountStore(
             ).use { statement ->
                 statement.setString(1, ticketHash)
                 statement.executeQuery().use { rs ->
-                    rs.next() && rs.getString("ticket_type") == "IDENTIFIER_LINK" &&
+                    rs.next() && rs.getString("ticket_type") in setOf("IDENTIFIER_LINK", "IDENTIFIER_REPLACE") &&
                         rs.getLong("account_id") == accountId && rs.getObject("used_at_millis") == null &&
                         rs.getLong("expires_at_millis") >= now
                 }
@@ -461,21 +528,53 @@ class JdbcAccountStore(
                     statement.executeUpdate()
                 }
             }
-            connection.prepareStatement(
+            val existingOfType = connection.prepareStatement(
                 """
-                INSERT INTO account_identifiers (
-                    account_id, identifier_type, raw_value, normalized_value, verified,
-                    created_at_millis, updated_at_millis
-                ) VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                SELECT id
+                FROM account_identifiers
+                WHERE account_id = ? AND identifier_type = ?
+                FOR UPDATE
                 """.trimIndent()
             ).use { statement ->
                 statement.setLong(1, accountId)
                 statement.setString(2, identifierType)
-                statement.setString(3, rawValue)
-                statement.setString(4, normalizedValue)
-                statement.setLong(5, now)
-                statement.setLong(6, now)
-                statement.executeUpdate()
+                statement.executeQuery().use { rs -> if (rs.next()) rs.getLong("id") else null }
+            }
+            if (replaceExisting != (existingOfType != null)) {
+                connection.rollback()
+                return AccountResult.Failure(AccountError.IDENTIFIER_CONFLICT)
+            }
+            if (existingOfType == null) {
+                connection.prepareStatement(
+                    """
+                    INSERT INTO account_identifiers (
+                        account_id, identifier_type, raw_value, normalized_value, verified,
+                        created_at_millis, updated_at_millis
+                    ) VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setLong(1, accountId)
+                    statement.setString(2, identifierType)
+                    statement.setString(3, rawValue)
+                    statement.setString(4, normalizedValue)
+                    statement.setLong(5, now)
+                    statement.setLong(6, now)
+                    statement.executeUpdate()
+                }
+            } else {
+                connection.prepareStatement(
+                    """
+                    UPDATE account_identifiers
+                    SET raw_value = ?, normalized_value = ?, verified = TRUE, updated_at_millis = ?
+                    WHERE id = ?
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, rawValue)
+                    statement.setString(2, normalizedValue)
+                    statement.setLong(3, now)
+                    statement.setLong(4, existingOfType)
+                    statement.executeUpdate()
+                }
             }
             connection.prepareStatement(
                 "UPDATE accounts SET primary_identifier_type = COALESCE(primary_identifier_type, ?) WHERE account_id = ?"
@@ -1011,15 +1110,17 @@ class JdbcAccountStore(
             }
 
             var accountId: Long = -1
+            val publicId = UUID.randomUUID().toString()
             connection.prepareStatement(
                 """
-                INSERT INTO accounts (deletion_requested_at_millis, created_at_millis)
-                VALUES (?, ?)
+                INSERT INTO accounts (public_id, deletion_requested_at_millis, created_at_millis)
+                VALUES (?, ?, ?)
                 """.trimIndent(),
                 Statement.RETURN_GENERATED_KEYS
             ).use { statement ->
-                statement.setNullableLong(1, null)
-                statement.setLong(2, now)
+                statement.setString(1, publicId)
+                statement.setNullableLong(2, null)
+                statement.setLong(3, now)
                 statement.executeUpdate()
                 statement.generatedKeys.use { keys ->
                     if (keys.next()) accountId = keys.getLong(1)
@@ -1529,7 +1630,7 @@ class JdbcAccountStore(
     private fun queryAccount(connection: Connection, accountId: Long): StoredAccount? {
         return connection.prepareStatement(
             """
-            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -1984,7 +2085,7 @@ class JdbcAccountStore(
         val list = mutableListOf<StoredAccount>()
         connection.prepareStatement(
             """
-            SELECT account_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
             FROM accounts
             WHERE account_id IN (?, ?)
             ORDER BY account_id
@@ -2210,6 +2311,7 @@ private const val UNIQUE_VIOLATION_SQL_STATE = "23505"
 private fun ResultSet.toStoredAccount(): StoredAccount {
     return StoredAccount(
         accountId = getLong("account_id"),
+        publicId = getString("public_id"),
         primaryIdentifierType = getString("primary_identifier_type"),
         deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
         createdAtMillis = getLong("created_at_millis")

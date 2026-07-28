@@ -63,6 +63,7 @@ internal class SecureAccountSessionStore(
         val nicknameBytes = nickname?.toByteArray(Charsets.UTF_8)
         val avatarUrlBytes = avatarUrl?.toByteArray(Charsets.UTF_8)
         val rawPhoneBytes = rawPhone?.toByteArray(Charsets.UTF_8)
+        val accountUuidBytes = accountUuid?.toByteArray(Charsets.UTF_8)
         require(tokenBytes.isNotEmpty())
 
         val primaryTypeBytes = primaryIdentifier?.type?.name?.toByteArray(Charsets.UTF_8)
@@ -80,6 +81,8 @@ internal class SecureAccountSessionStore(
         }
 
         val totalSize = 1 +
+            Long.SIZE_BYTES +
+            accountUuidBytes.encodedSize() +
             primaryTypeBytes.encodedSize() +
             primaryValBytes.encodedSize() +
             identsSize +
@@ -87,10 +90,13 @@ internal class SecureAccountSessionStore(
             tokenBytes.encodedSize() +
             1 +
             nicknameBytes.encodedSize() +
-            avatarUrlBytes.encodedSize()
+            avatarUrlBytes.encodedSize() +
+            Long.SIZE_BYTES * 2
 
         val buf = ByteBuffer.allocate(totalSize)
-            .put(SESSION_FORMAT_VERSION_V3)
+            .put(SESSION_FORMAT_VERSION_V5)
+            .putLong(accountId ?: NULL_LONG_FIELD)
+            .putNullableUtf8(accountUuidBytes)
             .putNullableUtf8(primaryTypeBytes)
             .putNullableUtf8(primaryValBytes)
 
@@ -106,6 +112,8 @@ internal class SecureAccountSessionStore(
         buf.put(if (wechatLinked) 1.toByte() else 0.toByte())
         buf.putNullableUtf8(nicknameBytes)
         buf.putNullableUtf8(avatarUrlBytes)
+        buf.putLong(deletionState.requestedAtEpochMillis ?: NULL_LONG_FIELD)
+        buf.putLong(deletionState.finalDeletionAtEpochMillis ?: NULL_LONG_FIELD)
 
         return buf.array()
     }
@@ -116,6 +124,8 @@ internal class SecureAccountSessionStore(
             SESSION_FORMAT_VERSION_V1 -> buffer.decodeVersionOne()
             SESSION_FORMAT_VERSION_V2 -> buffer.decodeVersionTwo()
             SESSION_FORMAT_VERSION_V3 -> buffer.decodeVersionThree()
+            SESSION_FORMAT_VERSION_V4 -> buffer.decodeVersionFour()
+            SESSION_FORMAT_VERSION_V5 -> buffer.decodeVersionFive()
             else -> error("Unsupported account session format")
         }
     }
@@ -144,7 +154,32 @@ internal class SecureAccountSessionStore(
         )
     }
 
-    private fun ByteBuffer.decodeVersionThree(): AccountCredentials {
+    private fun ByteBuffer.decodeVersionThree(): AccountCredentials =
+        decodeVersionThreeToFive(
+            accountId = null,
+            accountUuid = null,
+            includesDeletionState = false
+        )
+
+    private fun ByteBuffer.decodeVersionFour(): AccountCredentials =
+        decodeVersionThreeToFive(
+            accountId = getLong().takeUnless { it == NULL_LONG_FIELD },
+            accountUuid = null,
+            includesDeletionState = true
+        )
+
+    private fun ByteBuffer.decodeVersionFive(): AccountCredentials =
+        decodeVersionThreeToFive(
+            accountId = getLong().takeUnless { it == NULL_LONG_FIELD },
+            accountUuid = readNullableSizedUtf8(),
+            includesDeletionState = true
+        )
+
+    private fun ByteBuffer.decodeVersionThreeToFive(
+        accountId: Long?,
+        accountUuid: String?,
+        includesDeletionState: Boolean
+    ): AccountCredentials {
         val primaryTypeStr = readNullableSizedUtf8()
         val primaryValStr = readNullableSizedUtf8()
         val primaryIdentifier = if (primaryTypeStr != null && primaryValStr != null) {
@@ -175,13 +210,24 @@ internal class SecureAccountSessionStore(
         val wechatLinked = get().toInt() != 0
         val nickname = readNullableSizedUtf8()
         val avatarUrl = readNullableSizedUtf8()
+        val deletionState = if (includesDeletionState) {
+            AccountDeletionUiState(
+                requestedAtEpochMillis = getLong().takeUnless { it == NULL_LONG_FIELD },
+                finalDeletionAtEpochMillis = getLong().takeUnless { it == NULL_LONG_FIELD }
+            )
+        } else {
+            AccountDeletionUiState()
+        }
         require(!hasRemaining() && token.isNotBlank())
 
         return AccountCredentials(
+            accountId = accountId,
+            accountUuid = accountUuid,
             primaryIdentifier = primaryIdentifier,
             identifiers = idents,
             rawPhone = rawPhone,
             token = token,
+            deletionState = deletionState,
             wechatLinked = wechatLinked,
             nickname = nickname,
             avatarUrl = avatarUrl
@@ -213,7 +259,10 @@ internal class SecureAccountSessionStore(
         const val SESSION_FORMAT_VERSION_V1: Byte = 1
         const val SESSION_FORMAT_VERSION_V2: Byte = 2
         const val SESSION_FORMAT_VERSION_V3: Byte = 3
+        const val SESSION_FORMAT_VERSION_V4: Byte = 4
+        const val SESSION_FORMAT_VERSION_V5: Byte = 5
         const val NULL_FIELD_SIZE = -1
+        const val NULL_LONG_FIELD = Long.MIN_VALUE
     }
 }
 

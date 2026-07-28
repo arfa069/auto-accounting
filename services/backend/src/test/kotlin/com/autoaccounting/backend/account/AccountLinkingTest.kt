@@ -36,7 +36,7 @@ class AccountLinkingTest {
         val token1 = (reg1 as AccountResult.Success).value.token
 
         // Prepare link test@example.com
-        clock.advanceBy(60_000)
+        clock.advanceBy(60_001)
         val prepRes = service.prepareIdentifierLink(token1, "test@example.com", "device-1")
         assertTrue(prepRes is AccountResult.Success)
         val linkTicket = ((prepRes as AccountResult.Success).value as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued).linkTicket
@@ -82,6 +82,63 @@ class AccountLinkingTest {
         assertEquals(
             AccountResult.Success(com.autoaccounting.api.IdentifierLinkPrepareResponseContract.AlreadyLinked),
             service.prepareIdentifierLink(registered.value.token, "13800138000")
+        )
+    }
+
+    @Test
+    fun replacesExistingEmailAfterVerifyingNewAddress() {
+        val clock = MutableClock(1_000)
+        val service = AccountService(
+            emailProvider = testEmailProvider,
+            emailCodeGenerator = { "654321" },
+            clock = clock
+        )
+        val registered = service.registerIdentifier(
+            "profile_owner",
+            null,
+            "Password123!"
+        ) as AccountResult.Success
+
+        val firstPreparation = service.prepareIdentifierLink(
+            registered.value.token,
+            "old@example.com"
+        ) as AccountResult.Success
+        val firstTicket = (
+            firstPreparation.value as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        ).linkTicket
+        val firstLinked = service.confirmIdentifierLink(
+            registered.value.token,
+            firstTicket,
+            "654321"
+        ) as AccountResult.Success
+
+        clock.advanceBy(60_001)
+        assertEquals(
+            AccountResult.Failure(AccountError.IDENTIFIER_ALREADY_LINKED),
+            service.prepareIdentifierLink(firstLinked.value.token, "new@example.com")
+        )
+        val replacementResult = service.prepareIdentifierLink(
+            bearerToken = firstLinked.value.token,
+            identifier = "new@example.com",
+            replaceExisting = true
+        )
+        assertTrue(replacementResult.toString(), replacementResult is AccountResult.Success)
+        val replacementPreparation = replacementResult as AccountResult.Success
+        val replacementTicket = (
+            replacementPreparation.value as com.autoaccounting.api.IdentifierLinkPrepareResponseContract.LinkTicketIssued
+        ).linkTicket
+        val replaced = service.confirmIdentifierLink(
+            firstLinked.value.token,
+            replacementTicket,
+            "654321"
+        ) as AccountResult.Success
+
+        assertTrue(replaced.value.identifiers.any { it.value == "new@example.com" })
+        assertTrue(replaced.value.identifiers.none { it.value == "old@example.com" })
+        assertTrue(service.loginIdentifier("new@example.com", "Password123!") is AccountResult.Success)
+        assertEquals(
+            AccountResult.Failure(AccountError.LOGIN_FAILED),
+            service.loginIdentifier("old@example.com", "Password123!")
         )
     }
 

@@ -23,6 +23,7 @@ class HttpAccountRepositoryTest {
 
         val credentials = (result as AccountRepositoryResult.Success).value
         assertEquals("13800138000", credentials.phone)
+        assertEquals("d061c044-86c0-4673-8b07-3bd605ced1bc", credentials.accountUuid)
         assertEquals("token-1", credentials.token)
         assertNull(credentials.rawPhone)
         assertEquals("/account/register", transport.lastUrl?.removePrefix("https://example.test"))
@@ -51,6 +52,64 @@ class HttpAccountRepositoryTest {
         assertEquals(604_801_000L, result.value.deletionState.finalDeletionAtEpochMillis)
         assertEquals("token-1", transport.lastBearerToken)
         assertEquals(emptyMap<String, String>(), transport.lastForm)
+    }
+
+    @Test
+    fun nicknameUpdateUsesRepositoryAndKeepsStableSessionFields() = runBlocking {
+        val response = phoneWechatSessionJson()
+            .replace("\"token\":\"new-token\",", "")
+            .replace("\"nickname\":\"微信用户\"", "\"nickname\":\"新昵称\"")
+            .replace(
+                "\"deletionPending\":false",
+                "\"deletionPending\":true,\"requestedAtMillis\":1000,\"finalDeletionAtMillis\":604801000"
+            )
+        val transport = RecordingTransport(AccountHttpResponse(200, response))
+        val credentials = AccountCredentials(
+            accountId = 42,
+            token = "token-1",
+            deletionState = AccountDeletionUiState(1_000, 604_801_000),
+            wechatLinked = true,
+            nickname = "旧昵称"
+        )
+
+        val result = repository(transport).updateNickname(credentials, "新昵称")
+            as AccountRepositoryResult.Success
+
+        assertEquals("/account/profile/nickname", transport.lastUrl?.removePrefix("https://example.test"))
+        assertEquals(mapOf("nickname" to "新昵称"), transport.lastForm)
+        assertEquals("token-1", transport.lastBearerToken)
+        assertEquals(42L, result.value.accountId)
+        assertEquals("token-1", result.value.token)
+        assertEquals("新昵称", result.value.nickname)
+        assertTrue(result.value.deletionState.isPending)
+    }
+
+    @Test
+    fun avatarUpdateUsesProfileEndpointAndPreservesDeletionState() = runBlocking {
+        val response = phoneOnlySessionJson()
+            .replace("\"token\":\"new-token\",", "")
+            .replace("\"avatarUrl\":null", "\"avatarUrl\":\"data:image/jpeg;base64,/9j/\"")
+            .replace(
+                "\"deletionPending\":false",
+                "\"deletionPending\":true,\"requestedAtMillis\":1000,\"finalDeletionAtMillis\":604801000"
+            )
+        val transport = RecordingTransport(AccountHttpResponse(200, response))
+        val credentials = AccountCredentials(
+            accountId = 42,
+            token = "token-1",
+            deletionState = AccountDeletionUiState(1_000, 604_801_000)
+        )
+
+        val result = repository(transport).updateAvatar(
+            credentials,
+            "data:image/jpeg;base64,/9j/"
+        ) as AccountRepositoryResult.Success
+
+        assertEquals("/account/profile/avatar", transport.lastUrl?.removePrefix("https://example.test"))
+        assertEquals("data:image/jpeg;base64,/9j/", transport.lastForm?.get("avatarDataUrl"))
+        assertEquals("token-1", transport.lastBearerToken)
+        assertEquals("data:image/jpeg;base64,/9j/", result.value.avatarUrl)
+        assertTrue(result.value.deletionState.isPending)
     }
 
     @Test
@@ -135,6 +194,10 @@ class HttpAccountRepositoryTest {
                     200,
                     """{"ok":true,"status":"LINK_TICKET_ISSUED","linkTicket":"link-ticket","ticketExpiresAtMillis":300000}"""
                 ),
+                AccountHttpResponse(
+                    200,
+                    """{"ok":true,"status":"LINK_TICKET_ISSUED","linkTicket":"replacement-ticket","ticketExpiresAtMillis":300000}"""
+                ),
                 AccountHttpResponse(200, phoneWechatSessionJson()),
                 AccountHttpResponse(200, phoneWechatSessionJson()),
                 AccountHttpResponse(
@@ -173,6 +236,10 @@ class HttpAccountRepositoryTest {
 
         repository.prepareIdentifierLink("current-token", "13800138000")
         assertRequest(transport.requests.last(), "/account/identifier/link/prepare", "identifier" to "13800138000", "current-token")
+        assertTrue("replaceExisting" !in transport.requests.last().form)
+
+        repository.prepareIdentifierLink("current-token", "13900139000", replaceExisting = true)
+        assertRequest(transport.requests.last(), "/account/identifier/link/prepare", "replaceExisting" to "true", "current-token")
 
         repository.completeIdentifierLink("current-token", "link-ticket", "123456")
         assertRequest(transport.requests.last(), "/account/identifier/link/complete", "linkTicket" to "link-ticket", "current-token")
@@ -276,16 +343,16 @@ class HttpAccountRepositoryTest {
         )
 
     private fun wechatSessionJson(): String =
-        """{"ok":true,"token":"wechat-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"accountId":42,"token":"wechat-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun phoneWechatSessionJson(): String =
-        """{"ok":true,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"accountId":42,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun phoneOnlySessionJson(): String =
-        """{"ok":true,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":false,"nickname":null,"avatarUrl":null,"deletionPending":false}"""
+        """{"ok":true,"accountId":42,"accountUuid":"d061c044-86c0-4673-8b07-3bd605ced1bc","primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":false,"nickname":null,"avatarUrl":null,"deletionPending":false}"""
 
     private fun phoneWechatExchangeJson(): String =
-        """{"ok":true,"status":"SIGNED_IN","primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
+        """{"ok":true,"status":"SIGNED_IN","accountId":42,"primaryIdentifier":{"type":"PHONE","value":"13800138000","verified":true},"identifiers":[{"type":"PHONE","value":"13800138000","verified":true}],"token":"new-token","wechatLinked":true,"nickname":"微信用户","avatarUrl":"https://example.com/a.jpg","deletionPending":false}"""
 
     private fun assertRequest(
         request: RecordedRequest,

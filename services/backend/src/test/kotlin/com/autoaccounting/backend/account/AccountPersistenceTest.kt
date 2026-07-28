@@ -3,6 +3,7 @@ package com.autoaccounting.backend.account
 import java.sql.DriverManager
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -65,6 +66,10 @@ class AccountPersistenceTest {
         assertEquals("13800138000", verifiedRegistered.value.phone)
         assertEquals(registered.value.token, verifiedRegistered.value.token)
         assertEquals(registered.value.accountId, verifiedRegistered.value.accountId)
+        assertEquals(
+            registered.value.accountUuid,
+            UUID.fromString(requireNotNull(verifiedRegistered.value.accountUuid)).toString()
+        )
 
         assertEquals(
             AccountError.SMS_TOO_FREQUENT,
@@ -79,6 +84,7 @@ class AccountPersistenceTest {
         assertEquals("13800138000", verifiedLogin.value.phone)
         assertEquals(login.value.token, verifiedLogin.value.token)
         assertEquals(login.value.accountId, verifiedLogin.value.accountId)
+        assertEquals(verifiedRegistered.value.accountUuid, verifiedLogin.value.accountUuid)
 
         assertEquals(
             listOf("device-a", "device-b"),
@@ -129,7 +135,8 @@ class AccountPersistenceTest {
                         'account_sessions',
                         'registered_devices',
                         'account_wechat_identities',
-                        'account_one_time_tickets'
+                        'account_one_time_tickets',
+                        'account_profiles'
                     )
                     """.trimIndent()
                 ).use { rs ->
@@ -138,9 +145,40 @@ class AccountPersistenceTest {
                 }
             }
 
-            assertEquals(7, appliedMigrationCount)
-            assertTrue(accountTableCount >= 8)
+            assertEquals(10, appliedMigrationCount)
+            assertTrue(accountTableCount >= 9)
         }
+    }
+
+    @Test
+    fun jdbcAccountProfilePersistsWithoutWechatIdentity() {
+        val databaseUrl = h2DatabaseUrl()
+        val store = JdbcAccountStore(databaseUrl)
+        val service = AccountService(store = store, tokenGenerator = { "profile-token" })
+        val registered = service.registerIdentifier(
+            "profile_user",
+            null,
+            "Password123!"
+        ) as AccountResult.Success
+
+        val nicknameUpdated = service.updateNickname(
+            registered.value.token,
+            "持久昵称"
+        ) as AccountResult.Success
+        assertEquals("持久昵称", nicknameUpdated.value.nickname)
+        assertFalse(nicknameUpdated.value.wechatLinked)
+
+        val avatarUpdated = service.updateAvatar(
+            registered.value.token,
+            "data:image/jpeg;base64,/9j/"
+        ) as AccountResult.Success
+        assertEquals("data:image/jpeg;base64,/9j/", avatarUpdated.value.avatarUrl)
+
+        val restartedService = AccountService(store = JdbcAccountStore(databaseUrl))
+        val verified = restartedService.verifyToken(registered.value.token) as AccountResult.Success
+        assertEquals("持久昵称", verified.value.nickname)
+        assertEquals("data:image/jpeg;base64,/9j/", verified.value.avatarUrl)
+        assertFalse(verified.value.wechatLinked)
     }
 
     @Test

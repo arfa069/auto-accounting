@@ -15,7 +15,7 @@ private val v6TestSchemaPattern = Regex("codex_v6_data_test_[0-9a-f]{32}")
 
 class PostgresV6DataMigrationIntegrationTest {
     @Test
-    fun populatedVersion6SchemaMigratesToVersion7WithoutDataLoss() {
+    fun populatedVersion6SchemaMigratesToLatestWithoutDataLoss() {
         val config = postgresTestConfig()
         val schemaName = "codex_v6_data_test_${UUID.randomUUID().toString().replace("-", "")}"
         val schemaUrl = schemaUrl(config.jdbcUrl, schemaName)
@@ -124,7 +124,7 @@ class PostgresV6DataMigrationIntegrationTest {
         accountId: Long
     ): Long = jdbcConnection(schemaUrl, config.username, config.password).use { connection ->
         assertEquals(
-            "1,2,3,4,5,6,7",
+            "1,2,3,4,5,6,7,8",
             queryString(
                 connection,
                 "SELECT string_agg(version::text, ',' ORDER BY version) FROM schema_migrations"
@@ -148,7 +148,8 @@ class PostgresV6DataMigrationIntegrationTest {
             "ledger_sync_records",
             "ledger_sync_changes",
             "ledger_sync_conflicts",
-            "ledger_sync_mutations"
+            "ledger_sync_mutations",
+            "account_profiles"
         ).forEach { table -> assertTrue(tableExists(connection, table)) }
         assertEquals(
             1L,

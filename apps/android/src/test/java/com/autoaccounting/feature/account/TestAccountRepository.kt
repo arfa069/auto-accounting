@@ -8,6 +8,8 @@ internal class TestAccountRepository : AccountRepository {
     var authenticationResult: AccountRepositoryResult<AccountCredentials> =
         AccountRepositoryResult.Success(AccountCredentials("13800138000", "token-1"))
     var verificationResult: AccountRepositoryResult<AccountCredentials> = authenticationResult
+    var updateNicknameResult: AccountRepositoryResult<AccountCredentials>? = null
+    var updateAvatarResult: AccountRepositoryResult<AccountCredentials>? = null
     var signOutResult: AccountRepositoryResult<Unit> = AccountRepositoryResult.Success(Unit)
     var deletionResult: AccountRepositoryResult<AccountDeletionUiState> =
         AccountRepositoryResult.Success(
@@ -42,6 +44,11 @@ internal class TestAccountRepository : AccountRepository {
     var lastUnlinkWechatIdentifier: String? = null
     var signOutCalls = 0
     var requestDeletionCalls = 0
+    var updateNicknameCalls = 0
+    var updateAvatarCalls = 0
+    var lastNickname: String? = null
+    var lastAvatarDataUrl: String? = null
+    var lastReplaceExisting = false
 
     override suspend fun requestVerificationCode(
         identifier: String,
@@ -76,6 +83,28 @@ internal class TestAccountRepository : AccountRepository {
     override suspend fun verifySession(
         credentials: AccountCredentials
     ): AccountRepositoryResult<AccountCredentials> = verificationResult
+
+    override suspend fun updateNickname(
+        credentials: AccountCredentials,
+        nickname: String
+    ): AccountRepositoryResult<AccountCredentials> {
+        updateNicknameCalls += 1
+        lastNickname = nickname
+        return updateNicknameResult ?: AccountRepositoryResult.Success(
+            credentials.copy(nickname = nickname)
+        )
+    }
+
+    override suspend fun updateAvatar(
+        credentials: AccountCredentials,
+        avatarDataUrl: String
+    ): AccountRepositoryResult<AccountCredentials> {
+        updateAvatarCalls += 1
+        lastAvatarDataUrl = avatarDataUrl
+        return updateAvatarResult ?: AccountRepositoryResult.Success(
+            credentials.copy(avatarUrl = avatarDataUrl)
+        )
+    }
 
     override suspend fun signOut(token: String): AccountRepositoryResult<Unit> {
         signOutCalls += 1
@@ -133,9 +162,11 @@ internal class TestAccountRepository : AccountRepository {
 
     override suspend fun prepareIdentifierLink(
         token: String,
-        identifier: String
+        identifier: String,
+        replaceExisting: Boolean
     ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract> {
         prepareIdentifierLinkCalls += 1
+        lastReplaceExisting = replaceExisting
         return phoneLinkPrepareResult ?: AccountRepositoryResult.Success(
             IdentifierLinkPrepareResponseContract.LinkTicketIssued("link-ticket", 300_000L)
         )

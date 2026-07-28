@@ -210,7 +210,8 @@ Account model:
 - Users can skip login and use local mode.
 - Cloud-linked capabilities require a backend-verified Session; a restored but offline-unverified Session keeps local bookkeeping available and pauses cloud writes and account deletion.
 - Android uses a random persisted installation UUID and does not read hardware identifiers.
-- The backend uses an internal account ID. Each account can have one username, one email, one phone number, one shared password credential, and one WeChat identity; local Room ledger books never change ownership or sync to the account.
+- The backend uses a numeric internal account ID for relationships and a separate immutable public UUID for display and copy. The public UUID is not an authentication secret and must never be derived from a Session token.
+- Each account can have one username, one email, one phone number, one shared password credential, and one WeChat identity. Room remains the offline source; only the explicitly enabled formal ledger-sync scope is associated with the account.
 
 Login method:
 - Username, email, or phone number + the account's shared password.
@@ -223,11 +224,12 @@ Registration:
 - An unbound WeChat authorization can create a WeChat-only account, or bind an existing password account by password or a dedicated code sent to a bound phone/email.
 
 Identity management:
-- A password account can bind at most one phone number and one email; either becomes an additional login and recovery identifier without changing the primary identifier.
+- A password account can bind at most one phone number and one email; either becomes an additional login and recovery identifier without changing the primary identifier. A bound phone or email can be replaced only through its channel verification flow.
 - Identifier conflicts between password accounts are rejected without transfer or merge. A WeChat-only account can explicitly merge an existing password account; merging keeps the current account, accepts only complementary credentials, keeps current cloud configuration values, deduplicates devices, deletes source AI logs and source account Sessions, and never changes the local ledger.
 - A WeChat identity can be unlinked only when a password credential and another login identifier remain. Verification uses the shared password or a code sent to the user-selected bound phone/email. Binding, merging and unlinking rotate Sessions.
-- WeChat nickname and HTTPS avatar URL refresh after successful authorization; an unavailable or unsafe avatar uses the local placeholder.
-- The client never stores AppSecret, SMTP credentials, WeChat tokens, OpenID, UnionID or raw provider responses. Android Session v3 is Keystore-encrypted and contains only the business Session, primary identifier, identifier list and display fields; v1/v2 can be restored and upgraded.
+- The account Profile stores the user-editable nickname and avatar independently from the WeChat identity. WeChat authorization can provide initial display fields; later nickname, gallery-avatar, and camera-avatar edits persist through the backend and survive verification, restart, and another-device login.
+- Android converts selected images to a bounded JPEG Data URL before upload. The backend accepts only validated JPEG/PNG Data URLs up to 256 KiB; an unavailable or unsafe avatar uses the local placeholder.
+- The client never stores AppSecret, SMTP/SMS credentials, WeChat tokens, OpenID, UnionID or raw provider responses. Android Session v5 is Keystore-encrypted and contains the business Session, public account UUID, primary identifier, identifier list, deletion state and display fields; v1-v4 can be restored and upgraded.
 
 Password:
 - 8-32 characters.
@@ -406,7 +408,7 @@ Supporting metrics:
 ## 9. Non-Goals For First Internal Beta
 
 - iOS support.
-- Real-time cloud ledger sync.
+- WebSocket or server-push real-time ledger sync.
 - Full asset, liability, or balance reconciliation.
 - Ledger-book renaming, moving existing entries between ledger books, or per-ledger copies of categories and funding accounts.
 - Advertising SDKs or marketing tracking.
