@@ -212,6 +212,7 @@ Account model:
 - Android uses a random persisted installation UUID and does not read hardware identifiers.
 - The backend uses a numeric internal account ID for relationships and a separate immutable public UUID for display and copy. The public UUID is not an authentication secret and must never be derived from a Session token.
 - Each account can have one username, one email, one phone number, one shared password credential, and one WeChat identity. Room remains the offline source; only the explicitly enabled formal ledger-sync scope is associated with the account.
+- On first sync, untouched app-generated categories and categorization rules are bootstrap data: the cloud canonical record wins without creating a user-facing conflict. A real user edit to the same built-in record still follows normal conflict handling.
 
 Login method:
 - Username, email, or phone number + the account's shared password.
@@ -330,7 +331,7 @@ Login first screen:
 - Phone number input.
 - Visible local-mode entry.
 - Login, registration, and local mode require agreement to user agreement and privacy policy.
-- Local mode entry shows a one-time limitation explanation: local bookkeeping works, but cloud AI, device configuration, and future sync are unavailable.
+- Local mode entry shows a one-time limitation explanation: local bookkeeping works, but cloud AI, registered-device configuration, and account sync require sign-in.
 
 Profile top:
 - A compact, clickable account-state card: local mode states that the ledger remains on the device; signed-in mode shows a masked phone number and account state.

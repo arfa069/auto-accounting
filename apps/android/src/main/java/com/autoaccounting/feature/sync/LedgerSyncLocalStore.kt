@@ -18,6 +18,8 @@ import com.autoaccounting.data.local.AccountSyncStateEntity
 import com.autoaccounting.data.local.AutoAccountingDatabase
 import com.autoaccounting.data.local.CategorizationRuleEntity
 import com.autoaccounting.data.local.CategoryEntity
+import com.autoaccounting.data.local.DefaultCategorizationRules
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.EntryOrigin
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.FundingAccountEntity
@@ -156,17 +158,26 @@ class LedgerSyncLocalStore(
             database.ledgerSyncDao().upsertMetadata(record.toMetadata())
         }
         conflicts.forEach { conflict ->
-            database.ledgerSyncDao().upsertConflict(conflict.toEntity())
-            val metadata = database.ledgerSyncDao().getMetadata(conflict.entityType.name, conflict.entityId)
-            database.ledgerSyncDao().upsertMetadata(
-                (metadata ?: AccountSyncMetadataEntity(
-                    conflict.entityType.name,
-                    conflict.entityId,
-                    conflict.canonicalVersion,
-                    conflict.canonicalPayload?.let { LedgerSyncJsonContracts.encodePayload(conflict.entityType, it) },
-                    conflict.canonicalDeleted
-                )).copy(blockedByConflict = true)
-            )
+            if (conflict.isPristineGeneratedDefaultCandidate()) {
+                val canonical = conflict.toCanonicalRecord()
+                applyRecord(canonical)
+                database.ledgerSyncDao().upsertMetadata(canonical.toMetadata())
+                database.ledgerSyncDao().deleteConflict(conflict.conflictId)
+            } else {
+                database.ledgerSyncDao().upsertConflict(conflict.toEntity())
+                val metadata = database.ledgerSyncDao().getMetadata(conflict.entityType.name, conflict.entityId)
+                database.ledgerSyncDao().upsertMetadata(
+                    (metadata ?: AccountSyncMetadataEntity(
+                        conflict.entityType.name,
+                        conflict.entityId,
+                        conflict.canonicalVersion,
+                        conflict.canonicalPayload?.let {
+                            LedgerSyncJsonContracts.encodePayload(conflict.entityType, it)
+                        },
+                        conflict.canonicalDeleted
+                    )).copy(blockedByConflict = true)
+                )
+            }
         }
     }
 
@@ -249,13 +260,18 @@ class LedgerSyncLocalStore(
         records.latestByEntity().sortedWith(remoteApplyComparator).forEach { record ->
             val key = record.entityType to record.entityId
             val localPayload = local[key]?.third
+            val localContract = localPayload?.let {
+                LedgerSyncJsonContracts.parsePayload(record.entityType, it)
+            }
             val remotePayload = record.payload?.let { LedgerSyncJsonContracts.encodePayload(record.entityType, it) }
             database.ledgerSyncDao().upsertMetadata(record.toMetadata())
             if (localPayload == null) {
                 applyRecord(record)
             } else if (localPayload != remotePayload || record.deleted) {
                 applyRecord(record)
-                enqueue(record.entityType, record.entityId, baseVersion = 0, deleted = false, payload = localPayload)
+                if (localContract?.isPristineGeneratedDefault() != true) {
+                    enqueue(record.entityType, record.entityId, baseVersion = 0, deleted = false, payload = localPayload)
+                }
             }
         }
         reconcileOutbox()
@@ -567,6 +583,42 @@ private fun LedgerSyncConflictContract.toEntity() = AccountSyncConflictEntity(
     candidatePayload = candidatePayload?.let { LedgerSyncJsonContracts.encodePayload(entityType, it) },
     createdAtMillis = createdAtMillis
 )
+
+private fun LedgerSyncConflictContract.isPristineGeneratedDefaultCandidate(): Boolean =
+    !candidateDeleted && candidatePayload?.isPristineGeneratedDefault() == true
+
+private fun LedgerSyncConflictContract.toCanonicalRecord() = LedgerSyncRecordContract(
+    entityType = entityType,
+    entityId = entityId,
+    version = canonicalVersion,
+    revision = 0,
+    deleted = canonicalDeleted,
+    payload = canonicalPayload
+)
+
+private fun LedgerSyncPayloadContract.isPristineGeneratedDefault(): Boolean = when (this) {
+    is LedgerSyncPayloadContract.Category -> DefaultCategories
+        .systemDefaults(createdAtMillis)
+        .any { default ->
+            default.id == id &&
+                default.name == name &&
+                default.kind?.name == kind &&
+                default.sortOrder == sortOrder &&
+                default.isSystem == isSystem
+        }
+    is LedgerSyncPayloadContract.CategorizationRule -> DefaultCategorizationRules.rules.any { default ->
+        default.id == id &&
+            default.merchantContains == merchantContains &&
+            default.titleContains == titleContains &&
+            default.sourceLabel == sourceLabel &&
+            default.transactionKind == transactionKind &&
+            default.category == category &&
+            default.priority == priority &&
+            default.enabled == enabled &&
+            default.updatedAtEpochMillis == updatedAtMillis
+    }
+    else -> false
+}
 
 private fun CategoryEntity.toPayload() = LedgerSyncPayloadContract.Category(
     id, name, kind?.name, sortOrder, isSystem, createdAtEpochMillis

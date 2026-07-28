@@ -13,6 +13,8 @@ import com.autoaccounting.data.local.AutoAccountingDatabase
 import com.autoaccounting.data.local.CaptureReason
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.DefaultCategorizationRules
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.FundingAccountSourceScope
 import com.autoaccounting.data.local.EntryOrigin
@@ -155,6 +157,60 @@ class LedgerSyncLocalStoreTest {
     }
 
     @Test
+    fun pristineGeneratedDefaultsAdoptCloudSnapshotWithoutConflictMutations() = runBlocking {
+        val localCreatedAt = NOW + 1_000
+        val localCategory = DefaultCategories.systemDefaults(localCreatedAt).first { it.id == "food" }
+        val localRule = DefaultCategorizationRules.rules.first { it.id == "default-food" }
+        database.categoryDao().upsert(localCategory)
+        database.categorizationRuleDao().upsert(localRule)
+        store.enable("profile-a")
+
+        val cloudCategory = LedgerSyncPayloadContract.Category(
+            id = localCategory.id,
+            name = localCategory.name,
+            kind = localCategory.kind?.name,
+            sortOrder = localCategory.sortOrder,
+            isSystem = localCategory.isSystem,
+            createdAtMillis = NOW
+        )
+        val cloudRule = LedgerSyncPayloadContract.CategorizationRule(
+            id = localRule.id,
+            merchantContains = localRule.merchantContains,
+            titleContains = localRule.titleContains,
+            sourceLabel = localRule.sourceLabel,
+            transactionKind = localRule.transactionKind,
+            category = "云端保留分类",
+            priority = localRule.priority,
+            enabled = localRule.enabled,
+            updatedAtMillis = NOW - 1
+        )
+        store.mergeSnapshot(
+            listOf(
+                LedgerSyncRecordContract(
+                    LedgerSyncEntityTypeContract.CATEGORY,
+                    cloudCategory.id,
+                    3,
+                    1,
+                    false,
+                    cloudCategory
+                ),
+                LedgerSyncRecordContract(
+                    LedgerSyncEntityTypeContract.CATEGORIZATION_RULE,
+                    cloudRule.id,
+                    5,
+                    2,
+                    false,
+                    cloudRule
+                )
+            )
+        )
+
+        assertTrue(store.listMutations(100).isEmpty())
+        assertEquals(NOW, database.categoryDao().getCategory(localCategory.id)?.createdAtEpochMillis)
+        assertEquals("云端保留分类", database.categorizationRuleDao().getById(localRule.id)?.category)
+    }
+
+    @Test
     fun acceptedPushRemovesOutboxAndPersistsServerVersion() = runBlocking {
         database.ledgerBookDao().insert(localBook())
         store.enable("profile-a")
@@ -273,6 +329,119 @@ class LedgerSyncLocalStoreTest {
         assertEquals("云端账本", database.ledgerBookDao().getById("book-local")?.name)
         assertEquals("conflict-1", store.conflicts.first().single().conflictId)
         assertTrue(database.ledgerSyncDao().getMetadata("LEDGER_BOOK", "book-local")?.blockedByConflict == true)
+    }
+
+    @Test
+    fun remoteGeneratedDefaultConflictsUseCanonicalWithoutPromptingForPristineCandidates() = runBlocking {
+        val localCreatedAt = NOW + 1_000
+        val localCategory = DefaultCategories.systemDefaults(localCreatedAt).first { it.id == "food" }
+        val localRule = DefaultCategorizationRules.rules.first { it.id == "default-food" }
+        val housingRule = DefaultCategorizationRules.rules.first { it.id == "default-housing" }
+        val editedRule = housingRule.copy(priority = 999, updatedAtEpochMillis = localCreatedAt)
+        database.categoryDao().upsert(localCategory)
+        database.categorizationRuleDao().upsert(localRule)
+        database.categorizationRuleDao().upsert(editedRule)
+        store.enable("profile-a")
+
+        val canonicalCategory = LedgerSyncPayloadContract.Category(
+            localCategory.id,
+            localCategory.name,
+            localCategory.kind?.name,
+            localCategory.sortOrder,
+            localCategory.isSystem,
+            NOW
+        )
+        val candidateCategory = canonicalCategory.copy(createdAtMillis = localCreatedAt)
+        val canonicalRule = LedgerSyncPayloadContract.CategorizationRule(
+            localRule.id,
+            localRule.merchantContains,
+            localRule.titleContains,
+            localRule.sourceLabel,
+            localRule.transactionKind,
+            "云端保留分类",
+            localRule.priority,
+            localRule.enabled,
+            NOW - 1
+        )
+        val candidateRule = canonicalRule.copy(
+            category = localRule.category,
+            updatedAtMillis = localRule.updatedAtEpochMillis
+        )
+        val editedCandidate = LedgerSyncPayloadContract.CategorizationRule(
+            editedRule.id,
+            editedRule.merchantContains,
+            editedRule.titleContains,
+            editedRule.sourceLabel,
+            editedRule.transactionKind,
+            editedRule.category,
+            editedRule.priority,
+            editedRule.enabled,
+            editedRule.updatedAtEpochMillis
+        )
+        val editedCanonical = LedgerSyncPayloadContract.CategorizationRule(
+            housingRule.id,
+            housingRule.merchantContains,
+            housingRule.titleContains,
+            housingRule.sourceLabel,
+            housingRule.transactionKind,
+            housingRule.category,
+            housingRule.priority,
+            housingRule.enabled,
+            housingRule.updatedAtEpochMillis
+        )
+
+        store.applyRemote(
+            records = emptyList(),
+            conflicts = listOf(
+                LedgerSyncConflictContract(
+                    "generated-category",
+                    LedgerSyncEntityTypeContract.CATEGORY,
+                    localCategory.id,
+                    3,
+                    false,
+                    canonicalCategory,
+                    false,
+                    candidateCategory,
+                    NOW
+                ),
+                LedgerSyncConflictContract(
+                    "generated-rule",
+                    LedgerSyncEntityTypeContract.CATEGORIZATION_RULE,
+                    localRule.id,
+                    4,
+                    false,
+                    canonicalRule,
+                    false,
+                    candidateRule,
+                    NOW
+                ),
+                LedgerSyncConflictContract(
+                    "edited-rule",
+                    LedgerSyncEntityTypeContract.CATEGORIZATION_RULE,
+                    editedRule.id,
+                    2,
+                    false,
+                    editedCanonical,
+                    false,
+                    editedCandidate,
+                    NOW
+                )
+            )
+        )
+
+        assertEquals(listOf("edited-rule"), store.conflicts.first().map { it.conflictId })
+        assertEquals(NOW, database.categoryDao().getCategory(localCategory.id)?.createdAtEpochMillis)
+        assertEquals("云端保留分类", database.categorizationRuleDao().getById(localRule.id)?.category)
+        assertFalse(
+            database.ledgerSyncDao()
+                .getMetadata(LedgerSyncEntityTypeContract.CATEGORY.name, localCategory.id)
+                ?.blockedByConflict == true
+        )
+        assertTrue(
+            database.ledgerSyncDao()
+                .getMetadata(LedgerSyncEntityTypeContract.CATEGORIZATION_RULE.name, editedRule.id)
+                ?.blockedByConflict == true
+        )
     }
 
     @Test

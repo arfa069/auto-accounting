@@ -17,7 +17,7 @@
 - [Android 性能审计与 Trace 分析](./performance-audit/)
 - [领域语言与术语表](../CONTEXT.md)
 - [微信与支付宝交易识别规则](./PAYMENT-RECOGNITION-RULES.md)
-- [自动记账流程研究](./research/auto-bookkeeping-flow.md)
+- [自动记账流程研究（2026-07-13 至 2026-07-17 历史快照）](./research/auto-bookkeeping-flow.md)
 - [架构决策记录 (ADR)](./adr/)
 
 ADR 记录了文档对齐研讨过程中的关键技术与产品决策路径。PRD 及相关支撑文档描述了当前产品的基线；Phase 2 基线审计、切片规划和 Issue 规划作为历史快照保留，当前执行状态以 Phase 2 Issue 跟踪文件为准，跨 Issue 的外部阻断项汇总在根目录 `todos.md`。

@@ -5,6 +5,8 @@
 > 研究范围：当前仓库的 Android 自动记账与补录账单入口、通知与无障碍采集、分类与去重、待确认/入账持久化，以及相关 Shared API、Ktor 与 JDBC 实现。
 >
 > 来源原则：仅引用本仓库源码与测试；没有把规划文档当作实现事实。
+>
+> 历史快照说明（2026-07-28）：本文保留 2026-07-13 至 2026-07-17 的自动记账主链路研究结论；其中“Android 没有网络客户端或账户账本同步”的描述已被 [ADR 0059](../adr/0059-add-account-scoped-ledger-sync.md) 及现行[架构文档](../ARCHITECTURE.md)取代，不应作为当前能力判断。
 
 ## 结论先行
 
@@ -22,7 +24,7 @@
 5. 结果先写入本机 Room 的 `pending_entries`；不会直接写入账本。
 6. 用户在“待确认”中确认后，才在同一个 Room 事务中写入 `ledger_entries` 并删除原待确认记录。
 
-**主链路没有 Android → Ktor 的账目上传接口，也没有 PostgreSQL 账本写入。** Android 生产代码装配的是本机 Room 数据库；Manifest 没有声明 `INTERNET`，Android 依赖中也没有 HTTP client。仓库虽有 Ktor `POST /ai/categorize` 和 JDBC `ai_categorization_logs`，但当前 Android 端只装配本地同步返回的 `DemoAiCategorizationGateway`，因此这套后端能力只能视为“已有但客户端未接入的可选 AI 分类能力”，不能画进现行自动记账主链路（[`AndroidManifest.xml:1-2`](../../apps/android/src/main/AndroidManifest.xml#L1-L2)、[`apps/android/build.gradle.kts:91-115`](../../apps/android/build.gradle.kts#L91-L115)、[`MainActivity.kt:616-630`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L616-L630)）。
+**截至 2026-07-17 的研究快照，主链路没有 Android → Ktor 的账目上传接口，也没有 PostgreSQL 账本写入。** 当时 Android 生产代码装配的是本机 Room 数据库；Manifest 没有声明 `INTERNET`，Android 依赖中也没有 HTTP client。仓库虽有 Ktor `POST /ai/categorize` 和 JDBC `ai_categorization_logs`，但 Android 端只装配本地同步返回的 `DemoAiCategorizationGateway`，因此在该快照中只能视为“已有但客户端未接入的可选 AI 分类能力”，不能画进当时的自动记账主链路（[`AndroidManifest.xml:1-2`](../../apps/android/src/main/AndroidManifest.xml#L1-L2)、[`apps/android/build.gradle.kts:91-115`](../../apps/android/build.gradle.kts#L91-L115)、[`MainActivity.kt:616-630`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L616-L630)）。
 
 ## 流程概览
 
@@ -135,9 +137,9 @@
 - 待确认持久化/去重完成后，两类 Service 才尝试发结果通知。通知权限未授予时，`BookkeepingResultNotifier.notify` 直接返回，不会回滚或阻断前面的 Room 写入（[`PaymentNotificationListenerService.kt:72-79`](../../apps/android/src/main/java/com/autoaccounting/feature/capture/PaymentNotificationListenerService.kt#L72-L79)、[`BillSyncAccessibilityService.kt:337-344`](../../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt#L337-L344)、[`BookkeepingResultNotifier.kt:104-145`](../../apps/android/src/main/java/com/autoaccounting/feature/capture/BookkeepingResultNotifier.kt#L104-L145)）。
 - 单条新增待确认通知携带待确认 ID；点击后 `MainActivity` 切到“待确认”并打开对应项目。锁屏公开版本只显示泛化文案（[`BookkeepingResultNotifier.kt:77-101`](../../apps/android/src/main/java/com/autoaccounting/feature/capture/BookkeepingResultNotifier.kt#L77-L101)、[`BookkeepingResultNotifier.kt:115-143`](../../apps/android/src/main/java/com/autoaccounting/feature/capture/BookkeepingResultNotifier.kt#L115-L143)、[`MainActivity.kt:220-224`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L220-L224)）。
 
-## 后端、共享契约与 PostgreSQL：现有能力，但不在主链路
+## 后端、共享契约与 PostgreSQL：研究快照中的能力边界
 
-### 当前真实连接状态
+### 2026-07-17 快照连接状态
 
 仓库级搜索结果：
 
@@ -145,9 +147,9 @@
 rg -n "/ai/categorize|HttpClient|OkHttp|Retrofit" apps/android/src/main apps/android/build.gradle.kts
 ```
 
-Android 生产代码没有 `/ai/categorize` 调用或 HTTP client 实现；Manifest 也没有 `android.permission.INTERNET`。在待确认编辑弹窗点击 AI 建议时，UI 会调用注入的 `AiCategorizationGateway`，但 `MainActivity` 注入的是 `DemoAiCategorizationGateway`，在进程内按标题同步返回分类（[`ReviewQueueScreen.kt:253-275`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueueScreen.kt#L253-L275)、[`MainActivity.kt:458-479`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L458-L479)、[`MainActivity.kt:616-630`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L616-L630)）。
+截至 2026-07-17，Android 生产代码没有 `/ai/categorize` 调用或 HTTP client 实现；Manifest 也没有 `android.permission.INTERNET`。在待确认编辑弹窗点击 AI 建议时，UI 会调用注入的 `AiCategorizationGateway`，但 `MainActivity` 注入的是 `DemoAiCategorizationGateway`，在进程内按标题同步返回分类（[`ReviewQueueScreen.kt:253-275`](../../apps/android/src/main/java/com/autoaccounting/feature/review/ReviewQueueScreen.kt#L253-L275)、[`MainActivity.kt:458-479`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L458-L479)、[`MainActivity.kt:616-630`](../../apps/android/src/main/java/com/autoaccounting/MainActivity.kt#L616-L630)）。
 
-### 如果未来接入，后端已有的调用链
+### 快照中后端已有但未接入的调用链
 
 ```text
 POST /ai/categorize（表单参数）
@@ -173,7 +175,7 @@ POST /ai/categorize（表单参数）
 - Ktor 路由实际读取的是表单字段 `token/accountPhone/amountMinor/enhancedContext`，并没有消费 `AiCategorizationRequestContract`（[`CloudAiContracts.kt:13-21`](../../shared/api/src/main/kotlin/com/autoaccounting/api/CloudAiContracts.kt#L13-L21)、[`AiCategorizationRoutes.kt:21-55`](../../services/backend/src/main/kotlin/com/autoaccounting/backend/ai/AiCategorizationRoutes.kt#L21-L55)）。
 - Android 的 `CloudAiContractTest` 只验证本地模型可手工映射到请求合同，以及响应 JSON 可映射回 Android 模型；它没有通过真实 Android 网络 client 调用 Ktor 路由（[`CloudAiContractTest.kt:11-59`](../../apps/android/src/test/java/com/autoaccounting/feature/categorization/CloudAiContractTest.kt#L11-L59)、[`CloudAiContractTest.kt:85-95`](../../apps/android/src/test/java/com/autoaccounting/feature/categorization/CloudAiContractTest.kt#L85-L95)）。
 
-这意味着未来接入前至少需要统一传输格式、字段语义、鉴权字段和 base URL/client 装配；当前不能把共享请求类型视为已经落地的线上契约。
+这意味着在该快照中，后续接入前至少需要统一传输格式、字段语义、鉴权字段和 base URL/client 装配；当时不能把共享请求类型视为已经落地的线上契约。
 
 ## 关键文件索引
 
@@ -233,11 +235,11 @@ POST /ai/categorize（表单参数）
 | [`AiCategorizationRoutesTest.kt:17-46`](../../services/backend/src/test/kotlin/com/autoaccounting/backend/ai/AiCategorizationRoutesTest.kt#L17-L46) | Ktor AI 路由能处理表单并记录最小分类上下文 |
 | [`AiCategorizationPersistenceTest.kt:11-41`](../../services/backend/src/test/kotlin/com/autoaccounting/backend/ai/AiCategorizationPersistenceTest.kt#L11-L41) | JDBC AI 日志可跨 Store 实例读取；这是分类日志证据，不是 Android 接入证据 |
 
-## 已发现但当前无法确认或尚未落地的点
+## 截至 2026-07-17 无法确认或尚未落地的点
 
-1. **Android 如何连接 Ktor**：当前没有生产网络 client、base URL、请求编码或 `INTERNET` 权限，无法从源码确认部署地址、失败重试和 TLS 行为。
+1. **Android 如何连接 Ktor**：截至 2026-07-17 没有生产网络 client、base URL、请求编码或 `INTERNET` 权限，无法从该快照确认部署地址、失败重试和 TLS 行为。
 2. **AI 请求合同最终形态**：Shared request contract 与 Ktor 表单字段不一致；现有测试没有端到端覆盖 Android → Ktor。
-3. **PostgreSQL 账本同步**：仓库没有对应路由、合同、Store 或表；目前能确认的 PostgreSQL 写入仅包括账户、云配置和 AI 分类日志，不能推断账本会上云。
+3. **PostgreSQL 账本同步**：截至 2026-07-17，仓库没有对应路由、合同、Store 或表；该快照能确认的 PostgreSQL 写入仅包括账户、云配置和 AI 分类日志，不能据此推断账本会上云。现行实现见文首历史快照说明。
 4. **“已就绪”摘要与分支独立性的产品语义**：实现把缺少通知监听显示为“需要处理”，同时允许无障碍自动捕获独立运行。这可能是“完整覆盖状态”与“单一来源可运行”的刻意区分；源码没有更进一步的运行时分级说明。
 5. **真实 AI Provider 的生产行为**：Backend 可从环境装配 Provider 和 PostgreSQL Store，但当前 Android 端没有调用它，因此无法从客户端流程确认真实网络调用是否可用。
 

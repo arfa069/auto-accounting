@@ -11,6 +11,7 @@
 - Entity、DAO、Converter 和 Repository 的字段语义必须一致。删除或恢复数据时检查关联的分类、资金账户、规则与设置。
 - 同步范围内的本地业务写入必须与 outbox 处于同一 Room 事务；远端应用器直接写 DAO，禁止反向生成 outbox。
 - 初始分类规则必须作为 `categorization_rules` 真实记录初始化；升级不得覆盖用户编辑，也不得复活用户已删除的规则。
+- 首次绑定已有云端 Profile 时，仍与当前模板一致的系统分类和初始分类规则属于启动数据，应采用云端规范记录且不产生 outbox/人工冲突；真正的用户编辑仍走普通冲突流程。不要把该例外扩展到默认账本或其他正式数据。
 - schema 变化必须递增 `SCHEMA_VERSION`、补充连续 Migration、在 Provider 注册，并提交新的 Room schema JSON。禁止用破坏性迁移绕过升级。
 
 ## 验证
