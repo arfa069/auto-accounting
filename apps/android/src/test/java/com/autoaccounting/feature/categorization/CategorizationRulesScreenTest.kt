@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -36,8 +37,8 @@ class CategorizationRulesScreenTest {
         }
 
         composeRule.onNodeWithText("分类规则").assertIsDisplayed()
-        composeRule.onNodeWithText("智能分类登录后可用；本地分类规则不受影响。").assertIsDisplayed()
-        composeRule.onAllNodesWithText("开启云端 AI").assertCountEquals(0)
+        composeRule.onNodeWithText("登录后可以使用智能分类；本地规则照常生效。").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai-consent-switch").assertDoesNotExist()
     }
 
     @Test
@@ -56,7 +57,8 @@ class CategorizationRulesScreenTest {
         }
 
         composeRule.onAllNodesWithText("退款").assertCountEquals(1)
-        composeRule.onNodeWithText("全部交易").assertIsDisplayed()
+        composeRule.onNodeWithText("商户包含“退款”").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("建议为 退款").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -67,10 +69,10 @@ class CategorizationRulesScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("云端 AI 分类").assertIsDisplayed()
-        composeRule.onNodeWithText("开启云端 AI").assertIsDisplayed()
-        composeRule.onNodeWithText("提供更多上下文").assertIsDisplayed()
-            .assertIsNotEnabled()
+        composeRule.onNodeWithText("智能分类").assertIsDisplayed()
+        composeRule.onNodeWithText("试用").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai-consent-switch").assertIsOff()
+        composeRule.onNodeWithTag("enhanced-context-switch").assertIsNotEnabled()
     }
 
     @Test
@@ -84,7 +86,7 @@ class CategorizationRulesScreenTest {
         }
 
         composeRule.onNodeWithText("分类规则").assertIsDisplayed()
-        composeRule.onNodeWithText("新建规则").performClick()
+        composeRule.onNodeWithTag("create-rule").performClick()
         composeRule.onNodeWithText("商户包含").performTextInput("星巴克")
         composeRule.onNodeWithText("标题关键词").performTextInput("拿铁")
         composeRule.onNodeWithText("来源").performTextInput("微信")
@@ -97,7 +99,8 @@ class CategorizationRulesScreenTest {
             assertEquals("餐饮", rules.single().category)
         }
 
-        composeRule.onNodeWithText("编辑").performClick()
+        composeRule.onNodeWithTag("rule-menu-rule-1").performClick()
+        composeRule.onNodeWithTag("edit-rule-rule-1").performClick()
         composeRule.onNodeWithText("分类").performTextClearance()
         composeRule.onNodeWithText("分类").performTextInput("工作餐")
         composeRule.onNodeWithText("保存规则").performClick()
@@ -123,6 +126,7 @@ class CategorizationRulesScreenTest {
             )
         }
 
+        composeRule.onNodeWithTag("rule-menu-rule-delete").performClick()
         composeRule.onNodeWithTag("delete-rule-rule-delete").performClick()
 
         assertTrue(updatedRules?.isEmpty() == true)
@@ -139,12 +143,31 @@ class CategorizationRulesScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("云端 AI 分类").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("开启云端 AI").performScrollTo().performClick()
+        composeRule.onNodeWithTag("ai-consent-switch").performScrollTo().performClick()
         assertTrue(settings.aiConsentGranted)
 
-        composeRule.onNodeWithText("提供更多上下文").performScrollTo().performClick()
+        composeRule.onNodeWithTag("enhanced-context-switch").performScrollTo().performClick()
         assertTrue(settings.enhancedContextGranted)
+    }
+
+    @Test
+    fun ruleFiltersShowOnlyMatchingTransactionKinds() {
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                rules = listOf(
+                    CategorizationRule(id = "expense", transactionKind = "支出", category = "餐饮"),
+                    CategorizationRule(id = "income", transactionKind = "收入", category = "工资"),
+                    CategorizationRule(id = "other", transactionKind = "退款", category = "退款")
+                ),
+                onRulesChange = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("rule-filter-Expense").performClick()
+
+        composeRule.onNodeWithTag("rule-card-expense").assertIsDisplayed()
+        composeRule.onNodeWithTag("rule-card-income").assertDoesNotExist()
+        composeRule.onNodeWithTag("rule-card-other").assertDoesNotExist()
     }
 
 }
