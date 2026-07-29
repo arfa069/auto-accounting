@@ -33,7 +33,9 @@ class PaymentNotificationCaptureProcessor(
     private val preferencesRepository: LocalPreferencesRepository,
     private val captureCoordinator: ReviewQueueCaptureCoordinator =
         ReviewQueueCaptureCoordinator.Shared,
-    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder
+    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder,
+    private val alipayTransitContextStore: AlipayTransitContextStore =
+        AlipayTransitContextStore.None
 ) {
     suspend fun process(event: PaymentNotificationEvent): ReviewQueueState? =
         processWithResult(event)?.state
@@ -73,8 +75,16 @@ class PaymentNotificationCaptureProcessor(
             return@serialize null
         }
         diagnosticRecorder.record(entry.toNotificationDiagnosticEvent(event, traceId))
+        val correlatedEntry = if (
+            entry.isGenericAlipayExpenseNotification() &&
+            alipayTransitContextStore.consumeForNotification(event.postedAtEpochMillis)
+        ) {
+            entry.withAlipayMetroContext()
+        } else {
+            entry
+        }
         val rules = preferencesRepository.categorizationRules.first()
-        val categorizedEntry = entry.applyCategorizationSuggestion(rules)
+        val categorizedEntry = correlatedEntry.applyCategorizationSuggestion(rules)
         val previousState = reviewQueuePersistence.observeState().first()
         val ledgerEntriesForDedupe = reviewQueuePersistence.ledgerEntriesForDedupe()
             .filterNot { ledgerEntry ->

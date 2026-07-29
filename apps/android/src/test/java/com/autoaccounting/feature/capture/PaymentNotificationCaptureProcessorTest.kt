@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,6 +41,7 @@ class PaymentNotificationCaptureProcessorTest {
     private lateinit var persistence: ReviewQueuePersistence
     private lateinit var processor: PaymentNotificationCaptureProcessor
     private lateinit var diagnostics: InMemoryDiagnosticRecorder
+    private lateinit var alipayTransitContextStore: SharedPreferencesAlipayTransitContextStore
 
     @Before
     fun setUp() {
@@ -54,18 +56,25 @@ class PaymentNotificationCaptureProcessorTest {
             zoneId = ZoneId.of("UTC")
         )
         diagnostics = InMemoryDiagnosticRecorder()
+        alipayTransitContextStore = SharedPreferencesAlipayTransitContextStore(
+            ApplicationProvider.getApplicationContext(),
+            "notification-processor-transit-${System.nanoTime()}"
+        )
+        alipayTransitContextStore.clear()
         processor = PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
                 captureTimeFormatter = { "2026-07-08 12:21" }
             ),
             reviewQueuePersistence = persistence,
             preferencesRepository = LocalPreferencesRepository(database),
-            diagnosticRecorder = diagnostics
+            diagnosticRecorder = diagnostics,
+            alipayTransitContextStore = alipayTransitContextStore
         )
     }
 
     @After
     fun tearDown() {
+        alipayTransitContextStore.clear()
         database.close()
     }
 
@@ -186,6 +195,59 @@ class PaymentNotificationCaptureProcessorTest {
         assertTrue(pendingEntries.single().id.contains((NOW + 30_000).toString()))
     }
 
+    @Test
+    fun genericAlipayExpenseWithinFiveMinutesUsesMetroContextBeforeCategorization() = runBlocking {
+        LocalPreferencesRepository(database).replaceCategorizationRules(
+            listOf(
+                CategorizationRule(
+                    id = "metro",
+                    titleContains = "地铁",
+                    transactionKind = "支出",
+                    category = "交通"
+                )
+            )
+        )
+        alipayTransitContextStore.record(NOW)
+
+        processor.process(alipayExpenseEvent(NOW + 5 * 60_000 - 1))
+
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("地铁乘车", entry.merchantTitle)
+        assertEquals(3590L, entry.amountMinor)
+        assertEquals("交通", entry.suggestedCategoryLabel)
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("场景证据=支付宝乘车已出站"))
+        assertFalse(alipayTransitContextStore.consumeForNotification(NOW + 5 * 60_000 - 1))
+    }
+
+    @Test
+    fun genericAlipayExpenseAtFiveMinutesKeepsUnknownMerchant() = runBlocking {
+        alipayTransitContextStore.record(NOW)
+
+        processor.process(alipayExpenseEvent(NOW + 5 * 60_000))
+
+        assertEquals(
+            "未知来源",
+            database.pendingEntryDao().listPendingEntries().single().merchantTitle
+        )
+    }
+
+    @Test
+    fun specificAlipayMerchantDoesNotConsumeMetroContext() = runBlocking {
+        alipayTransitContextStore.record(NOW)
+
+        processor.process(
+            alipayExpenseEvent(NOW + 60_000).copy(
+                text = "付款成功 商户：便利店 金额：¥35.90"
+            )
+        )
+
+        assertEquals(
+            "便利店",
+            database.pendingEntryDao().listPendingEntries().single().merchantTitle
+        )
+        assertTrue(alipayTransitContextStore.consumeForNotification(NOW + 90_000))
+    }
+
     private fun paymentEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
         PaymentNotificationEvent(
             packageName = "com.tencent.mm",
@@ -207,6 +269,14 @@ class PaymentNotificationCaptureProcessorTest {
             packageName = "com.tencent.mm",
             title = "微信红包",
             text = "收到张三的红包 ¥3.00",
+            postedAtEpochMillis = postedAtEpochMillis
+        )
+
+    private fun alipayExpenseEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
+        PaymentNotificationEvent(
+            packageName = "com.eg.android.AlipayGphone",
+            title = "支付宝",
+            text = "付款成功 ¥35.90",
             postedAtEpochMillis = postedAtEpochMillis
         )
 

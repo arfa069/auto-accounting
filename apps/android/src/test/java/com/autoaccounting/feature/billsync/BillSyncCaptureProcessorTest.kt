@@ -10,6 +10,7 @@ import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.data.local.TransactionKind
+import com.autoaccounting.feature.capture.SharedPreferencesAlipayTransitContextStore
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
@@ -41,6 +42,7 @@ class BillSyncCaptureProcessorTest {
     private lateinit var persistence: ReviewQueuePersistence
     private lateinit var processor: BillSyncCaptureProcessor
     private lateinit var diagnostics: InMemoryDiagnosticRecorder
+    private lateinit var alipayTransitContextStore: SharedPreferencesAlipayTransitContextStore
 
     @Before
     fun setUp() {
@@ -55,6 +57,11 @@ class BillSyncCaptureProcessorTest {
             zoneId = ZoneId.of("UTC")
         )
         diagnostics = InMemoryDiagnosticRecorder()
+        alipayTransitContextStore = SharedPreferencesAlipayTransitContextStore(
+            ApplicationProvider.getApplicationContext(),
+            "bill-sync-processor-transit-${System.nanoTime()}"
+        )
+        alipayTransitContextStore.clear()
         processor = BillSyncCaptureProcessor(
             pipeline = BillSyncPipeline(
                 captureTimeFormatter = { "2026-07-08 12:30" }
@@ -62,12 +69,14 @@ class BillSyncCaptureProcessorTest {
             reviewQueuePersistence = persistence,
             preferencesRepository = LocalPreferencesRepository(database),
             clock = { NOW },
-            diagnosticRecorder = diagnostics
+            diagnosticRecorder = diagnostics,
+            alipayTransitContextStore = alipayTransitContextStore
         )
     }
 
     @After
     fun tearDown() {
+        alipayTransitContextStore.clear()
         database.close()
     }
 
@@ -160,6 +169,77 @@ class BillSyncCaptureProcessorTest {
         assertEquals(CaptureReason.ACCESSIBILITY_AUTO, entry.captureReason)
         assertEquals("food", entry.suggestedCategoryId)
         assertTrue(database.ledgerEntryDao().listLedgerEntries().isEmpty())
+    }
+
+    @Test
+    fun metroContextEnrichesOneRecentGenericAlipayNotificationThatArrivedFirst() = runBlocking {
+        LocalPreferencesRepository(database).seedDefaultCategorizationRules()
+        val notification = ReviewQueueEntry(
+            id = "notification-alipay",
+            title = "未知来源",
+            amountMinor = 3590,
+            transactionTimeText = "2026-07-08 12:29",
+            sourceLabel = "支付宝",
+            kindLabel = "支出",
+            captureReasonLabel = "通知捕获",
+            confidence = ConfidenceState.NEEDS_REVIEW,
+            capturedAtEpochMillis = NOW - 60_000
+        )
+        val previous = ReviewQueueState(
+            pendingEntries = listOf(notification),
+            nowEpochMillis = NOW
+        )
+        persistence.persistTransition(ReviewQueueState(nowEpochMillis = NOW), previous)
+
+        assertTrue(processor.recordAlipayMetroExitContext())
+
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("地铁乘车", entry.merchantTitle)
+        assertEquals("transport", entry.suggestedCategoryId)
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("场景证据=支付宝乘车已出站"))
+        assertFalse(alipayTransitContextStore.consumeForNotification(NOW + 30_000))
+    }
+
+    @Test
+    fun ambiguousRecentGenericNotificationsAreNotEnrichedOrSavedAsFutureContext() = runBlocking {
+        val notifications = listOf(
+            ReviewQueueEntry(
+                id = "notification-alipay-1",
+                title = "未知来源",
+                amountMinor = 3590,
+                transactionTimeText = "2026-07-08 12:29",
+                sourceLabel = "支付宝",
+                kindLabel = "支出",
+                captureReasonLabel = "通知捕获",
+                confidence = ConfidenceState.NEEDS_REVIEW,
+                capturedAtEpochMillis = NOW - 60_000
+            ),
+            ReviewQueueEntry(
+                id = "notification-alipay-2",
+                title = "未知来源",
+                amountMinor = 1200,
+                transactionTimeText = "2026-07-08 12:28",
+                sourceLabel = "支付宝",
+                kindLabel = "支出",
+                captureReasonLabel = "通知捕获",
+                confidence = ConfidenceState.NEEDS_REVIEW,
+                capturedAtEpochMillis = NOW - 120_000
+            )
+        )
+        val previous = ReviewQueueState(
+            pendingEntries = notifications,
+            nowEpochMillis = NOW
+        )
+        persistence.persistTransition(ReviewQueueState(nowEpochMillis = NOW), previous)
+
+        assertFalse(processor.recordAlipayMetroExitContext())
+
+        assertTrue(
+            database.pendingEntryDao().listPendingEntries().all {
+                it.merchantTitle == "未知来源"
+            }
+        )
+        assertFalse(alipayTransitContextStore.consumeForNotification(NOW + 30_000))
     }
 
     @Test

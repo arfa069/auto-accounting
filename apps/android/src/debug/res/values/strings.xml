@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">自动记账 Debug</string>
+    <string name="app_name">阿喵记账 Debug</string>
     <string name="notification_listener_label">自动记账 Debug 通知捕获</string>
     <string name="bill_sync_accessibility_label">自动记账 Debug 无障碍服务</string>
 </resources>

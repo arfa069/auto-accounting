@@ -2,6 +2,10 @@ package com.autoaccounting.feature.billsync
 
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
+import com.autoaccounting.feature.capture.AlipayTransitContextStore
+import com.autoaccounting.feature.capture.isGenericAlipayExpenseNotification
+import com.autoaccounting.feature.capture.isWithinAlipayTransitCorrelationWindow
+import com.autoaccounting.feature.capture.withAlipayMetroContext
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticEvent
 import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
@@ -18,6 +22,7 @@ import com.autoaccounting.feature.review.ReviewQueuePersistence
 import com.autoaccounting.feature.review.reduceReviewQueue
 import kotlinx.coroutines.flow.first
 
+@Suppress("LongParameterList")
 class BillSyncCaptureProcessor(
     private val pipeline: BillSyncPipeline,
     private val reviewQueuePersistence: ReviewQueuePersistence,
@@ -25,7 +30,9 @@ class BillSyncCaptureProcessor(
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val captureCoordinator: ReviewQueueCaptureCoordinator =
         ReviewQueueCaptureCoordinator.Shared,
-    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder
+    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder,
+    private val alipayTransitContextStore: AlipayTransitContextStore =
+        AlipayTransitContextStore.None
 ) {
     suspend fun process(
         source: BillSyncSource,
@@ -93,6 +100,42 @@ class BillSyncCaptureProcessor(
             )
         }
         return matches == 1
+    }
+
+    suspend fun recordAlipayMetroExitContext(
+        detectedAtEpochMillis: Long = clock()
+    ): Boolean = captureCoordinator.serialize {
+        reviewQueuePersistence.ensureSystemCategories()
+        val previousState = reviewQueuePersistence.observeState().first()
+        val matchingNotifications = previousState.pendingEntries.filter { entry ->
+            entry.isGenericAlipayExpenseNotification() &&
+                isWithinAlipayTransitCorrelationWindow(
+                    entry.capturedAtEpochMillis,
+                    detectedAtEpochMillis
+                )
+        }
+        if (matchingNotifications.isEmpty()) {
+            alipayTransitContextStore.record(detectedAtEpochMillis)
+            return@serialize false
+        }
+        if (matchingNotifications.size > 1) {
+            alipayTransitContextStore.record(detectedAtEpochMillis)
+            alipayTransitContextStore.consumeForNotification(detectedAtEpochMillis)
+            return@serialize false
+        }
+
+        val rules = preferencesRepository.categorizationRules.first()
+        val enrichedEntry = matchingNotifications.single()
+            .withAlipayMetroContext()
+            .applyCategorizationSuggestion(rules)
+        val nextState = reduceReviewQueue(
+            previousState,
+            ReviewQueueAction.AddPending(enrichedEntry)
+        )
+        reviewQueuePersistence.persistTransition(previousState, nextState)
+        alipayTransitContextStore.record(detectedAtEpochMillis)
+        alipayTransitContextStore.consumeForNotification(detectedAtEpochMillis)
+        true
     }
 
     private suspend fun processWithReason(

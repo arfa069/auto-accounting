@@ -132,6 +132,29 @@ class DedupeEngineTest {
     }
 
     @Test
+    fun mergePrefersSpecificCandidateTitleAndCategoryOverExistingGenericTitle() {
+        val notification = entry(
+            title = "未知来源",
+            transactionTimeText = "2026-07-08 12:20",
+            source = "支付宝",
+            captureReason = "通知捕获"
+        )
+        val automatic = entry(
+            id = "automatic-1",
+            title = "地铁乘车",
+            transactionTimeText = "2026-07-08 12:21",
+            source = "支付宝",
+            captureReason = "支付结果自动捕获"
+        ).copy(category = "交通")
+
+        val merged = DedupeEngine().addCandidate(listOf(notification), automatic)
+            .pendingEntries.single()
+
+        assertEquals("地铁乘车", merged.title)
+        assertEquals("交通", merged.category)
+    }
+
+    @Test
     fun differentSpecificTitlesStayDuplicateSuspectsAcrossCaptureSources() {
         val notification = entry(
             title = "午餐",

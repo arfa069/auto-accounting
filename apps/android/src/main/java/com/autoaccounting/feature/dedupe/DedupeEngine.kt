@@ -82,12 +82,18 @@ class DedupeEngine {
             kindLabel == other.kindLabel &&
             transactionTimeText.minutesFrom(other.transactionTimeText)?.let { it <= LOW_CONFIDENCE_WINDOW_MINUTES } == true
 
-    private fun ReviewQueueEntry.mergeWith(candidate: ReviewQueueEntry): ReviewQueueEntry =
-        copy(
+    private fun ReviewQueueEntry.mergeWith(candidate: ReviewQueueEntry): ReviewQueueEntry {
+        val preferCandidateDetails = hasGenericTitle && !candidate.hasGenericTitle
+        return copy(
+            title = candidate.title.takeIf { preferCandidateDetails } ?: title,
             confidence = ConfidenceState.HIGH,
             captureReasonLabel = "重复合并",
             categoryId = categoryId ?: candidate.categoryId,
-            category = category.ifBlank { candidate.category },
+            category = if (preferCandidateDetails) {
+                candidate.category.ifBlank { category }
+            } else {
+                category.ifBlank { candidate.category }
+            },
             fundingAccountLabel = fundingAccountLabel.ifBlank { candidate.fundingAccountLabel },
             note = note ?: candidate.note,
             rawEvidenceText = listOf(rawEvidenceText, candidate.rawEvidenceText)
@@ -107,6 +113,7 @@ class DedupeEngine {
                 )
                 .distinct()
         )
+    }
 
     private fun ReviewQueueEntry.markDuplicateSuspect(match: ReviewQueueEntry): ReviewQueueEntry =
         copy(

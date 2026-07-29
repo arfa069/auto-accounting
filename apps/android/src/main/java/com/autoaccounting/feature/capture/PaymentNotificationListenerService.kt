@@ -33,6 +33,9 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
     private val database by lazy { AutoAccountingDatabaseProvider.get(this) }
     private val preferencesRepository by lazy { LocalPreferencesRepository(database) }
+    private val alipayTransitContextStore by lazy {
+        SharedPreferencesAlipayTransitContextStore(this)
+    }
     private val processor by lazy {
         PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
@@ -42,7 +45,8 @@ class PaymentNotificationListenerService : NotificationListenerService() {
                 LocalLedgerRepository(database)
             ),
             preferencesRepository = preferencesRepository,
-            diagnosticRecorder = diagnostics
+            diagnosticRecorder = diagnostics,
+            alipayTransitContextStore = alipayTransitContextStore
         )
     }
     private val resultNotifier by lazy { BookkeepingResultNotifier(this) }
@@ -82,6 +86,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
                 .continuousMonitoringState
                 .let(::isAutomaticBookkeepingNotificationCaptureEnabled)
             if (!automaticBookkeepingEnabled) {
+                alipayTransitContextStore.clear()
                 diagnostics.record(
                     notificationServiceEvent(event, traceId, isReplay, "disabled", "blocked")
                 )
