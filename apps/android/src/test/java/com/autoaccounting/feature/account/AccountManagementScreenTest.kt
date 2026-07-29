@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.autoaccounting.api.AccountIdentifierContract
 import com.autoaccounting.api.AccountIdentifierTypeContract
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -93,6 +94,46 @@ class AccountManagementScreenTest {
         composeRule.onNodeWithText("用户名登录").assertDoesNotExist()
         composeRule.onNodeWithTag("account-connection-status").assertDoesNotExist()
         composeRule.onNodeWithTag("bind-phone").assertIsDisplayed()
+    }
+
+    @Test
+    fun successfulRetryPersistsLatestAvatarForOfflineRestore() {
+        val refreshed = AccountCredentials(
+            phone = "13800138000",
+            token = "token-1",
+            nickname = "本机头像用户",
+            avatarUrl = "data:image/jpeg;base64,/9j/"
+        )
+        val repository = TestAccountRepository().apply {
+            verificationResult = AccountRepositoryResult.Success(refreshed)
+        }
+        var persisted: AccountCredentials? = null
+        var verified: AccountCredentials? = null
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn("13800138000", "token-1"),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.OfflineUnverified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = { verified = it },
+                onInvalidSession = {},
+                persistSession = {
+                    persisted = it
+                    true
+                },
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithText("重新验证").performClick()
+        composeRule.waitUntil { persisted != null && verified != null }
+
+        assertEquals(refreshed, persisted)
+        assertEquals(refreshed, verified)
     }
 
     @Test

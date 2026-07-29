@@ -116,7 +116,15 @@ fun AccountManagementScreen(
                                 ) {
                                     is AccountRepositoryResult.Success -> {
                                         operationInProgress = false
-                                        onSessionVerified(result.value)
+                                        if (
+                                            !persistRefreshedAccountSession(
+                                                credentials = result.value,
+                                                persistSession = persistSession,
+                                                onSessionVerified = onSessionVerified
+                                            )
+                                        ) {
+                                            errorMessage = "账号资料已验证，但无法保存到本机，请重试"
+                                        }
                                     }
                                     is AccountRepositoryResult.Failure -> handleFailure(result)
                                 }

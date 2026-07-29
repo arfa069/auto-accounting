@@ -12,3 +12,14 @@ internal suspend fun persistAccountSessionOrRevoke(
     accountRepository.signOut(credentials.token)
     return false
 }
+
+internal fun persistRefreshedAccountSession(
+    credentials: AccountCredentials,
+    persistSession: (AccountCredentials) -> Boolean,
+    onSessionVerified: (AccountCredentials) -> Unit
+): Boolean {
+    if (!persistSession(credentials)) return false
+
+    onSessionVerified(credentials)
+    return true
+}

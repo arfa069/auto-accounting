@@ -58,6 +58,7 @@ import com.autoaccounting.feature.account.rememberWechatAvatarCache
 import com.autoaccounting.feature.account.InstallationIdStore
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.account.SecureAccountSessionStore
+import com.autoaccounting.feature.account.persistRefreshedAccountSession
 import com.autoaccounting.feature.account.resolveAccountSessionVerification
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.billsync.ManualBillImportHost
@@ -506,7 +507,20 @@ fun AutoAccountingApp(
                 )
             )
         ) {
-            is AccountSessionVerificationDecision.Verified -> applyVerifiedCredentials(decision.credentials)
+            is AccountSessionVerificationDecision.Verified -> {
+                val persisted = persistRefreshedAccountSession(
+                    credentials = decision.credentials,
+                    persistSession = { credentials ->
+                        persistAccountSessionOverride?.invoke(credentials)
+                            ?: secureAccountSessionStore.save(credentials)
+                    },
+                    onSessionVerified = ::applyVerifiedCredentials
+                )
+                if (!persisted) {
+                    accountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.OfflineUnverified)
+                    appState.snackbarHostState.showSnackbar("账号已验证，但最新资料未能保存到本机")
+                }
+            }
             AccountSessionVerificationDecision.ClearInvalidSession -> {
                 moveAccountToLocalMode()
                 appState.snackbarHostState.showSnackbar("登录状态已失效，已切换到本地模式")

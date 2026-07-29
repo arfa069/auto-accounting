@@ -46,4 +46,43 @@ class AccountSessionCommitTest {
         assertEquals(0, clearCalls)
         assertEquals(0, repository.signOutCalls)
     }
+
+    @Test
+    fun refreshedProfileIsAppliedOnlyAfterItIsPersisted() {
+        val credentials = AccountCredentials(
+            phone = "13800138000",
+            token = "existing-token",
+            nickname = "本机头像用户",
+            avatarUrl = "data:image/jpeg;base64,/9j/"
+        )
+        var persisted: AccountCredentials? = null
+        var applied: AccountCredentials? = null
+
+        val committed = persistRefreshedAccountSession(
+            credentials = credentials,
+            persistSession = {
+                persisted = it
+                true
+            },
+            onSessionVerified = { applied = it }
+        )
+
+        assertTrue(committed)
+        assertEquals(credentials, persisted)
+        assertEquals(credentials, applied)
+    }
+
+    @Test
+    fun refreshedProfilePersistenceFailureDoesNotApplyVolatileProfile() {
+        var applied = false
+
+        val committed = persistRefreshedAccountSession(
+            credentials = AccountCredentials("13800138000", "existing-token"),
+            persistSession = { false },
+            onSessionVerified = { applied = true }
+        )
+
+        assertFalse(committed)
+        assertFalse(applied)
+    }
 }
