@@ -112,9 +112,59 @@ class CloudConfigServiceTest {
         assertEquals(CloudConfigResult.Written, result)
         val config = service.configService.readConfig(reg.accountId)
         assertFalse(config.aiConsentGranted)
-        assertTrue(config.enhancedContextGranted)
+        assertFalse(config.enhancedContextGranted)
         assertEquals(mapOf("beta_reports" to true), config.featureFlags)
         assertEquals(2000L, config.updatedAtMillis)
+    }
+
+
+    @Test
+    fun readConfigNormalizesLegacyEnhancedContextWithoutAiConsent() {
+        val accountService = AccountService(
+            smsCodeGenerator = { "123456" },
+            tokenGenerator = { "token-1" },
+            clock = MutableClock(0)
+        )
+        val store = InMemoryCloudConfigStore().apply {
+            upsertConfig(
+                StoredCloudConfig(
+                    accountId = 99,
+                    aiConsentGranted = false,
+                    enhancedContextGranted = true,
+                    updatedAtMillis = 1000
+                )
+            )
+        }
+        val service = CloudConfigService(store = store, accountService = accountService)
+
+        val config = service.readConfig(99)
+
+        assertFalse(config.aiConsentGranted)
+        assertFalse(config.enhancedContextGranted)
+    }
+
+    @Test
+    fun directWriteCannotPersistEnhancedContextWithoutAiConsent() {
+        val service = cloudConfigService()
+        service.accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val reg = (service.accountService.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!"
+        ) as AccountResult.Success<AccountToken>).value
+
+        service.configService.writeConfig(
+            StoredCloudConfig(
+                accountId = reg.accountId,
+                aiConsentGranted = false,
+                enhancedContextGranted = true,
+                updatedAtMillis = 1000
+            )
+        )
+
+        val config = service.configService.readConfig(reg.accountId)
+        assertFalse(config.aiConsentGranted)
+        assertFalse(config.enhancedContextGranted)
     }
 
     private fun cloudConfigService(): CloudConfigTestHarness {

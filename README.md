@@ -55,7 +55,7 @@ Phase 2 已将本地账本、待确认队列、规则与 AI 同意、备份恢�
 
 已登录账户管理使用后端生成的公开 UUID 作为稳定账号 ID，界面仅显示脱敏短格式，复制时保留完整 UUID；不得从 Session Token 派生账号 ID。昵称、相册头像和相机头像通过账号 Profile 接口持久化，手机号与邮箱支持经验证码换绑。
 
-账户同步已完成一台 Xiaomi 真机与受控模拟客户端的账号切换、两种冲突处理及局域网 HTTP Release 验收。两台真实设备与生产式 HTTPS Release 验收仍未完成。目标 ROM 设备矩阵也尚未全部覆盖，云端 AI 仍使用本地 `DemoAiCategorizationGateway`。
+账户同步已完成一台 Xiaomi 真机与受控模拟客户端的账号切换、两种冲突处理及局域网 HTTP Release 验收。两台真实设备与生产式 HTTPS Release 验收仍未完成。目标 ROM 设备矩阵也尚未全部覆盖。Android 云端 AI 已改为只调用项目后端；后端运行时只接受 `AUTO_ACCOUNTING_AI_PROVIDER=openai`，默认关闭，未配置、`rule` 或未知 Provider 均失败关闭。真实 Provider 端到端与生产启用仍未执行。
 
 Release 只有在本地提供 keystore 与完整签名凭据时才是可安装的已签名 APK。没有签名凭据时，构建会产出未签名的 `android-release-unsigned.apk`，仅用于编译与 lint 验证。
 

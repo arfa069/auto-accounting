@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.review
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertTextContains
@@ -21,16 +22,22 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.CategoryEntity
 import com.autoaccounting.data.local.ConfidenceState
+import com.autoaccounting.data.local.DefaultCategories
 import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.FundingAccountSourceScope
+import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.categorization.AiCategorizationFailureReason
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
+import com.autoaccounting.feature.categorization.AiCategorizationGatewayResult
 import com.autoaccounting.feature.categorization.AiCategorizationPayload
 import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -501,6 +508,148 @@ class ReviewQueueScreenTest {
     }
 
     @Test
+    fun emptyCategoryListUsesDisplayedSystemDefaultsForAiRequest() {
+        val gateway = CapturingAiCategorizationGateway()
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(
+                    pendingEntries = listOf(sampleEntry().copy(category = ""))
+                ),
+                categories = emptyList(),
+                accountSession = AccountSession.SignedIn(
+                    phone = "13800138000",
+                    token = "token-1"
+                ),
+                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
+                aiCategorizationGateway = gateway
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("ai-suggest-button").performClick()
+        composeRule.waitUntil { gateway.payload.get() != null }
+
+        val expected = DefaultCategories.systemDefaults(0)
+            .filter { category ->
+                category.kind == TransactionKind.EXPENSE &&
+                    category.id != LocalLedgerRepository.DEFAULT_CATEGORY_ID
+            }
+            .map { category -> DefaultCategories.nameForId(category.id) ?: category.name }
+            .distinct()
+        val actual = requireNotNull(gateway.payload.get()).categoryCandidates
+        assertTrue(actual.isNotEmpty())
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun expenseDraftSendsOnlySelectableBusinessCategoriesToAi() {
+        val gateway = CapturingAiCategorizationGateway()
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(
+                    pendingEntries = listOf(sampleEntry().copy(category = ""))
+                ),
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("salary", "工资", TransactionKind.INCOME, 20),
+                    CategoryEntity(
+                        id = LocalLedgerRepository.DEFAULT_CATEGORY_ID,
+                        name = "未分类",
+                        kind = null,
+                        sortOrder = Int.MAX_VALUE,
+                        isSystem = true,
+                        createdAtEpochMillis = NOW
+                    )
+                ),
+                accountSession = AccountSession.SignedIn(
+                    phone = "13800138000",
+                    token = "token-1"
+                ),
+                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
+                aiCategorizationGateway = gateway
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("ai-suggest-button").performClick()
+        composeRule.waitUntil { gateway.payload.get() != null }
+
+        assertEquals(
+            listOf("餐饮"),
+            requireNotNull(gateway.payload.get()).categoryCandidates
+        )
+    }
+
+    @Test
+    fun aiRequestShowsLoadingAndDisablesDuplicateSubmissionUntilSuccess() {
+        val deferred = CompletableDeferred<AiCategorizationGatewayResult>()
+        val gateway = DeferredAiCategorizationGateway(deferred)
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry().copy(category = ""))),
+                categories = listOf(
+                    category("food", "餐饮", TransactionKind.EXPENSE, 10),
+                    category("transport", "交通", TransactionKind.EXPENSE, 20)
+                ),
+                accountSession = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
+                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
+                aiCategorizationGateway = gateway
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("ai-suggest-button").performClick()
+        composeRule.waitUntil { gateway.calls.get() == 1 }
+
+        composeRule.onNodeWithTag("ai-suggest-loading").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai-suggest-button").assertIsNotEnabled()
+        assertEquals(1, gateway.calls.get())
+
+        deferred.complete(
+            AiCategorizationGatewayResult.Success(
+                AiCategorizationResponse("交通", "高", "测试建议")
+            )
+        )
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("AI 建议：交通").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("AI 建议：交通").assertIsDisplayed()
+    }
+
+    @Test
+    fun aiFailureShowsStableMessage() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry().copy(category = ""))),
+                categories = listOf(category("food", "餐饮", TransactionKind.EXPENSE, 10)),
+                accountSession = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
+                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
+                aiCategorizationGateway = FixedAiCategorizationGateway(
+                    AiCategorizationGatewayResult.Failure(AiCategorizationFailureReason.RATE_LIMITED)
+                )
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("ai-suggest-button").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("AI 请求过于频繁，请稍后重试").assertIsDisplayed()
+    }
+
+    @Test
     fun sharedEditorListsExistingFundingAccounts() {
         composeRule.setContent {
             ReviewQueueScreen(
@@ -586,15 +735,53 @@ class ReviewQueueScreenTest {
     }
 
     private class FixedAiCategorizationGateway(
-        private val category: String
+        private val result: AiCategorizationGatewayResult
     ) : AiCategorizationGateway {
-        override fun suggestCategory(
+        constructor(category: String) : this(
+            AiCategorizationGatewayResult.Success(
+                AiCategorizationResponse(
+                    category = category,
+                    confidenceLabel = "中",
+                    explanation = "测试建议"
+                )
+            )
+        )
+
+        override suspend fun suggestCategory(
             token: String,
             payload: AiCategorizationPayload
-        ): AiCategorizationResponse = AiCategorizationResponse(
-            category = category,
-            confidenceLabel = "中",
-            explanation = "测试建议"
-        )
+        ): AiCategorizationGatewayResult = result
+    }
+
+    private class CapturingAiCategorizationGateway : AiCategorizationGateway {
+        val payload = AtomicReference<AiCategorizationPayload?>()
+
+        override suspend fun suggestCategory(
+            token: String,
+            payload: AiCategorizationPayload
+        ): AiCategorizationGatewayResult {
+            this.payload.set(payload)
+            return AiCategorizationGatewayResult.Success(
+                AiCategorizationResponse(
+                    category = payload.categoryCandidates.first(),
+                    confidenceLabel = "中",
+                    explanation = "测试建议"
+                )
+            )
+        }
+    }
+
+    private class DeferredAiCategorizationGateway(
+        private val deferred: CompletableDeferred<AiCategorizationGatewayResult>
+    ) : AiCategorizationGateway {
+        val calls = AtomicInteger(0)
+
+        override suspend fun suggestCategory(
+            token: String,
+            payload: AiCategorizationPayload
+        ): AiCategorizationGatewayResult {
+            calls.incrementAndGet()
+            return deferred.await()
+        }
     }
 }

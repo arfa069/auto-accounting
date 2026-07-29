@@ -8,9 +8,12 @@ class CloudConfigService(
     private val accountService: AccountService
 ) {
     fun readConfig(accountId: Long): StoredCloudConfig {
-        return store.findConfig(accountId) ?: StoredCloudConfig(
+        val stored = store.findConfig(accountId) ?: return StoredCloudConfig(
             accountId = accountId,
             updatedAtMillis = 0
+        )
+        return stored.copy(
+            enhancedContextGranted = stored.aiConsentGranted && stored.enhancedContextGranted
         )
     }
 
@@ -20,10 +23,13 @@ class CloudConfigService(
         now: Long = System.currentTimeMillis()
     ): CloudConfigResult {
         val current = readConfig(accountId)
+        val aiConsentGranted = update.aiConsentGranted ?: current.aiConsentGranted
+        val enhancedContextGranted = aiConsentGranted &&
+            (update.enhancedContextGranted ?: current.enhancedContextGranted)
         return writeConfig(
             current.copy(
-                aiConsentGranted = update.aiConsentGranted ?: current.aiConsentGranted,
-                enhancedContextGranted = update.enhancedContextGranted ?: current.enhancedContextGranted,
+                aiConsentGranted = aiConsentGranted,
+                enhancedContextGranted = enhancedContextGranted,
                 featureFlags = update.featureFlags ?: current.featureFlags,
                 updatedAtMillis = now
             )
@@ -34,7 +40,11 @@ class CloudConfigService(
         if (!accountService.canWriteCloudData(config.accountId)) {
             return CloudConfigResult.DeletionPending
         }
-        store.upsertConfig(config)
+        store.upsertConfig(
+            config.copy(
+                enhancedContextGranted = config.aiConsentGranted && config.enhancedContextGranted
+            )
+        )
         return CloudConfigResult.Written
     }
 

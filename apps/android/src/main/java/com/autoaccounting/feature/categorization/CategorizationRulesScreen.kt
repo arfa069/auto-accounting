@@ -52,6 +52,7 @@ fun CategorizationRulesScreen(
     modifier: Modifier = Modifier,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
+    aiSettingsSyncInFlight: Boolean = false,
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     accountRuntimeState: AccountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
@@ -64,6 +65,7 @@ fun CategorizationRulesScreen(
         modifier = modifier,
         aiSettings = aiSettings,
         onAiSettingsChange = onAiSettingsChange,
+        aiSettingsSyncInFlight = aiSettingsSyncInFlight,
         accountSession = accountSession,
         accountDeletionState = accountDeletionState,
         accountRuntimeState = accountRuntimeState,
@@ -78,6 +80,7 @@ fun CategorizationRulesScreen(
     modifier: Modifier = Modifier,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     onAiSettingsChange: (AiCategorizationSettings) -> Unit = {},
+    aiSettingsSyncInFlight: Boolean = false,
     accountSession: AccountSession? = null,
     accountDeletionState: AccountDeletionUiState = AccountDeletionUiState(),
     accountRuntimeState: AccountRuntimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
@@ -85,14 +88,8 @@ fun CategorizationRulesScreen(
 ) {
     var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
     var isCreating by remember { mutableStateOf(false) }
-    var currentAiSettings by remember(aiSettings) { mutableStateOf(aiSettings) }
     var selectedFilter by remember { mutableStateOf(RuleFilter.All) }
     val visibleRules = rules.filter(selectedFilter::matches)
-
-    fun updateAiSettings(next: AiCategorizationSettings) {
-        currentAiSettings = next
-        onAiSettingsChange(next)
-    }
 
     Column(
         modifier = modifier
@@ -105,10 +102,11 @@ fun CategorizationRulesScreen(
 
         when (accountSession) {
             is AccountSession.SignedIn -> AiConsentItem(
-                settings = currentAiSettings,
+                settings = aiSettings,
                 cloudWritesPaused = accountDeletionState.isPending ||
                     !accountRuntimeState.cloudWritesAllowed,
-                onSettingsChange = ::updateAiSettings
+                settingsSyncInFlight = aiSettingsSyncInFlight,
+                onSettingsChange = onAiSettingsChange
             )
             else -> SignedOutAiItem()
         }
@@ -225,6 +223,7 @@ private fun PageHeading(onBack: (() -> Unit)?) {
 private fun AiConsentItem(
     settings: AiCategorizationSettings,
     cloudWritesPaused: Boolean,
+    settingsSyncInFlight: Boolean,
     onSettingsChange: (AiCategorizationSettings) -> Unit
 ) {
     Card(
@@ -239,7 +238,7 @@ private fun AiConsentItem(
         ) {
             AiSettingsHeader(
                 checked = settings.aiConsentGranted,
-                enabled = !cloudWritesPaused,
+                enabled = !cloudWritesPaused && !settingsSyncInFlight,
                 onCheckedChange = { enabled ->
                     onSettingsChange(
                         reduceAiCategorizationSettings(
@@ -262,6 +261,14 @@ private fun AiConsentItem(
                     "账号注销冷静期内，智能分类暂时不可用。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (settingsSyncInFlight) {
+                Text(
+                    "正在同步云端 AI 设置…",
+                    modifier = Modifier.testTag("ai-settings-syncing"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Surface(
@@ -296,7 +303,9 @@ private fun AiConsentItem(
                             )
                         },
                         modifier = Modifier.testTag("enhanced-context-switch"),
-                        enabled = !cloudWritesPaused && settings.aiConsentGranted
+                        enabled = !cloudWritesPaused &&
+                            !settingsSyncInFlight &&
+                            settings.aiConsentGranted
                     )
                 }
             }

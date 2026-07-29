@@ -62,9 +62,11 @@ import com.autoaccounting.feature.account.resolveAccountSessionVerification
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.billsync.ManualBillImportHost
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
-import com.autoaccounting.feature.categorization.AiCategorizationPayload
-import com.autoaccounting.feature.categorization.AiCategorizationResponse
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
+import com.autoaccounting.feature.categorization.CloudAiSettingsGateway
+import com.autoaccounting.feature.categorization.CloudAiSettingsGatewayResult
+import com.autoaccounting.feature.categorization.HttpAiCategorizationGateway
+import com.autoaccounting.feature.categorization.HttpCloudAiSettingsGateway
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
@@ -208,6 +210,8 @@ fun AutoAccountingApp(
     reviewNavigationRequest: Long = 0,
     pendingEntryNavigationId: String? = null,
     accountRepositoryOverride: AccountRepository? = null,
+    aiCategorizationGatewayOverride: AiCategorizationGateway? = null,
+    cloudAiSettingsGatewayOverride: CloudAiSettingsGateway? = null,
     persistAccountSessionOverride: ((AccountCredentials) -> Boolean)? = null,
     wechatAuthGatewayOverride: WechatAuthGateway? = null,
     wechatAuthCallback: WechatAuthCallback? = null,
@@ -230,6 +234,20 @@ fun AutoAccountingApp(
         )
     }
     val accountRepository = accountRepositoryOverride ?: productionAccountRepository
+    val productionAiCategorizationGateway = remember {
+        HttpAiCategorizationGateway(
+            backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
+            allowHttp = BuildConfig.AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC
+        )
+    }
+    val aiCategorizationGateway = aiCategorizationGatewayOverride ?: productionAiCategorizationGateway
+    val productionCloudAiSettingsGateway = remember {
+        HttpCloudAiSettingsGateway(
+            backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
+            allowHttp = BuildConfig.AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC
+        )
+    }
+    val cloudAiSettingsGateway = cloudAiSettingsGatewayOverride ?: productionCloudAiSettingsGateway
     val ledgerSyncRepository = remember {
         HttpLedgerSyncRepository(
             backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
@@ -266,6 +284,8 @@ fun AutoAccountingApp(
     var accountRuntimeState by remember { mutableStateOf(AccountRuntimeState(AccountRuntimeStatus.LocalMode)) }
     var continuousMonitoringState by remember { mutableStateOf(ContinuousMonitoringState()) }
     var aiSettings by remember { mutableStateOf(AiCategorizationSettings()) }
+    var aiSettingsSyncInFlight by remember { mutableStateOf(false) }
+    var cloudAiSettingsLoadedToken by remember { mutableStateOf<String?>(null) }
     var reviewState by remember { mutableStateOf(ReviewQueueState()) }
     var reviewTransitionInFlight by remember { mutableStateOf(false) }
     var ledgerState by remember { mutableStateOf(LedgerRepositoryState()) }
@@ -275,6 +295,14 @@ fun AutoAccountingApp(
     var ledgerSyncAccountSwitchBusy by remember { mutableStateOf(false) }
 
     val activeLedgerName = ledgerState.activeLedgerBook?.name ?: DEFAULT_LEDGER_BOOK_NAME
+    val effectiveAiSettings = (accountSession as? AccountSession.SignedIn)
+        ?.takeIf { signedIn ->
+            signedIn.token == cloudAiSettingsLoadedToken &&
+                accountRuntimeState.cloudWritesAllowed &&
+                accountDeletionState.cloudWritesAllowed
+        }
+        ?.let { aiSettings }
+        ?: AiCategorizationSettings()
     val ledgerEntries = remember(ledgerState.ledgerEntries) {
         ledgerState.ledgerEntries.map { it.toLedgerUiEntry() }
     }
@@ -543,8 +571,41 @@ fun AutoAccountingApp(
     }
 
     fun persistAiSettings(nextSettings: AiCategorizationSettings) {
-        aiSettings = nextSettings
-        coroutineScope.launch { localPreferencesRepository.updateAiSettings(nextSettings) }
+        if (aiSettingsSyncInFlight) return
+        val signedIn = accountSession as? AccountSession.SignedIn
+        if (
+            signedIn == null ||
+            !accountRuntimeState.cloudWritesAllowed ||
+            !accountDeletionState.cloudWritesAllowed
+        ) {
+            coroutineScope.launch {
+                appState.snackbarHostState.showSnackbar(
+                    if (signedIn == null) {
+                        "登录后才能同步云端 AI 设置"
+                    } else {
+                        "账号当前不允许写入云端设置"
+                    }
+                )
+            }
+            return
+        }
+        aiSettingsSyncInFlight = true
+        coroutineScope.launch {
+            try {
+                when (val result = cloudAiSettingsGateway.write(signedIn.token, nextSettings)) {
+                    is CloudAiSettingsGatewayResult.Success -> {
+                        aiSettings = result.settings
+                        cloudAiSettingsLoadedToken = signedIn.token
+                        localPreferencesRepository.updateAiSettings(result.settings)
+                    }
+                    is CloudAiSettingsGatewayResult.Failure -> {
+                        appState.snackbarHostState.showSnackbar(result.reason.toAiSettingsMessage())
+                    }
+                }
+            } finally {
+                aiSettingsSyncInFlight = false
+            }
+        }
     }
 
     fun persistContinuousMonitoringState(nextState: ContinuousMonitoringState) {
@@ -618,10 +679,49 @@ fun AutoAccountingApp(
         localPreferencesRepository.categorizationRules.collect { rules -> categorizationRules = rules }
     }
 
-    LaunchedEffect(localPreferencesRepository) {
+    LaunchedEffect(localPreferencesRepository, accountSession) {
         localPreferencesRepository.userPreferences.collect { preferences ->
-            aiSettings = preferences.aiSettings
+            if (accountSession !is AccountSession.SignedIn) {
+                aiSettings = preferences.aiSettings
+            }
             continuousMonitoringState = preferences.continuousMonitoringState
+        }
+    }
+
+    LaunchedEffect(
+        accountSession,
+        accountRuntimeState.status,
+        accountDeletionState.isPending,
+        cloudAiSettingsGateway
+    ) {
+        val signedIn = accountSession as? AccountSession.SignedIn
+        if (
+            signedIn == null ||
+            !accountRuntimeState.cloudWritesAllowed ||
+            !accountDeletionState.cloudWritesAllowed
+        ) {
+            aiSettings = AiCategorizationSettings()
+            cloudAiSettingsLoadedToken = null
+            aiSettingsSyncInFlight = false
+            return@LaunchedEffect
+        }
+
+        // Stored account consent is authoritative. Fail closed while it is being loaded so a
+        // previous/local account setting cannot enable a request for the current account.
+        aiSettings = AiCategorizationSettings()
+        cloudAiSettingsLoadedToken = null
+        aiSettingsSyncInFlight = true
+        try {
+            when (val result = cloudAiSettingsGateway.read(signedIn.token)) {
+                is CloudAiSettingsGatewayResult.Success -> {
+                    aiSettings = result.settings
+                    cloudAiSettingsLoadedToken = signedIn.token
+                    localPreferencesRepository.updateAiSettings(result.settings)
+                }
+                is CloudAiSettingsGatewayResult.Failure -> Unit
+            }
+        } finally {
+            aiSettingsSyncInFlight = false
         }
     }
 
@@ -765,12 +865,8 @@ fun AutoAccountingApp(
                                                 persistCategorizationRules(categorizationRules.upsert(rule))
                                             },
                                             accountSession = accountSession,
-                                            aiSettings = if (accountRuntimeState.cloudWritesAllowed && accountDeletionState.cloudWritesAllowed) {
-                                                aiSettings
-                                            } else {
-                                                AiCategorizationSettings()
-                                            },
-                                            aiCategorizationGateway = DemoAiCategorizationGateway,
+                                            aiSettings = effectiveAiSettings,
+                                            aiCategorizationGateway = aiCategorizationGateway,
                                             onOpenBillImport = { manualBillImportRequestId += 1 },
                                             openPendingEntryId = pendingEntryNavigationId,
                                             openPendingEntryRequestId = reviewNavigationRequest,
@@ -916,8 +1012,9 @@ fun AutoAccountingApp(
                                             ProfileDestination.CategorizationRules -> CategorizationRulesScreen(
                                                 rules = categorizationRules,
                                                 onRulesChange = ::persistCategorizationRules,
-                                                aiSettings = aiSettings,
+                                                aiSettings = effectiveAiSettings,
                                                 onAiSettingsChange = ::persistAiSettings,
+                                                aiSettingsSyncInFlight = aiSettingsSyncInFlight,
                                                 accountSession = activeAccountSession,
                                                 accountDeletionState = accountDeletionState,
                                                 accountRuntimeState = accountRuntimeState,
@@ -1086,24 +1183,6 @@ fun AutoAccountingApp(
     }
 }
 
-private object DemoAiCategorizationGateway : AiCategorizationGateway {
-    override fun suggestCategory(
-        token: String,
-        payload: AiCategorizationPayload
-    ): AiCategorizationResponse {
-        val category = when {
-            payload.merchantTitle.contains("地铁") -> "交通"
-            payload.merchantTitle.contains("餐") || payload.merchantTitle.contains("咖啡") -> "餐饮"
-            else -> "未分类"
-        }
-        return AiCategorizationResponse(
-            category = category,
-            confidenceLabel = "中",
-            explanation = "通过后端 AI 代理返回的分类建议"
-        )
-    }
-}
-
 internal enum class AppTab(
     val label: String,
     val iconRes: Int,
@@ -1144,3 +1223,20 @@ private fun List<CategorizationRule>.upsert(rule: CategorizationRule): List<Cate
         this + rule
     }
 }
+
+private fun com.autoaccounting.feature.categorization.AiCategorizationFailureReason.toAiSettingsMessage(): String =
+    when (this) {
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.BACKEND_NOT_CONFIGURED ->
+            "云端后端地址尚未配置"
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.INVALID_SESSION ->
+            "登录状态已失效，请重新登录"
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.ACCOUNT_DELETION_PENDING ->
+            "账号注销冷静期内，云端设置已暂停"
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.RATE_LIMITED ->
+            "请求过于频繁，请稍后重试"
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.NETWORK_FAILURE ->
+            "网络连接失败，云端 AI 设置未更改"
+        com.autoaccounting.feature.categorization.AiCategorizationFailureReason.SERVICE_UNAVAILABLE ->
+            "云端服务暂时不可用，设置未更改"
+        else -> "云端 AI 设置同步失败，请稍后重试"
+    }

@@ -72,7 +72,10 @@ class CloudConfigRoutesTest {
             }
         ) { header(HttpHeaders.Authorization, "Bearer token-1") }
         assertEquals(HttpStatusCode.OK, writeResponse.status)
-        assertEquals("""{"ok":true}""", writeResponse.bodyAsText())
+        val written = ApiJsonContracts.parseCloudConfigResponse(writeResponse.bodyAsText())
+        assertTrue(written.aiConsentGranted)
+        assertTrue(written.enhancedContextGranted)
+        assertEquals(mapOf("beta" to true), written.featureFlags)
 
         val readResponse = client.submitForm(
             url = "/account/cloud-config/read",
@@ -186,7 +189,7 @@ class CloudConfigRoutesTest {
         ) { header(HttpHeaders.Authorization, "Bearer token-1") }
         val contract = ApiJsonContracts.parseCloudConfigResponse(readResponse.bodyAsText())
         assertTrue(!contract.aiConsentGranted)
-        assertTrue(contract.enhancedContextGranted)
+        assertTrue(!contract.enhancedContextGranted)
         assertEquals(mapOf("beta" to true), contract.featureFlags)
     }
 

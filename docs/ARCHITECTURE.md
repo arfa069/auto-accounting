@@ -147,11 +147,13 @@ flowchart LR
 - 仅在用户选择开启后才提供增强 AI 上下文。
 
 后端行为：
-- Android 应用仅调用本项目的后端。
-- 后端负责调用 AI 服务商。
-- 内测期间后端保留 AI 分类日志。
-- AI 日志不等于云端账本同步。
-- 日志留存策略必须在公开发布前经过复核。
+- Android 应用仅通过 `BuildConfig.AUTO_ACCOUNTING_BACKEND_URL` 调用本项目的 `POST /ai/categorize`，Bearer Token 不得转发给第三方 Provider。
+- 路由先验证 Session、云写入状态、已保存的 AI 同意及独立的增强上下文同意；注销冷静期账号在读取 payload 前即被阻断。
+- 运行时环境工厂只接受 `AUTO_ACCOUNTING_AI_PROVIDER=openai`，并显式启用基于 JDK 17 `HttpClient` 的 OpenAI Responses API Provider；空值、`rule`、未知值或 OpenAI 配置错误均失败关闭。`RuleBasedAiProvider` 仅可由测试代码直接注入，不得通过环境配置选择。API Key、模型、base URL 和超时仅由后端环境/`.env` 提供。
+- Provider 使用严格 JSON Schema 结构化输出，服务端再次校验长度、必填值、置信度枚举及分类候选白名单。
+- 只有完整验证成功的建议才写入最小化 AI 日志；Provider 缺失、超时、限流、HTTP/解析失败及白名单失败均不写成功日志。
+- AI 日志仅保存账号关联、最小请求字段、建议及时间；使用增强上下文时，Provider explanation 也不持久化，改存固定脱敏说明。备注和原始证据不落库，也不进入普通日志、错误响应或 Provider 异常文本。
+- AI 日志不等于云端账本同步，日志留存策略必须在公开发布前经过复核。
 
 建议的最小化 AI Payload：
 - 商家/标题。
@@ -198,7 +200,7 @@ PostgreSQL 数据表：
 
 Session 与传输边界：
 - Android 应用在构建时获取后端 URL。Debug 默认使用 `http://10.0.2.2:8080`；Debug 与 Release 均可使用显式配置的 HTTP 或 HTTPS URL，Release 未配置 URL 时保持账号网络不可用。HTTP 仅用于受控测试网络和专用测试账号，因为账号凭据、验证码与 Session Token 不具备传输加密。
-- 账本同步单独默认拒绝 HTTP；仅当本地忽略配置 `AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC=true` 且目标为回环或 RFC1918 地址时允许受控测试，并在界面持续显示明文风险。生产同步必须使用 HTTPS。
+- 账本同步、AI 分类及云端 AI 设置同步默认拒绝 HTTP；仅当本地忽略配置 `AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC=true` 且目标为回环或 RFC1918 地址时允许受控测试。账本同步界面持续显示明文风险；生产网络调用必须使用 HTTPS。
 - Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、验证码、退出登录及注销操作不会自动重试。
 - 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的标识或表单 Token 绝不用于选取受保护账号。
 - 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。

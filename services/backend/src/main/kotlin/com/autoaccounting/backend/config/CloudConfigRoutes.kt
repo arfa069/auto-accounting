@@ -62,11 +62,21 @@ fun Route.cloudConfigRoutes(
             now = System.currentTimeMillis()
         )
         when (result) {
-            is CloudConfigResult.Written -> call.respondText(
-                text = """{"ok":true}""",
-                contentType = ContentType.Application.Json,
-                status = HttpStatusCode.OK
-            )
+            is CloudConfigResult.Written -> {
+                val config = cloudConfigService.readConfig(account.accountId)
+                call.respondText(
+                    text = ApiJsonContracts.encodeCloudConfigResponse(
+                        CloudConfigContract(
+                            ok = true,
+                            aiConsentGranted = config.aiConsentGranted,
+                            enhancedContextGranted = config.enhancedContextGranted,
+                            featureFlags = config.featureFlags
+                        )
+                    ),
+                    contentType = ContentType.Application.Json,
+                    status = HttpStatusCode.OK
+                )
+            }
             is CloudConfigResult.DeletionPending -> call.respondAccountFailure(
                 com.autoaccounting.backend.account.AccountError.ACCOUNT_DELETION_PENDING
             )

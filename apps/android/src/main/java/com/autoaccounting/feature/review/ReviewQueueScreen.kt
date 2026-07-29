@@ -25,6 +25,7 @@ import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.EmptyStatePanel
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +70,7 @@ import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.data.local.defaultFlowDirection
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.categorization.AiCategorizationClient
+import com.autoaccounting.feature.categorization.AiCategorizationFailureReason
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.AiCategorizationResult
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
@@ -75,8 +78,11 @@ import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.ledger.LedgerEntryFormState
 import com.autoaccounting.feature.ledger.SharedLedgerEntryForm
+import com.autoaccounting.feature.ledger.ledgerCategoryOptions
 import com.autoaccounting.ui.visual.CategoryArtwork
 import com.autoaccounting.ui.components.HomeReturnButton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 @Composable
@@ -196,23 +202,30 @@ fun ReviewQueueScreen(
             )
         }
     } else {
+        val availableCategories = remember(categories) {
+            categories.ifEmpty { DefaultCategories.systemDefaults(0) }
+        }
         ReviewPendingEntryEditor(
             entry = activeEdit,
-            categories = categories,
+            availableCategories = availableCategories,
             fundingAccounts = fundingAccounts,
             modifier = modifier,
             snackbarHostState = snackbarHostState,
             onExit = { editingEntry = null },
-            onAiSuggest = { draft ->
+            onAiSuggest = { draft, categoryCandidates ->
                 val gateway = aiCategorizationGateway
-                    ?: return@ReviewPendingEntryEditor AiCategorizationResult(
+                if (gateway == null) {
+                    AiCategorizationResult(
                         skipReason = AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT
                     )
-                AiCategorizationClient(gateway).suggestCategory(
-                    entry = draft,
-                    session = accountSession,
-                    settings = aiSettings
-                )
+                } else {
+                    AiCategorizationClient(gateway).suggestCategory(
+                        entry = draft,
+                        session = accountSession,
+                        settings = aiSettings,
+                        categoryCandidates = categoryCandidates
+                    )
+                }
             },
             onConfirm = { edit ->
                 if (activeEdit.hasCategoryCorrection(edit.category)) {
@@ -763,17 +776,14 @@ private fun CategoryEntity.reviewDisplayName(): String =
 @Composable
 private fun ReviewPendingEntryEditor(
     entry: ReviewQueueEntry,
-    categories: List<CategoryEntity>,
+    availableCategories: List<CategoryEntity>,
     fundingAccounts: List<FundingAccountEntity>,
     modifier: Modifier,
     snackbarHostState: SnackbarHostState,
     onExit: () -> Unit,
-    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult,
+    onAiSuggest: suspend (ReviewQueueEntry, List<String>) -> AiCategorizationResult,
     onConfirm: (PendingReviewEdit) -> Unit
 ) {
-    val availableCategories = remember(categories) {
-        categories.ifEmpty { DefaultCategories.systemDefaults(0) }
-    }
     val initial = remember(entry, availableCategories, fundingAccounts) {
         entry.toLedgerEntryFormState(availableCategories, fundingAccounts)
     }
@@ -819,10 +829,27 @@ private fun ReviewEditorTools(
     categories: List<CategoryEntity>,
     fundingAccounts: List<FundingAccountEntity>,
     onDraftChange: (LedgerEntryFormState) -> Unit,
-    onAiSuggest: (ReviewQueueEntry) -> AiCategorizationResult
+    onAiSuggest: suspend (ReviewQueueEntry, List<String>) -> AiCategorizationResult
 ) {
     var showEvidence by remember(entry.id) { mutableStateOf(false) }
     var aiMessage by remember(entry.id) { mutableStateOf<String?>(null) }
+    var aiRequestInFlight by remember(entry.id) { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val aiCategoryCandidates = remember(
+        categories,
+        draft.flowDirection,
+        draft.transactionKind
+    ) {
+        ledgerCategoryOptions(
+            categories = categories,
+            flowDirection = draft.flowDirection,
+            transactionKind = draft.transactionKind
+        ).asSequence()
+            .filterNot { it.id == LocalLedgerRepository.DEFAULT_CATEGORY_ID }
+            .map(CategoryEntity::reviewDisplayName)
+            .distinct()
+            .toList()
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -840,59 +867,116 @@ private fun ReviewEditorTools(
                 }
                 OutlinedButton(
                     onClick = {
+                        if (aiRequestInFlight) return@OutlinedButton
                         val input = runCatching { draft.toInput(System.currentTimeMillis()) }
                             .getOrElse {
                                 aiMessage = it.message ?: "当前内容无法获取分类建议"
                                 return@OutlinedButton
                             }
-                        val result = onAiSuggest(
-                            entry.copy(
-                                title = input.merchantTitle,
-                                amountMinor = input.amountMinor,
-                                transactionTimeText = formatReviewDateTime(
-                                    input.transactionTimeEpochMillis,
-                                    java.time.ZoneId.systemDefault()
-                                ),
-                                kindLabel = input.transactionKind.toReviewLabel(),
-                                categoryId = input.categoryId,
-                                category = input.categoryId.toReviewCategoryName(categories),
-                                fundingAccountId = input.fundingAccountId,
-                                fundingAccountLabel = fundingAccounts
-                                    .firstOrNull { it.id == input.fundingAccountId }
-                                    ?.label
-                                    .orEmpty(),
-                                note = input.note
-                            )
-                        )
-                        result.suggestion?.let { suggestion ->
-                            val categoryId = categories.firstOrNull {
-                                it.reviewDisplayName() == suggestion.category
-                            }?.id ?: DefaultCategories.idForName(
-                                suggestion.category,
-                                input.transactionKind
-                            )
-                            if (categoryId == null) {
-                                aiMessage = "AI 建议“${suggestion.category}”不在现有分类中"
-                            } else {
-                                onDraftChange(draft.copy(categoryId = categoryId))
-                                aiMessage = "AI 建议：${suggestion.category}"
-                            }
-                        } ?: run {
-                            aiMessage = when (result.skipReason) {
-                                AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT -> "登录后才能使用云端 AI 分类"
-                                AiCategorizationSkipReason.REQUIRES_AI_CONSENT -> "开启云端 AI 后才能获取分类建议"
-                                null -> "暂时没有 AI 分类建议"
+                        aiRequestInFlight = true
+                        aiMessage = null
+                        coroutineScope.launch {
+                            try {
+                                val result = onAiSuggest(
+                                    entry.copy(
+                                        title = input.merchantTitle,
+                                        amountMinor = input.amountMinor,
+                                        transactionTimeText = formatReviewDateTime(
+                                            input.transactionTimeEpochMillis,
+                                            java.time.ZoneId.systemDefault()
+                                        ),
+                                        kindLabel = input.transactionKind.toReviewLabel(),
+                                        categoryId = input.categoryId,
+                                        category = input.categoryId.toReviewCategoryName(categories),
+                                        fundingAccountId = input.fundingAccountId,
+                                        fundingAccountLabel = fundingAccounts
+                                            .firstOrNull { it.id == input.fundingAccountId }
+                                            ?.label
+                                            .orEmpty(),
+                                        note = input.note
+                                    ),
+                                    aiCategoryCandidates
+                                )
+                                result.suggestion?.let { suggestion ->
+                                    val categoryId = categories.firstOrNull {
+                                        it.reviewDisplayName() == suggestion.category
+                                    }?.id ?: DefaultCategories.idForName(
+                                        suggestion.category,
+                                        input.transactionKind
+                                    )
+                                    if (categoryId == null) {
+                                        aiMessage = "AI 建议“${suggestion.category}”不在现有分类中"
+                                    } else {
+                                        onDraftChange(draft.copy(categoryId = categoryId))
+                                        aiMessage = "AI 建议：${suggestion.category}"
+                                    }
+                                } ?: run {
+                                    aiMessage = result.toUserMessage()
+                                }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: RuntimeException) {
+                                aiMessage = "云端 AI 暂时不可用，请稍后重试"
+                            } finally {
+                                aiRequestInFlight = false
                             }
                         }
-                    }
+                    },
+                    modifier = Modifier.testTag("ai-suggest-button"),
+                    enabled = !aiRequestInFlight
                 ) {
-                    Text("AI 建议分类")
+                    if (aiRequestInFlight) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .testTag("ai-suggest-loading"),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("正在获取建议")
+                    } else {
+                        Text("AI 建议分类")
+                    }
                 }
             }
-            aiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            aiMessage?.let {
+                Text(
+                    it,
+                    modifier = Modifier.testTag("ai-suggest-message"),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (showEvidence) EvidenceSection(entry)
         }
     }
+}
+
+private fun AiCategorizationResult.toUserMessage(): String = when {
+    skipReason == AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT ->
+        "登录后才能使用云端 AI 分类"
+    skipReason == AiCategorizationSkipReason.REQUIRES_AI_CONSENT ->
+        "开启云端 AI 后才能获取分类建议"
+    failureReason == AiCategorizationFailureReason.BACKEND_NOT_CONFIGURED ->
+        "云端 AI 后端地址尚未配置"
+    failureReason == AiCategorizationFailureReason.INVALID_SESSION ->
+        "登录状态已失效，请重新登录"
+    failureReason == AiCategorizationFailureReason.ACCOUNT_DELETION_PENDING ->
+        "账号注销冷静期内，云端 AI 已暂停"
+    failureReason == AiCategorizationFailureReason.AI_CONSENT_REQUIRED ->
+        "请先开启云端 AI 分类"
+    failureReason == AiCategorizationFailureReason.ENHANCED_CONTEXT_NOT_AUTHORIZED ->
+        "增强上下文授权已失效，请重新确认设置"
+    failureReason == AiCategorizationFailureReason.CATEGORY_CANDIDATES_REQUIRED ->
+        "暂无可用分类，请先创建或启用分类"
+    failureReason == AiCategorizationFailureReason.RATE_LIMITED ->
+        "AI 请求过于频繁，请稍后重试"
+    failureReason == AiCategorizationFailureReason.SERVICE_UNAVAILABLE ->
+        "云端 AI 暂时不可用，请稍后重试"
+    failureReason == AiCategorizationFailureReason.NETWORK_FAILURE ->
+        "网络连接失败，请检查网络后重试"
+    failureReason == AiCategorizationFailureReason.INVALID_RESPONSE ->
+        "AI 响应无法解析，请稍后重试"
+    else -> "暂时没有 AI 分类建议"
 }
 
 private fun ReviewQueueEntry.toLedgerEntryFormState(

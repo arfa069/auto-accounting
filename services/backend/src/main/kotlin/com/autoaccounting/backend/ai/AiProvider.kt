@@ -1,59 +1,51 @@
 package com.autoaccounting.backend.ai
 
-/**
- * Provider seam for AI categorization suggestions.
- * Environment-configured: reads AUTO_ACCOUNTING_AI_PROVIDER and related keys.
- * Falls back to [MissingAiProvider] when unconfigured.
- */
+/** Provider boundary for optional cloud AI categorization suggestions. */
 interface AiProvider {
-    fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion
+    suspend fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion
 }
 
-/**
- * Rule-based fallback that mimics the original hardcoded logic.
- * Used as the default when no external AI provider is configured.
- */
+/** Explicit deterministic test provider; never selected from runtime environment. */
 object RuleBasedAiProvider : AiProvider {
-    override fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
-        val category = suggestCategory(payload)
+    override suspend fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
+        val title = payload.merchantTitle.lowercase()
+        val category = when {
+            payload.categoryCandidates.any { it == "餐饮" } &&
+                (title.contains("餐") || title.contains("咖啡") || title.contains("饭")) -> "餐饮"
+            payload.categoryCandidates.any { it == "交通" } &&
+                (title.contains("地铁") || title.contains("公交")) -> "交通"
+            else -> payload.categoryCandidates.first()
+        }
         return AiCategorizationSuggestion(
             category = category,
             confidenceLabel = "中",
             explanation = "基于商户标题、交易类型和来源生成分类建议"
         )
     }
-
-    private fun suggestCategory(payload: AiCategorizationPayload): String {
-        val title = payload.merchantTitle.lowercase()
-        return when {
-            payload.categoryCandidates.any { it == "餐饮" } &&
-                (title.contains("餐") || title.contains("咖啡") || title.contains("饭")) -> "餐饮"
-            title.contains("地铁") || title.contains("公交") -> "交通"
-            payload.categoryCandidates.isNotEmpty() -> payload.categoryCandidates.first()
-            else -> "未分类"
-        }
-    }
 }
 
-/**
- * Safe fallback returned when the AI provider environment variable is missing or unrecognized.
- */
-object MissingAiProvider : AiProvider {
-    override fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
-        return AiCategorizationSuggestion(
-            category = "未分类",
-            confidenceLabel = "低",
-            explanation = "AI服务未配置"
-        )
+sealed class AiProviderException : RuntimeException() {
+    data object Unavailable : AiProviderException()
+    data object ConfigurationInvalid : AiProviderException()
+    data object TimedOut : AiProviderException()
+    data object RateLimited : AiProviderException()
+    data object UpstreamFailure : AiProviderException()
+    data object InvalidResponse : AiProviderException()
+}
+
+/** Missing or invalid production configuration must fail closed, never mimic a successful AI call. */
+class UnavailableAiProvider(
+    private val failure: AiProviderException = AiProviderException.Unavailable
+) : AiProvider {
+    override suspend fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
+        throw failure
     }
 }
 
 fun aiProviderFromEnvironment(env: Map<String, String> = System.getenv()): AiProvider {
-    val provider = env["AUTO_ACCOUNTING_AI_PROVIDER"].orEmpty().lowercase()
-    return when {
-        provider.isBlank() -> RuleBasedAiProvider
-        provider == "rule" -> RuleBasedAiProvider
-        // Future: provider == "openai" -> OpenAiProvider.fromEnvironment(env)
-        else -> MissingAiProvider
+    return when (env["AUTO_ACCOUNTING_AI_PROVIDER"].orEmpty().trim().lowercase()) {
+        "openai" -> OpenAiProvider.fromEnvironment(env)
+        "" -> UnavailableAiProvider()
+        else -> UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
     }
 }

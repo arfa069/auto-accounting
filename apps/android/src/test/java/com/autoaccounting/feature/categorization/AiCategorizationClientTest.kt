@@ -2,6 +2,7 @@ package com.autoaccounting.feature.categorization
 
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -9,19 +10,21 @@ import org.junit.Test
 
 class AiCategorizationClientTest {
     @Test
-    fun localModeOrMissingConsentDoesNotCallCloudAi() {
+    fun localModeOrMissingConsentDoesNotCallCloudAi() = runBlocking {
         val gateway = RecordingAiCategorizationGateway()
         val client = AiCategorizationClient(gateway)
 
         val localModeResult = client.suggestCategory(
             entry = sampleEntry(),
             session = AccountSession.LocalMode,
-            settings = AiCategorizationSettings(aiConsentGranted = true)
+            settings = AiCategorizationSettings(aiConsentGranted = true),
+            categoryCandidates = listOf("餐饮")
         )
         val noConsentResult = client.suggestCategory(
             entry = sampleEntry(),
             session = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
-            settings = AiCategorizationSettings(aiConsentGranted = false)
+            settings = AiCategorizationSettings(aiConsentGranted = false),
+            categoryCandidates = listOf("餐饮")
         )
 
         assertEquals(AiCategorizationSkipReason.REQUIRES_SIGNED_IN_ACCOUNT, localModeResult.skipReason)
@@ -30,14 +33,15 @@ class AiCategorizationClientTest {
     }
 
     @Test
-    fun consentedSignedInUserSendsMinimalPayloadByDefault() {
+    fun consentedSignedInUserSendsMinimalPayloadByDefault() = runBlocking {
         val gateway = RecordingAiCategorizationGateway()
         val client = AiCategorizationClient(gateway)
 
         val result = client.suggestCategory(
             entry = sampleEntry(),
             session = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
-            settings = AiCategorizationSettings(aiConsentGranted = true)
+            settings = AiCategorizationSettings(aiConsentGranted = true),
+            categoryCandidates = listOf("餐饮", "交通")
         )
 
         assertEquals("餐饮", result.suggestion?.category)
@@ -47,12 +51,14 @@ class AiCategorizationClientTest {
         assertEquals("微信", payload.sourceLabel)
         assertEquals("支出", payload.transactionKind)
         assertEquals("0-50", payload.amountRangeLabel)
+        assertEquals(listOf("餐饮", "交通"), payload.categoryCandidates)
+        assertEquals(false, payload.enhancedContext)
         assertNull(payload.note)
         assertNull(payload.rawEvidenceText)
     }
 
     @Test
-    fun enhancedContextOptInAddsOptionalContext() {
+    fun enhancedContextOptInAddsOptionalContext() = runBlocking {
         val gateway = RecordingAiCategorizationGateway()
         val client = AiCategorizationClient(gateway)
 
@@ -62,12 +68,47 @@ class AiCategorizationClientTest {
             settings = AiCategorizationSettings(
                 aiConsentGranted = true,
                 enhancedContextGranted = true
-            )
+            ),
+            categoryCandidates = listOf("餐饮")
         )
 
         val payload = gateway.requests.single().payload
+        assertTrue(payload.enhancedContext)
         assertEquals("客户会议", payload.note)
         assertEquals("微信支付收款凭证 午餐 35.90", payload.rawEvidenceText)
+    }
+
+    @Test
+    fun emptyCandidatesFailBeforeNetwork() = runBlocking {
+        val gateway = RecordingAiCategorizationGateway()
+
+        val result = AiCategorizationClient(gateway).suggestCategory(
+            entry = sampleEntry(),
+            session = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
+            settings = AiCategorizationSettings(aiConsentGranted = true),
+            categoryCandidates = listOf(" ")
+        )
+
+        assertEquals(AiCategorizationFailureReason.CATEGORY_CANDIDATES_REQUIRED, result.failureReason)
+        assertTrue(gateway.requests.isEmpty())
+    }
+
+    @Test
+    fun gatewayFailureIsPreserved() = runBlocking {
+        val gateway = RecordingAiCategorizationGateway(
+            result = AiCategorizationGatewayResult.Failure(
+                AiCategorizationFailureReason.ACCOUNT_DELETION_PENDING
+            )
+        )
+
+        val result = AiCategorizationClient(gateway).suggestCategory(
+            entry = sampleEntry(),
+            session = AccountSession.SignedIn(phone = "13800138000", token = "token-1"),
+            settings = AiCategorizationSettings(aiConsentGranted = true),
+            categoryCandidates = listOf("餐饮")
+        )
+
+        assertEquals(AiCategorizationFailureReason.ACCOUNT_DELETION_PENDING, result.failureReason)
     }
 
     private fun sampleEntry(): ReviewQueueEntry = ReviewQueueEntry(
@@ -84,19 +125,23 @@ class AiCategorizationClientTest {
         rawEvidenceText = "微信支付收款凭证 午餐 35.90"
     )
 
-    private class RecordingAiCategorizationGateway : AiCategorizationGateway {
-        val requests = mutableListOf<AiCategorizationGatewayRequest>()
-
-        override fun suggestCategory(
-            token: String,
-            payload: AiCategorizationPayload
-        ): AiCategorizationResponse {
-            requests += AiCategorizationGatewayRequest(token, payload)
-            return AiCategorizationResponse(
+    private class RecordingAiCategorizationGateway(
+        private val result: AiCategorizationGatewayResult = AiCategorizationGatewayResult.Success(
+            AiCategorizationResponse(
                 category = "餐饮",
                 confidenceLabel = "高",
-                explanation = "商户标题像餐饮消费"
+                explanation = "测试建议"
             )
+        )
+    ) : AiCategorizationGateway {
+        val requests = mutableListOf<AiCategorizationGatewayRequest>()
+
+        override suspend fun suggestCategory(
+            token: String,
+            payload: AiCategorizationPayload
+        ): AiCategorizationGatewayResult {
+            requests += AiCategorizationGatewayRequest(token, payload)
+            return result
         }
     }
 }

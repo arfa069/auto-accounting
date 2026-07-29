@@ -50,16 +50,18 @@ class ApplicationEnvironmentIntegrationTest {
                     append("merchantTitle", "午餐")
                     append("sourceLabel", "微信")
                     append("transactionKind", "支出")
-                    append("amountMinor", "3590")
+                    append("amountRangeLabel", "0-50")
+                    append(
+                        "categoryCandidates",
+                        ApiJsonContracts.encodeAiCategoryCandidates(listOf("餐饮", "交通"))
+                    )
                 }
             ) { header(HttpHeaders.Authorization, "Bearer token-1") }
 
             assertEquals(HttpStatusCode.OK, writeConfigResponse.status)
-            assertEquals(HttpStatusCode.OK, aiResponse.status)
-            val aiContract = ApiJsonContracts.parseAiCategorizationResponse(aiResponse.bodyAsText())
-            assertEquals("未分类", aiContract.category)
-            assertEquals("低", aiContract.confidence)
-            assertTrue(aiContract.explanation.contains("AI服务未配置"))
+            assertEquals(HttpStatusCode.ServiceUnavailable, aiResponse.status)
+            val aiError = ApiJsonContracts.parseAiCategorizationError(aiResponse.bodyAsText())
+            assertEquals("PROVIDER_CONFIGURATION_INVALID", aiError.error)
         }
 
         testApplication {
@@ -80,7 +82,7 @@ class ApplicationEnvironmentIntegrationTest {
             assertEquals(mapOf("beta" to true), configContract.featureFlags)
         }
 
-        assertEquals(1, JdbcAiCategorizationLogStore(databaseUrl).allLogs().size)
+        assertEquals(0, JdbcAiCategorizationLogStore(databaseUrl).allLogs().size)
     }
 
     private fun accountService(databaseUrl: String, clock: MutableClock): AccountService {

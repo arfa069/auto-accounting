@@ -1,5 +1,8 @@
 package com.autoaccounting.backend.ai
 
+import com.autoaccounting.api.AiCategorizationRequestContract
+import kotlinx.coroutines.runBlocking
+
 import com.autoaccounting.backend.account.JdbcAccountStore
 import java.sql.DriverManager
 import org.junit.Assert.assertEquals
@@ -118,17 +121,22 @@ class AiCategorizationPersistenceTest {
             logStore = logStore
         )
 
-        service.suggest(
-            accountId = 1L,
-            merchantTitle = "午餐",
-            sourceLabel = "微信",
-            transactionKind = "支出",
-            amountMinor = 3590,
-            categoryCandidates = listOf("餐饮"),
-            note = "private note",
-            rawEvidenceText = "private evidence",
-            enhancedContext = true
-        )
+        runBlocking {
+            service.suggest(
+                accountId = 1L,
+                request = AiCategorizationRequestContract(
+                    merchantTitle = "午餐",
+                    sourceLabel = "微信",
+                    transactionKind = "支出",
+                    amountRangeLabel = "0-50",
+                    categoryCandidates = listOf("餐饮"),
+                    enhancedContext = true,
+                    note = "private note",
+                    rawEvidenceText = "private evidence"
+                ),
+                enhancedContextAuthorized = true
+            )
+        }
 
         val logs = logStore.allLogs()
         assertEquals(1, logs.size)

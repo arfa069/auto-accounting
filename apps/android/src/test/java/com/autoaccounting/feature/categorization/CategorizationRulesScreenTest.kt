@@ -75,6 +75,7 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithTag("enhanced-context-switch").assertIsNotEnabled()
     }
 
+
     @Test
     fun userCanCreateAndEditRule() {
         var rules by mutableStateOf(emptyList<CategorizationRule>())
@@ -134,7 +135,7 @@ class CategorizationRulesScreenTest {
 
     @Test
     fun signedInUserCanToggleCloudAiConsent() {
-        var settings = AiCategorizationSettings()
+        var settings by mutableStateOf(AiCategorizationSettings())
         composeRule.setContent {
             CategorizationRulesScreen(
                 aiSettings = settings,
@@ -144,10 +145,27 @@ class CategorizationRulesScreenTest {
         }
 
         composeRule.onNodeWithTag("ai-consent-switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
         assertTrue(settings.aiConsentGranted)
 
         composeRule.onNodeWithTag("enhanced-context-switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
         assertTrue(settings.enhancedContextGranted)
+    }
+
+    @Test
+    fun cloudAiSwitchesAreDisabledWhileSettingsSynchronize() {
+        composeRule.setContent {
+            CategorizationRulesScreen(
+                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
+                aiSettingsSyncInFlight = true,
+                accountSession = AccountSession.SignedIn("13800138000", "token-1")
+            )
+        }
+
+        composeRule.onNodeWithTag("ai-settings-syncing").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai-consent-switch").assertIsNotEnabled()
+        composeRule.onNodeWithTag("enhanced-context-switch").assertIsNotEnabled()
     }
 
     @Test

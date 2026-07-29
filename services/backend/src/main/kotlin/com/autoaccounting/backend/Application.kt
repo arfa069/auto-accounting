@@ -82,7 +82,11 @@ fun Application.module(
             )
         }
         accountRoutes(resolvedAccountService)
-        aiCategorizationRoutes(resolvedAiCategorizationService, resolvedAccountService)
+        aiCategorizationRoutes(
+            resolvedAiCategorizationService,
+            resolvedAccountService,
+            resolvedCloudConfigService
+        )
         cloudConfigRoutes(resolvedCloudConfigService, resolvedAccountService)
         ledgerSyncRoutes(resolvedLedgerSyncService, resolvedAccountService)
     }

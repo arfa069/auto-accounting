@@ -1,17 +1,20 @@
 package com.autoaccounting.backend.account
 
+import com.autoaccounting.api.AiCategorizationRequestContract
 import com.autoaccounting.api.LedgerSyncEntityTypeContract
 import com.autoaccounting.api.LedgerSyncMutationContract
 import com.autoaccounting.api.LedgerSyncPayloadContract
 import com.autoaccounting.backend.AccountDeletionJob
 import com.autoaccounting.backend.ai.AiCategorizationService
 import com.autoaccounting.backend.ai.InMemoryAiCategorizationLogStore
+import com.autoaccounting.backend.ai.RuleBasedAiProvider
 import com.autoaccounting.backend.config.CloudConfigService
 import com.autoaccounting.backend.config.CloudConfigStore
 import com.autoaccounting.backend.config.InMemoryCloudConfigStore
 import com.autoaccounting.backend.config.StoredCloudConfig
 import com.autoaccounting.backend.sync.InMemoryLedgerSyncStore
 import com.autoaccounting.backend.sync.LedgerSyncService
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -256,7 +259,7 @@ class AccountServiceTest {
     @Test
     fun finalDeletionJobPurgesAiLogsAndCloudConfigForDeletedAccount() {
         val accountService = accountService(startMillis = 0)
-        val aiService = AiCategorizationService()
+        val aiService = AiCategorizationService(provider = RuleBasedAiProvider)
         val cloudConfigService = CloudConfigService(
             store = InMemoryCloudConfigStore(),
             accountService = accountService
@@ -266,17 +269,19 @@ class AccountServiceTest {
             as AccountResult.Success<AccountToken>).value
         val accountId = tokenResult.accountId
 
-        aiService.suggest(
-            accountId = accountId,
-            merchantTitle = "午餐",
-            sourceLabel = "微信",
-            transactionKind = "支出",
-            amountMinor = 3590,
-            categoryCandidates = listOf("餐饮"),
-            note = null,
-            rawEvidenceText = null,
-            enhancedContext = false
-        )
+        runBlocking {
+            aiService.suggest(
+                accountId = accountId,
+                request = AiCategorizationRequestContract(
+                    merchantTitle = "午餐",
+                    sourceLabel = "微信",
+                    transactionKind = "支出",
+                    amountRangeLabel = "0-50",
+                    categoryCandidates = listOf("餐饮")
+                ),
+                enhancedContextAuthorized = false
+            )
+        }
         cloudConfigService.writeConfig(
             StoredCloudConfig(
                 accountId = accountId,
@@ -342,7 +347,7 @@ class AccountServiceTest {
     fun finalDeletionRetainsAccountWhenCleanupFailsAndSucceedsOnRetry() {
         val accountService = accountService(startMillis = 0)
         val aiStore = InMemoryAiCategorizationLogStore()
-        val aiService = AiCategorizationService(logStore = aiStore)
+        val aiService = AiCategorizationService(provider = RuleBasedAiProvider, logStore = aiStore)
         val configStore = FailingOnceCloudConfigStore()
         val cloudConfigService = CloudConfigService(configStore, accountService)
         accountService.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
@@ -351,17 +356,19 @@ class AccountServiceTest {
         val token = tokenResult.token
         val accountId = tokenResult.accountId
 
-        aiService.suggest(
-            accountId = accountId,
-            merchantTitle = "merchant",
-            sourceLabel = "source",
-            transactionKind = "expense",
-            amountMinor = 100,
-            categoryCandidates = emptyList(),
-            note = null,
-            rawEvidenceText = null,
-            enhancedContext = false
-        )
+        runBlocking {
+            aiService.suggest(
+                accountId = accountId,
+                request = AiCategorizationRequestContract(
+                    merchantTitle = "merchant",
+                    sourceLabel = "source",
+                    transactionKind = "expense",
+                    amountRangeLabel = "0-50",
+                    categoryCandidates = listOf("其他")
+                ),
+                enhancedContextAuthorized = false
+            )
+        }
         cloudConfigService.writeConfig(
             StoredCloudConfig(accountId = accountId, updatedAtMillis = 0)
         )

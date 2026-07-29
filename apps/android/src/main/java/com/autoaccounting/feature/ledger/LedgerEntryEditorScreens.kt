@@ -714,7 +714,7 @@ private fun FlowDirectionSelector(
     }
 }
 
-private fun ledgerCategoryOptions(
+internal fun ledgerCategoryOptions(
     categories: List<CategoryEntity>,
     flowDirection: FlowDirection,
     transactionKind: TransactionKind

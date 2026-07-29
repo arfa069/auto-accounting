@@ -17,6 +17,7 @@ class CloudAiContractTest {
             transactionKind = "支出",
             amountRangeLabel = "0-50",
             categoryCandidates = listOf("餐饮", "交通"),
+            enhancedContext = true,
             note = "客户会议",
             rawEvidenceText = "微信支付收款凭证 午餐 35.90"
         )
@@ -28,6 +29,7 @@ class CloudAiContractTest {
                 transactionKind = "支出",
                 amountRangeLabel = "0-50",
                 categoryCandidates = listOf("餐饮", "交通"),
+                enhancedContext = true,
                 note = "客户会议",
                 rawEvidenceText = "微信支付收款凭证 午餐 35.90"
             ),
@@ -89,6 +91,7 @@ class CloudAiContractTest {
             transactionKind = transactionKind,
             amountRangeLabel = amountRangeLabel,
             categoryCandidates = categoryCandidates,
+            enhancedContext = enhancedContext,
             note = note,
             rawEvidenceText = rawEvidenceText
         )
