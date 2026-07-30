@@ -141,7 +141,10 @@ database_check() {
 }
 
 application_health_check() {
-    local deadline=$((SECONDS + 60))
+    local timeout_seconds="${AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS:-60}"
+    [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] ||
+        die "AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS must be a positive integer."
+    local deadline=$((SECONDS + timeout_seconds))
     while (( SECONDS < deadline )); do
         if sv status "$AA_SERVICE_NAME" 2>/dev/null | grep -q "^run:" &&
             database_check &&
