@@ -149,7 +149,7 @@ chmod -R a-w "$release_directory"
 previous_target="$(readlink -f "$AA_CURRENT_LINK" 2>/dev/null || true)"
 atomic_current_link "$release_directory"
 switched=true
-sv up "$AA_SERVICE_NAME"
+sv restart "$AA_SERVICE_NAME"
 application_health_check || die "Application health checks did not pass within 60 seconds."
 
 printf '%s\n' "$release_tag" > "$AA_DEPLOYED_VERSION"

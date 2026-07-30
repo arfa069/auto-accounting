@@ -10,7 +10,7 @@ HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS �
 2. 维护者创建 `vMAJOR.MINOR.PATCH` 标签后，Release 工作流再次运行 CI。
 3. 工作流生成后端 Java 17 分发包、签名 APK、manifest 和 SHA-256 文件，
    并发布为 GitHub prerelease。
-4. Termux watcher 每 300 秒读取最新发布，校验、备份、原子切换并执行健康检查。
+4. Termux watcher 每 300 秒读取最新发布，校验、备份、原子切换、重启后端并执行健康检查。
 
 发布任务使用 GitHub Environment `internal-termux`：
 

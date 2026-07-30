@@ -186,6 +186,9 @@ printf '1\n'
 EOF
 cat > "$fake_bin/sv" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${FAKE_SV_EVENTS:-}" ]]; then
+    printf '%s\n' "$*" >> "$FAKE_SV_EVENTS"
+fi
 if [[ "${1:-}" == "status" ]]; then
     printf 'run: %s\n' "${2:-service}"
 fi
@@ -244,6 +247,7 @@ case "$(uname -s)" in
         export AUTO_ACCOUNTING_STATE_ROOT="$failed_health_root/state"
         export AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS=1
         export FAKE_CHECKSUM_ASSET="$deploy_fixture/checksums-valid.sha256"
+        export FAKE_SV_EVENTS="$failed_health_root/sv-events"
         if bash "$SCRIPT_DIR/deploy-release.sh" \
             > "$failed_health_root/output.log" 2>&1; then
             printf 'Deployment accepted a failed health check.\n' >&2
@@ -264,6 +268,11 @@ case "$(uname -s)" in
         find "$failed_health_root/state/backups" \
             -type f -name '*.dump' -print -quit |
             grep -q .
+        if [[ "$(head -n 1 "$FAKE_SV_EVENTS")" != "restart auto-accounting-backend" ]]; then
+            printf 'Deployment did not restart the backend after switching releases.\n' >&2
+            exit 1
+        fi
+        unset FAKE_SV_EVENTS
         ;;
 esac
 
