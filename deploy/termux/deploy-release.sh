@@ -157,11 +157,21 @@ chmod 600 "$AA_DEPLOYED_VERSION"
 switched=false
 log "Deployment of $release_tag succeeded."
 
-mapfile -t old_releases < <(ls -1dt "$AA_RELEASES_ROOT"/v* 2>/dev/null | tail -n +6 || true)
+mapfile -t old_releases < <(
+    find "$AA_RELEASES_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'v*' \
+        -printf '%T@ %p\n' |
+        sort -nr |
+        sed -n '6,$s/^[^ ]* //p'
+)
 for old_release in "${old_releases[@]}"; do
     safe_remove_release "$old_release"
 done
-mapfile -t old_backups < <(ls -1t "$AA_BACKUPS_ROOT"/*.dump 2>/dev/null | tail -n +8 || true)
+mapfile -t old_backups < <(
+    find "$AA_BACKUPS_ROOT" -mindepth 1 -maxdepth 1 -type f -name '*.dump' \
+        -printf '%T@ %p\n' |
+        sort -nr |
+        sed -n '8,$s/^[^ ]* //p'
+)
 for old_backup in "${old_backups[@]}"; do
     [[ "$old_backup" == "$AA_BACKUPS_ROOT"/*.dump ]] ||
         die "Refusing unsafe backup removal."
