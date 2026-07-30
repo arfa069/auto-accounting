@@ -17,6 +17,9 @@ AA_BACKUPS_ROOT="$AA_STATE_ROOT/backups"
 AA_SERVICE_NAME="auto-accounting-backend"
 # shellcheck disable=SC2034
 AA_REPOSITORY="${AUTO_ACCOUNTING_GITHUB_REPOSITORY:-arfa069/auto-accounting}"
+if [[ -n "${PREFIX:-}" ]]; then
+    export SVDIR="${SVDIR:-$PREFIX/var/service}"
+fi
 
 log() {
     printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -87,18 +90,26 @@ load_database_config() {
 }
 
 github_api() {
-    [[ -f "$AA_GITHUB_CURL_CONFIG" ]] || die "GitHub token configuration is missing."
-    curl --config "$AA_GITHUB_CURL_CONFIG" \
+    local config_args=()
+    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    fi
+    curl "${config_args[@]}" \
         --fail --silent --show-error --location \
         --header "Accept: application/vnd.github+json" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
         "$@"
 }
 
 github_asset() {
-    [[ -f "$AA_GITHUB_CURL_CONFIG" ]] || die "GitHub token configuration is missing."
-    curl --config "$AA_GITHUB_CURL_CONFIG" \
+    local config_args=()
+    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    fi
+    curl "${config_args[@]}" \
         --fail --silent --show-error --location \
         --header "Accept: application/octet-stream" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
         "$@"
 }
 
@@ -130,7 +141,10 @@ database_check() {
 }
 
 application_health_check() {
-    local deadline=$((SECONDS + 60))
+    local timeout_seconds="${AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS:-60}"
+    [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] ||
+        die "AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS must be a positive integer."
+    local deadline=$((SECONDS + timeout_seconds))
     while (( SECONDS < deadline )); do
         if sv status "$AA_SERVICE_NAME" 2>/dev/null | grep -q "^run:" &&
             database_check &&

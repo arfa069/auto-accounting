@@ -1,0 +1,11 @@
+#!/data/data/com.termux/files/usr/bin/sh
+
+exec 2>&1
+config="$HOME/.config/auto-accounting/nginx.conf"
+while [ ! -f "$config" ]; do
+    sleep 5
+done
+exec nginx \
+    -p "$HOME/.local/state/auto-accounting/nginx/" \
+    -c "$config" \
+    -g 'daemon off;'
