@@ -184,4 +184,10 @@ if ! pgrep -f 'runsvdir.*var/service' >/dev/null 2>&1; then
 fi
 sv up auto-accounting-backend
 provisioning_complete=true
-log "Provisioning complete. Configure the GitHub token before enabling release polling."
+if github_api "https://api.github.com/repos/$AA_REPOSITORY" >/dev/null 2>&1; then
+    rm -f "$PREFIX/var/service/auto-accounting-release-watcher/down"
+    sv up auto-accounting-release-watcher
+    log "Provisioning complete. Anonymous GitHub release polling is enabled."
+else
+    log "Provisioning complete. Configure the GitHub token before enabling release polling."
+fi

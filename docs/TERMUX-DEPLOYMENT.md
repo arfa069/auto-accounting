@@ -19,7 +19,8 @@ HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS �
 - Variables：`INTERNAL_BACKEND_URL=http://192.168.1.13:8080`、
   `INTERNAL_ALLOW_HTTP_LEDGER_SYNC=true`；微信 AppID 可按需添加。
 
-Termux 使用一个仅授予本私有仓库 `Contents: read` 的 fine-grained PAT。
+当前公开仓库使用匿名 GitHub API 和 Release 下载，不需要 PAT。若仓库以后
+重新设为私有，可使用仅授予该仓库 `Contents: read` 的 fine-grained PAT；
 令牌通过 `configure-github-token.sh` 的交互提示写入本机 `0600` 配置，
 不得写入仓库、命令参数或日志。
 
@@ -35,11 +36,12 @@ Termux 使用一个仅授予本私有仓库 `Contents: read` 的 fine-grained PA
 
 ```sh
 ./bootstrap.sh --provision
-~/.local/lib/auto-accounting-deploy/configure-github-token.sh
 ```
 
 若检测到 `auto_accounting` 角色或数据库已经存在，provision 必须停止。
 不得通过删除、覆盖或改名绕过检查；应先单独盘点现有数据。
+公开仓库在 provision 完成后自动启用 Release watcher；私有仓库需再运行
+`~/.local/lib/auto-accounting-deploy/configure-github-token.sh`。
 
 配置 Termux:Boot 时还需安装并打开该应用一次，并在 Android 系统中允许
 Termux 后台运行。boot 脚本只启动 services、PostgreSQL 和 Nginx，不执行发布。

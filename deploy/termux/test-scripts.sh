@@ -45,3 +45,24 @@ case "$(uname -s)" in
     MINGW*|MSYS*) [[ -e "$AA_CURRENT_LINK" ]] ;;
     *) [[ "$(readlink -f "$AA_CURRENT_LINK")" == "$AA_RELEASES_ROOT/v0.1.0" ]] ;;
 esac
+
+fake_bin="$test_root/bin"
+fake_curl_args="$test_root/curl-args"
+mkdir -p "$fake_bin"
+cat > "$fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$FAKE_CURL_ARGS"
+EOF
+chmod +x "$fake_bin/curl"
+export FAKE_CURL_ARGS="$fake_curl_args"
+PATH="$fake_bin:$PATH"
+
+github_api "https://api.github.com/repos/example/public" >/dev/null
+if grep -Fxq -- "--config" "$fake_curl_args"; then
+    printf 'Anonymous GitHub request unexpectedly required a curl config.\n' >&2
+    exit 1
+fi
+printf '%s\n' 'header = "Authorization: Bearer test-token"' > "$AA_GITHUB_CURL_CONFIG"
+github_asset "https://api.github.com/repos/example/releases/assets/1" >/dev/null
+grep -Fxq -- "--config" "$fake_curl_args"
+grep -Fxq -- "$AA_GITHUB_CURL_CONFIG" "$fake_curl_args"

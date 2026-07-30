@@ -87,18 +87,26 @@ load_database_config() {
 }
 
 github_api() {
-    [[ -f "$AA_GITHUB_CURL_CONFIG" ]] || die "GitHub token configuration is missing."
-    curl --config "$AA_GITHUB_CURL_CONFIG" \
+    local config_args=()
+    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    fi
+    curl "${config_args[@]}" \
         --fail --silent --show-error --location \
         --header "Accept: application/vnd.github+json" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
         "$@"
 }
 
 github_asset() {
-    [[ -f "$AA_GITHUB_CURL_CONFIG" ]] || die "GitHub token configuration is missing."
-    curl --config "$AA_GITHUB_CURL_CONFIG" \
+    local config_args=()
+    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    fi
+    curl "${config_args[@]}" \
         --fail --silent --show-error --location \
         --header "Accept: application/octet-stream" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
         "$@"
 }
 
