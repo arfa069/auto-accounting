@@ -43,8 +43,15 @@ HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS �
 公开仓库在 provision 完成后自动启用 Release watcher；私有仓库需再运行
 `~/.local/lib/auto-accounting-deploy/configure-github-token.sh`。
 
+部署使用独立的 `auto-accounting-nginx` runit 服务和
+`~/.config/auto-accounting/nginx.conf`，不会修改或重载 Termux 的主
+`$PREFIX/etc/nginx/nginx.conf`，也不会接管已有 Nginx 服务。
+
 配置 Termux:Boot 时还需安装并打开该应用一次，并在 Android 系统中允许
-Termux 后台运行。boot 脚本只启动 services、PostgreSQL 和 Nginx，不执行发布。
+Termux 后台运行。boot 脚本只启动 services、PostgreSQL 和本项目的独立
+Nginx，不执行发布。
+若设备已有其他项目，安装 boot 脚本前必须先复核其 PostgreSQL 启动方式；
+未获批准时可暂不复制 `start-auto-accounting-boot.sh`。
 
 ## 运维与回滚
 

@@ -5,6 +5,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=deploy/termux/lib.sh
 source "$SCRIPT_DIR/lib.sh"
+export SVDIR="${SVDIR:-$PREFIX/var/service}"
 
 printf 'Deployed version: %s\n' "$(
     if [[ -f "$AA_DEPLOYED_VERSION" ]]; then
@@ -14,6 +15,7 @@ printf 'Deployed version: %s\n' "$(
     fi
 )"
 sv status auto-accounting-backend || true
+sv status auto-accounting-nginx || true
 sv status auto-accounting-release-watcher || true
 pg_isready || true
 curl --silent --show-error --max-time 3 http://127.0.0.1:18080/health || true

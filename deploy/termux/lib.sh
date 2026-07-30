@@ -17,6 +17,9 @@ AA_BACKUPS_ROOT="$AA_STATE_ROOT/backups"
 AA_SERVICE_NAME="auto-accounting-backend"
 # shellcheck disable=SC2034
 AA_REPOSITORY="${AUTO_ACCOUNTING_GITHUB_REPOSITORY:-arfa069/auto-accounting}"
+if [[ -n "${PREFIX:-}" ]]; then
+    export SVDIR="${SVDIR:-$PREFIX/var/service}"
+fi
 
 log() {
     printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
