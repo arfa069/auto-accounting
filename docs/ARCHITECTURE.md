@@ -149,8 +149,8 @@ flowchart LR
 后端行为：
 - Android 应用仅通过 `BuildConfig.AUTO_ACCOUNTING_BACKEND_URL` 调用本项目的 `POST /ai/categorize`，Bearer Token 不得转发给第三方 Provider。
 - 路由先验证 Session、云写入状态、已保存的 AI 同意及独立的增强上下文同意；注销冷静期账号在读取 payload 前即被阻断。
-- 运行时环境工厂只接受 `AUTO_ACCOUNTING_AI_PROVIDER=openai`，并显式启用基于 JDK 17 `HttpClient` 的 OpenAI Responses API Provider；空值、`rule`、未知值或 OpenAI 配置错误均失败关闭。`RuleBasedAiProvider` 仅可由测试代码直接注入，不得通过环境配置选择。API Key、模型、base URL 和超时仅由后端环境/`.env` 提供。
-- Provider 使用严格 JSON Schema 结构化输出，服务端再次校验长度、必填值、置信度枚举及分类候选白名单。
+- 运行时环境工厂通过 `AUTO_ACCOUNTING_AI_PROTOCOL=openai-responses|openai-chat-completions|anthropic-messages` 选择协议。三种协议共用 `AUTO_ACCOUNTING_AI_ENDPOINT`、`AUTO_ACCOUNTING_AI_API_KEY`、`AUTO_ACCOUNTING_AI_MODEL`、认证方式和超时配置；Endpoint 必须包含完整请求路径。旧的厂商专属环境变量不再读取。空值、`rule`、未知协议或配置错误均失败关闭。`RuleBasedAiProvider` 仅可由测试代码直接注入，不得通过环境配置选择。所有外部请求仅允许 HTTPS，HTTP 仅限 localhost 测试。
+- 认证方式限定为 `bearer`、`x-api-key` 或 `api-key`。结构化输出支持协议允许的 `json-schema`、`json-object` 或 `prompt-only`；Chat Completions 还可显式启用或关闭推理模式。服务端始终再次校验响应长度、字段集合、置信度枚举及分类候选白名单。
 - 只有完整验证成功的建议才写入最小化 AI 日志；Provider 缺失、超时、限流、HTTP/解析失败及白名单失败均不写成功日志。
 - AI 日志仅保存账号关联、最小请求字段、建议及时间；使用增强上下文时，Provider explanation 也不持久化，改存固定脱敏说明。备注和原始证据不落库，也不进入普通日志、错误响应或 Provider 异常文本。
 - AI 日志不等于云端账本同步，日志留存策略必须在公开发布前经过复核。

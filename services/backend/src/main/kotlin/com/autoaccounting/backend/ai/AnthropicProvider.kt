@@ -1,7 +1,5 @@
 package com.autoaccounting.backend.ai
 
-import java.net.URI
-import java.time.Duration
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -10,12 +8,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class OpenAiProvider internal constructor(
-    private val model: String,
-    private val responsesUri: URI,
-    private val requestHeaders: Map<String, String>,
-    private val requestTimeout: Duration,
-    private val outputMode: AiProviderOutputMode,
+class AnthropicProvider internal constructor(
+    private val config: AiProviderRuntimeConfig,
     private val transport: ProviderHttpTransport
 ) : AiProvider {
     override suspend fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
@@ -23,10 +17,10 @@ class OpenAiProvider internal constructor(
             throw AiProviderException.InvalidResponse
         }
         val response = transport.post(
-            uri = responsesUri,
-            headers = requestHeaders,
+            uri = config.endpoint,
+            headers = config.requestHeaders + ("anthropic-version" to config.apiVersion),
             body = buildRequestBody(payload),
-            requestTimeout = requestTimeout
+            requestTimeout = config.readTimeout
         )
         requireSuccessfulProviderResponse(response)
         return parseResponse(response.body, payload.categoryCandidates)
@@ -34,26 +28,26 @@ class OpenAiProvider internal constructor(
 
     private fun buildRequestBody(payload: AiCategorizationPayload): String =
         buildJsonObject {
-            put("model", model)
-            put("store", false)
-            put("max_output_tokens", 256)
-            put("input", buildJsonArray {
-                add(buildJsonObject {
-                    put("role", "system")
-                    put("content", categorizationSystemPrompt())
-                })
+            put("model", config.model)
+            put("max_tokens", 256)
+            put("system", categorizationSystemPrompt())
+            put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
                     put("content", categorizationUserPayload(payload))
                 })
             })
-            if (outputMode == AiProviderOutputMode.JsonSchema) {
-                put("text", buildJsonObject {
+            if (config.outputMode == AiProviderOutputMode.JsonSchema) {
+                put("output_config", buildJsonObject {
                     put("format", buildJsonObject {
                         put("type", "json_schema")
-                        put("name", "accounting_category_suggestion")
-                        put("strict", true)
-                        put("schema", categorizationSuggestionSchema(payload))
+                        put(
+                            "schema",
+                            categorizationSuggestionSchema(
+                                payload = payload,
+                                constrainCategoryToCandidates = false
+                            )
+                        )
                     })
                 })
             }
@@ -65,21 +59,21 @@ class OpenAiProvider internal constructor(
     ): AiCategorizationSuggestion {
         val root = parseProviderJsonObject(body)
             ?: throw AiProviderException.InvalidResponse
+        val invalidEnvelope = listOf(
+            root["type"]?.jsonPrimitive?.contentOrNull != "message",
+            root["role"]?.jsonPrimitive?.contentOrNull != "assistant",
+            root["stop_reason"]?.jsonPrimitive?.contentOrNull != "end_turn"
+        ).any { it }
         val text = root
-            .takeIf { it["status"]?.jsonPrimitive?.contentOrNull == "completed" }
+            .takeUnless { invalidEnvelope }
             ?.let { validRoot ->
                 runCatching {
-                    validRoot.getValue("output")
+                    validRoot.getValue("content")
                         .jsonArray
                         .asSequence()
                         .map { it.jsonObject }
-                        .filter { it["type"]?.jsonPrimitive?.contentOrNull == "message" }
-                        .flatMap { message ->
-                            message.getValue("content").jsonArray.asSequence()
-                        }
-                        .map { it.jsonObject }
                         .firstOrNull {
-                            it["type"]?.jsonPrimitive?.contentOrNull == "output_text"
+                            it["type"]?.jsonPrimitive?.contentOrNull == "text"
                         }
                         ?.get("text")
                         ?.jsonPrimitive
@@ -93,7 +87,7 @@ class OpenAiProvider internal constructor(
     companion object {
         fun fromEnvironment(env: Map<String, String>): AiProvider {
             val config = env.aiProviderRuntimeConfig(
-                defaultAuthStyle = AiProviderAuthStyle.Bearer,
+                defaultAuthStyle = AiProviderAuthStyle.XApiKey,
                 defaultOutputMode = AiProviderOutputMode.JsonSchema
             ) ?: return UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
             if (
@@ -105,12 +99,8 @@ class OpenAiProvider internal constructor(
             ) {
                 return UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
             }
-            return OpenAiProvider(
-                model = config.model,
-                responsesUri = config.endpoint,
-                requestHeaders = config.requestHeaders,
-                requestTimeout = config.readTimeout,
-                outputMode = config.outputMode,
+            return AnthropicProvider(
+                config = config,
                 transport = JdkProviderHttpTransport(config.connectTimeout)
             )
         }

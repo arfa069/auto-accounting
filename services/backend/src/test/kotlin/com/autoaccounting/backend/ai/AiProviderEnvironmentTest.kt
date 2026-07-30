@@ -6,41 +6,57 @@ import org.junit.Test
 
 class AiProviderEnvironmentTest {
     @Test
-    fun ruleProviderIsRejectedByEnvironmentFactory() = runBlocking {
-        val provider = aiProviderFromEnvironment(
-            mapOf("AUTO_ACCOUNTING_AI_PROVIDER" to "rule")
-        )
-
-        assertProviderFailure(provider, AiProviderException.ConfigurationInvalid)
-    }
-
-    @Test
-    fun missingAndUnknownProviderFailClosed() = runBlocking {
+    fun missingAndUnknownProtocolFailClosed() = runBlocking {
         val missing = aiProviderFromEnvironment(emptyMap())
         val unknown = aiProviderFromEnvironment(
-            mapOf("AUTO_ACCOUNTING_AI_PROVIDER" to "unknown")
+            mapOf("AUTO_ACCOUNTING_AI_PROTOCOL" to "unknown")
+        )
+        val rule = aiProviderFromEnvironment(
+            mapOf("AUTO_ACCOUNTING_AI_PROTOCOL" to "rule")
         )
 
         assertProviderFailure(missing, AiProviderException.Unavailable)
         assertProviderFailure(unknown, AiProviderException.ConfigurationInvalid)
+        assertProviderFailure(rule, AiProviderException.ConfigurationInvalid)
     }
 
     @Test
-    fun openAiSelectionWithMissingConfigurationFailsClosed() = runBlocking {
+    fun supportedProtocolsUseTheirProtocolAdapters() {
+        val responses = aiProviderFromEnvironment(
+            validConfig("openai-responses", "https://example.com/v1/responses")
+        )
+        val chatCompletions = aiProviderFromEnvironment(
+            validConfig(
+                "openai-chat-completions",
+                "https://example.com/v1/chat/completions"
+            )
+        )
+        val messages = aiProviderFromEnvironment(
+            validConfig("anthropic-messages", "https://example.com/v1/messages")
+        )
+
+        assertTrue(responses is OpenAiProvider)
+        assertTrue(chatCompletions is DeepSeekProvider)
+        assertTrue(messages is AnthropicProvider)
+    }
+
+    @Test
+    fun selectedProtocolRequiresCommonConfiguration() = runBlocking {
         val provider = aiProviderFromEnvironment(
-            mapOf("AUTO_ACCOUNTING_AI_PROVIDER" to "openai")
+            mapOf("AUTO_ACCOUNTING_AI_PROTOCOL" to "openai-chat-completions")
         )
 
         assertProviderFailure(provider, AiProviderException.ConfigurationInvalid)
     }
 
     @Test
-    fun openAiRejectsUnsafeHttpBaseUrl() = runBlocking {
+    fun legacyProviderVariablesAreNotRead() = runBlocking {
         val provider = aiProviderFromEnvironment(
             mapOf(
-                "AUTO_ACCOUNTING_AI_PROVIDER" to "openai",
-                "AUTO_ACCOUNTING_OPENAI_API_KEY" to "test-key",
-                "AUTO_ACCOUNTING_OPENAI_BASE_URL" to "http://example.com/v1"
+                "AUTO_ACCOUNTING_AI_PROTOCOL" to "openai-chat-completions",
+                "AUTO_ACCOUNTING_DEEPSEEK_API_KEY" to "legacy-key",
+                "AUTO_ACCOUNTING_DEEPSEEK_MODEL" to "deepseek-v4-flash",
+                "AUTO_ACCOUNTING_DEEPSEEK_BASE_URL" to "https://api.deepseek.com"
             )
         )
 
@@ -48,17 +64,57 @@ class AiProviderEnvironmentTest {
     }
 
     @Test
-    fun openAiRejectsInvalidTimeoutConfiguration() = runBlocking {
-        val provider = aiProviderFromEnvironment(
-            mapOf(
-                "AUTO_ACCOUNTING_AI_PROVIDER" to "openai",
-                "AUTO_ACCOUNTING_OPENAI_API_KEY" to "test-key",
-                "AUTO_ACCOUNTING_OPENAI_CONNECT_TIMEOUT_MILLIS" to "0"
+    fun commonConfigurationRejectsUnsafeOrInjectedValues() = runBlocking {
+        val unsafeEndpoint = aiProviderFromEnvironment(
+            validConfig(
+                protocol = "openai-chat-completions",
+                endpoint = "http://example.com/chat/completions"
             )
         )
+        val injectedCredential = aiProviderFromEnvironment(
+            validConfig(
+                protocol = "openai-chat-completions",
+                endpoint = "https://example.com/chat/completions"
+            ) + ("AUTO_ACCOUNTING_AI_API_KEY" to "test-key\nInjected: value")
+        )
+        val invalidAuthStyle = aiProviderFromEnvironment(
+            validConfig(
+                protocol = "openai-chat-completions",
+                endpoint = "https://example.com/chat/completions"
+            ) + ("AUTO_ACCOUNTING_AI_AUTH_STYLE" to "custom")
+        )
 
-        assertProviderFailure(provider, AiProviderException.ConfigurationInvalid)
+        assertProviderFailure(unsafeEndpoint, AiProviderException.ConfigurationInvalid)
+        assertProviderFailure(injectedCredential, AiProviderException.ConfigurationInvalid)
+        assertProviderFailure(invalidAuthStyle, AiProviderException.ConfigurationInvalid)
     }
+
+    @Test
+    fun protocolRejectsUnsupportedCapabilityCombination() = runBlocking {
+        val responsesWithJsonObject = aiProviderFromEnvironment(
+            validConfig(
+                protocol = "openai-responses",
+                endpoint = "https://example.com/v1/responses"
+            ) + ("AUTO_ACCOUNTING_AI_OUTPUT_MODE" to "json-object")
+        )
+        val messagesWithReasoning = aiProviderFromEnvironment(
+            validConfig(
+                protocol = "anthropic-messages",
+                endpoint = "https://example.com/v1/messages"
+            ) + ("AUTO_ACCOUNTING_AI_REASONING_MODE" to "enabled")
+        )
+
+        assertProviderFailure(responsesWithJsonObject, AiProviderException.ConfigurationInvalid)
+        assertProviderFailure(messagesWithReasoning, AiProviderException.ConfigurationInvalid)
+    }
+
+    private fun validConfig(protocol: String, endpoint: String): Map<String, String> =
+        mapOf(
+            "AUTO_ACCOUNTING_AI_PROTOCOL" to protocol,
+            "AUTO_ACCOUNTING_AI_ENDPOINT" to endpoint,
+            "AUTO_ACCOUNTING_AI_API_KEY" to "test-key",
+            "AUTO_ACCOUNTING_AI_MODEL" to "test-model"
+        )
 
     private suspend fun assertProviderFailure(
         provider: AiProvider,

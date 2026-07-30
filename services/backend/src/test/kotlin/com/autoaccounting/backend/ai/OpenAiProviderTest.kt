@@ -218,27 +218,27 @@ class OpenAiProviderTest {
 
     @Test
     fun jdkTransportKeepsTimeoutAndIoFailureMappings() = runBlocking {
-        val timeoutTransport = JdkOpenAiHttpTransport(
+        val timeoutTransport = JdkProviderHttpTransport(
             ioDispatcher = Dispatchers.IO,
             sendRequest = { throw HttpTimeoutException("timeout") }
         )
         val timeoutFailure = runCatching {
             timeoutTransport.post(
                 uri = URI("https://api.openai.com/v1/responses"),
-                apiKey = "test-key",
+                headers = mapOf("Authorization" to "Bearer test-key"),
                 body = "{}",
                 requestTimeout = Duration.ofSeconds(1)
             )
         }.exceptionOrNull()
 
-        val ioTransport = JdkOpenAiHttpTransport(
+        val ioTransport = JdkProviderHttpTransport(
             ioDispatcher = Dispatchers.IO,
             sendRequest = { throw IOException("network") }
         )
         val ioFailure = runCatching {
             ioTransport.post(
                 uri = URI("https://api.openai.com/v1/responses"),
-                apiKey = "test-key",
+                headers = mapOf("Authorization" to "Bearer test-key"),
                 body = "{}",
                 requestTimeout = Duration.ofSeconds(1)
             )
@@ -253,7 +253,7 @@ class OpenAiProviderTest {
         val entered = CountDownLatch(1)
         val blocker = CountDownLatch(1)
         val interrupted = AtomicBoolean(false)
-        val transport = JdkOpenAiHttpTransport(
+        val transport = JdkProviderHttpTransport(
             ioDispatcher = Dispatchers.IO,
             sendRequest = {
                 entered.countDown()
@@ -270,7 +270,7 @@ class OpenAiProviderTest {
         val requestJob = launch(start = CoroutineStart.UNDISPATCHED) {
             transport.post(
                 uri = URI("https://api.openai.com/v1/responses"),
-                apiKey = "test-key",
+                headers = mapOf("Authorization" to "Bearer test-key"),
                 body = "{}",
                 requestTimeout = Duration.ofSeconds(30)
             )
@@ -311,12 +311,14 @@ class OpenAiProviderTest {
     private fun provider(server: HttpServer, readTimeoutMillis: Long = 2_000): AiProvider {
         return OpenAiProvider.fromEnvironment(
             mapOf(
-                "AUTO_ACCOUNTING_OPENAI_API_KEY" to ephemeralApiKey,
-                "AUTO_ACCOUNTING_OPENAI_MODEL" to "gpt-4o-mini",
-                "AUTO_ACCOUNTING_OPENAI_BASE_URL" to
-                    "http://127.0.0.1:${server.address.port}/v1",
-                "AUTO_ACCOUNTING_OPENAI_CONNECT_TIMEOUT_MILLIS" to "1000",
-                "AUTO_ACCOUNTING_OPENAI_READ_TIMEOUT_MILLIS" to readTimeoutMillis.toString()
+                "AUTO_ACCOUNTING_AI_API_KEY" to ephemeralApiKey,
+                "AUTO_ACCOUNTING_AI_MODEL" to "gpt-4o-mini",
+                "AUTO_ACCOUNTING_AI_ENDPOINT" to
+                    "http://127.0.0.1:${server.address.port}/v1/responses",
+                "AUTO_ACCOUNTING_AI_AUTH_STYLE" to "bearer",
+                "AUTO_ACCOUNTING_AI_OUTPUT_MODE" to "json-schema",
+                "AUTO_ACCOUNTING_AI_CONNECT_TIMEOUT_MILLIS" to "1000",
+                "AUTO_ACCOUNTING_AI_READ_TIMEOUT_MILLIS" to readTimeoutMillis.toString()
             )
         )
     }

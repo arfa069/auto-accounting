@@ -22,7 +22,7 @@ class ApplicationEnvironmentIntegrationTest {
         val databaseUrl = h2DatabaseUrl()
         val env = mapOf(
             "AUTO_ACCOUNTING_DATABASE_URL" to databaseUrl,
-            "AUTO_ACCOUNTING_AI_PROVIDER" to "unknown-provider"
+            "AUTO_ACCOUNTING_AI_PROTOCOL" to "unknown-protocol"
         )
         val clock = MutableClock(0)
 

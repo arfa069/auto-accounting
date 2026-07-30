@@ -43,8 +43,10 @@ class UnavailableAiProvider(
 }
 
 fun aiProviderFromEnvironment(env: Map<String, String> = System.getenv()): AiProvider {
-    return when (env["AUTO_ACCOUNTING_AI_PROVIDER"].orEmpty().trim().lowercase()) {
-        "openai" -> OpenAiProvider.fromEnvironment(env)
+    return when (env["AUTO_ACCOUNTING_AI_PROTOCOL"].orEmpty().trim().lowercase()) {
+        "openai-responses" -> OpenAiProvider.fromEnvironment(env)
+        "openai-chat-completions" -> DeepSeekProvider.fromEnvironment(env)
+        "anthropic-messages" -> AnthropicProvider.fromEnvironment(env)
         "" -> UnavailableAiProvider()
         else -> UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
     }

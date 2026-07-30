@@ -1,7 +1,5 @@
 package com.autoaccounting.backend.ai
 
-import java.net.URI
-import java.time.Duration
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -10,12 +8,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class OpenAiProvider internal constructor(
-    private val model: String,
-    private val responsesUri: URI,
-    private val requestHeaders: Map<String, String>,
-    private val requestTimeout: Duration,
-    private val outputMode: AiProviderOutputMode,
+class DeepSeekProvider internal constructor(
+    private val config: AiProviderRuntimeConfig,
     private val transport: ProviderHttpTransport
 ) : AiProvider {
     override suspend fun suggest(payload: AiCategorizationPayload): AiCategorizationSuggestion {
@@ -23,10 +17,10 @@ class OpenAiProvider internal constructor(
             throw AiProviderException.InvalidResponse
         }
         val response = transport.post(
-            uri = responsesUri,
-            headers = requestHeaders,
+            uri = config.endpoint,
+            headers = config.requestHeaders,
             body = buildRequestBody(payload),
-            requestTimeout = requestTimeout
+            requestTimeout = config.readTimeout
         )
         requireSuccessfulProviderResponse(response)
         return parseResponse(response.body, payload.categoryCandidates)
@@ -34,10 +28,22 @@ class OpenAiProvider internal constructor(
 
     private fun buildRequestBody(payload: AiCategorizationPayload): String =
         buildJsonObject {
-            put("model", model)
-            put("store", false)
-            put("max_output_tokens", 256)
-            put("input", buildJsonArray {
+            put("model", config.model)
+            put("max_tokens", 256)
+            put("stream", false)
+            if (config.reasoningMode != AiProviderReasoningMode.Unspecified) {
+                put("thinking", buildJsonObject {
+                    put(
+                        "type",
+                        when (config.reasoningMode) {
+                            AiProviderReasoningMode.Disabled -> "disabled"
+                            AiProviderReasoningMode.Enabled -> "enabled"
+                            AiProviderReasoningMode.Unspecified -> error("unreachable")
+                        }
+                    )
+                })
+            }
+            put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "system")
                     put("content", categorizationSystemPrompt())
@@ -47,14 +53,9 @@ class OpenAiProvider internal constructor(
                     put("content", categorizationUserPayload(payload))
                 })
             })
-            if (outputMode == AiProviderOutputMode.JsonSchema) {
-                put("text", buildJsonObject {
-                    put("format", buildJsonObject {
-                        put("type", "json_schema")
-                        put("name", "accounting_category_suggestion")
-                        put("strict", true)
-                        put("schema", categorizationSuggestionSchema(payload))
-                    })
+            if (config.outputMode == AiProviderOutputMode.JsonObject) {
+                put("response_format", buildJsonObject {
+                    put("type", "json_object")
                 })
             }
         }.toString()
@@ -66,22 +67,21 @@ class OpenAiProvider internal constructor(
         val root = parseProviderJsonObject(body)
             ?: throw AiProviderException.InvalidResponse
         val text = root
-            .takeIf { it["status"]?.jsonPrimitive?.contentOrNull == "completed" }
+            .takeIf { it["object"]?.jsonPrimitive?.contentOrNull == "chat.completion" }
             ?.let { validRoot ->
                 runCatching {
-                    validRoot.getValue("output")
+                    val choice = validRoot.getValue("choices")
                         .jsonArray
-                        .asSequence()
-                        .map { it.jsonObject }
-                        .filter { it["type"]?.jsonPrimitive?.contentOrNull == "message" }
-                        .flatMap { message ->
-                            message.getValue("content").jsonArray.asSequence()
+                        .singleOrNull()
+                        ?.jsonObject
+                        ?: return@runCatching null
+                    choice
+                        .takeIf {
+                            it["finish_reason"]?.jsonPrimitive?.contentOrNull == "stop"
                         }
-                        .map { it.jsonObject }
-                        .firstOrNull {
-                            it["type"]?.jsonPrimitive?.contentOrNull == "output_text"
-                        }
-                        ?.get("text")
+                        ?.get("message")
+                        ?.jsonObject
+                        ?.get("content")
                         ?.jsonPrimitive
                         ?.contentOrNull
                 }.getOrNull()
@@ -94,23 +94,18 @@ class OpenAiProvider internal constructor(
         fun fromEnvironment(env: Map<String, String>): AiProvider {
             val config = env.aiProviderRuntimeConfig(
                 defaultAuthStyle = AiProviderAuthStyle.Bearer,
-                defaultOutputMode = AiProviderOutputMode.JsonSchema
+                defaultOutputMode = AiProviderOutputMode.JsonObject
             ) ?: return UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
             if (
                 config.outputMode !in setOf(
-                    AiProviderOutputMode.JsonSchema,
+                    AiProviderOutputMode.JsonObject,
                     AiProviderOutputMode.PromptOnly
-                ) ||
-                config.reasoningMode != AiProviderReasoningMode.Unspecified
+                )
             ) {
                 return UnavailableAiProvider(AiProviderException.ConfigurationInvalid)
             }
-            return OpenAiProvider(
-                model = config.model,
-                responsesUri = config.endpoint,
-                requestHeaders = config.requestHeaders,
-                requestTimeout = config.readTimeout,
-                outputMode = config.outputMode,
+            return DeepSeekProvider(
+                config = config,
                 transport = JdkProviderHttpTransport(config.connectTimeout)
             )
         }
