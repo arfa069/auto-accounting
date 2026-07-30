@@ -13,8 +13,5 @@ elif ! pg_isready >/dev/null 2>&1; then
         -l "$PREFIX/var/log/postgresql.log" \
         start
 fi
-if [ -d "$PREFIX/var/service/nginx" ]; then
-    sv up nginx
-elif ! pgrep -x nginx >/dev/null 2>&1; then
-    nginx
-fi
+sv up auto-accounting-nginx
+sv up auto-accounting-backend

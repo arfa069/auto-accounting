@@ -12,9 +12,6 @@ mode="${1:---inspect}"
 created_role=false
 created_database=false
 provisioning_complete=false
-nginx_changed=false
-nginx_conf=""
-nginx_backup=""
 
 cleanup_provisioning_failure() {
     local exit_code=$?
@@ -26,15 +23,21 @@ cleanup_provisioning_failure() {
         if [[ "$created_role" == "true" ]]; then
             dropuser --if-exists auto_accounting >/dev/null 2>&1
         fi
-        if [[ "$nginx_changed" == "true" && -f "$nginx_backup" ]]; then
-            cp "$nginx_backup" "$nginx_conf"
-            rm -f "$PREFIX/etc/nginx/conf.d/auto-accounting.conf"
-        fi
         if [[ "$provisioning_complete" != "true" ]]; then
-            rm -f "$AA_BACKEND_ENV"
+            for service_name in \
+                auto-accounting-backend \
+                auto-accounting-nginx \
+                auto-accounting-release-watcher; do
+                if [[ -d "$PREFIX/var/service/$service_name" ]]; then
+                    sv down "$PREFIX/var/service/$service_name" >/dev/null 2>&1
+                fi
+            done
+            rm -f "$AA_BACKEND_ENV" "$AA_CONFIG_ROOT/nginx.conf"
             rm -rf -- \
                 "$HOME/.local/lib/auto-accounting-deploy" \
+                "$AA_STATE_ROOT/nginx" \
                 "$PREFIX/var/service/auto-accounting-backend" \
+                "$PREFIX/var/service/auto-accounting-nginx" \
                 "$PREFIX/var/service/auto-accounting-release-watcher"
             rm -f "$HOME/.termux/boot/start-auto-accounting"
         fi
@@ -65,6 +68,7 @@ df -h "$HOME"
 
 [[ "$mode" == "--provision" ]] || exit 0
 [[ -n "${PREFIX:-}" ]] || die "PREFIX is not set; run inside Termux."
+export SVDIR="$PREFIX/var/service"
 require_command psql
 require_command pg_isready
 pg_isready >/dev/null || die "PostgreSQL is not ready."
@@ -78,9 +82,10 @@ if [[ "$role_exists" == "1" || "$database_exists" == "1" ]]; then
 fi
 for target in \
     "$AA_BACKEND_ENV" \
+    "$AA_CONFIG_ROOT/nginx.conf" \
     "$HOME/.local/lib/auto-accounting-deploy" \
-    "$PREFIX/etc/nginx/conf.d/auto-accounting.conf" \
     "$PREFIX/var/service/auto-accounting-backend" \
+    "$PREFIX/var/service/auto-accounting-nginx" \
     "$PREFIX/var/service/auto-accounting-release-watcher" \
     "$HOME/.termux/boot/start-auto-accounting"; do
     [[ ! -e "$target" ]] || die "Provisioning target already exists: $target"
@@ -91,7 +96,7 @@ if (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true) |
     die "Port 8080 or 18080 is already in use."
 fi
 
-pkg install --yes openjdk-17 jq termux-services coreutils findutils openssl
+pkg install --yes openjdk-17 jq termux-services coreutils findutils openssl-tool
 for command_name in java nginx psql pg_dump pg_isready sv jq curl openssl; do
     require_command "$command_name"
 done
@@ -127,37 +132,34 @@ unset db_password auth_pepper
 mv "$backend_env_temp" "$AA_BACKEND_ENV"
 chmod 600 "$AA_BACKEND_ENV"
 
+mkdir -p "$AA_STATE_ROOT/nginx"
+nginx_config="$AA_CONFIG_ROOT/nginx.conf"
+nginx_config_temp="$nginx_config.tmp"
+{
+    printf 'worker_processes 1;\n'
+    printf 'pid %s/nginx/nginx.pid;\n' "$AA_STATE_ROOT"
+    printf 'error_log %s/nginx/error.log warn;\n' "$AA_STATE_ROOT"
+    printf 'events { worker_connections 256; }\n'
+    printf 'http {\n'
+    printf '    include %s/etc/nginx/mime.types;\n' "$PREFIX"
+    printf '    default_type application/octet-stream;\n'
+    printf '    access_log %s/nginx/access.log;\n' "$AA_STATE_ROOT"
+    sed 's/^/    /' "$SCRIPT_DIR/nginx-auto-accounting.conf"
+    printf '}\n'
+} > "$nginx_config_temp"
+mv "$nginx_config_temp" "$nginx_config"
+chmod 600 "$nginx_config"
+nginx -t -p "$AA_STATE_ROOT/nginx/" -c "$nginx_config"
+
 install_root="$HOME/.local/lib/auto-accounting-deploy"
 mkdir -p "$install_root"
 cp "$SCRIPT_DIR"/*.sh "$install_root/"
 chmod 700 "$install_root"/*.sh
 
-nginx_conf="$PREFIX/etc/nginx/nginx.conf"
-nginx_backup="$nginx_conf.auto-accounting.$(date -u '+%Y%m%dT%H%M%SZ').bak"
-[[ -f "$nginx_conf" ]] || die "Nginx configuration is missing."
-cp "$nginx_conf" "$nginx_backup"
-nginx_changed=true
-mkdir -p "$PREFIX/etc/nginx/conf.d"
-if ! grep -Eq 'include[[:space:]]+.*conf\.d/\*\.conf' "$nginx_conf"; then
-    closing_line="$(grep -n '^}' "$nginx_conf" | tail -n 1 | cut -d: -f1)"
-    [[ -n "$closing_line" ]] || die "Cannot find the closing http block in nginx.conf."
-    {
-        head -n "$((closing_line - 1))" "$nginx_conf"
-        printf '    include %s/etc/nginx/conf.d/*.conf;\n' "$PREFIX"
-        tail -n "+$closing_line" "$nginx_conf"
-    } > "$nginx_conf.tmp"
-    mv "$nginx_conf.tmp" "$nginx_conf"
-fi
-cp "$SCRIPT_DIR/nginx-auto-accounting.conf" \
-    "$PREFIX/etc/nginx/conf.d/auto-accounting.conf"
-if ! nginx -t; then
-    cp "$nginx_backup" "$nginx_conf"
-    rm -f "$PREFIX/etc/nginx/conf.d/auto-accounting.conf"
-    nginx_changed=false
-    die "Nginx validation failed; the original configuration was restored."
-fi
-
-for service_name in auto-accounting-backend auto-accounting-release-watcher; do
+for service_name in \
+    auto-accounting-backend \
+    auto-accounting-nginx \
+    auto-accounting-release-watcher; do
     service_root="$PREFIX/var/service/$service_name"
     mkdir -p "$service_root/log"
     cp "$SCRIPT_DIR/services/$service_name/run" "$service_root/run"
@@ -171,17 +173,11 @@ cp "$SCRIPT_DIR/start-auto-accounting-boot.sh" \
     "$HOME/.termux/boot/start-auto-accounting"
 chmod 700 "$HOME/.termux/boot/start-auto-accounting"
 
-if pgrep -x nginx >/dev/null 2>&1; then
-    nginx -s reload
-elif [[ -d "$PREFIX/var/service/nginx" ]]; then
-    sv up nginx
-else
-    nginx
-fi
 if ! pgrep -f 'runsvdir.*var/service' >/dev/null 2>&1; then
     # shellcheck disable=SC1091
     source "$PREFIX/etc/profile.d/start-services.sh"
 fi
+sv up auto-accounting-nginx
 sv up auto-accounting-backend
 provisioning_complete=true
 if github_api "https://api.github.com/repos/$AA_REPOSITORY" >/dev/null 2>&1; then
