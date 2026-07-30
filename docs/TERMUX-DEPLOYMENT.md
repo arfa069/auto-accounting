@@ -4,13 +4,24 @@
 `http://192.168.1.13:8080`。账号凭据、验证码和 Session Token 通过
 HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS 验收或公开服务。
 
-## 发布链
+## 触发边界与发布链
 
-1. Pull Request 和 `master` push 运行完整 CI。
-2. 维护者创建 `vMAJOR.MINOR.PATCH` 标签后，Release 工作流再次运行 CI。
-3. 工作流生成后端 Java 17 分发包、签名 APK、manifest 和 SHA-256 文件，
+- 本地 `git commit` 只创建提交；仓库未配置本地 Git Hook，不会自动运行
+  GitHub CI 或部署。
+- `git push origin master` 触发 GitHub 托管 Runner 上的完整 CI，不发布
+  Release，也不部署 Termux。
+- 只有推送新的 `vMAJOR.MINOR.PATCH` 标签才触发 Release 工作流。三个字段
+  均为非负整数，例如 `v0.1.0` 的下一个修复版本是 `v0.1.1`。
+- 已发布标签和资产不可覆盖；发布前必须确认标签指向已经通过 `master` CI 的
+  目标提交。
+
+版本标签推送后：
+
+1. Release 工作流复用完整 CI。
+2. CI 通过后生成后端 Java 17 分发包、签名 APK、manifest 和 SHA-256 文件，
    并发布为 GitHub prerelease。
-4. Termux watcher 每 300 秒读取最新发布，校验、备份、原子切换、重启后端并执行健康检查。
+3. Termux watcher 每 300 秒读取最新 prerelease；发现更高版本后执行校验、
+   PostgreSQL 备份、原子切换、后端重启和健康检查。
 
 发布任务使用 GitHub Environment `internal-termux`：
 

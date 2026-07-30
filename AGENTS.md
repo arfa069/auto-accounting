@@ -34,6 +34,16 @@
 - 最终测试或构建完成后，运行 `.\gradlew.bat --stop` 释放 Gradle Daemon。
 - 真机账号验收使用本地安全保存的专用测试凭据；不得把账号、密码或其他认证秘密写入仓库、命令输出或验收记录。
 
+## CI 与 Termux 发布
+
+- 本地 `git commit` 不触发 CI；推送 `master` 才在 GitHub 托管 Runner 上运行完整 CI。
+- Termux CD 必须显式创建并推送新的严格语义版本标签，例如 `v0.1.1`；普通
+  `master` push 不发布 Release，也不部署服务器。
+- 发布标签、GitHub prerelease 和已发布资产不得复用或覆盖。创建标签属于发布
+  操作，必须得到用户明确要求，并先确认目标提交的 CI 已通过。
+- 完整发布链、服务器目录、健康检查与回滚步骤见
+  `docs/TERMUX-DEPLOYMENT.md`。
+
 ## 编码风格与命名
 
 - 遵循 Kotlin 官方代码风格（`kotlin.code.style=official`），使用四空格缩进；
