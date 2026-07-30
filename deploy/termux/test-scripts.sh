@@ -266,3 +266,82 @@ case "$(uname -s)" in
             grep -q .
         ;;
 esac
+
+boot_test_root="$test_root/boot"
+mkdir -p \
+    "$boot_test_root/bin" \
+    "$boot_test_root/home" \
+    "$boot_test_root/prefix/etc/profile.d" \
+    "$boot_test_root/prefix/var/lib/postgresql"
+for service_name in \
+    auto-accounting-nginx \
+    auto-accounting-backend \
+    auto-accounting-release-watcher; do
+    mkdir -p "$boot_test_root/prefix/var/service/$service_name"
+done
+cat > "$boot_test_root/bin/termux-wake-lock" <<'EOF'
+#!/usr/bin/env bash
+printf 'wake-lock\n' >> "$BOOT_TEST_EVENTS"
+EOF
+cat > "$boot_test_root/bin/pg_isready" <<'EOF'
+#!/usr/bin/env bash
+[[ -f "$BOOT_TEST_DB_READY" ]]
+EOF
+cat > "$boot_test_root/bin/pg_ctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "status" ]]; then
+    exit 1
+fi
+printf 'pg_ctl start\n' >> "$BOOT_TEST_EVENTS"
+touch "$BOOT_TEST_DB_READY"
+EOF
+cat > "$boot_test_root/bin/sv" <<'EOF'
+#!/usr/bin/env bash
+printf 'sv %s %s\n' "$1" "$2" >> "$BOOT_TEST_EVENTS"
+EOF
+cat > "$boot_test_root/prefix/etc/profile.d/start-services.sh" <<'EOF'
+printf 'start-services\n' >> "$BOOT_TEST_EVENTS"
+EOF
+chmod +x "$boot_test_root/bin/"*
+touch "$boot_test_root/database-ready"
+(
+    export HOME="$boot_test_root/home"
+    export PREFIX="$boot_test_root/prefix"
+    export BOOT_TEST_EVENTS="$boot_test_root/events"
+    export BOOT_TEST_DB_READY="$boot_test_root/database-ready"
+    export PATH="$boot_test_root/bin:$original_path"
+    sh "$SCRIPT_DIR/start-auto-accounting-boot.sh"
+)
+grep -Fxq 'wake-lock' "$boot_test_root/events"
+grep -Fxq 'start-services' "$boot_test_root/events"
+for service_name in \
+    auto-accounting-nginx \
+    auto-accounting-backend \
+    auto-accounting-release-watcher; do
+    grep -Fxq \
+        "sv up $boot_test_root/prefix/var/service/$service_name" \
+        "$boot_test_root/events"
+done
+if grep -q 'postgres' "$boot_test_root/events"; then
+    printf 'Boot script changed PostgreSQL runit state.\n' >&2
+    exit 1
+fi
+if grep -q 'pg_ctl' "$boot_test_root/events"; then
+    printf 'Boot script restarted an already-ready PostgreSQL server.\n' >&2
+    exit 1
+fi
+
+rm -f "$boot_test_root/database-ready"
+(
+    export HOME="$boot_test_root/home"
+    export PREFIX="$boot_test_root/prefix"
+    export BOOT_TEST_EVENTS="$boot_test_root/events-database-start"
+    export BOOT_TEST_DB_READY="$boot_test_root/database-ready"
+    export PATH="$boot_test_root/bin:$original_path"
+    sh "$SCRIPT_DIR/start-auto-accounting-boot.sh"
+)
+grep -Fxq 'pg_ctl start' "$boot_test_root/events-database-start"
+if grep -q 'sv .*postgres' "$boot_test_root/events-database-start"; then
+    printf 'Boot script enabled PostgreSQL through runit.\n' >&2
+    exit 1
+fi
