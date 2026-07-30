@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.bundling.Compression
+import org.gradle.api.tasks.bundling.Tar
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
@@ -12,6 +14,18 @@ kotlin {
 
 application {
     mainClass.set("com.autoaccounting.backend.ApplicationKt")
+}
+
+version = providers.environmentVariable("AUTO_ACCOUNTING_VERSION_NAME")
+    .orElse("0.1.0")
+    .get()
+
+tasks.named<Tar>("distTar") {
+    compression = Compression.GZIP
+    archiveExtension.set("tar.gz")
+    archiveBaseName.set("auto-accounting-backend")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
 }
 
 jacoco {
@@ -32,6 +46,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.forwarded.header)
     implementation(libs.logback.classic)
     implementation(libs.postgresql)
 

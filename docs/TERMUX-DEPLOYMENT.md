@@ -1,0 +1,64 @@
+# Termux 局域网内测部署
+
+本部署只面向 `192.168.1.0/24` 局域网，入口为
+`http://192.168.1.13:8080`。账号凭据、验证码和 Session Token 通过
+HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS 验收或公开服务。
+
+## 发布链
+
+1. Pull Request 和 `master` push 运行完整 CI。
+2. 维护者创建 `vMAJOR.MINOR.PATCH` 标签后，Release 工作流再次运行 CI。
+3. 工作流生成后端 Java 17 分发包、签名 APK、manifest 和 SHA-256 文件，
+   并发布为 GitHub prerelease。
+4. Termux watcher 每 300 秒读取最新发布，校验、备份、原子切换并执行健康检查。
+
+发布任务使用 GitHub Environment `internal-termux`：
+
+- Secrets：`ANDROID_RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、
+  `RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。
+- Variables：`INTERNAL_BACKEND_URL=http://192.168.1.13:8080`、
+  `INTERNAL_ALLOW_HTTP_LEDGER_SYNC=true`；微信 AppID 可按需添加。
+
+Termux 使用一个仅授予本私有仓库 `Contents: read` 的 fine-grained PAT。
+令牌通过 `configure-github-token.sh` 的交互提示写入本机 `0600` 配置，
+不得写入仓库、命令参数或日志。
+
+## 首次部署
+
+将 `deploy/termux/` 复制到服务器后，先运行：
+
+```sh
+./bootstrap.sh --inspect
+```
+
+确认 PostgreSQL、端口、路径和启动方式后，才运行：
+
+```sh
+./bootstrap.sh --provision
+~/.local/lib/auto-accounting-deploy/configure-github-token.sh
+```
+
+若检测到 `auto_accounting` 角色或数据库已经存在，provision 必须停止。
+不得通过删除、覆盖或改名绕过检查；应先单独盘点现有数据。
+
+配置 Termux:Boot 时还需安装并打开该应用一次，并在 Android 系统中允许
+Termux 后台运行。boot 脚本只启动 services、PostgreSQL 和 Nginx，不执行发布。
+
+## 运维与回滚
+
+查看状态：
+
+```sh
+~/.local/lib/auto-accounting-deploy/status.sh
+```
+
+仅回滚后端程序：
+
+```sh
+~/.local/lib/auto-accounting-deploy/rollback.sh v0.1.0
+```
+
+每次部署和程序回滚前都会创建 PostgreSQL custom-format 备份。自动回滚只切换
+程序符号链接，不恢复数据库；任何数据库恢复都必须先停止服务并另行确认。
+手动回滚会停止 Release watcher，完成验收后需显式运行
+`sv up auto-accounting-release-watcher` 才会恢复自动更新。

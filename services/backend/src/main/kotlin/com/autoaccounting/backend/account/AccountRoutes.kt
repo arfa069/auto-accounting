@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -25,7 +26,7 @@ fun Route.accountRoutes(accountService: AccountService) {
             accountService.issueVerificationCode(
                 identifier = identifier,
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost,
+                ipAddress = call.request.origin.remoteHost,
                 purpose = parameters["purpose"].orEmpty(),
                 contextKey = parameters["contextKey"],
                 bearerToken = call.accountBearerToken()
@@ -42,7 +43,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 code = parameters["code"].orEmpty(),
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -55,7 +56,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 identifier = identifier,
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -70,7 +71,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 code = parameters["code"].orEmpty(),
                 newPassword = password,
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -127,7 +128,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 code = parameters["code"].orEmpty(),
                 bearerToken = call.accountBearerToken(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -138,7 +139,7 @@ fun Route.accountRoutes(accountService: AccountService) {
             accountService.registerWithWechat(
                 wechatTicket = parameters["wechatTicket"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -152,7 +153,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 identifier = identifier,
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -166,7 +167,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 identifier = identifier,
                 code = parameters["code"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -178,7 +179,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 bearerToken = call.accountBearerToken().orEmpty(),
                 password = parameters["password"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -191,7 +192,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 identifier = parameters["identifier"].orEmpty(),
                 code = parameters["code"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -204,7 +205,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 bearerToken = call.accountBearerToken().orEmpty(),
                 identifier = identifier,
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost,
+                ipAddress = call.request.origin.remoteHost,
                 replaceExisting = parameters["replaceExisting"].toBoolean()
             )
         )
@@ -220,7 +221,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 code = parameters["code"].orEmpty(),
                 password = parameters["password"],
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }
@@ -245,7 +246,7 @@ fun Route.accountRoutes(accountService: AccountService) {
                 mergeTicket = parameters["mergeTicket"].orEmpty(),
                 confirmText = parameters["confirmText"].orEmpty(),
                 deviceId = parameters["deviceId"].orEmpty(),
-                ipAddress = call.request.local.remoteHost
+                ipAddress = call.request.origin.remoteHost
             )
         )
     }

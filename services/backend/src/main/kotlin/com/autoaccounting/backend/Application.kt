@@ -12,9 +12,11 @@ import com.autoaccounting.backend.sync.ledgerSyncRoutes
 import io.ktor.http.ContentType
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
+import io.ktor.server.application.install
 import io.ktor.server.application.log
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.forwardedheaders.XForwardedHeaders
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -24,10 +26,11 @@ import kotlinx.coroutines.launch
 
 fun main() {
     val backendEnvironment = BackendEnvironment.load()
+    val serverConfig = BackendServerConfig.fromEnvironment(backendEnvironment)
     embeddedServer(
         factory = Netty,
-        port = 8080,
-        host = "0.0.0.0",
+        port = serverConfig.port,
+        host = serverConfig.host,
         module = { module(env = backendEnvironment) }
     ).start(wait = true)
 }
@@ -40,6 +43,10 @@ fun Application.module(
     ledgerSyncService: LedgerSyncService? = null
 ) {
     val resolvedEnv = env ?: System.getenv()
+    val serverConfig = BackendServerConfig.fromEnvironment(resolvedEnv)
+    if (serverConfig.trustProxyHeaders) {
+        install(XForwardedHeaders)
+    }
     val resolvedAccountService = accountService ?: AccountService.fromEnvironment(resolvedEnv)
     val shouldUseEnvironmentDefaults = env != null || accountService == null
     val resolvedAiCategorizationService = aiCategorizationService ?: if (shouldUseEnvironmentDefaults) {

@@ -66,6 +66,7 @@ androidx-tracing-perfetto-binary = { module = "androidx.tracing:tracing-perfetto
 junit = { module = "junit:junit", version.ref = "junit" }
 ktor-server-core = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }
+ktor-server-forwarded-header = { module = "io.ktor:ktor-server-forwarded-header-jvm", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

@@ -17,23 +17,34 @@ val localPropertiesText = providers.fileContents(
 val localBuildProperties = Properties().apply {
     localPropertiesText?.reader()?.use(::load)
 }
-val configuredBackendUrl = localBuildProperties.getProperty("AUTO_ACCOUNTING_BACKEND_URL")
-    ?: System.getenv("AUTO_ACCOUNTING_BACKEND_URL")
+val configuredBackendUrl = System.getenv("AUTO_ACCOUNTING_BACKEND_URL")
+    ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_BACKEND_URL")
 val debugBackendUrl = configuredBackendUrl?.takeIf { it.isNotBlank() }
     ?: "http://10.0.2.2:8080"
 val releaseBackendUrl = configuredBackendUrl
     ?.trim()
     .orEmpty()
 val allowHttpLedgerSync = (
-    localBuildProperties.getProperty("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
-        ?: System.getenv("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
+    System.getenv("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
+        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
     )?.equals("true", ignoreCase = true) == true
-val wechatAppId = (localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID")
-    ?: System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID"))
+val wechatAppId = (System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID")
+    ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID"))
     ?.trim()
     .orEmpty()
 val composeCompilerReportsEnabled =
     providers.gradleProperty("composeCompilerReports").orNull == "true"
+val appVersionName = (
+    System.getenv("AUTO_ACCOUNTING_VERSION_NAME")
+        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_VERSION_NAME")
+)?.trim()?.takeIf(String::isNotEmpty) ?: "0.1.0"
+val appVersionCode = (
+    System.getenv("AUTO_ACCOUNTING_VERSION_CODE")
+        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_VERSION_CODE")
+)?.trim()?.let { rawVersionCode ->
+    rawVersionCode.toIntOrNull()?.takeIf { it > 0 }
+        ?: error("AUTO_ACCOUNTING_VERSION_CODE must be a positive integer.")
+} ?: 1
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -50,8 +61,8 @@ android {
         applicationId = "com.autoaccounting"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
             "String",

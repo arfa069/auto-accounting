@@ -1,0 +1,5 @@
+#!/data/data/com.termux/files/usr/bin/sh
+
+log_root="$PREFIX/var/log/sv/auto-accounting-release-watcher"
+mkdir -p "$log_root"
+exec svlogd -tt "$log_root"

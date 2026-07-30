@@ -13,6 +13,7 @@
 - [阶段 2 Issue 跟踪文件](./issues/phase-2/)
 - [当前未完成事项](../todos.md)
 - [内测发布与 QA 验证](./INTERNAL-BETA-RELEASE.md)
+- [Termux 局域网内测部署](./TERMUX-DEPLOYMENT.md)
 - [诊断日志操作手册](./DIAGNOSTIC-LOGS.md)
 - [Android 性能审计与 Trace 分析](./performance-audit/)
 - [领域语言与术语表](../CONTEXT.md)
