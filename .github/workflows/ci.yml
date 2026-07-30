@@ -119,7 +119,10 @@ jobs:
         uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
 
       - name: Install Android SDK 36
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" >/dev/null
+        run: |
+          sdkmanager_path="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager_path"
+          "$sdkmanager_path" "platforms;android-36" "build-tools;36.0.0" >/dev/null
 
       - name: Test and build Android
         run: >-

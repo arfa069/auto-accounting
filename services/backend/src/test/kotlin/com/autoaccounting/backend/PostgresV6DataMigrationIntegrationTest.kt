@@ -124,7 +124,7 @@ class PostgresV6DataMigrationIntegrationTest {
         accountId: Long
     ): Long = jdbcConnection(schemaUrl, config.username, config.password).use { connection ->
         assertEquals(
-            "1,2,3,4,5,6,7,8",
+            allBackendMigrations.joinToString(",") { it.version.toString() },
             queryString(
                 connection,
                 "SELECT string_agg(version::text, ',' ORDER BY version) FROM schema_migrations"
