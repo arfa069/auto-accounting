@@ -82,3 +82,11 @@ Nginx，不执行发布。
 程序符号链接，不恢复数据库；任何数据库恢复都必须先停止服务并另行确认。
 手动回滚会停止 Release watcher，完成验收后需显式运行
 `sv up auto-accounting-release-watcher` 才会恢复自动更新。
+
+## 故障排查
+
+`sv restart` / `sv up` 报 `fail: <service>: runsv not running`：
+
+- 根因通常是 runsvdir（service-daemon）未运行，backend 的 runsv 退出后无人拉起；后端 java 进程可能仍作为孤儿进程占用 `18080`。
+- 恢复：先 `export SVDIR=$PREFIX/var/service`，再执行 `service-daemon start`，等待 runsvdir 补齐各服务目录的 runsv；若 `18080` 被孤儿进程占用，先终止该进程再重启服务。
+- 部署脚本 `deploy-release.sh` 已在切换与回滚两处调用 `ensure_service_runsv`（`lib.sh`），runsv 缺失时自动恢复，最多等待 15 秒；同步前旧脚本会以 `.bak-<时间戳>` 保留。

@@ -12,7 +12,7 @@
 
 ## 实现约束
 
-- 保持 `MainActivity` 只负责应用组装和顶层导航；业务逻辑放入对应 feature 或 repository。
+- 保持 `MainActivity` 只保留系统生命周期、外部 Intent 转换与 `setContent` 装配；依赖创建与根组合由 `AutoAccountingApp` 承载，业务逻辑放入对应 feature 或 repository。
 - UI 状态与持久化状态必须明确区分。涉及账目、待确认队列、设置或账号状态时，验证进程重启后的恢复行为。
 - 修改 Room 表或字段等 schema 时，递增 `SCHEMA_VERSION`，补充连续 Migration，在 `AutoAccountingDatabaseProvider` 注册，并提交新的 `schemas/.../<version>.json`。DAO 或 Converter 行为变化应补充对应持久化测试。禁止使用破坏性迁移掩盖缺失 Migration。
 - 修改通知监听或无障碍账单同步时，保持 Service `exported=false`，不扩大权限或采集范围，并覆盖授权、拒绝、空输入与重复事件。
