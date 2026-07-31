@@ -48,6 +48,27 @@ is_newer_release() {
         [[ "$(printf '%s\n%s\n' "$candidate" "$current" | sort -V | tail -n 1)" == "$candidate" ]]
 }
 
+# Runsv is normally kept alive by runsvdir (service-daemon). If it is missing,
+# `sv restart` would fail and the backend process could be left without a
+# supervisor. Restore the runit supervision tree before touching the service.
+ensure_service_runsv() {
+    local service_name="$1"
+    if sv status "$service_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    command -v service-daemon >/dev/null 2>&1 || return 1
+    log "Runit supervisor is missing for $service_name; restoring service-daemon."
+    service-daemon start >/dev/null 2>&1 || true
+    local attempt=0
+    until sv status "$service_name" >/dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        [[ "$attempt" -ge 15 ]] && break
+        sleep 1
+    done
+    sv status "$service_name" >/dev/null 2>&1
+}
+
+
 env_value() {
     local key="$1"
     local file="$2"

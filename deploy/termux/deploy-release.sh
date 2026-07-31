@@ -31,6 +31,7 @@ cleanup() {
         set +e
         if [[ -n "$previous_target" && -d "$previous_target" ]]; then
             atomic_current_link "$previous_target"
+            ensure_service_runsv "$AA_SERVICE_NAME" >/dev/null 2>&1 || true
             sv restart "$AA_SERVICE_NAME" >/dev/null
         else
             sv down "$AA_SERVICE_NAME" >/dev/null
@@ -149,6 +150,8 @@ chmod -R a-w "$release_directory"
 previous_target="$(readlink -f "$AA_CURRENT_LINK" 2>/dev/null || true)"
 atomic_current_link "$release_directory"
 switched=true
+ensure_service_runsv "$AA_SERVICE_NAME" ||
+    die "Runit supervision for $AA_SERVICE_NAME could not be restored."
 sv restart "$AA_SERVICE_NAME"
 application_health_check || die "Application health checks did not pass within 60 seconds."
 

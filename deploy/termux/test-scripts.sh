@@ -289,8 +289,9 @@ case "$(uname -s)" in
         find "$failed_health_root/state/backups" \
             -type f -name '*.dump' -print -quit |
             grep -q .
-        if [[ "$(head -n 1 "$FAKE_SV_EVENTS")" != "restart auto-accounting-backend" ]]; then
-            printf 'Deployment did not restart the backend after switching releases.\n' >&2
+        if [[ "$(sed -n 1p "$FAKE_SV_EVENTS")" != "status auto-accounting-backend" ]] ||
+            [[ "$(sed -n 2p "$FAKE_SV_EVENTS")" != "restart auto-accounting-backend" ]]; then
+            printf 'Deployment did not verify then restart the backend after switching releases.\n' >&2
             exit 1
         fi
         unset FAKE_SV_EVENTS
