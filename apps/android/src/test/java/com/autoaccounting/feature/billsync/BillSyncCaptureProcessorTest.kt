@@ -287,6 +287,32 @@ class BillSyncCaptureProcessorTest {
     }
 
     @Test
+    fun automaticAlipayOcrPersistsMerchantMethodAndAmountWithoutRawEvidence() = runBlocking {
+        val result = processor.processAutomatic(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付成功
+                收款方
+                便利店
+                金额
+                ¥20.00
+                交易方式
+                支付宝余额
+            """.trimIndent(),
+            retainRawEvidence = false
+        )
+
+        assertEquals(1, result.createdEntries.size)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals("便利店", entry.merchantTitle)
+        assertEquals("支付宝余额", entry.fundingAccountLabel)
+        assertEquals(2_000L, entry.amountMinor)
+        assertEquals(CaptureReason.ACCESSIBILITY_AUTO, entry.captureReason)
+        assertEquals(null, entry.evidenceSummary)
+        assertTrue(entry.parsedFieldsText.orEmpty().contains("支付方式=支付宝余额"))
+    }
+
+    @Test
     fun manualWechatOcrKeepsRawTextOffDiskAndFlagsMissingMerchantForReview() = runBlocking {
         val pageText = requireNotNull(
             prepareManualWechatOcrResultText("当前状态\n支付成功\n¥10.40")

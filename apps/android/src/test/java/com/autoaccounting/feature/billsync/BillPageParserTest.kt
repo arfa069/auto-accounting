@@ -117,6 +117,51 @@ class BillPageParserTest {
     }
 
     @Test
+    fun alipayPaymentResultPrefersMerchantOverProductName() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付成功
+                商品
+                套餐名称
+                收款方
+                真实商户
+                金额
+                ¥20.00
+                付款方式
+                支付宝余额
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-31 12:00"
+        ).single()
+
+        assertEquals("真实商户", entry.merchantTitle)
+        assertEquals("支付宝余额", entry.fundingAccountLabel)
+        assertFalse(entry.merchantTitleFromFallback)
+        assertFalse(entry.fundingAccountFromFallback)
+    }
+
+    @Test
+    fun missingMerchantLabelDoesNotConsumePaymentMethodAsMerchant() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                支付成功
+                收款方
+                付款方式
+                支付宝余额
+                金额
+                ¥20.00
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-07-31 12:00"
+        ).single()
+
+        assertEquals("支付宝支付", entry.merchantTitle)
+        assertEquals("支付宝余额", entry.fundingAccountLabel)
+        assertTrue(entry.merchantTitleFromFallback)
+        assertFalse(entry.fundingAccountFromFallback)
+    }
+
+    @Test
     fun parsesAlipayBillDetailHeaderAsMerchant() {
         val entries = BillPageParser().parse(
             source = BillSyncSource.Alipay,

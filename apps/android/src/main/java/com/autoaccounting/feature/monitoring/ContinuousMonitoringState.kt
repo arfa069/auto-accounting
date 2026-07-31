@@ -302,6 +302,8 @@ private val ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS = listOf(
     "收款方",
     "付款方式",
     "支付方式",
+    "交易方式",
+    "付款渠道",
     "交易时间",
     "订单号",
     "交易单号",

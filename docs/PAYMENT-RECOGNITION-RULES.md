@@ -11,7 +11,7 @@
 
 - 交易发生时自动识别：
   - 通知监听读取微信、支付宝通知。
-  - 开启自动记账功能后，无障碍服务观察支付完成页；微信无障碍节点文本不可用时可走受限的本机OCR。
+  - 开启自动记账功能后，无障碍服务观察支付完成页；微信以及支付宝结果页在无障碍节点文本不可用或字段不完整时，可走受限的本机OCR。
   - 支付宝乘车出站页只有在无障碍节点暴露乘车线索但缺少完整场景时，才使用受限的本机 OCR 补足“已出站”场景；该 OCR 不解析金额或创建独立交易。
 
 - 账单补录：
@@ -195,7 +195,7 @@
 
 ### 3.2 交易发生时：自动页面识别
 
-支付宝支付结果与交易记录仍使用无障碍节点文本。唯一的自动截图 OCR 例外是下述“乘车出站延迟扣费”场景；支付宝手动补录仍不使用截图 OCR。
+支付宝自动路径优先使用无障碍节点文本。支付结果页刚从付款流程切换出来、无障碍节点为空或无法同时提取商户与付款方式时，Android 11 及以上可执行一次受限的本机截图 OCR；OCR 只作为该结果页的兜底，不改变交易页面签名。支付宝手动补录仍只读取无障碍节点，不使用截图 OCR。
 
 #### 支付、收款、转账与退款完成页
 
@@ -203,8 +203,10 @@
 
 1. 含明确金额。
 2. 含至少一个完成词：`支付成功`、`付款成功`、`交易成功`、`转账成功`、`收款成功`、`退款成功`、`红包发送成功`、`已支付`或`已付款`。
-3. 含至少一个支付宝结果页上下文：`收款方`、`付款方式`、`支付方式`、`交易时间`、`订单号`、`交易单号`、`支付信息`、`支付凭证`、`交易详情`、`账单详情`、`查看账单`或`返回首页`。
+3. 含至少一个支付宝结果页上下文：`收款方`、`付款方式`、`支付方式`、`交易方式`、`付款渠道`、`交易时间`、`订单号`、`交易单号`、`支付信息`、`支付凭证`、`交易详情`、`账单详情`、`查看账单`或`返回首页`。
 4. 能按通用页面类型规则判断为`支出`、`收入`、`退款`、`转账`或`红包`。
+
+当自动路径需要 OCR 兜底时，OCR 结果还必须同时包含明确的商户/收款方、付款方式/交易方式和一个无歧义金额；缺任一字段、金额冲突或只有“支付宝支付/支付宝余额”等回退值时拒绝入账。截图只在内存中短暂处理，OCR 原文不写入账本或待确认队列，仅沿用受控诊断敏感字段链路，不作为普通运行日志。
 
 类型判断重点：
 
@@ -278,5 +280,6 @@
 - 自动页面入口边界：[ContinuousMonitoringState.kt](../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt)
 - 微信完成页签名：[WechatPaymentSurface.kt](../apps/android/src/main/java/com/autoaccounting/feature/monitoring/WechatPaymentSurface.kt)
 - 页面字段与类型解析：[BillPageParser.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt)
+- 支付宝结果页 OCR 兜底放行：[AlipayOcrCaptureDecision.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/AlipayOcrCaptureDecision.kt)
 - 微信 OCR 与补录放行：[WechatOcrCaptureDecision.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/WechatOcrCaptureDecision.kt)
 - 完整采集、去重、待确认链路：[自动记账流程研究](./research/auto-bookkeeping-flow.md)

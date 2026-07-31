@@ -93,6 +93,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private var healthHeartbeatJob: Job? = null
     private var wechatOcrCaptureJob: Job? = null
     private var alipayTransitOcrCaptureJob: Job? = null
+    private var alipayOcrCaptureJob: Job? = null
     private var wechatOcrGuardResetJob: Job? = null
     private val automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
     private val continuousMonitoringEventGate = AccessibilityEventAdmissionGate()
@@ -100,7 +101,11 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private var lastWechatOcrAttemptAtElapsedMillis = 0L
     private var lastManualWechatOcrAttemptAtElapsedMillis = 0L
     private var lastAlipayTransitOcrAttemptAtElapsedMillis = 0L
+    private var lastAlipayOcrAttemptAtElapsedMillis = 0L
+    private var alipayPaymentFlowObservedAtElapsedMillis = 0L
     private var alipayTransitSurfaceInspected = false
+    private var alipayOcrSurfaceInspected = false
+    private var alipayOcrSurfaceFingerprint: Int? = null
     @Volatile
     private var activeWechatWindowIdentity: WechatWindowIdentity? = null
 
@@ -173,43 +178,30 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
         val activeRoot = rootInActiveWindow ?: event.source
         val pageText = activeRoot?.collectVisibleText().orEmpty()
+        observeAlipayPaymentFlow(packageName, pageText, shouldConsiderContinuousMonitoring)
         val windowIdentity = activeWechatWindowIdentity
             ?.takeIf { identity -> identity.windowId == activeRoot?.windowId }
         val windowEvidence = activeRoot
             ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
             ?.let { root -> currentWechatWindowEvidence(root.windowId, windowIdentity) }
-        if (handleAlipayTransitSurface(packageName, pageText, shouldConsiderContinuousMonitoring, activeRoot)) return
-        val isManualWechatPackage = manualBillSyncAcceptsPackage &&
-            packageName == BillSyncSource.WeChat.packageName
-        val isManualWechatOcrSession = isManualWechatPackage &&
-            BillSyncSessions.controller.acceptsManualOcr(packageName)
-        val shouldEvaluateManualOcr = isManualWechatOcrSession &&
-            windowEvidence != null &&
-            shouldAttemptManualWechatOcrFallback(
+        if (
+            handleAlipaySurface(
                 packageName = packageName,
                 pageText = pageText,
-                sdkInt = Build.VERSION.SDK_INT,
-                windowEvidence = windowEvidence
+                shouldConsiderContinuousMonitoring = shouldConsiderContinuousMonitoring,
+                activeRoot = activeRoot,
+                isWindowStateChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             )
-        if (shouldEvaluateManualOcr) {
-            captureManualWechatOcrFallback(packageName)
-            return
-        }
-        if (isManualWechatPackage) return
-        val shouldEvaluateOcr = shouldConsiderContinuousMonitoring &&
-            windowEvidence != null &&
-            isWechatOcrFallbackCandidate(
+        ) return
+        if (
+            handleWechatCaptureRoute(
                 packageName = packageName,
                 pageText = pageText,
-                sdkInt = Build.VERSION.SDK_INT,
+                manualBillSyncAcceptsPackage = manualBillSyncAcceptsPackage,
+                shouldConsiderContinuousMonitoring = shouldConsiderContinuousMonitoring,
                 windowEvidence = windowEvidence
             )
-        if (shouldEvaluateOcr) {
-            wechatOcrGuardResetJob?.cancel()
-            wechatOcrGuardResetJob = null
-            captureWechatOcrFallback(packageName)
-            return
-        }
+        ) return
         if (pageText.isBlank()) {
             recordMetadata(
                 event = "accessibility_event_rejected",
@@ -233,6 +225,45 @@ class BillSyncAccessibilityService : AccessibilityService() {
             pageText = pageText,
             permissionHealth = requireNotNull(monitoringPermissionHealth)
         )
+    }
+
+    private fun handleWechatCaptureRoute(
+        packageName: String,
+        pageText: String,
+        manualBillSyncAcceptsPackage: Boolean,
+        shouldConsiderContinuousMonitoring: Boolean,
+        windowEvidence: WechatWindowEvidence?
+    ): Boolean {
+        val isManualWechatPackage = manualBillSyncAcceptsPackage &&
+            packageName == BillSyncSource.WeChat.packageName
+        val isManualWechatOcrSession = isManualWechatPackage &&
+            BillSyncSessions.controller.acceptsManualOcr(packageName)
+        val shouldEvaluateManualOcr = isManualWechatOcrSession &&
+            windowEvidence != null &&
+            shouldAttemptManualWechatOcrFallback(
+                packageName = packageName,
+                pageText = pageText,
+                sdkInt = Build.VERSION.SDK_INT,
+                windowEvidence = windowEvidence
+            )
+        if (shouldEvaluateManualOcr) {
+            captureManualWechatOcrFallback(packageName)
+            return true
+        }
+        if (isManualWechatPackage) return true
+        val shouldEvaluateOcr = shouldConsiderContinuousMonitoring &&
+            windowEvidence != null &&
+            isWechatOcrFallbackCandidate(
+                packageName = packageName,
+                pageText = pageText,
+                sdkInt = Build.VERSION.SDK_INT,
+                windowEvidence = windowEvidence
+            )
+        if (!shouldEvaluateOcr) return false
+        wechatOcrGuardResetJob?.cancel()
+        wechatOcrGuardResetJob = null
+        captureWechatOcrFallback(packageName)
+        return true
     }
 
     private fun captureRoute(packageName: String): AccessibilityCaptureRoute =
@@ -572,6 +603,298 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }
         alipayTransitSurfaceInspected = false
         return false
+    }
+
+    private fun rememberAlipayPaymentFlow(pageText: String) {
+        if (isAlipayPaymentInitiationPage(pageText)) {
+            alipayPaymentFlowObservedAtElapsedMillis = SystemClock.elapsedRealtime()
+        }
+    }
+
+    private fun observeAlipayPaymentFlow(
+        packageName: String,
+        pageText: String,
+        shouldConsiderContinuousMonitoring: Boolean
+    ) {
+        if (!shouldConsiderContinuousMonitoring) return
+        if (packageName == BillSyncSource.Alipay.packageName) {
+            rememberAlipayPaymentFlow(pageText)
+        } else {
+            resetAlipayOcrState()
+        }
+    }
+
+    private fun handleAlipaySurface(
+        packageName: String,
+        pageText: String,
+        shouldConsiderContinuousMonitoring: Boolean,
+        activeRoot: AccessibilityNodeInfo?,
+        isWindowStateChanged: Boolean
+    ): Boolean {
+        if (handleAlipayTransitSurface(packageName, pageText, shouldConsiderContinuousMonitoring, activeRoot)) {
+            return true
+        }
+        return handleAlipayOcrSurface(
+            packageName = packageName,
+            pageText = pageText,
+            shouldConsiderContinuousMonitoring = shouldConsiderContinuousMonitoring,
+            activeRoot = activeRoot,
+            isWindowStateChanged = isWindowStateChanged
+        )
+    }
+
+    private fun handleAlipayOcrSurface(
+        packageName: String,
+        pageText: String,
+        shouldConsiderContinuousMonitoring: Boolean,
+        activeRoot: AccessibilityNodeInfo?,
+        isWindowStateChanged: Boolean
+    ): Boolean {
+        if (packageName != BillSyncSource.Alipay.packageName) {
+            resetAlipayOcrState()
+            return false
+        }
+        if (
+            !shouldConsiderContinuousMonitoring ||
+            activeRoot == null ||
+            activeRoot.packageName?.toString() != packageName
+        ) {
+            resetAlipayOcrState()
+            return false
+        }
+
+        val windowId = activeRoot.windowId
+        val isApplicationWindow = isApplicationWindow(windowId)
+        val hasRecentPaymentFlow = hasRecentAlipayPaymentFlow()
+        val shouldAttempt = shouldAttemptAlipayOcrFallback(
+            AlipayOcrFallbackRequest(
+                packageName = packageName,
+                pageText = pageText,
+                sdkInt = Build.VERSION.SDK_INT,
+                isApplicationWindow = isApplicationWindow,
+                isWindowStateChanged = isWindowStateChanged,
+                hasRecentPaymentFlow = hasRecentPaymentFlow,
+                accessibilityNeedsOcr = alipayAccessibilityNeedsOcr(pageText)
+            )
+        )
+        if (!shouldAttempt) {
+            if (!hasRecentPaymentFlow && pageText.isNotBlank()) {
+                alipayOcrSurfaceInspected = false
+                alipayOcrSurfaceFingerprint = null
+            }
+            return false
+        }
+
+        val surfaceFingerprint = 31 * windowId + pageText.hashCode()
+        if (surfaceFingerprint != alipayOcrSurfaceFingerprint) {
+            alipayOcrSurfaceInspected = false
+            alipayOcrSurfaceFingerprint = surfaceFingerprint
+        }
+        if (alipayOcrSurfaceInspected || alipayOcrCaptureJob?.isActive == true) return true
+
+        alipayOcrSurfaceInspected = true
+        captureAlipayOcrFallback(packageName)
+        return true
+    }
+
+    private fun alipayAccessibilityNeedsOcr(pageText: String): Boolean {
+        val parsedEntry = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = pageText,
+            fallbackTransactionTimeText = ALIPAY_OCR_FALLBACK_TRANSACTION_TIME
+        ).singleOrNull() ?: return true
+        return parsedEntry.merchantTitleFromFallback ||
+            parsedEntry.fundingAccountFromFallback
+    }
+
+    private fun hasRecentAlipayPaymentFlow(): Boolean {
+        val ageMillis = SystemClock.elapsedRealtime() - alipayPaymentFlowObservedAtElapsedMillis
+        return alipayPaymentFlowObservedAtElapsedMillis > 0L &&
+            ageMillis in 0..ALIPAY_PAYMENT_FLOW_WINDOW_MILLIS
+    }
+
+    private fun resetAlipayOcrState() {
+        alipayPaymentFlowObservedAtElapsedMillis = 0L
+        alipayOcrSurfaceInspected = false
+        alipayOcrSurfaceFingerprint = null
+        alipayOcrCaptureJob?.cancel()
+        alipayOcrCaptureJob = null
+    }
+
+    private fun captureAlipayOcrFallback(packageName: String) {
+        if (!isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)) {
+            recordAlipayOcrRejection("screen_off_or_locked")
+            return
+        }
+        if (alipayOcrCaptureJob?.isActive == true) return
+        val nowElapsedMillis = SystemClock.elapsedRealtime()
+        if (nowElapsedMillis - lastAlipayOcrAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS) {
+            recordAlipayOcrRejection("cooldown")
+            return
+        }
+        lastAlipayOcrAttemptAtElapsedMillis = nowElapsedMillis
+        val traceId = newDiagnosticTraceId()
+        recordMetadata(
+            event = "alipay_ocr_started",
+            outcome = "started",
+            reason = "payment_result_accessibility_incomplete",
+            traceId = traceId,
+            source = DiagnosticSource.Alipay,
+            component = DiagnosticComponent.Ocr
+        )
+
+        alipayOcrCaptureJob = serviceScope.launch {
+            try {
+                delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+                val initialRoot = currentAlipayOcrRoot(packageName)
+                if (initialRoot == null) {
+                    recordAlipayOcrRejection("settled_context_invalid", traceId)
+                    return@launch
+                }
+                val windowId = initialRoot.windowId
+                val screenshot = captureScreenBitmap(windowId)
+                if (screenshot == null) {
+                    recordAlipayOcrRejection("screenshot_unavailable", traceId)
+                    return@launch
+                }
+                try {
+                    val currentRoot = currentAlipayOcrRoot(packageName)
+                    if (currentRoot == null || currentRoot.windowId != windowId) {
+                        recordAlipayOcrRejection("window_changed_before_ocr", traceId)
+                        return@launch
+                    }
+                    val ocrText = ocrRecognizer.recognize(screenshot)
+                    captureAlipayOcrPaymentResult(
+                        packageName = packageName,
+                        pageText = ocrText,
+                        traceId = traceId
+                    )
+                } finally {
+                    screenshot.recycle()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                recordFailure(
+                    "alipay_ocr_failed",
+                    traceId,
+                    BillSyncSource.Alipay,
+                    null,
+                    error
+                )
+            } finally {
+                alipayOcrCaptureJob = null
+            }
+        }
+    }
+
+    private fun currentAlipayOcrRoot(packageName: String): AccessibilityNodeInfo? {
+        if (
+            !continuousMonitoringState.enabled ||
+            !currentContinuousMonitoringPermissionHealth().isHealthy ||
+            !isScreenReadyForWechatOcr(
+                powerManager.isInteractive,
+                keyguardManager.isKeyguardLocked
+            )
+        ) {
+            return null
+        }
+        val root = rootInActiveWindow ?: return null
+        if (
+            root.packageName?.toString() != packageName ||
+            !isApplicationWindow(root.windowId)
+        ) {
+            return null
+        }
+        val pageText = root.collectVisibleText()
+        return root.takeIf {
+            shouldAttemptAlipayOcrFallback(
+                AlipayOcrFallbackRequest(
+                    packageName = packageName,
+                    pageText = pageText,
+                    sdkInt = Build.VERSION.SDK_INT,
+                    isApplicationWindow = true,
+                    isWindowStateChanged = true,
+                    hasRecentPaymentFlow = hasRecentAlipayPaymentFlow(),
+                    accessibilityNeedsOcr = alipayAccessibilityNeedsOcr(pageText)
+                )
+            )
+        }
+    }
+
+    private suspend fun captureAlipayOcrPaymentResult(
+        packageName: String,
+        pageText: String,
+        traceId: String
+    ): Boolean {
+        val ocrDecision = decideAlipayOcrCapture(pageText)
+        if (!ocrDecision.shouldCapture) {
+            recordAlipayOcrRejection(
+                ocrDecision.rejectionReason?.name ?: "unknown_rejection",
+                traceId
+            )
+            return false
+        }
+        val permissionHealth = currentContinuousMonitoringPermissionHealth()
+        if (!continuousMonitoringState.enabled || !permissionHealth.isHealthy) {
+            recordAlipayOcrRejection("monitoring_blocked", traceId)
+            return false
+        }
+        val decision = decideContinuousMonitoringCapture(
+            state = continuousMonitoringState,
+            event = ContinuousMonitoringEvent(
+                packageName = packageName,
+                screenText = pageText
+            ),
+            permissionHealth = permissionHealth
+        )
+        if (!decision.shouldCapture) {
+            recordAlipayOcrRejection(decision.observation.name, traceId)
+            return false
+        }
+        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) {
+            recordAlipayOcrRejection("debounced", traceId)
+            return false
+        }
+
+        val source = BillSyncSource.Alipay
+        val outcome = runCatching {
+            processor.processAutomatic(
+                source = source,
+                pageText = pageText,
+                retainRawEvidence = false,
+                traceId = traceId
+            )
+        }.onSuccess { result ->
+            result.toBookkeepingResultNotification(source.label)?.let { notification ->
+                recordMetadata(
+                    "result_notification_requested",
+                    "requested",
+                    notification.javaClass.simpleName.ifBlank { "bookkeeping_result" },
+                    traceId = traceId,
+                    source = source.diagnosticSource()
+                )
+                resultNotifier.notify(notification)
+            }
+        }.onFailure { error ->
+            recordFailure("alipay_ocr_processor_failed", traceId, source, null, error)
+        }
+        val processed = outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
+        if (processed) {
+            alipayPaymentFlowObservedAtElapsedMillis = 0L
+        }
+        return processed
+    }
+
+    private fun recordAlipayOcrRejection(reason: String, traceId: String? = null) {
+        recordMetadata(
+            event = "alipay_ocr_rejected",
+            outcome = "rejected",
+            reason = reason,
+            traceId = traceId ?: newDiagnosticTraceId(),
+            source = DiagnosticSource.Alipay,
+            component = DiagnosticComponent.Ocr
+        )
     }
 
     private fun captureAlipayTransitOcrFallback(packageName: String) {
@@ -1253,6 +1576,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private companion object {
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
+        const val ALIPAY_PAYMENT_FLOW_WINDOW_MILLIS = 2 * 60_000L
         const val MANUAL_OCR_ATTEMPT_COOLDOWN_MILLIS = 1_000L
         const val OCR_SESSION_RESET_SETTLE_MILLIS = 3_000L
     }
