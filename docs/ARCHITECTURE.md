@@ -63,9 +63,12 @@ flowchart LR
   - `LocalLedgerRepository`: 实现上述所有领域接口，作为 UI 和 ViewModel 调用的单一门面 (Facade)。
 - **UI 状态与服务协调器**：
   - `MonitoringStateCoordinator`: 封装 Android Activity 生命周期回调、服务心跳定时器 (`Handler`) 及设置 Intent 启动器。
-  - `AutoAccountingAppState`: 管理 Compose 导航 Tab 列表、列表滚动状态及 SnackbarHostState 的状态持有者 (State Holder)。
+  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、Intent 和应用组装。
+  - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
+  - `BillSyncAccessibilityService` 通过独立事件路由和微信 OCR 策略决定手动补录、连续监控或拒绝，系统 Service 继续作为权限和生命周期边界。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
+  - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。
 
 ## 3. 本地数据模型
 
@@ -175,6 +178,11 @@ Ktor 服务构成：
 - **账本同步服务 (Ledger Sync Service)**：提供初始化、分页快照、幂等推送、游标增量拉取和冲突解决，并按 `accountId` 隔离。
 - **账号注销服务 (Account Deletion Service)**：注销申请、冷静期状态管理、取消注销及最终清理任务。
 - **合规服务 (Compliance Service)**：提供隐私政策、收集清单、第三方清单及权限说明。
+
+账号持久化边界：
+- `AccountStore` 保持统一兼容门面，并组合账号生命周期、标识/Profile、验证码、Session/设备、微信身份和跨账号事务能力。
+- `InMemoryAccountStore` 作为与 JDBC 语义一致的测试实现；`JdbcAccountStore` 是稳定构造门面，SQL 与跨表事务由内部委托实现承载。
+- 账号结果模型与密码、Token、验证码散列工具脱离 `AccountService`，Routes 和现有调用方仍只依赖原有服务入口。
 
 PostgreSQL 数据表：
 - `accounts`：内部自增 `account_id` 与对外稳定 `public_id` UUID。

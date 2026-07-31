@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:AccountContracts.kt$AccountApiJsonContracts$fun encodeWechatExchangeResponse(response: WechatExchangeResponseContract): String</ID>
+    <ID>CyclomaticComplexMethod:AccountIdentifierParser.kt$AccountIdentifierParser$private fun isValidEmail(email: String): Boolean</ID>
+    <ID>ReturnCount:AccountIdentifierParser.kt$AccountIdentifierParser$private fun isValidEmail(email: String): Boolean</ID>
+    <ID>TooManyFunctions:AccountContracts.kt$AccountApiJsonContracts</ID>
+    <ID>TooManyFunctions:CloudAiContracts.kt$ApiJsonContracts</ID>
+    <ID>TooManyFunctions:LedgerSyncContracts.kt$LedgerSyncJsonContracts</ID>
+    <ID>TooManyFunctions:LedgerSyncContracts.kt$com.autoaccounting.api.LedgerSyncContracts.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

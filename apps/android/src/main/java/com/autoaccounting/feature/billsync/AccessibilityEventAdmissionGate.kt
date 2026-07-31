@@ -9,6 +9,23 @@ internal fun isContinuousMonitoringEventRelevant(eventType: Int): Boolean =
         eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
         eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
 
+internal enum class AccessibilityCaptureRoute {
+    ManualBillSync,
+    ContinuousMonitoring,
+    Reject
+}
+
+internal fun resolveAccessibilityCaptureRoute(
+    manualBillSyncAcceptsPackage: Boolean,
+    continuousMonitoringEnabled: Boolean,
+    continuousMonitoringPackageAllowed: Boolean
+): AccessibilityCaptureRoute = when {
+    manualBillSyncAcceptsPackage -> AccessibilityCaptureRoute.ManualBillSync
+    continuousMonitoringEnabled && continuousMonitoringPackageAllowed ->
+        AccessibilityCaptureRoute.ContinuousMonitoring
+    else -> AccessibilityCaptureRoute.Reject
+}
+
 internal class AccessibilityEventAdmissionGate(
     private val duplicateWindowMillis: Long = DUPLICATE_WINDOW_MILLIS,
     private val clock: () -> Long = { android.os.SystemClock.elapsedRealtime() }

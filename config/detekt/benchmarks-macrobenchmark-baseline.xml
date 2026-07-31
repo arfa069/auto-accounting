@@ -1,0 +1,8 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>TooManyFunctions:BenchmarkApp.kt$BenchmarkApp</ID>
+    <ID>TooManyFunctions:CriticalUserJourneysBenchmark.kt$CriticalUserJourneysBenchmark</ID>
+  </CurrentIssues>
+</SmellBaseline>

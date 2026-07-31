@@ -13,6 +13,10 @@ subprojects {
         buildUponDefaultConfig = true
         allRules = false
         config.setFrom(files("${rootProject.projectDir}/config/detekt/detekt.yml"))
+        baseline = file(
+            "${rootProject.projectDir}/config/detekt/" +
+                "${project.path.removePrefix(":").replace(':', '-')}-baseline.xml"
+        )
     }
 }
 

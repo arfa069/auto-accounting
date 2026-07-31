@@ -7,6 +7,42 @@ import org.junit.Test
 
 class AccessibilityEventAdmissionGateTest {
     @Test
+    fun manualSessionTakesPriorityOverContinuousMonitoring() {
+        assertTrue(
+            resolveAccessibilityCaptureRoute(
+                manualBillSyncAcceptsPackage = true,
+                continuousMonitoringEnabled = true,
+                continuousMonitoringPackageAllowed = true
+            ) == AccessibilityCaptureRoute.ManualBillSync
+        )
+    }
+
+    @Test
+    fun continuousMonitoringRequiresBothOptInAndAllowedPackage() {
+        assertTrue(
+            resolveAccessibilityCaptureRoute(
+                manualBillSyncAcceptsPackage = false,
+                continuousMonitoringEnabled = true,
+                continuousMonitoringPackageAllowed = true
+            ) == AccessibilityCaptureRoute.ContinuousMonitoring
+        )
+        assertTrue(
+            resolveAccessibilityCaptureRoute(
+                manualBillSyncAcceptsPackage = false,
+                continuousMonitoringEnabled = false,
+                continuousMonitoringPackageAllowed = true
+            ) == AccessibilityCaptureRoute.Reject
+        )
+        assertTrue(
+            resolveAccessibilityCaptureRoute(
+                manualBillSyncAcceptsPackage = false,
+                continuousMonitoringEnabled = true,
+                continuousMonitoringPackageAllowed = false
+            ) == AccessibilityCaptureRoute.Reject
+        )
+    }
+
+    @Test
     fun onlyWindowAndContentEventsReachContinuousMonitoring() {
         assertTrue(isContinuousMonitoringEventRelevant(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED))
         assertTrue(isContinuousMonitoringEventRelevant(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED))
