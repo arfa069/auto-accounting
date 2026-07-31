@@ -127,6 +127,9 @@ safe_remove_release() {
     [[ "$target" == "$AA_RELEASES_ROOT"/v* ]] || die "Refusing unsafe release removal."
     [[ "$target" != "$(readlink -f "$AA_CURRENT_LINK" 2>/dev/null || true)" ]] ||
         die "Refusing to remove the current release."
+    if [[ -d "$target" && ! -L "$target" ]]; then
+        chmod -R u+w -- "$target"
+    fi
     rm -rf -- "$target"
 }
 

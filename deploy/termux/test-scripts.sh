@@ -47,6 +47,27 @@ case "$(uname -s)" in
     *) [[ "$(readlink -f "$AA_CURRENT_LINK")" == "$AA_RELEASES_ROOT/v0.1.0" ]] ;;
 esac
 
+readonly_stale_release="$AA_RELEASES_ROOT/v0.1.1"
+mkdir -p "$readonly_stale_release/lib"
+printf 'stale release\n' > "$readonly_stale_release/lib/marker"
+chmod -R a-w "$readonly_stale_release"
+safe_remove_release "$readonly_stale_release"
+if [[ -e "$readonly_stale_release" ]]; then
+    printf 'A read-only stale release was not removed.\n' >&2
+    exit 1
+fi
+
+case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *)
+        if (safe_remove_release "$AA_RELEASES_ROOT/v0.1.0" >/dev/null 2>&1); then
+            printf 'The current release was removed.\n' >&2
+            exit 1
+        fi
+        [[ -d "$AA_RELEASES_ROOT/v0.1.0" ]]
+        ;;
+esac
+
 fake_bin="$test_root/bin"
 fake_curl_args="$test_root/curl-args"
 mkdir -p "$fake_bin"
