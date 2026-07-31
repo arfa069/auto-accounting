@@ -2,26 +2,21 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ComplexCondition:InMemoryAccountStore.kt$InMemoryAccountStore$ticket.ticketType !in setOf("IDENTIFIER_LINK", "IDENTIFIER_REPLACE") || ticket.accountId != accountId || ticket.usedAtMillis != null || ticket.expiresAtMillis &lt; now</ID>
     <ID>ComplexCondition:AiCategorizationService.kt$category !in categoryCandidates || confidence !in setOf("低", "中", "高") || safeExplanation.isBlank() || safeExplanation.length &gt; MAX_EXPLANATION_LENGTH</ID>
     <ID>ComplexCondition:EmailProvider.kt$SmtpEmailProvider$security !in setOf(SECURITY_STARTTLS, SECURITY_SSL) || !isSafeHeaderValue(email) || !isSafeHeaderValue(fromAddress) || !CODE_REGEX.matches(code)</ID>
     <ID>ComplexCondition:LedgerSyncService.kt$LedgerSyncService$deviceId.isBlank() || deviceId.length &gt; MAX_SYNC_DEVICE_ID_LENGTH || afterCursor &lt; 0 || limit !in 1..LEDGER_SYNC_MAX_BATCH_SIZE</ID>
     <ID>ComplexCondition:LedgerSyncService.kt$LedgerSyncService$deviceId.isBlank() || deviceId.length &gt; MAX_SYNC_DEVICE_ID_LENGTH || mutations.isEmpty() || mutations.size &gt; LEDGER_SYNC_MAX_BATCH_SIZE || mutations.map { it.mutationId }.distinct().size != mutations.size || mutations.any { !it.isValid() }</ID>
     <ID>ComplexCondition:LedgerSyncService.kt$mutationId.isBlank() || mutationId.length &gt; MAX_SYNC_MUTATION_ID_LENGTH || entityId.isBlank() || entityId.length &gt; MAX_SYNC_ENTITY_ID_LENGTH || baseVersion &lt; 0</ID>
     <ID>ComplexCondition:SmsProvider.kt$keyId.isBlank() || keySecret.isBlank() || signName.isBlank() || templateCode.isBlank()</ID>
-    <ID>CyclomaticComplexMethod:InMemoryAccountStore.kt$InMemoryAccountStore$@Synchronized override fun completeIdentifierLink( ticketHash: String, accountId: Long, identifierType: String, rawValue: String, normalizedValue: String, newPasswordSalt: String?, newPasswordHash: String?, deviceId: String, ipAddress: String, now: Long, tokenGenerator: () -&gt; String, replaceExisting: Boolean ): AccountResult&lt;AccountToken&gt;</ID>
     <ID>CyclomaticComplexMethod:LedgerSyncRoutes.kt$fun Route.ledgerSyncRoutes(service: LedgerSyncService, accountService: AccountService)</ID>
     <ID>CyclomaticComplexMethod:LedgerSyncService.kt$private fun LedgerSyncMutationContract.isValid(): Boolean</ID>
     <ID>CyclomaticComplexMethod:LedgerSyncStore.kt$internal fun normalizeBusinessMutations( mutations: List&lt;LedgerSyncMutationContract&gt;, findCanonical: (LedgerSyncEntityTypeContract, LedgerSyncPayloadContract) -&gt; LedgerSyncRecordContract? ): List&lt;NormalizedLedgerSyncMutation&gt;</ID>
     <ID>CyclomaticComplexMethod:SmsProvider.kt$fun SmsProvider.Companion.fromEnvironment(env: Map&lt;String, String&gt; = System.getenv()): SmsProvider</ID>
     <ID>LargeClass:AccountRoutesTest.kt$AccountRoutesTest</ID>
-    <ID>LargeClass:InMemoryAccountStore.kt$InMemoryAccountStore : AccountStore</ID>
     <ID>LongParameterList:EmailProvider.kt$SmtpEmailProvider$( private val host: String, private val port: Int, private val username: String, private val passwordSupplier: () -&gt; String, private val fromAddress: String, private val security: String = SECURITY_STARTTLS, private val timeoutMillis: Int = 5_000, private val sslSocketFactory: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory )</ID>
     <ID>LongParameterList:JdbcLedgerSyncStore.kt$JdbcLedgerSyncStore$( connection: Connection, accountId: Long, entityType: LedgerSyncEntityTypeContract, entityId: String, version: Long, deleted: Boolean, payload: LedgerSyncPayloadContract?, now: Long )</ID>
     <ID>LongParameterList:SmsProvider.kt$AliyunPnvsSmsProvider$( private val accessKeyId: String, private val accessKeySecret: String, private val signName: String, private val templateCode: String, private val schemeName: String = "", private val endpoint: String = "https://dypnsapi.aliyuncs.com", private val httpClient: HttpClient = HttpClient.newHttpClient() )</ID>
-    <ID>SwallowedException:AccountService.kt$AccountService$e: Exception</ID>
     <ID>SwallowedException:AiCategorizationService.kt$AiCategorizationService$error: AiProviderException</ID>
-    <ID>SwallowedException:JdbcAccountStoreDelegate.kt$JdbcAccountStoreDelegate$error: java.sql.SQLException</ID>
     <ID>ThrowsCount:AiCategorizationService.kt$AiCategorizationService$suspend fun suggest( accountId: Long? = null, request: AiCategorizationRequestContract, enhancedContextAuthorized: Boolean ): AiCategorizationSuggestion</ID>
     <ID>ThrowsCount:AiCategorizationService.kt$private fun AiCategorizationRequestContract.toValidatedPayload( enhancedContextAuthorized: Boolean ): AiCategorizationPayload</ID>
     <ID>TooManyFunctions:LedgerSyncStore.kt$InMemoryLedgerSyncStore : LedgerSyncStore</ID>

@@ -63,9 +63,11 @@ flowchart LR
   - `LocalLedgerRepository`: 实现上述所有领域接口，作为 UI 和 ViewModel 调用的单一门面 (Facade)。
 - **UI 状态与服务协调器**：
   - `MonitoringStateCoordinator`: 封装 Android Activity 生命周期回调、服务心跳定时器 (`Handler`) 及设置 Intent 启动器。
-  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、Intent 和应用组装。
+  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换、监控协调器接入和 `setContent`。
+  - `AutoAccountingAppBindings` 承载系统权限、设置跳转、外部导航及微信回调，`AutoAccountingAppOverrides` 仅承载测试替身；生产依赖、Session 恢复、同步副作用和本地状态持久化继续由应用根组合层统一装配。
   - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
-  - `BillSyncAccessibilityService` 通过独立事件路由和微信 OCR 策略决定手动补录、连续监控或拒绝，系统 Service 继续作为权限和生命周期边界。
+  - `BillSyncAccessibilityService` 只保留 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，`ContinuousCaptureCoordinator` 负责持续监控去重和处理，微信/支付宝 OCR 协调器分别拥有冷却、窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
+  - OCR 协调器只经 `AccessibilityCaptureHost` 读取当前窗口、屏幕健康度和截图能力；`onDestroy` 统一取消协调器任务，`onInterrupt` 不改变服务连接状态。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。
@@ -181,8 +183,10 @@ Ktor 服务构成：
 
 账号持久化边界：
 - `AccountStore` 保持统一兼容门面，并组合账号生命周期、标识/Profile、验证码、Session/设备、微信身份和跨账号事务能力。
-- `InMemoryAccountStore` 作为与 JDBC 语义一致的测试实现；`JdbcAccountStore` 是稳定构造门面，SQL 与跨表事务由内部委托实现承载。
-- 账号结果模型与密码、Token、验证码散列工具脱离 `AccountService`，Routes 和现有调用方仍只依赖原有服务入口。
+- `AccountService` 保持 Routes 使用的公共门面，内部委派给验证码、标识账号、微信账号、Session 和生命周期五个服务；公开方法、默认参数、环境工厂和错误映射保持兼容。
+- `JdbcAccountStore` 保持稳定构造门面。内部能力组件共享 `JdbcAccountStoreContext`；微信注册/绑定/解绑和账号合并由事务组件创建唯一连接，并把同一个 `Connection` 显式传给身份、设备、账本同步和云配置迁移 SQL。
+- JDBC 仅将确认的唯一键冲突映射为领域冲突；其他 `SQLException` 在事务回滚后继续抛出。
+- `InMemoryAccountStore` 作为与 JDBC 语义一致的测试实现，所有能力组件共享一个 `InMemoryAccountState` 和同一把锁，复合身份操作不会使用分离的数据副本。
 
 PostgreSQL 数据表：
 - `accounts`：内部自增 `account_id` 与对外稳定 `public_id` UUID。
