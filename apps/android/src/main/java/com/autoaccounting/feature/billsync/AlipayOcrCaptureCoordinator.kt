@@ -193,21 +193,27 @@ internal class AlipayOcrCaptureCoordinator(
 
     private fun resetPaymentState() {
         paymentFlowObservedAtElapsedMillis = 0L
-        paymentSurfaceInspected = false
-        paymentSurfaceFingerprint = null
+        resetPaymentSurface()
         paymentJob?.cancel()
         paymentJob = null
+    }
+
+    private fun resetPaymentSurface() {
+        paymentSurfaceInspected = false
+        paymentSurfaceFingerprint = null
     }
 
     private fun capturePaymentFallback(packageName: String) {
         if (!host.isScreenReady()) {
             recordPaymentRejection("screen_off_or_locked")
+            resetPaymentSurface()
             return
         }
         if (paymentJob?.isActive == true) return
         val nowElapsedMillis = SystemClock.elapsedRealtime()
         if (nowElapsedMillis - lastPaymentAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS) {
             recordPaymentRejection("cooldown")
+            resetPaymentSurface()
             return
         }
         lastPaymentAttemptAtElapsedMillis = nowElapsedMillis
@@ -222,6 +228,7 @@ internal class AlipayOcrCaptureCoordinator(
         )
 
         paymentJob = scope.launch {
+            var processed = false
             try {
                 delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
                 val initialRoot = currentPaymentRoot(packageName)
@@ -241,7 +248,12 @@ internal class AlipayOcrCaptureCoordinator(
                         recordPaymentRejection("window_changed_before_ocr", traceId)
                         return@launch
                     }
-                    processPaymentResult(packageName, host.recognizeScreen(screenshot), traceId)
+                    processed = processPaymentResult(
+                        packageName = packageName,
+                        pageText = host.recognizeScreen(screenshot),
+                        traceId = traceId,
+                        allowRecentPaymentContext = hasRecentPaymentFlow()
+                    )
                 } finally {
                     screenshot.recycle()
                 }
@@ -250,6 +262,7 @@ internal class AlipayOcrCaptureCoordinator(
             } catch (error: Throwable) {
                 diagnostics.recordFailure("alipay_ocr_failed", traceId, BillSyncSource.Alipay, null, error)
             } finally {
+                if (!processed) resetPaymentSurface()
                 paymentJob = null
             }
         }
@@ -282,9 +295,13 @@ internal class AlipayOcrCaptureCoordinator(
     private suspend fun processPaymentResult(
         packageName: String,
         pageText: String,
-        traceId: String
+        traceId: String,
+        allowRecentPaymentContext: Boolean
     ): Boolean {
-        val ocrDecision = decideAlipayOcrCapture(pageText)
+        val ocrDecision = decideAlipayOcrCapture(
+            pageText = pageText,
+            allowRecentPaymentContext = allowRecentPaymentContext
+        )
         if (!ocrDecision.shouldCapture) {
             recordPaymentRejection(ocrDecision.rejectionReason?.name ?: "unknown_rejection", traceId)
             return false

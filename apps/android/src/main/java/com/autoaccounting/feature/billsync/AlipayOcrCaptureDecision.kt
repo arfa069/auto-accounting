@@ -29,24 +29,30 @@ internal data class AlipayOcrFallbackRequest(
 )
 
 internal fun shouldAttemptAlipayOcrFallback(request: AlipayOcrFallbackRequest): Boolean {
-    if (request.packageName != BillSyncSource.Alipay.packageName) return false
-    if (request.sdkInt < Build.VERSION_CODES.R) return false
-    if (!request.isApplicationWindow) return false
-    if (!request.accessibilityNeedsOcr) return false
-
     val compactText = request.pageText.filterNot(Char::isWhitespace)
-    if (compactText.isBlank()) {
-        return request.hasRecentPaymentFlow && request.isWindowStateChanged
+    return when {
+        request.packageName != BillSyncSource.Alipay.packageName -> false
+        request.sdkInt < Build.VERSION_CODES.R -> false
+        !request.isApplicationWindow -> false
+        !request.accessibilityNeedsOcr -> false
+        ALIPAY_NON_RESULT_SURFACE_KEYWORDS.any(compactText::contains) -> false
+        compactText.isBlank() -> request.hasRecentPaymentFlow
+        ALIPAY_OCR_PAYMENT_INITIATION_KEYWORDS.any(compactText::contains) -> false
+        ALIPAY_OCR_PAYMENT_FAILURE_KEYWORDS.any(compactText::contains) -> false
+        else -> {
+            val hasCompletionCue = ALIPAY_OCR_PAYMENT_COMPLETION_KEYWORDS.any(
+                compactText::contains
+            )
+            val hasResultContext = hasAlipayPaymentResultPageSignature(request.pageText)
+            hasCompletionCue && (hasResultContext || request.hasRecentPaymentFlow)
+        }
     }
-    if (ALIPAY_OCR_PAYMENT_INITIATION_KEYWORDS.any(compactText::contains)) return false
-    if (ALIPAY_OCR_PAYMENT_FAILURE_KEYWORDS.any(compactText::contains)) return false
-
-    val hasCompletionCue = ALIPAY_OCR_PAYMENT_COMPLETION_KEYWORDS.any(compactText::contains)
-    val hasResultContext = hasAlipayPaymentResultPageSignature(request.pageText)
-    return hasCompletionCue && hasResultContext
 }
 
-internal fun decideAlipayOcrCapture(pageText: String): AlipayOcrCaptureDecision {
+internal fun decideAlipayOcrCapture(
+    pageText: String,
+    allowRecentPaymentContext: Boolean = false
+): AlipayOcrCaptureDecision {
     val compactText = pageText.filterNot(Char::isWhitespace)
     val rejectionReason = when {
         compactText.isBlank() -> AlipayOcrRejectionReason.BlankText
@@ -54,20 +60,23 @@ internal fun decideAlipayOcrCapture(pageText: String): AlipayOcrCaptureDecision 
             AlipayOcrRejectionReason.PaymentInitiation
         ALIPAY_OCR_PAYMENT_FAILURE_KEYWORDS.any(compactText::contains) ->
             AlipayOcrRejectionReason.PaymentFailedOrPending
-        !hasAlipayPaymentResultPageSignature(pageText) ->
+        ALIPAY_NON_RESULT_SURFACE_KEYWORDS.any(compactText::contains) ->
+            AlipayOcrRejectionReason.PaymentResultContextMissing
+        !hasAlipayPaymentResultPageSignature(pageText) && !allowRecentPaymentContext ->
             AlipayOcrRejectionReason.PaymentResultContextMissing
         !hasUnambiguousTransactionAmount(pageText) ->
             AlipayOcrRejectionReason.TransactionAmountMissingOrAmbiguous
         else -> {
+            val parserPageText = pageText.withTrustedAlipayPaymentContext(allowRecentPaymentContext)
             val parsedEntry = BillPageParser().parse(
                 source = BillSyncSource.Alipay,
-                pageText = pageText,
+                pageText = parserPageText,
                 fallbackTransactionTimeText = ALIPAY_OCR_FALLBACK_TRANSACTION_TIME
             ).singleOrNull()
             when {
                 parsedEntry == null || parsedEntry.merchantTitleFromFallback ->
                     AlipayOcrRejectionReason.MerchantMissing
-                parsedEntry.fundingAccountFromFallback ->
+                parsedEntry.fundingAccountFromFallback && !allowRecentPaymentContext ->
                     AlipayOcrRejectionReason.FundingAccountMissing
                 else -> null
             }
@@ -85,6 +94,16 @@ internal fun isAlipayPaymentInitiationPage(pageText: String): Boolean {
 }
 
 internal const val ALIPAY_OCR_FALLBACK_TRANSACTION_TIME = "1970-01-01 00:00"
+
+private fun String.withTrustedAlipayPaymentContext(allowRecentPaymentContext: Boolean): String =
+    if (
+        allowRecentPaymentContext &&
+        !hasAlipayPaymentResultPageSignature(this)
+    ) {
+        "$this\n支付信息"
+    } else {
+        this
+    }
 
 private val ALIPAY_OCR_PAYMENT_COMPLETION_KEYWORDS = listOf(
     "支付成功",
@@ -118,4 +137,10 @@ private val ALIPAY_OCR_PAYMENT_FAILURE_KEYWORDS = listOf(
     "待支付",
     "已取消",
     "交易取消"
+)
+
+private val ALIPAY_NON_RESULT_SURFACE_KEYWORDS = listOf(
+    "支付宝首页",
+    "最近消息",
+    "消息盒子"
 )

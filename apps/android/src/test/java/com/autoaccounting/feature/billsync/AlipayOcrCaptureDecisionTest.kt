@@ -17,20 +17,11 @@ class AlipayOcrCaptureDecisionTest {
     }
 
     @Test
-    fun blankResultPageRequiresRecentPaymentFlowAndWindowTransition() {
+    fun blankResultPageRequiresRecentPaymentFlowButNotWindowTransition() {
         val pageText = ""
         assertTrue(
             shouldAttemptAlipayOcrFallback(
                 request(pageText, hasRecentPaymentFlow = true)
-            )
-        )
-        assertFalse(
-            shouldAttemptAlipayOcrFallback(
-                request(
-                    pageText,
-                    isWindowStateChanged = false,
-                    hasRecentPaymentFlow = true
-                )
             )
         )
         assertFalse(
@@ -56,6 +47,20 @@ class AlipayOcrCaptureDecisionTest {
         assertFalse(
             shouldAttemptAlipayOcrFallback(
                 request("收银台\n立即付款\n¥20.00", hasRecentPaymentFlow = true)
+            )
+        )
+    }
+
+    @Test
+    fun recentPaymentFlowAllowsSuccessCueWithoutAccessibilityResultContext() {
+        assertTrue(
+            shouldAttemptAlipayOcrFallback(
+                request("支付成功\n¥20.00", hasRecentPaymentFlow = true)
+            )
+        )
+        assertFalse(
+            shouldAttemptAlipayOcrFallback(
+                request("支付成功\n¥20.00")
             )
         )
     }
@@ -119,6 +124,35 @@ class AlipayOcrCaptureDecisionTest {
         assertEquals(
             AlipayOcrRejectionReason.TransactionAmountMissingOrAmbiguous,
             decideAlipayOcrCapture(ambiguousAmount).rejectionReason
+        )
+    }
+
+    @Test
+    fun recentPaymentContextCanReplaceMissingResultContextLabel() {
+        val pageText = "支付成功\n便利店\n¥20.00"
+
+        assertEquals(
+            AlipayOcrRejectionReason.PaymentResultContextMissing,
+            decideAlipayOcrCapture(pageText).rejectionReason
+        )
+        assertTrue(
+            decideAlipayOcrCapture(
+                pageText = pageText,
+                allowRecentPaymentContext = true
+            ).shouldCapture
+        )
+    }
+
+    @Test
+    fun recentPaymentContextDoesNotAllowAlipayHomeMessageSurface() {
+        val pageText = "支付宝首页\n最近消息\n便利店 付款成功 ¥20.00"
+
+        assertEquals(
+            AlipayOcrRejectionReason.PaymentResultContextMissing,
+            decideAlipayOcrCapture(
+                pageText = pageText,
+                allowRecentPaymentContext = true
+            ).rejectionReason
         )
     }
 }
