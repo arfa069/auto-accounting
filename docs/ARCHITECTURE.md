@@ -87,6 +87,10 @@ flowchart LR
   - `SmtpEmailProviderConfig` 与 `AliyunPnvsSmsConfig` 承载 SMTP/阿里云 PNVS 的不可变配置；`SmtpEmailProvider`、`AliyunPnvsSmsProvider` 保留原 public 构造器作为兼容转发入口，环境变量名称、短信 Provider 选择值、凭据回退顺序、TLS/超时和失败映射均不变。
   - `AiCategorizationService` 只负责请求编排、Provider 调用和成功日志写入；`AiCategorizationValidation.kt` 负责请求与增强上下文授权校验，`AiCategorizationResponseValidation.kt` 负责响应白名单、脱敏解释和异常映射。取消异常继续向上传播，未知运行时异常稳定映射为 `PROVIDER_ERROR`，任何失败都不写成功日志或泄露 Provider 文本。
   - 本轮未新增路由、共享 API、环境变量、数据库表或用户流程。Backend 全量测试 213 项（3 项环境门控跳过）和 backend Detekt 通过；baseline 现仅保留 `AccountRoutesTest` 的 `LargeClass` 历史项。Android 全量、`coverageReport`、根构建和真机验收未因本轮 backend-only 改动重复执行。
+- **第七轮 BillPageParser 页面解析职责拆分（2026-08-02）**：保持微信/支付宝页面识别规则、关键词优先级、金额选择、交易方向、时间与商户回退及待确认语义不变，只拆分 Android billsync 内部职责：
+  - `BillPageParser` 保留公共解析入口、规范化、结构化单行解析、金额转换和结果去重；`PaymentRecordClassification` 集中页面准入、完成态/付款发起判断和交易类型分类。
+  - `PaymentRecordSurfaceParser` 负责支付记录金额候选、窗口、时间回退和结果构造；`PaymentRecordFieldExtractor` 负责商户、商品、资金账户、状态及订单字段，时间、P2P 标题和订单号辅助提取器分别位于独立文件。
+  - 本轮未新增路由、共享 API、环境变量、数据库表、UI 或 OCR/无障碍行为；移除 3 条对应 Detekt baseline 项。Android 全量 556 项、Android Detekt、Debug 构建及 `coverageReport detekt build` 均通过，未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

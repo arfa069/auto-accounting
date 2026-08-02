@@ -233,3 +233,4 @@
 - `2026-07-30`：GitHub CI/CD 与华为 Termux 局域网内测部署链完成验收。`v0.1.0` prerelease 已部署，独立 Nginx `8080`、Ktor 回环端口 `18080`、PostgreSQL `5432`、runit 拉起和内外层 `/health` 均通过；部署切换现显式重启后端，回归脚本与提交 `8a593f3` 的三组 GitHub CI 检查均成功。
 - `2026-07-31`：v0.1.2 prerelease 发布并部署。真机以 versionCode `1002` 覆盖安装 v0.1.2 成功；`master` CI 与 `v0.1.2` 标签 Release 工作流均通过，Termux watcher 完成部署。首次部署曾因 runsvdir（service-daemon）未运行报 `runsv not running`，恢复服务托管并终止孤儿后端进程后重试成功，`deploy-release.sh` 随后增加 `ensure_service_runsv` 自动恢复逻辑。
 - `2026-08-02`：第六轮 Provider 与 AI 服务职责拆分完成；未改变账号验证码、AI 分类协议、环境变量、HTTP/JSON、数据库 schema 或用户流程。Backend 全量测试 213 项（3 项环境门控跳过）、backend Detekt 和 `git diff --check` 通过；未重复执行 Android 全量、`coverageReport`、根构建或真机验收。
+- `2026-08-02`：第七轮 `BillPageParser` 页面解析职责拆分完成；保持微信/支付宝识别规则和待确认语义不变，仅将页面分类、金额/窗口、字段、时间、P2P 标题和订单号提取拆到独立文件。Android 全量测试 556 项（0 failures、0 errors、0 skipped）、Android Detekt、Debug 构建、`coverageReport detekt build` 和 `git diff --check` 通过；未执行真机操作，改动仍留在工作区待审阅。
