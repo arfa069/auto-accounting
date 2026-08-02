@@ -71,4 +71,5 @@
 - 2026-07-26：受控局域网 HTTP Release 持续显示未加密风险提示且同步功能通过；本轮只有一台真机，HTTP 模拟客户端不计作第二台真实设备，生产式 HTTPS 也未执行。
 - 2026-07-28：完全卸载并全新安装 Release 后，登录已有云端数据的账号并启用同步，复现 144 个冲突；数据库核验显示 138 个系统分类候选只与云端 `createdAtMillis` 不同，另有 6 个初始规则冲突来自内置模板版本差异。客户端改为让仍与当前内置模板一致的候选采用云端规范记录，同时保留真实编辑冲突。
 - 2026-07-28：定向 `LedgerSyncLocalStoreTest` 14 项全部通过；签名 Release 重新构建并经 `apksigner verify --verbose` 确认为单签名 v2 APK，随后安装到 Xiaomi 真机。修复后的“无内置数据冲突”页面结果待用户验收。
+- 2026-08-02：第五轮后端同步职责拆分完成。校验、业务唯一键规范化、InMemory mutation 操作、Route 响应边界和 JDBC 写入参数边界分别收敛到独立职责，未改变 HTTP/JSON、共享契约、数据库 schema、事务或账号删除门控语义；同步专项 16 项、Backend 全量 212 项（3 项环境门控跳过）、Android 全量 556 项均通过，`coverageReport detekt build` 成功，后端同步 Detekt baseline 移除 8 条历史问题。
 - 真实双设备和生产式 HTTPS 验收仍待执行，不以单机自动化结果替代。

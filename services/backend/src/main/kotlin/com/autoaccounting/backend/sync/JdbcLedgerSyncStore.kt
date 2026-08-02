@@ -18,6 +18,17 @@ import java.sql.Statement
 import java.sql.Types
 import java.util.UUID
 
+private data class AcceptedRecordWrite(
+    val connection: Connection,
+    val accountId: Long,
+    val entityType: LedgerSyncEntityTypeContract,
+    val entityId: String,
+    val version: Long,
+    val deleted: Boolean,
+    val payload: LedgerSyncPayloadContract?,
+    val now: Long
+)
+
 class JdbcLedgerSyncStore(
     private val jdbcUrl: String,
     private val username: String = "",
@@ -175,14 +186,16 @@ class JdbcLedgerSyncStore(
                     null
                 }
                 writeAcceptedRecord(
-                    connection = connection,
-                    accountId = accountId,
-                    entityType = conflict.entityType,
-                    entityId = conflict.entityId,
-                    version = (current?.version ?: 0L) + 1,
-                    deleted = deleted,
-                    payload = payload,
-                    now = now
+                    AcceptedRecordWrite(
+                        connection = connection,
+                        accountId = accountId,
+                        entityType = conflict.entityType,
+                        entityId = conflict.entityId,
+                        version = (current?.version ?: 0L) + 1,
+                        deleted = deleted,
+                        payload = payload,
+                        now = now
+                    )
                 )
             }
             connection.prepareStatement(
@@ -249,8 +262,16 @@ class JdbcLedgerSyncStore(
             return LedgerSyncMutationResultContract(mutation.mutationId, false, null, null, conflictId)
         }
         val record = writeAcceptedRecord(
-            connection, accountId, mutation.entityType, mutation.entityId,
-            currentVersion + 1, mutation.deleted, mutation.payload, now
+            AcceptedRecordWrite(
+                connection = connection,
+                accountId = accountId,
+                entityType = mutation.entityType,
+                entityId = mutation.entityId,
+                version = currentVersion + 1,
+                deleted = mutation.deleted,
+                payload = mutation.payload,
+                now = now
+            )
         )
         return LedgerSyncMutationResultContract(
             mutationId = mutation.mutationId,
@@ -261,19 +282,15 @@ class JdbcLedgerSyncStore(
         )
     }
 
-    private fun writeAcceptedRecord(
-        connection: Connection,
-        accountId: Long,
-        entityType: LedgerSyncEntityTypeContract,
-        entityId: String,
-        version: Long,
-        deleted: Boolean,
-        payload: LedgerSyncPayloadContract?,
-        now: Long
-    ): LedgerSyncRecordContract {
-        val encoded = payload?.let { encodePayload(entityType, it) }
-        val businessKey = payload?.businessKey() ?: findBusinessKey(connection, accountId, entityType, entityId)
-        val revision = connection.prepareStatement(
+    private fun writeAcceptedRecord(request: AcceptedRecordWrite): LedgerSyncRecordContract {
+        val encoded = request.payload?.let { encodePayload(request.entityType, it) }
+        val businessKey = request.payload?.businessKey() ?: findBusinessKey(
+            request.connection,
+            request.accountId,
+            request.entityType,
+            request.entityId
+        )
+        val revision = request.connection.prepareStatement(
             """
             INSERT INTO ledger_sync_changes(
                 account_id, entity_type, entity_id, version, deleted, payload, changed_at_millis
@@ -281,36 +298,36 @@ class JdbcLedgerSyncStore(
             """.trimIndent(),
             Statement.RETURN_GENERATED_KEYS
         ).use { statement ->
-            statement.setLong(1, accountId)
-            statement.setString(2, entityType.name)
-            statement.setString(3, entityId)
-            statement.setLong(4, version)
-            statement.setBoolean(5, deleted)
+            statement.setLong(1, request.accountId)
+            statement.setString(2, request.entityType.name)
+            statement.setString(3, request.entityId)
+            statement.setLong(4, request.version)
+            statement.setBoolean(5, request.deleted)
             statement.setNullableString(6, encoded)
-            statement.setLong(7, now)
+            statement.setLong(7, request.now)
             statement.executeUpdate()
             statement.generatedKeys.use { keys -> check(keys.next()); keys.getLong(1) }
         }
-        val updated = connection.prepareStatement(
+        val updated = request.connection.prepareStatement(
             """
             UPDATE ledger_sync_records
             SET version = ?, revision = ?, deleted = ?, payload = ?, business_key = ?, updated_at_millis = ?
             WHERE account_id = ? AND entity_type = ? AND entity_id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setLong(1, version)
+            statement.setLong(1, request.version)
             statement.setLong(2, revision)
-            statement.setBoolean(3, deleted)
+            statement.setBoolean(3, request.deleted)
             statement.setNullableString(4, encoded)
             statement.setNullableString(5, businessKey)
-            statement.setLong(6, now)
-            statement.setLong(7, accountId)
-            statement.setString(8, entityType.name)
-            statement.setString(9, entityId)
+            statement.setLong(6, request.now)
+            statement.setLong(7, request.accountId)
+            statement.setString(8, request.entityType.name)
+            statement.setString(9, request.entityId)
             statement.executeUpdate()
         }
         if (updated == 0) {
-            connection.prepareStatement(
+            request.connection.prepareStatement(
                 """
                 INSERT INTO ledger_sync_records(
                     account_id, entity_type, entity_id, version, revision,
@@ -318,19 +335,26 @@ class JdbcLedgerSyncStore(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
-                statement.setLong(1, accountId)
-                statement.setString(2, entityType.name)
-                statement.setString(3, entityId)
-                statement.setLong(4, version)
+                statement.setLong(1, request.accountId)
+                statement.setString(2, request.entityType.name)
+                statement.setString(3, request.entityId)
+                statement.setLong(4, request.version)
                 statement.setLong(5, revision)
-                statement.setBoolean(6, deleted)
+                statement.setBoolean(6, request.deleted)
                 statement.setNullableString(7, encoded)
                 statement.setNullableString(8, businessKey)
-                statement.setLong(9, now)
+                statement.setLong(9, request.now)
                 statement.executeUpdate()
             }
         }
-        return LedgerSyncRecordContract(entityType, entityId, version, revision, deleted, payload)
+        return LedgerSyncRecordContract(
+            request.entityType,
+            request.entityId,
+            request.version,
+            revision,
+            request.deleted,
+            request.payload
+        )
     }
 
     private fun findProfile(connection: Connection, accountId: Long): StoredLedgerSyncProfile? =

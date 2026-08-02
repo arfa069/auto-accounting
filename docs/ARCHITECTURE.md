@@ -78,6 +78,11 @@ flowchart LR
   - Review 列表、忽略项弹窗和编辑器工具分别位于 `ReviewQueueListContent.kt`、`ReviewIgnoredEntriesDialog.kt`、`ReviewEditorTools.kt`；`ReviewQueueScreen` 与 `ReviewQueueEditor` 保留页面状态和事件编排。
   - 账本和资金账户删除操作由管理页的长生命周期 Compose scope 启动；删除对话框只发送确认事件。删除完成或失败后，Snackbar 不会因为对话框移出组合而被取消，成功/失败路径由 `LedgerReportsScreenTest` 覆盖。
   - Android Detekt baseline 从 128 项减少到 112 项，已移除 16 个本轮解决或搬迁的问题；`ReviewQueueScreen` 的公开入口参数债务为兼容现有调用方暂时保留。
+- **第五轮账本同步后端职责拆分（2026-08-02）**：保持 HTTP/JSON、共享 API、数据库 schema、事务边界、账号删除门控和同步数据语义不变，收缩后端同步内部职责：
+  - `LedgerSyncValidation.kt` 集中请求参数和 mutation 合同校验；`LedgerSyncService` 只保留删除门控、Store 编排和领域结果映射。
+  - `LedgerSyncMutationNormalizer.kt` 由 JDBC 与 InMemory Store 共用业务唯一键规范化和引用重映射；`InMemoryLedgerSyncMutationOperations.kt` 承担内存 mutation、冲突、幂等结果与 revision 操作，外层 `@Synchronized` 方法继续持有唯一同步锁。
+  - `LedgerSyncRoutes.kt` 只负责五个同步 endpoint 的注册与认证/解析边界；`LedgerSyncRouteResponses.kt` 统一成功和错误 JSON envelope；`JdbcLedgerSyncStore` 使用 `AcceptedRecordWrite` 聚合写入参数，SQL 和事务实现保持不变。
+  - 后端 Detekt baseline 移除本轮已解决的 8 条同步问题；同步专项 16 项、Backend 全量 212 项（3 项环境门控跳过）和 Android 全量 556 项均无失败，`coverageReport detekt build` 通过。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

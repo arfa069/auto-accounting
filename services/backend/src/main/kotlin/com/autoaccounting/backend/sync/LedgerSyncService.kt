@@ -1,10 +1,8 @@
 package com.autoaccounting.backend.sync
 
-import com.autoaccounting.api.LEDGER_SYNC_MAX_BATCH_SIZE
 import com.autoaccounting.api.LedgerSyncConflictChoiceContract
 import com.autoaccounting.api.LedgerSyncInitializeResponseContract
 import com.autoaccounting.api.LedgerSyncMutationContract
-import com.autoaccounting.api.LedgerSyncPayloadContract
 import com.autoaccounting.api.LedgerSyncPullResponseContract
 import com.autoaccounting.api.LedgerSyncPushResponseContract
 import com.autoaccounting.api.LedgerSyncResolveConflictResponseContract
@@ -37,7 +35,7 @@ class LedgerSyncService(
     }
 
     fun snapshot(accountId: Long, offset: Int, limit: Int): LedgerSyncServiceResult<LedgerSyncSnapshotResponseContract> {
-        if (offset < 0 || limit !in 1..LEDGER_SYNC_MAX_BATCH_SIZE) return LedgerSyncServiceResult.InvalidRequest
+        if (!isValidLedgerSyncSnapshotRequest(offset, limit)) return LedgerSyncServiceResult.InvalidRequest
         val records = store.snapshot(accountId, offset, limit + 1)
         val visible = records.take(limit)
         return LedgerSyncServiceResult.Success(
@@ -55,12 +53,7 @@ class LedgerSyncService(
         mutations: List<LedgerSyncMutationContract>
     ): LedgerSyncServiceResult<LedgerSyncPushResponseContract> {
         if (!accountService.canWriteCloudData(accountId)) return LedgerSyncServiceResult.DeletionPending
-        if (
-            deviceId.isBlank() || deviceId.length > MAX_SYNC_DEVICE_ID_LENGTH ||
-            mutations.isEmpty() || mutations.size > LEDGER_SYNC_MAX_BATCH_SIZE ||
-            mutations.map { it.mutationId }.distinct().size != mutations.size ||
-            mutations.any { !it.isValid() }
-        ) return LedgerSyncServiceResult.InvalidRequest
+        if (!isValidLedgerSyncPushRequest(deviceId, mutations)) return LedgerSyncServiceResult.InvalidRequest
         store.getOrCreateProfile(accountId, clock.millis())
         val results = store.push(accountId, deviceId, mutations, clock.millis())
         return LedgerSyncServiceResult.Success(
@@ -74,10 +67,7 @@ class LedgerSyncService(
         afterCursor: Long,
         limit: Int
     ): LedgerSyncServiceResult<LedgerSyncPullResponseContract> {
-        if (
-            deviceId.isBlank() || deviceId.length > MAX_SYNC_DEVICE_ID_LENGTH ||
-            afterCursor < 0 || limit !in 1..LEDGER_SYNC_MAX_BATCH_SIZE
-        ) {
+        if (!isValidLedgerSyncPullRequest(deviceId, afterCursor, limit)) {
             return LedgerSyncServiceResult.InvalidRequest
         }
         if (afterCursor > store.currentCursor(accountId)) return LedgerSyncServiceResult.CursorExpired
@@ -94,10 +84,9 @@ class LedgerSyncService(
         choice: LedgerSyncConflictChoiceContract
     ): LedgerSyncServiceResult<LedgerSyncResolveConflictResponseContract> {
         if (!accountService.canWriteCloudData(accountId)) return LedgerSyncServiceResult.DeletionPending
-        if (
-            conflictId.isBlank() || conflictId.length > MAX_SYNC_CONFLICT_ID_LENGTH ||
-            expectedCanonicalVersion < 0
-        ) return LedgerSyncServiceResult.InvalidRequest
+        if (!isValidLedgerSyncResolveRequest(conflictId, expectedCanonicalVersion)) {
+            return LedgerSyncServiceResult.InvalidRequest
+        }
         return when (
             val result = store.resolve(accountId, conflictId, expectedCanonicalVersion, choice, clock.millis())
         ) {
@@ -126,27 +115,3 @@ class LedgerSyncService(
         }
     }
 }
-
-private fun LedgerSyncMutationContract.isValid(): Boolean {
-    if (
-        mutationId.isBlank() || mutationId.length > MAX_SYNC_MUTATION_ID_LENGTH ||
-        entityId.isBlank() || entityId.length > MAX_SYNC_ENTITY_ID_LENGTH ||
-        baseVersion < 0
-    ) return false
-    if (deleted != (payload == null)) return false
-    return when (val value = payload) {
-        null -> true
-        is LedgerSyncPayloadContract.Category -> value.id == entityId && value.name.isNotBlank()
-        is LedgerSyncPayloadContract.FundingAccount -> value.syncId == entityId && value.label.isNotBlank()
-        is LedgerSyncPayloadContract.LedgerBook -> value.id == entityId && value.name.isNotBlank()
-        is LedgerSyncPayloadContract.LedgerEntry ->
-            value.id == entityId && value.ledgerBookId.isNotBlank() && value.amountMinor > 0 &&
-                value.currency == "CNY" && value.merchantTitle.isNotBlank()
-        is LedgerSyncPayloadContract.CategorizationRule -> value.id == entityId && value.category.isNotBlank()
-    }
-}
-
-internal const val MAX_SYNC_DEVICE_ID_LENGTH = 128
-private const val MAX_SYNC_MUTATION_ID_LENGTH = 64
-private const val MAX_SYNC_ENTITY_ID_LENGTH = 128
-private const val MAX_SYNC_CONFLICT_ID_LENGTH = 64
