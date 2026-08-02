@@ -253,6 +253,32 @@ class LedgerReportsScreenTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000) { deletedId.get() != null }
         assertEquals("travel", deletedId.get())
+        composeRule.onNodeWithText("已删除账本「旅行账本」").assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerDeleteFailureShowsSnackbarAfterDialogCloses() {
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                ledgerBooks = listOf(
+                    LedgerBookUiModel("default", "默认账本", isActive = true),
+                    LedgerBookUiModel("travel", "旅行账本")
+                ),
+                onDeleteLedger = { throw IllegalStateException("账本删除失败") }
+            )
+        }
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteLedger("travel"))
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_LEDGER).performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("账本删除失败").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("账本删除失败").assertIsDisplayed()
     }
 
     @Test
@@ -324,6 +350,28 @@ class LedgerReportsScreenTest {
         composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { deletedId.get() != null }
         assertEquals(7L, deletedId.get())
+        composeRule.onNodeWithText("已删除资金账户「零钱」").assertIsDisplayed()
+    }
+
+    @Test
+    fun fundingAccountDeleteFailureShowsSnackbarAfterDialogCloses() {
+        val account = fundingAccount(id = 7, label = "零钱", source = PaymentSource.WECHAT)
+        composeRule.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                fundingAccounts = listOf(account),
+                onDeleteFundingAccount = { throw IllegalStateException("资金账户删除失败") }
+            )
+        }
+
+        openFundingAccountManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("资金账户删除失败").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("资金账户删除失败").assertIsDisplayed()
     }
 
     @Test

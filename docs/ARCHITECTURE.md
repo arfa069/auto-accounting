@@ -73,6 +73,11 @@ flowchart LR
   - `AutoAccountingAppRuntime` 集中账号 Session、账本/同步状态、动作和展示模型；`AutoAccountingAppEffectsContext` 及其副作用函数集中恢复、校验、导航、持久化和同步生命周期，避免路由组件直接拥有后台任务。
   - `AutoAccountingRouteContext` 作为路由共享上下文，`AutoAccountingRouteHost` 负责账号入口、已登录应用壳、手动录入和主 Tab 分发；账本/待确认/报表与 Profile 子页分别由 `AutoAccountingLedgerRoutes`、`AutoAccountingProfileRoutes` 编排。
   - `AutoAccountingLedgerSyncAccountSwitchDialog` 必须在 `AutoAccountingTheme` 组合结束后调用。这样账本同步发现账号与本地 Profile 不一致时，AlertDialog 继续使用重构前的主题作用域，不会因结构拆分意外继承应用自定义颜色、字体或组件主题。
+- **第四轮 Ledger + Review UI 职责拆分（2026-08-02）**：保持产品交互、Room/同步、OCR、后端契约和数据语义不变，将核心页面拆成可独立核对的渲染与编排边界：
+  - Ledger 表单字段与配置位于 `LedgerEntryFormFields.kt`、`LedgerEntryFormConfig.kt`；最近删除、账本管理和资金账户管理分别位于独立 Screen 文件，`LedgerScreen` 只负责路由和 action holder 装配。
+  - Review 列表、忽略项弹窗和编辑器工具分别位于 `ReviewQueueListContent.kt`、`ReviewIgnoredEntriesDialog.kt`、`ReviewEditorTools.kt`；`ReviewQueueScreen` 与 `ReviewQueueEditor` 保留页面状态和事件编排。
+  - 账本和资金账户删除操作由管理页的长生命周期 Compose scope 启动；删除对话框只发送确认事件。删除完成或失败后，Snackbar 不会因为对话框移出组合而被取消，成功/失败路径由 `LedgerReportsScreenTest` 覆盖。
+  - Android Detekt baseline 从 128 项减少到 112 项，已移除 16 个本轮解决或搬迁的问题；`ReviewQueueScreen` 的公开入口参数债务为兼容现有调用方暂时保留。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

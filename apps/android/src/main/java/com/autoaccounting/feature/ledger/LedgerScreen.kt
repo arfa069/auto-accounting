@@ -177,33 +177,38 @@ fun LedgerScreen(
                         initial = initialFormState,
                         categories = categories,
                         fundingAccounts = fundingAccounts,
-                        onExit = {
-                            selectedEntryId = null
-                            view = LedgerView.LIST
-                        },
-                        onSave = { input ->
-                            onUpdateEntry(entry.id, input)
-                            selectedEntryId = null
-                            view = LedgerView.LIST
-                        },
-                        onDelete = {
-                            scope.launch {
-                                runCatching { onDeleteEntry(entry.id) }
-                                    .onSuccess {
-                                        selectedEntryId = null
-                                        view = LedgerView.LIST
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = "已移入最近删除",
-                                            actionLabel = "撤销"
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            onRestoreEntry(entry.id)
+                        config = LedgerEntryFormConfig(
+                            flowDirections = listOf(FlowDirection.OUTFLOW, FlowDirection.INFLOW),
+                            allowCreateFundingAccount = false,
+                            saveLabel = "保存修改",
+                            onExit = {
+                                selectedEntryId = null
+                                view = LedgerView.LIST
+                            },
+                            onSave = { input ->
+                                onUpdateEntry(entry.id, input)
+                                selectedEntryId = null
+                                view = LedgerView.LIST
+                            },
+                            onDelete = {
+                                scope.launch {
+                                    runCatching { onDeleteEntry(entry.id) }
+                                        .onSuccess {
+                                            selectedEntryId = null
+                                            view = LedgerView.LIST
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "已移入最近删除",
+                                                actionLabel = "撤销"
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                onRestoreEntry(entry.id)
+                                            }
                                         }
-                                    }
-                                    .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
-                            }
-                        },
-                        snackbarHostState = snackbarHostState
+                                        .onFailure { snackbarHostState.showSnackbar(it.userMessage()) }
+                                }
+                            },
+                            snackbarHostState = snackbarHostState
+                        )
                     )
                 }
 
@@ -227,19 +232,23 @@ fun LedgerScreen(
                 LedgerView.LEDGER_BOOKS -> LedgerBookManagementScreen(
                     ledgerBooks = ledgerBooks,
                     snackbarHostState = snackbarHostState,
-                    onBack = { view = LedgerView.LIST },
-                    onCreateLedger = onCreateLedger,
-                    onSelectLedger = onSelectLedger,
-                    onDeleteLedger = onDeleteLedger
+                    actions = LedgerBookManagementActions(
+                        onBack = { view = LedgerView.LIST },
+                        onCreateLedger = onCreateLedger,
+                        onSelectLedger = onSelectLedger,
+                        onDeleteLedger = onDeleteLedger
+                    )
                 )
 
                 LedgerView.FUNDING_ACCOUNTS -> FundingAccountManagementScreen(
                     fundingAccounts = fundingAccounts,
                     snackbarHostState = snackbarHostState,
-                    onBack = { view = LedgerView.LIST },
-                    onCreateFundingAccount = onCreateFundingAccount,
-                    onUpdateFundingAccount = onUpdateFundingAccount,
-                    onDeleteFundingAccount = onDeleteFundingAccount
+                    actions = FundingAccountManagementActions(
+                        onBack = { view = LedgerView.LIST },
+                        onCreateFundingAccount = onCreateFundingAccount,
+                        onUpdateFundingAccount = onUpdateFundingAccount,
+                        onDeleteFundingAccount = onDeleteFundingAccount
+                    )
                 )
             }
         }
