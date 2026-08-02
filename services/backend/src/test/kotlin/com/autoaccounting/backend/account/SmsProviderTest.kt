@@ -90,10 +90,12 @@ class SmsProviderTest {
             responseBody = """{"Code":"isv.BUSINESS_LIMIT_CONTROL","Message":"触发天发送限流"}"""
         )
         val provider = AliyunPnvsSmsProvider(
-            accessKeyId = "LTAI5tExampleKeyId",
-            accessKeySecret = "SecretKey123",
-            signName = "预置签名",
-            templateCode = "SMS_1001",
+            config = AliyunPnvsSmsConfig(
+                accessKeyId = "LTAI5tExampleKeyId",
+                accessKeySecret = "SecretKey123",
+                signName = "预置签名",
+                templateCode = "SMS_1001"
+            ),
             httpClient = mockHttpClient
         )
 

@@ -1,10 +1,7 @@
-@file:Suppress("LongParameterList")
-
 package com.autoaccounting.backend.ai
 
 import com.autoaccounting.api.AiCategorizationRequestContract
 import com.autoaccounting.backend.account.JdbcAccountStore
-import kotlinx.coroutines.CancellationException
 
 internal const val MAX_MERCHANT_TITLE_LENGTH = 200
 internal const val MAX_SOURCE_LABEL_LENGTH = 80
@@ -15,7 +12,6 @@ internal const val MAX_CATEGORY_LENGTH = 80
 internal const val MAX_NOTE_LENGTH = 500
 internal const val MAX_RAW_EVIDENCE_LENGTH = 2_000
 internal const val MAX_EXPLANATION_LENGTH = 240
-private val ALLOWED_AMOUNT_RANGE_LABELS = setOf("0-50", "50-200", "200-500", "500-1000", "1000+")
 
 data class AiCategorizationPayload(
     val merchantTitle: String,
@@ -67,12 +63,8 @@ class AiCategorizationService(
         val payload = request.toValidatedPayload(enhancedContextAuthorized)
         val suggestion = try {
             provider.suggest(payload)
-        } catch (error: AiProviderException) {
-            throw AiCategorizationException(error.toCategorizationError())
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: RuntimeException) {
-            throw AiCategorizationException(AiCategorizationError.PROVIDER_ERROR)
+        } catch (error: RuntimeException) {
+            throw error.toAiCategorizationException()
         }
         val validatedSuggestion = suggestion.validateAgainst(payload.categoryCandidates)
         logStore.insertLog(
@@ -109,96 +101,4 @@ class AiCategorizationService(
             )
         }
     }
-}
-
-private fun AiCategorizationRequestContract.toValidatedPayload(
-    enhancedContextAuthorized: Boolean
-): AiCategorizationPayload {
-    if (enhancedContext && !enhancedContextAuthorized) {
-        throw AiCategorizationException(AiCategorizationError.ENHANCED_CONTEXT_NOT_AUTHORIZED)
-    }
-    if (!enhancedContext && (!note.isNullOrBlank() || !rawEvidenceText.isNullOrBlank())) {
-        throw AiCategorizationException(AiCategorizationError.INVALID_REQUEST)
-    }
-
-    val candidates = categoryCandidates
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinct()
-    if (candidates.isEmpty()) {
-        throw AiCategorizationException(AiCategorizationError.CATEGORY_CANDIDATES_REQUIRED)
-    }
-    if (candidates.size > MAX_CATEGORY_CANDIDATES || candidates.any { it.length > MAX_CATEGORY_LENGTH }) {
-        throw AiCategorizationException(AiCategorizationError.INVALID_REQUEST)
-    }
-
-    val validatedAmountRange = amountRangeLabel.requiredTrimmed(MAX_AMOUNT_RANGE_LABEL_LENGTH)
-    if (validatedAmountRange !in ALLOWED_AMOUNT_RANGE_LABELS) {
-        throw AiCategorizationException(AiCategorizationError.INVALID_REQUEST)
-    }
-
-    return AiCategorizationPayload(
-        merchantTitle = merchantTitle.requiredTrimmed(MAX_MERCHANT_TITLE_LENGTH),
-        sourceLabel = sourceLabel.requiredTrimmed(MAX_SOURCE_LABEL_LENGTH),
-        transactionKind = transactionKind.requiredTrimmed(MAX_TRANSACTION_KIND_LENGTH),
-        amountRangeLabel = validatedAmountRange,
-        categoryCandidates = candidates,
-        note = note.optionalTrimmed(MAX_NOTE_LENGTH).takeIf { enhancedContext },
-        rawEvidenceText = rawEvidenceText.optionalTrimmed(MAX_RAW_EVIDENCE_LENGTH)
-            .takeIf { enhancedContext }
-    )
-}
-
-private fun String.requiredTrimmed(maxLength: Int): String {
-    val value = trim()
-    if (value.isBlank() || value.length > maxLength) {
-        throw AiCategorizationException(AiCategorizationError.INVALID_REQUEST)
-    }
-    return value
-}
-
-private fun String?.optionalTrimmed(maxLength: Int): String? {
-    val value = this?.trim()?.takeIf(String::isNotBlank) ?: return null
-    if (value.length > maxLength) {
-        throw AiCategorizationException(AiCategorizationError.INVALID_REQUEST)
-    }
-    return value
-}
-
-private fun AiCategorizationPayload.safeLogExplanation(explanation: String): String {
-    return if (note != null || rawEvidenceText != null) {
-        "增强上下文请求：解释未持久化"
-    } else {
-        explanation
-    }
-}
-
-private fun AiCategorizationSuggestion.validateAgainst(
-    categoryCandidates: List<String>
-): AiCategorizationSuggestion {
-    val category = category.trim()
-    val confidence = confidenceLabel.trim()
-    val safeExplanation = explanation.trim()
-    if (
-        category !in categoryCandidates ||
-        confidence !in setOf("低", "中", "高") ||
-        safeExplanation.isBlank() ||
-        safeExplanation.length > MAX_EXPLANATION_LENGTH
-    ) {
-        throw AiCategorizationException(AiCategorizationError.PROVIDER_INVALID_RESPONSE)
-    }
-    return copy(
-        category = category,
-        confidenceLabel = confidence,
-        explanation = safeExplanation
-    )
-}
-
-private fun AiProviderException.toCategorizationError(): AiCategorizationError = when (this) {
-    AiProviderException.Unavailable -> AiCategorizationError.PROVIDER_UNAVAILABLE
-    AiProviderException.ConfigurationInvalid -> AiCategorizationError.PROVIDER_CONFIGURATION_INVALID
-    AiProviderException.TimedOut -> AiCategorizationError.PROVIDER_TIMEOUT
-    AiProviderException.RateLimited -> AiCategorizationError.PROVIDER_RATE_LIMITED
-    AiProviderException.UpstreamFailure -> AiCategorizationError.PROVIDER_ERROR
-    AiProviderException.InvalidResponse -> AiCategorizationError.PROVIDER_INVALID_RESPONSE
 }

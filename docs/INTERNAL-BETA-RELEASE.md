@@ -232,3 +232,4 @@
 - `2026-07-28`：完全卸载并全新安装 Release 后，登录已有云端数据的账号并启用同步，复现出 144 个冲突；可见项为本机与云端同名的系统分类。根因是首次同步把全新安装生成的分类时间戳和初始规则版本差异误判为用户编辑。客户端现仅对仍与内置模板一致的系统分类/初始规则采用云端规范版本，真实用户编辑继续进入冲突；`LedgerSyncLocalStoreTest` 14 项为 0 失败，签名 Release 构建及 v2 单签名校验通过并已安装到 Xiaomi 真机，修复后的页面结果待用户验收。
 - `2026-07-30`：GitHub CI/CD 与华为 Termux 局域网内测部署链完成验收。`v0.1.0` prerelease 已部署，独立 Nginx `8080`、Ktor 回环端口 `18080`、PostgreSQL `5432`、runit 拉起和内外层 `/health` 均通过；部署切换现显式重启后端，回归脚本与提交 `8a593f3` 的三组 GitHub CI 检查均成功。
 - `2026-07-31`：v0.1.2 prerelease 发布并部署。真机以 versionCode `1002` 覆盖安装 v0.1.2 成功；`master` CI 与 `v0.1.2` 标签 Release 工作流均通过，Termux watcher 完成部署。首次部署曾因 runsvdir（service-daemon）未运行报 `runsv not running`，恢复服务托管并终止孤儿后端进程后重试成功，`deploy-release.sh` 随后增加 `ensure_service_runsv` 自动恢复逻辑。
+- `2026-08-02`：第六轮 Provider 与 AI 服务职责拆分完成；未改变账号验证码、AI 分类协议、环境变量、HTTP/JSON、数据库 schema 或用户流程。Backend 全量测试 213 项（3 项环境门控跳过）、backend Detekt 和 `git diff --check` 通过；未重复执行 Android 全量、`coverageReport`、根构建或真机验收。

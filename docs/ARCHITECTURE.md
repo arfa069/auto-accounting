@@ -83,6 +83,10 @@ flowchart LR
   - `LedgerSyncMutationNormalizer.kt` 由 JDBC 与 InMemory Store 共用业务唯一键规范化和引用重映射；`InMemoryLedgerSyncMutationOperations.kt` 承担内存 mutation、冲突、幂等结果与 revision 操作，外层 `@Synchronized` 方法继续持有唯一同步锁。
   - `LedgerSyncRoutes.kt` 只负责五个同步 endpoint 的注册与认证/解析边界；`LedgerSyncRouteResponses.kt` 统一成功和错误 JSON envelope；`JdbcLedgerSyncStore` 使用 `AcceptedRecordWrite` 聚合写入参数，SQL 和事务实现保持不变。
   - 后端 Detekt baseline 移除本轮已解决的 8 条同步问题；同步专项 16 项、Backend 全量 212 项（3 项环境门控跳过）和 Android 全量 556 项均无失败，`coverageReport detekt build` 通过。
+- **第六轮 Provider 与 AI 服务职责拆分（2026-08-02）**：保持账号验证码、AI 分类、HTTP/JSON、环境变量、数据库 schema、日志隐私边界和失败语义不变，只收缩后端内部职责：
+  - `SmtpEmailProviderConfig` 与 `AliyunPnvsSmsConfig` 承载 SMTP/阿里云 PNVS 的不可变配置；`SmtpEmailProvider`、`AliyunPnvsSmsProvider` 保留原 public 构造器作为兼容转发入口，环境变量名称、短信 Provider 选择值、凭据回退顺序、TLS/超时和失败映射均不变。
+  - `AiCategorizationService` 只负责请求编排、Provider 调用和成功日志写入；`AiCategorizationValidation.kt` 负责请求与增强上下文授权校验，`AiCategorizationResponseValidation.kt` 负责响应白名单、脱敏解释和异常映射。取消异常继续向上传播，未知运行时异常稳定映射为 `PROVIDER_ERROR`，任何失败都不写成功日志或泄露 Provider 文本。
+  - 本轮未新增路由、共享 API、环境变量、数据库表或用户流程。Backend 全量测试 213 项（3 项环境门控跳过）和 backend Detekt 通过；baseline 现仅保留 `AccountRoutesTest` 的 `LargeClass` 历史项。Android 全量、`coverageReport`、根构建和真机验收未因本轮 backend-only 改动重复执行。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

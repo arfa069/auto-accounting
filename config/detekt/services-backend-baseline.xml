@@ -2,15 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ComplexCondition:AiCategorizationService.kt$category !in categoryCandidates || confidence !in setOf("低", "中", "高") || safeExplanation.isBlank() || safeExplanation.length &gt; MAX_EXPLANATION_LENGTH</ID>
-    <ID>ComplexCondition:EmailProvider.kt$SmtpEmailProvider$security !in setOf(SECURITY_STARTTLS, SECURITY_SSL) || !isSafeHeaderValue(email) || !isSafeHeaderValue(fromAddress) || !CODE_REGEX.matches(code)</ID>
-    <ID>ComplexCondition:SmsProvider.kt$keyId.isBlank() || keySecret.isBlank() || signName.isBlank() || templateCode.isBlank()</ID>
-    <ID>CyclomaticComplexMethod:SmsProvider.kt$fun SmsProvider.Companion.fromEnvironment(env: Map&lt;String, String&gt; = System.getenv()): SmsProvider</ID>
     <ID>LargeClass:AccountRoutesTest.kt$AccountRoutesTest</ID>
-    <ID>LongParameterList:EmailProvider.kt$SmtpEmailProvider$( private val host: String, private val port: Int, private val username: String, private val passwordSupplier: () -&gt; String, private val fromAddress: String, private val security: String = SECURITY_STARTTLS, private val timeoutMillis: Int = 5_000, private val sslSocketFactory: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory )</ID>
-    <ID>LongParameterList:SmsProvider.kt$AliyunPnvsSmsProvider$( private val accessKeyId: String, private val accessKeySecret: String, private val signName: String, private val templateCode: String, private val schemeName: String = "", private val endpoint: String = "https://dypnsapi.aliyuncs.com", private val httpClient: HttpClient = HttpClient.newHttpClient() )</ID>
-    <ID>SwallowedException:AiCategorizationService.kt$AiCategorizationService$error: AiProviderException</ID>
-    <ID>ThrowsCount:AiCategorizationService.kt$AiCategorizationService$suspend fun suggest( accountId: Long? = null, request: AiCategorizationRequestContract, enhancedContextAuthorized: Boolean ): AiCategorizationSuggestion</ID>
-    <ID>ThrowsCount:AiCategorizationService.kt$private fun AiCategorizationRequestContract.toValidatedPayload( enhancedContextAuthorized: Boolean ): AiCategorizationPayload</ID>
   </CurrentIssues>
 </SmellBaseline>

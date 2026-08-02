@@ -29,23 +29,37 @@ object MissingEmailProvider : EmailProvider {
         EmailProviderResult.Failed(AccountError.EMAIL_PROVIDER_UNCONFIGURED)
 }
 
-class SmtpEmailProvider(
-    private val host: String,
-    private val port: Int,
-    private val username: String,
+class SmtpEmailProvider internal constructor(
+    private val config: SmtpEmailProviderConfig,
     private val passwordSupplier: () -> String,
-    private val fromAddress: String,
-    private val security: String = SECURITY_STARTTLS,
-    private val timeoutMillis: Int = 5_000,
     private val sslSocketFactory: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
 ) : EmailProvider {
 
+    @Suppress("LongParameterList")
+    constructor(
+        host: String,
+        port: Int,
+        username: String,
+        passwordSupplier: () -> String,
+        fromAddress: String,
+        security: String = SMTP_SECURITY_STARTTLS,
+        timeoutMillis: Int = SMTP_DEFAULT_TIMEOUT_MILLIS,
+        sslSocketFactory: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+    ) : this(
+        config = SmtpEmailProviderConfig(
+            host = host,
+            port = port,
+            username = username,
+            fromAddress = fromAddress,
+            security = security,
+            timeoutMillis = timeoutMillis
+        ),
+        passwordSupplier = passwordSupplier,
+        sslSocketFactory = sslSocketFactory
+    )
+
     override fun sendCode(email: String, code: String, purpose: String): EmailProviderResult {
-        if (security !in setOf(SECURITY_STARTTLS, SECURITY_SSL) ||
-            !isSafeHeaderValue(email) ||
-            !isSafeHeaderValue(fromAddress) ||
-            !CODE_REGEX.matches(code)
-        ) {
+        if (!isValidRequest(email, code)) {
             return EmailProviderResult.Failed(AccountError.EMAIL_SEND_FAILED)
         }
 
@@ -56,20 +70,20 @@ class SmtpEmailProvider(
             connection.expectResponse(220)
             connection.command("EHLO localhost", 250)
 
-            if (security == SECURITY_STARTTLS) {
+            if (config.security == SMTP_SECURITY_STARTTLS) {
                 connection.command("STARTTLS", 220)
                 socket = upgradeToTls(socket)
                 connection = SmtpConnection(socket)
                 connection.command("EHLO localhost", 250)
             }
 
-            if (username.isNotBlank()) {
+            if (config.username.isNotBlank()) {
                 connection.command("AUTH LOGIN", 334)
-                connection.command(Base64.getEncoder().encodeToString(username.toByteArray()), 334)
+                connection.command(Base64.getEncoder().encodeToString(config.username.toByteArray()), 334)
                 connection.command(Base64.getEncoder().encodeToString(passwordSupplier().toByteArray()), 235)
             }
 
-            connection.command("MAIL FROM:<$fromAddress>", 250)
+            connection.command("MAIL FROM:<${config.fromAddress}>", 250)
             connection.command("RCPT TO:<$email>", 250)
             connection.command("DATA", 354)
             connection.writeMessage(email, code, purpose)
@@ -83,30 +97,36 @@ class SmtpEmailProvider(
         }
     }
 
+    private fun isValidRequest(email: String, code: String): Boolean =
+        config.security in setOf(SMTP_SECURITY_STARTTLS, SMTP_SECURITY_SSL) &&
+            isSafeHeaderValue(email) &&
+            isSafeHeaderValue(config.fromAddress) &&
+            CODE_REGEX.matches(code)
+
     private fun connectSocket(): Socket {
-        return if (security == SECURITY_SSL) {
+        return if (config.security == SMTP_SECURITY_SSL) {
             val sslSocket = sslSocketFactory.createSocket() as SSLSocket
-            sslSocket.connect(InetSocketAddress(host, port), timeoutMillis)
+            sslSocket.connect(InetSocketAddress(config.host, config.port), config.timeoutMillis)
             configureTls(sslSocket)
             sslSocket.startHandshake()
             sslSocket
         } else {
             Socket().apply {
-                connect(InetSocketAddress(host, port), timeoutMillis)
-                soTimeout = timeoutMillis
+                connect(InetSocketAddress(config.host, config.port), config.timeoutMillis)
+                soTimeout = config.timeoutMillis
             }
         }
     }
 
     private fun upgradeToTls(socket: Socket): SSLSocket {
-        val sslSocket = sslSocketFactory.createSocket(socket, host, port, true) as SSLSocket
+        val sslSocket = sslSocketFactory.createSocket(socket, config.host, config.port, true) as SSLSocket
         configureTls(sslSocket)
         sslSocket.startHandshake()
         return sslSocket
     }
 
     private fun configureTls(socket: SSLSocket) {
-        socket.soTimeout = timeoutMillis
+        socket.soTimeout = config.timeoutMillis
         socket.sslParameters = socket.sslParameters.apply {
             endpointIdentificationAlgorithm = "HTTPS"
         }
@@ -146,7 +166,7 @@ class SmtpEmailProvider(
                 "WECHAT_UNLINK" -> "解绑微信"
                 else -> "账号验证"
             }
-            writer.print("From: $fromAddress\r\n")
+            writer.print("From: ${config.fromAddress}\r\n")
             writer.print("To: $email\r\n")
             writer.print("Subject: =?UTF-8?B?$subject?=\r\n")
             writer.print("Content-Type: text/plain; charset=UTF-8\r\n")
@@ -160,8 +180,6 @@ class SmtpEmailProvider(
     }
 
     companion object {
-        private const val SECURITY_STARTTLS = "starttls"
-        private const val SECURITY_SSL = "ssl"
         private val CODE_REGEX = Regex("^\\d{6}$")
 
         fun fromEnvironment(env: Map<String, String> = System.getenv()): EmailProvider {
@@ -171,25 +189,27 @@ class SmtpEmailProvider(
 
             val host = env["AUTO_ACCOUNTING_SMTP_HOST"].orEmpty()
             val security = env["AUTO_ACCOUNTING_SMTP_SECURITY"].orEmpty()
-                .ifBlank { SECURITY_STARTTLS }
+                .ifBlank { SMTP_SECURITY_STARTTLS }
                 .lowercase()
-            if (host.isBlank() || security !in setOf(SECURITY_STARTTLS, SECURITY_SSL)) {
+            if (host.isBlank() || security !in setOf(SMTP_SECURITY_STARTTLS, SMTP_SECURITY_SSL)) {
                 return MissingEmailProvider
             }
             val port = env["AUTO_ACCOUNTING_SMTP_PORT"]?.toIntOrNull()
-                ?: if (security == SECURITY_SSL) 465 else 587
+                ?: if (security == SMTP_SECURITY_SSL) 465 else 587
             val username = env["AUTO_ACCOUNTING_SMTP_USERNAME"].orEmpty()
             val password = env["AUTO_ACCOUNTING_SMTP_PASSWORD"].orEmpty()
             val fromAddress = env["AUTO_ACCOUNTING_SMTP_FROM"].orEmpty().ifBlank { username }
             if (fromAddress.isBlank() || !isSafeHeaderValue(fromAddress)) return MissingEmailProvider
 
             return SmtpEmailProvider(
-                host = host,
-                port = port,
-                username = username,
-                passwordSupplier = { password },
-                fromAddress = fromAddress,
-                security = security
+                config = SmtpEmailProviderConfig(
+                    host = host,
+                    port = port,
+                    username = username,
+                    fromAddress = fromAddress,
+                    security = security
+                ),
+                passwordSupplier = { password }
             )
         }
 

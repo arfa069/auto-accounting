@@ -105,6 +105,27 @@ class AiCategorizationServiceTest {
     }
 
     @Test
+    fun unexpectedProviderRuntimeFailureIsStableAndNeverLeaksOrLogs() = runBlocking {
+        val service = AiCategorizationService(
+            provider = object : AiProvider {
+                override suspend fun suggest(
+                    payload: AiCategorizationPayload
+                ): AiCategorizationSuggestion {
+                    error("provider secret")
+                }
+            }
+        )
+
+        val failure = runCatching {
+            service.suggest(1L, request(), false)
+        }.exceptionOrNull() as AiCategorizationException
+
+        assertEquals(AiCategorizationError.PROVIDER_ERROR, failure.error)
+        assertFalse(failure.message.orEmpty().contains("provider secret"))
+        assertTrue(service.logs.isEmpty())
+    }
+
+    @Test
     fun providerCancellationIsNotConvertedOrLogged() = runBlocking {
         val cancellation = CancellationException("cancelled")
         val service = AiCategorizationService(

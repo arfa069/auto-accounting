@@ -12,6 +12,7 @@
 - Provider 缺失或失败时返回安全、稳定的失败结果，不泄露配置、上游响应或堆栈。
 - 账号最终删除必须清理该账号的全部 AI 日志；保留策略变化要同步合规文档。
 - 请求和响应字段变化同步更新 Shared API 与 Android 客户端测试。
+- `AiCategorizationService` 只做编排和成功日志写入；请求边界由 `AiCategorizationValidation.kt` 负责，响应白名单、脱敏解释和异常映射由 `AiCategorizationResponseValidation.kt` 负责。保持 `CancellationException` 传播，并确保 Provider 失败不写成功日志。
 
 ## 验证
 

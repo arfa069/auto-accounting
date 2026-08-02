@@ -49,11 +49,13 @@ class EmailProviderTest {
 
         try {
             val provider = SmtpEmailProvider(
-                host = "127.0.0.1",
-                port = port,
-                username = "testuser",
-                passwordSupplier = { "wrongpass" },
-                fromAddress = "noreply@example.com"
+                config = SmtpEmailProviderConfig(
+                    host = "127.0.0.1",
+                    port = port,
+                    username = "testuser",
+                    fromAddress = "noreply@example.com"
+                ),
+                passwordSupplier = { "wrongpass" }
             )
             val result = provider.sendCode("user@example.com", "654321", "REGISTER")
             assertEquals(EmailProviderResult.Failed(AccountError.EMAIL_SEND_FAILED), result)
@@ -83,12 +85,14 @@ class EmailProviderTest {
     @Test
     fun smtpProviderReturnsFailedOnTimeout() {
         val provider = SmtpEmailProvider(
-            host = "192.0.2.1", // Non-routable IP to trigger timeout
-            port = 25,
-            username = "",
-            passwordSupplier = { "" },
-            fromAddress = "noreply@example.com",
-            timeoutMillis = 200
+            config = SmtpEmailProviderConfig(
+                host = "192.0.2.1", // Non-routable IP to trigger timeout
+                port = 25,
+                username = "",
+                fromAddress = "noreply@example.com",
+                timeoutMillis = 200
+            ),
+            passwordSupplier = { "" }
         )
         val result = provider.sendCode("user@example.com", "654321", "REGISTER")
         assertEquals(EmailProviderResult.Failed(AccountError.EMAIL_SEND_FAILED), result)

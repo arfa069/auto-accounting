@@ -17,6 +17,7 @@
 - 注销申请进入七天冷静期；待注销账号暂停云端写入，取消后恢复，最终删除需联动 AI 日志、云配置和账户同步数据。
 - Store 接口、内存替身与 JDBC 实现必须保持同一语义；迁移版本不可复用。
 - `AccountService` 保持 Routes 使用的公共门面，内部按验证码、标识、微信、Session 与生命周期服务委派；JDBC Store 事务通过共享连接上下文保持原子，微信注册/绑定/解绑与账号合并必须复用一个 `Connection`。
+- SMTP 与短信 Provider 的连接/签名行为保持在 Provider 内部；`SmtpEmailProviderConfig` 和 `AliyunPnvsSmsConfig` 只承载不可变配置，环境工厂继续负责既有环境变量与安全失败判断。保留旧的 public Provider 构造器作为兼容入口时，不得改变 TLS、超时、凭据回退或错误映射。
 
 ## 验证
 

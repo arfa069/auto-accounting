@@ -68,36 +68,53 @@ class WebhookSmsProvider(
     }
 }
 
-class AliyunPnvsSmsProvider(
-    private val accessKeyId: String,
-    private val accessKeySecret: String,
-    private val signName: String,
-    private val templateCode: String,
-    private val schemeName: String = "",
-    private val endpoint: String = "https://dypnsapi.aliyuncs.com",
+class AliyunPnvsSmsProvider internal constructor(
+    private val config: AliyunPnvsSmsConfig,
     private val httpClient: HttpClient = HttpClient.newHttpClient()
 ) : SmsProvider {
+
+    @Suppress("LongParameterList")
+    constructor(
+        accessKeyId: String,
+        accessKeySecret: String,
+        signName: String,
+        templateCode: String,
+        schemeName: String = "",
+        endpoint: String = "https://dypnsapi.aliyuncs.com",
+        httpClient: HttpClient = HttpClient.newHttpClient()
+    ) : this(
+        config = AliyunPnvsSmsConfig(
+            accessKeyId = accessKeyId,
+            accessKeySecret = accessKeySecret,
+            signName = signName,
+            templateCode = templateCode,
+            schemeName = schemeName,
+            endpoint = endpoint
+        ),
+        httpClient = httpClient
+    )
+
     override fun sendCode(phone: String, code: String): SmsProviderResult {
         return try {
             val timestamp = ISO_INSTANT_FORMATTER.format(java.time.Instant.now())
             val nonce = java.util.UUID.randomUUID().toString()
 
             val params = mutableMapOf(
-                "AccessKeyId" to accessKeyId,
+                "AccessKeyId" to config.accessKeyId,
                 "Action" to "SendSmsVerifyCode",
                 "Format" to "JSON",
                 "PhoneNumber" to phone,
-                "SignName" to signName,
+                "SignName" to config.signName,
                 "SignatureMethod" to "HMAC-SHA1",
                 "SignatureNonce" to nonce,
                 "SignatureVersion" to "1.0",
-                "TemplateCode" to templateCode,
+                "TemplateCode" to config.templateCode,
                 "TemplateParam" to "{\"code\":\"$code\",\"min\":\"5\"}",
                 "Timestamp" to timestamp,
                 "Version" to "2017-05-25"
             )
-            if (schemeName.isNotBlank()) {
-                params["SchemeName"] = schemeName
+            if (config.schemeName.isNotBlank()) {
+                params["SchemeName"] = config.schemeName
             }
 
             val canonicalizedQueryString = params.entries
@@ -107,10 +124,10 @@ class AliyunPnvsSmsProvider(
                 }
 
             val stringToSign = "POST&${percentEncode("/")}&${percentEncode(canonicalizedQueryString)}"
-            val signature = computeHmacSha1(stringToSign, "$accessKeySecret&")
+            val signature = computeHmacSha1(stringToSign, "${config.accessKeySecret}&")
             val requestBody = "Signature=${percentEncode(signature)}&$canonicalizedQueryString"
 
-            val request = HttpRequest.newBuilder(URI.create(endpoint))
+            val request = HttpRequest.newBuilder(URI.create(config.endpoint))
                 .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build()
@@ -163,36 +180,38 @@ fun SmsProvider.Companion.fromEnvironment(env: Map<String, String> = System.gete
     if (provider.isBlank()) return MissingSmsProvider
 
     return when (provider) {
-        "webhook" -> {
-            val url = env["AUTO_ACCOUNTING_SMS_WEBHOOK_URL"].orEmpty()
-            val key = env["AUTO_ACCOUNTING_SMS_API_KEY"].orEmpty()
-            if (url.isBlank() || key.isBlank()) MissingSmsProvider else WebhookSmsProvider(url, key)
-        }
-        "aliyun_pnvs", "aliyun" -> {
-            val keyId = env["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_ID"]
-                ?: env["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_ID"]
-                ?: env["ALIYUN_ACCESS_KEY_ID"]
-                .orEmpty()
-            val keySecret = env["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_SECRET"]
-                ?: env["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_SECRET"]
-                ?: env["ALIYUN_ACCESS_KEY_SECRET"]
-                .orEmpty()
-            val signName = env["AUTO_ACCOUNTING_SMS_SIGN_NAME"].orEmpty()
-            val templateCode = env["AUTO_ACCOUNTING_SMS_TEMPLATE_CODE"].orEmpty()
-            val schemeName = env["AUTO_ACCOUNTING_SMS_SCHEME_NAME"].orEmpty()
-
-            if (keyId.isBlank() || keySecret.isBlank() || signName.isBlank() || templateCode.isBlank()) {
-                MissingSmsProvider
-            } else {
-                AliyunPnvsSmsProvider(
-                    accessKeyId = keyId,
-                    accessKeySecret = keySecret,
-                    signName = signName,
-                    templateCode = templateCode,
-                    schemeName = schemeName
-                )
-            }
-        }
+        "webhook" -> fromWebhookEnvironment(env)
+        "aliyun_pnvs", "aliyun" -> fromAliyunEnvironment(env)
         else -> MissingSmsProvider
     }
+}
+
+private fun fromWebhookEnvironment(env: Map<String, String>): SmsProvider {
+    val url = env["AUTO_ACCOUNTING_SMS_WEBHOOK_URL"].orEmpty()
+    val key = env["AUTO_ACCOUNTING_SMS_API_KEY"].orEmpty()
+    return if (url.isBlank() || key.isBlank()) MissingSmsProvider else WebhookSmsProvider(url, key)
+}
+
+private fun fromAliyunEnvironment(env: Map<String, String>): SmsProvider {
+    val config = env.aliyunPnvsSmsConfig() ?: return MissingSmsProvider
+    return AliyunPnvsSmsProvider(config)
+}
+
+private fun Map<String, String>.aliyunPnvsSmsConfig(): AliyunPnvsSmsConfig? {
+    val keyId = this["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_ID"]
+        ?: this["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_ID"]
+        ?: this["ALIYUN_ACCESS_KEY_ID"].orEmpty()
+    val keySecret = this["AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_SECRET"]
+        ?: this["AUTO_ACCOUNTING_ALIYUN_ACCESS_KEY_SECRET"]
+        ?: this["ALIYUN_ACCESS_KEY_SECRET"].orEmpty()
+    val signName = this["AUTO_ACCOUNTING_SMS_SIGN_NAME"].orEmpty()
+    val templateCode = this["AUTO_ACCOUNTING_SMS_TEMPLATE_CODE"].orEmpty()
+    if (listOf(keyId, keySecret, signName, templateCode).any(String::isBlank)) return null
+    return AliyunPnvsSmsConfig(
+        accessKeyId = keyId,
+        accessKeySecret = keySecret,
+        signName = signName,
+        templateCode = templateCode,
+        schemeName = this["AUTO_ACCOUNTING_SMS_SCHEME_NAME"].orEmpty()
+    )
 }
