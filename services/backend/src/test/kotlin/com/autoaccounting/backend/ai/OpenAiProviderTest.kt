@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -295,17 +296,23 @@ class OpenAiProviderTest {
         server.respond { exchange ->
             exchange.capture()
             entered.countDown()
-            Thread.sleep(250)
+            Thread.sleep(2_000)
             runCatching { exchange.respond(200, completedResponse("餐饮", "中", "late")) }
         }
-        val provider = provider(server, readTimeoutMillis = 40)
+        val provider = provider(server, readTimeoutMillis = 500)
 
-        val failure = runBlocking {
-            runCatching { provider.suggest(samplePayload()) }.exceptionOrNull()
+        runBlocking {
+            val requestJob = async(Dispatchers.IO) {
+                runCatching { provider.suggest(samplePayload()) }.exceptionOrNull()
+            }
+            try {
+                assertTrue("fake server did not receive the request", entered.await(2, TimeUnit.SECONDS))
+                val failure = withTimeout(2_000) { requestJob.await() }
+                assertTrue(failure === AiProviderException.TimedOut)
+            } finally {
+                requestJob.cancelAndJoin()
+            }
         }
-
-        assertTrue(entered.await(1, TimeUnit.SECONDS))
-        assertTrue(failure === AiProviderException.TimedOut)
     }
 
     private fun provider(server: HttpServer, readTimeoutMillis: Long = 2_000): AiProvider {

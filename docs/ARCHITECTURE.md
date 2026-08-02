@@ -68,6 +68,11 @@ flowchart LR
   - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
   - `BillSyncAccessibilityService` 只保留 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，`ContinuousCaptureCoordinator` 负责持续监控去重和处理，微信/支付宝 OCR 协调器分别拥有冷却、窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
   - OCR 协调器只经 `AccessibilityCaptureHost` 读取当前窗口、屏幕健康度和截图能力；`onDestroy` 统一取消协调器任务，`onInterrupt` 不改变服务连接状态。
+- **第三轮根组合重构（2026-08-02）**：`AutoAccountingApp` 保留为唯一根组合入口，但将职责拆分为可独立核对的边界：
+  - `AutoAccountingAppDependencies` 负责 Room、账号、AI、微信、备份和账本同步等生产依赖的记忆化装配；`AutoAccountingAppOverrides` 只向测试注入替身，不改变生产依赖图。
+  - `AutoAccountingAppRuntime` 集中账号 Session、账本/同步状态、动作和展示模型；`AutoAccountingAppEffectsContext` 及其副作用函数集中恢复、校验、导航、持久化和同步生命周期，避免路由组件直接拥有后台任务。
+  - `AutoAccountingRouteContext` 作为路由共享上下文，`AutoAccountingRouteHost` 负责账号入口、已登录应用壳、手动录入和主 Tab 分发；账本/待确认/报表与 Profile 子页分别由 `AutoAccountingLedgerRoutes`、`AutoAccountingProfileRoutes` 编排。
+  - `AutoAccountingLedgerSyncAccountSwitchDialog` 必须在 `AutoAccountingTheme` 组合结束后调用。这样账本同步发现账号与本地 Profile 不一致时，AlertDialog 继续使用重构前的主题作用域，不会因结构拆分意外继承应用自定义颜色、字体或组件主题。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

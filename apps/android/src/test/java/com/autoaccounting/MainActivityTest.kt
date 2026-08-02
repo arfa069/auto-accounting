@@ -104,8 +104,10 @@ class MainActivityTest {
         clearPersistedSession()
         composeRule.setContent {
             AutoAccountingApp(
-                accountRepositoryOverride = FakeAccountRepository(),
-                persistAccountSessionOverride = { true }
+                overrides = AutoAccountingAppOverrides(
+                    accountRepository = FakeAccountRepository(),
+                    persistAccountSession = { true }
+                )
             )
         }
 
@@ -228,7 +230,9 @@ class MainActivityTest {
     @Test
     fun reviewNavigationRequestStillOpensReviewQueue() {
         composeRule.setContent {
-            AutoAccountingApp(reviewNavigationRequest = 1L)
+            AutoAccountingApp(
+                bindings = AutoAccountingAppBindings(reviewNavigationRequest = 1L)
+            )
         }
 
         composeRule.onNodeWithText("待确认").assertIsDisplayed()
@@ -378,9 +382,11 @@ class MainActivityTest {
     fun billImportRemainsOnReviewAndIsAbsentFromAutomaticBookkeeping() {
         composeRule.setContent {
             AutoAccountingApp(
-                billSyncAccessibilityAccessGranted = true,
-                billSyncAccessibilityServiceConnected = true,
-                onLaunchBillSyncSource = { true }
+                bindings = AutoAccountingAppBindings(
+                    billSyncAccessibilityAccessGranted = true,
+                    billSyncAccessibilityServiceConnected = true,
+                    onLaunchBillSyncSource = { true }
+                )
             )
         }
 
@@ -413,9 +419,11 @@ class MainActivityTest {
         try {
             composeRule.setContent {
                 AutoAccountingApp(
-                    billSyncAccessibilityAccessGranted = true,
-                    billSyncAccessibilityServiceConnected = false,
-                    permissionStateLoaded = true
+                    bindings = AutoAccountingAppBindings(
+                        billSyncAccessibilityAccessGranted = true,
+                        billSyncAccessibilityServiceConnected = false,
+                        permissionStateLoaded = true
+                    )
                 )
             }
 
