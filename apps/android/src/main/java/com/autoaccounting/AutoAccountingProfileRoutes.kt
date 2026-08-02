@@ -8,6 +8,8 @@ import com.autoaccounting.feature.account.AccountManagementScreen
 import com.autoaccounting.feature.account.AccountRuntimeState
 import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.categorization.CategorizationAiUiState
+import com.autoaccounting.feature.categorization.CategorizationRulesActions
 import com.autoaccounting.feature.categorization.CategorizationRulesScreen
 import com.autoaccounting.feature.compliance.ComplianceAndPrivacyScreen
 import com.autoaccounting.feature.monitoring.AutomaticBookkeepingScreen
@@ -141,14 +143,18 @@ private fun AutoAccountingCategorizationRoute(
     CategorizationRulesScreen(
         rules = runtime.categorizationRules,
         onRulesChange = context.actions::persistCategorizationRules,
-        aiSettings = context.presentation.effectiveAiSettings,
-        onAiSettingsChange = context.actions::persistAiSettings,
-        aiSettingsSyncInFlight = runtime.aiSettingsSyncInFlight,
-        accountSession = runtime.accountSession,
-        accountDeletionState = runtime.accountDeletionState,
-        accountRuntimeState = runtime.accountRuntimeState,
-        onBack = { context.appState.profileDestination.value = null },
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier.padding(innerPadding),
+        aiUiState = CategorizationAiUiState(
+            settings = context.presentation.effectiveAiSettings,
+            signedIn = runtime.accountSession is AccountSession.SignedIn,
+            cloudWritesPaused = runtime.accountDeletionState.isPending ||
+                !runtime.accountRuntimeState.cloudWritesAllowed,
+            settingsSyncInFlight = runtime.aiSettingsSyncInFlight
+        ),
+        actions = CategorizationRulesActions(
+            onAiSettingsChange = context.actions::persistAiSettings,
+            onBack = { context.appState.profileDestination.value = null }
+        ),
     )
 }
 

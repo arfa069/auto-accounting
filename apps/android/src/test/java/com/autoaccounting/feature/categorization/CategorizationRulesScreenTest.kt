@@ -15,7 +15,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.autoaccounting.feature.account.AccountSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -33,7 +32,7 @@ class CategorizationRulesScreenTest {
     @Test
     fun localModeShowsRulesAndLoginHintWithoutAiControls() {
         composeRule.setContent {
-            CategorizationRulesScreen(accountSession = AccountSession.LocalMode)
+            CategorizationRulesScreen()
         }
 
         composeRule.onNodeWithText("分类规则").assertIsDisplayed()
@@ -65,7 +64,7 @@ class CategorizationRulesScreenTest {
     fun signedInModeShowsOptionalAiConsentAndDisablesEnhancedContextByDefault() {
         composeRule.setContent {
             CategorizationRulesScreen(
-                accountSession = AccountSession.SignedIn("13800138000", "token")
+                aiUiState = CategorizationAiUiState(signedIn = true)
             )
         }
 
@@ -138,9 +137,8 @@ class CategorizationRulesScreenTest {
         var settings by mutableStateOf(AiCategorizationSettings())
         composeRule.setContent {
             CategorizationRulesScreen(
-                aiSettings = settings,
+                aiUiState = CategorizationAiUiState(signedIn = true, settings = settings),
                 onAiSettingsChange = { settings = it },
-                accountSession = AccountSession.SignedIn("13800138000", "token-1")
             )
         }
 
@@ -157,9 +155,11 @@ class CategorizationRulesScreenTest {
     fun cloudAiSwitchesAreDisabledWhileSettingsSynchronize() {
         composeRule.setContent {
             CategorizationRulesScreen(
-                aiSettings = AiCategorizationSettings(aiConsentGranted = true),
-                aiSettingsSyncInFlight = true,
-                accountSession = AccountSession.SignedIn("13800138000", "token-1")
+                aiUiState = CategorizationAiUiState(
+                    settings = AiCategorizationSettings(aiConsentGranted = true),
+                    signedIn = true,
+                    settingsSyncInFlight = true
+                )
             )
         }
 
