@@ -101,6 +101,10 @@ flowchart LR
   - `AccountScreen.kt` 保留 Compose 状态、微信 Controller 装配、跨页面 Effects、返回处理和子组件装配；认证操作（`isReadyFor`、短信请求、登录、注册、找回及 `completeAuthentication`）机械搬移至 `AccountAuthOperations.kt`。
   - 页面模型、Flow 页 Scaffold 与 Landing/Login/Register/Recovery/LocalMode 内容位于 `AccountAuthContent.kt`；表单字段组件因 Detekt 文件级 `TooManyFunctions` 阈值独立为 `AccountAuthFormFields.kt`；微信登录分支 Scaffold 包装 `WechatLoginFlowPage` 归入 `WechatLoginScreens.kt`。
   - Android Detekt baseline 从 101 项减少到 98 项，移除 3 条已解决的 `AccountScreen.kt` 问题，公开入口的 `LongParameterList` 兼容债务保留。账号专项测试、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
+- **第十一轮 数据与备份页面职责拆分（2026-08-03）**：保持账户同步模式与冲突规则、备份格式与恢复事务、CSV 契约与删除语义不变，只拆分 `DataAndBackupScreen` 的账户同步与本地备份职责：
+  - `LedgerSyncSettingsSection.kt` 拥有同步区稳定生命周期内的 `syncBusy`、首次同步预览与确认 Dialog、冲突展示；`LocalBackupSection.kt` 拥有文件 Launcher、导出/导入密码、`PendingRestore` 与恢复确认；`DataAndBackupScreen.kt` 保留公开签名、页面标题/返回、共享 `SnackbarHostState` 与危险区。
+  - 协程 scope 由 Section 持有，Dialog 关闭后成功/失败 Snackbar 不会被取消；Android Detekt baseline 从 98 项减少到 96 项，移除两条已解决的 `CyclomaticComplexMethod`/`LongMethod`，公开入口与 `BackupPasswordDialog` 的 `LongParameterList` 兼容债务保留。
+  - settings 专项、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

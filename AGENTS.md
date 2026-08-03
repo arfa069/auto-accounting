@@ -53,7 +53,7 @@
 - 每个文件应聚焦一个主要职责；
 - 数据持久层使用领域细分接口（`LedgerBookRepository`、`LedgerEntryRepository`、`FundingAccountRepository`）解耦操作，并通过 `LocalLedgerRepository` Facade 对外透出；
 - Activity 回调与系统监控服务由 `MonitoringStateCoordinator` 托管，组合导航状态由 `AutoAccountingAppState` (State Holder) 管理；
-- 优先沿用现有 feature、repository 与 service 组织方式，不为简单问题引入新抽象。ADR 使用下一个四位编号，例如 `docs/adr/0048-describe-decision.md`。
+- 优先沿用现有 feature、repository 与 service 组织方式，不为简单问题引入新抽象。ADR 使用下一个四位编号，例如 `docs/adr/0062-describe-decision.md`。
 
 ## 测试规范
 
