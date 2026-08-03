@@ -148,6 +148,28 @@ class DiagnosticLogsScreenTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun failedExportKeepsResultVisibleAfterPassphraseDialogCloses() {
+        val repository = FakeDiagnosticRepository(initialEnabled = true).apply {
+            failExport = true
+        }
+        composeRule.setContent {
+            DiagnosticLogsScreen(
+                isDebugBuild = true,
+                onBack = {},
+                repositoryOverride = repository,
+                applySecureWindowFlag = false
+            )
+        }
+
+        startExport(repository)
+
+        composeRule.onNodeWithText("导出失败").assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostic-export-result-message")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostic-export-passphrase").assertDoesNotExist()
+    }
+
     private fun startExport(repository: FakeDiagnosticRepository) {
         val eventList = composeRule.onNodeWithTag("diagnostic-event-list")
         eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
@@ -190,6 +212,8 @@ private class FakeDiagnosticRepository(initialEnabled: Boolean) : DiagnosticLogR
     @Volatile
     var blockExport = false
     @Volatile
+    var failExport = false
+    @Volatile
     var exportCallCount = 0
 
     override val enabled: StateFlow<Boolean> = mutableEnabled
@@ -212,6 +236,7 @@ private class FakeDiagnosticRepository(initialEnabled: Boolean) : DiagnosticLogR
     override suspend fun exportEncrypted(passphrase: CharArray): String {
         exportCallCount += 1
         if (blockExport) awaitCancellation()
+        if (failExport) error("export failed")
         return "encrypted"
     }
 }
