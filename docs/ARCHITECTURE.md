@@ -91,6 +91,16 @@ flowchart LR
   - `BillPageParser` 保留公共解析入口、规范化、结构化单行解析、金额转换和结果去重；`PaymentRecordClassification` 集中页面准入、完成态/付款发起判断和交易类型分类。
   - `PaymentRecordSurfaceParser` 负责支付记录金额候选、窗口、时间回退和结果构造；`PaymentRecordFieldExtractor` 负责商户、商品、资金账户、状态及订单字段，时间、P2P 标题和订单号辅助提取器分别位于独立文件。
   - 本轮未新增路由、共享 API、环境变量、数据库表、UI 或 OCR/无障碍行为；移除 3 条对应 Detekt baseline 项。Android 全量 556 项、Android Detekt、Debug 构建及 `coverageReport detekt build` 均通过，未执行真机操作。
+- **第八轮 分类规则页面职责拆分（2026-08-03）**：保持规则匹配语义、规则持久化、AI 同意状态与可见 UI 行为不变，只拆分 `CategorizationRulesScreen` 的页面职责：
+  - 规则列表、规则编辑对话框和 AI 设置区段分别位于 `CategorizationRuleListContent.kt`、`CategorizationRuleDialog.kt`、`CategorizationAiSettingsSection.kt`，`CategorizationAiUiState.kt` 承载 AI 设置状态；`CategorizationRulesScreen` 保留页面状态与装配。
+  - 本轮未新增共享 API、数据库表或后端路由，Detekt baseline 无变化。
+- **第九轮 微信账号管理 UI 职责拆分（2026-08-03）**：保持账号 Profile 持久化、微信身份绑定/换绑/合并、注销冷静期与可见 UI 行为不变，只拆分 `AccountManagementScreen` 的微信账号管理职责：
+  - `WechatAccountManagement.kt` 保留微信账号管理面板的状态与事件编排；昵称/头像 Profile 内容、头像编辑、身份对话框宿主及对话框操作分别位于 `WechatAccountProfileContent.kt`、`WechatAccountAvatarEditor.kt`、`WechatAccountIdentityDialogHost.kt`、`WechatAccountIdentityDialogOperations.kt`。
+  - Android Detekt baseline 移除 5 条已解决的 `WechatAccountManagement.kt` 问题；账号专项测试（含新增微信 UI 覆盖）通过。
+- **第十轮 账号入口职责拆分（2026-08-03）**：保持 `AccountScreen` 公开签名、页面返回层级、Session 持久化失败撤销、微信回调单次消费、短信倒计时与 Snackbar 生命周期不变，只拆分账号入口文件职责：
+  - `AccountScreen.kt` 保留 Compose 状态、微信 Controller 装配、跨页面 Effects、返回处理和子组件装配；认证操作（`isReadyFor`、短信请求、登录、注册、找回及 `completeAuthentication`）机械搬移至 `AccountAuthOperations.kt`。
+  - 页面模型、Flow 页 Scaffold 与 Landing/Login/Register/Recovery/LocalMode 内容位于 `AccountAuthContent.kt`；表单字段组件因 Detekt 文件级 `TooManyFunctions` 阈值独立为 `AccountAuthFormFields.kt`；微信登录分支 Scaffold 包装 `WechatLoginFlowPage` 归入 `WechatLoginScreens.kt`。
+  - Android Detekt baseline 从 101 项减少到 98 项，移除 3 条已解决的 `AccountScreen.kt` 问题，公开入口的 `LongParameterList` 兼容债务保留。账号专项测试、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。
