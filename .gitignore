@@ -26,3 +26,4 @@ captures/
 *.pem
 .codex/config.toml
 /.agents
+reasonix.toml
