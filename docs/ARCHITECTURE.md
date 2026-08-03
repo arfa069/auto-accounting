@@ -105,6 +105,11 @@ flowchart LR
   - `LedgerSyncSettingsSection.kt` 拥有同步区稳定生命周期内的 `syncBusy`、首次同步预览与确认 Dialog、冲突展示；`LocalBackupSection.kt` 拥有文件 Launcher、导出/导入密码、`PendingRestore` 与恢复确认；`DataAndBackupScreen.kt` 保留公开签名、页面标题/返回、共享 `SnackbarHostState` 与危险区。
   - 协程 scope 由 Section 持有，Dialog 关闭后成功/失败 Snackbar 不会被取消；Android Detekt baseline 从 98 项减少到 96 项，移除两条已解决的 `CyclomaticComplexMethod`/`LongMethod`，公开入口与 `BackupPasswordDialog` 的 `LongParameterList` 兼容债务保留。
   - settings 专项、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
+- **第十二轮 诊断日志页面职责拆分（2026-08-03）**：保持诊断采集范围、脱敏、加密分段、清空与导出口令语义不变，只拆分 `DiagnosticLogsScreen` 的页面内容与 Dialog 职责：
+  - `DiagnosticLogsContent.kt` 拥有事件列表、搜索/级别/组件筛选、状态与操作行及 `DiagnosticEventCard`，只接收状态和事件回调；`DiagnosticLogsDialogs.kt` 承载 Release 开启确认、敏感内容确认、清空确认、导出口令与导出结果 Dialog。
+  - 导出 Job 继续由页面级 scope 持有，口令在 `finally` 中以 `\u0000` 覆盖，取消不创建文件，结果 Dialog 在口令 Dialog 关闭后仍可见；Lifecycle 后台重新遮罩与 `FLAG_SECURE` 边界保留在根函数。
+  - Android Detekt baseline 从 96 项减少到 94 项，移除两条已解决的 `CyclomaticComplexMethod`/`LongMethod`，公开入口的 `LongParameterList` 兼容债务保留；新增导出失败后结果仍稳定可见的 UI 回归测试。
+  - diagnostics/compliance 专项、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。
