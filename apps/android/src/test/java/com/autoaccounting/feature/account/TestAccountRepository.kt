@@ -2,6 +2,7 @@ package com.autoaccounting.feature.account
 
 import com.autoaccounting.api.MergePreviewResponseContract
 import com.autoaccounting.api.IdentifierLinkPrepareResponseContract
+import kotlinx.coroutines.CompletableDeferred
 
 internal class TestAccountRepository : AccountRepository {
     var smsResult: AccountRepositoryResult<Unit> = AccountRepositoryResult.Success(Unit)
@@ -21,11 +22,13 @@ internal class TestAccountRepository : AccountRepository {
     var linkWechatWithPasswordResult: AccountRepositoryResult<AccountCredentials>? = null
     var linkWechatWithCodeResult: AccountRepositoryResult<AccountCredentials>? = null
     var phoneLinkPrepareResult: AccountRepositoryResult<IdentifierLinkPrepareResponseContract>? = null
+    var prepareIdentifierLinkGate: CompletableDeferred<Unit>? = null
     var phoneLinkCompleteResult: AccountRepositoryResult<AccountCredentials>? = null
     var mergePrepareResult: AccountRepositoryResult<MergePreviewResponseContract>? = null
     var mergeConfirmResult: AccountRepositoryResult<AccountCredentials>? = null
     var unlinkWechatWithPasswordResult: AccountRepositoryResult<AccountCredentials>? = null
     var unlinkWechatWithCodeResult: AccountRepositoryResult<AccountCredentials>? = null
+    var smsGate: CompletableDeferred<AccountRepositoryResult<Unit>>? = null
     var smsCalls = 0
     var lastSmsIdentifier: String? = null
     var lastSmsPurpose: AccountVerificationPurpose? = null
@@ -42,6 +45,7 @@ internal class TestAccountRepository : AccountRepository {
     var unlinkWechatWithPasswordCalls = 0
     var unlinkWechatWithCodeCalls = 0
     var lastUnlinkWechatIdentifier: String? = null
+    var lastUnlinkWechatCode: String? = null
     var signOutCalls = 0
     var requestDeletionCalls = 0
     var updateNicknameCalls = 0
@@ -60,7 +64,7 @@ internal class TestAccountRepository : AccountRepository {
         lastSmsIdentifier = identifier
         lastSmsPurpose = purpose
         lastSmsContextKey = contextKey
-        return smsResult
+        return smsGate?.await() ?: smsResult
     }
 
     override suspend fun register(
@@ -167,6 +171,7 @@ internal class TestAccountRepository : AccountRepository {
     ): AccountRepositoryResult<IdentifierLinkPrepareResponseContract> {
         prepareIdentifierLinkCalls += 1
         lastReplaceExisting = replaceExisting
+        prepareIdentifierLinkGate?.await()
         return phoneLinkPrepareResult ?: AccountRepositoryResult.Success(
             IdentifierLinkPrepareResponseContract.LinkTicketIssued("link-ticket", 300_000L)
         )
@@ -228,6 +233,7 @@ internal class TestAccountRepository : AccountRepository {
     ): AccountRepositoryResult<AccountCredentials> {
         unlinkWechatWithCodeCalls += 1
         lastUnlinkWechatIdentifier = identifier
+        lastUnlinkWechatCode = code
         return unlinkWechatWithCodeResult ?: authenticationResult
     }
 }

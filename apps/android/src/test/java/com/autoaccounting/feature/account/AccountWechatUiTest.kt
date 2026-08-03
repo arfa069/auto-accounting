@@ -10,8 +10,10 @@ import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +25,7 @@ import androidx.core.app.ActivityOptionsCompat
 import androidx.test.core.app.ApplicationProvider
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -50,6 +53,27 @@ class AccountWechatUiTest {
         composeRule.onNodeWithTag("wechat-login-entry").assertDoesNotExist()
         composeRule.onNodeWithText("登录").assertIsDisplayed()
         composeRule.onNodeWithText("创建账号").assertIsDisplayed()
+    }
+
+    @Test
+    fun missingGatewayDisablesWechatBindingAction() {
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn("13800138000", "token"),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = TestAccountRepository(),
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("bind-wechat").performScrollTo().assertIsNotEnabled()
     }
 
     @Test
@@ -179,6 +203,42 @@ class AccountWechatUiTest {
     }
 
     @Test
+    fun delayedIdentifierSmsRequestKeepsLatestIdentifierAndDropsOldTicket() {
+        val repository = TestAccountRepository().apply {
+            prepareIdentifierLinkGate = CompletableDeferred()
+        }
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(null, "token", wechatLinked = true),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("bind-phone").performScrollTo().performClick()
+        composeRule.onNodeWithTag("identity-phone").performTextInput("13800138000")
+        composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitUntil { repository.prepareIdentifierLinkCalls == 1 }
+
+        composeRule.onNodeWithTag("identity-phone").performTextReplacement("13900139000")
+        repository.prepareIdentifierLinkGate!!.complete(Unit)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("identity-phone").assertTextContains("13900139000")
+        composeRule.onNodeWithText("继续").performClick()
+        composeRule.waitForIdle()
+        assertEquals(0, repository.completeIdentifierLinkCalls)
+    }
+
+    @Test
     fun passwordMergeRequiresExactConfirmationAndExplainsDataRules() {
         val repository = TestAccountRepository()
         composeRule.setContent {
@@ -290,6 +350,58 @@ class AccountWechatUiTest {
         composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
         composeRule.waitUntil { repository.unlinkWechatWithCodeCalls == 1 }
         assertEquals("user@example.com", repository.lastUnlinkWechatIdentifier)
+    }
+
+    @Test
+    fun delayedUnlinkSmsRequestKeepsLatestIdentifierAndCode() {
+        val phone = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
+            "13800138000"
+        )
+        val email = com.autoaccounting.api.AccountIdentifierContract(
+            com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL,
+            "user@example.com"
+        )
+        val repository = TestAccountRepository().apply {
+            smsGate = CompletableDeferred()
+        }
+        composeRule.setContent {
+            AccountManagementScreen(
+                session = AccountSession.SignedIn(
+                    primaryIdentifier = phone,
+                    identifiers = listOf(phone, email),
+                    token = "token",
+                    wechatLinked = true
+                ),
+                runtimeState = AccountRuntimeState(AccountRuntimeStatus.Verified),
+                deletionState = AccountDeletionUiState(),
+                accountRepository = repository,
+                onSignInOrRegister = {},
+                onSessionVerified = {},
+                onInvalidSession = {},
+                clearPersistedSession = { true },
+                onSignedOut = {},
+                onDeletionStateChange = {},
+                onBack = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("unlink-wechat").performScrollTo().performClick()
+        composeRule.onNodeWithText("验证码验证").performClick()
+        composeRule.onNodeWithText("获取验证码").performClick()
+        composeRule.waitUntil { repository.smsCalls == 1 }
+
+        composeRule.onNodeWithText("邮箱验证码").performClick()
+        composeRule.onNodeWithTag("unlink-code").performTextInput("654321")
+        repository.smsGate!!.complete(AccountRepositoryResult.Success(Unit))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("获取验证码").assertIsEnabled()
+
+        composeRule.onNodeWithTag("confirm-unlink-wechat").performClick()
+        composeRule.waitUntil { repository.unlinkWechatWithCodeCalls == 1 }
+
+        assertEquals("user@example.com", repository.lastUnlinkWechatIdentifier)
+        assertEquals("654321", repository.lastUnlinkWechatCode)
     }
 
     @Test

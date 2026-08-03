@@ -135,16 +135,20 @@ fun AccountManagementScreen(
                 }
                 WechatAccountManagementPanel(
                     session = session,
-                    deletionState = deletionState,
-                    accountRepository = accountRepository,
-                    wechatAuthGateway = wechatAuthGateway,
-                    wechatAuthCallback = wechatAuthCallback,
-                    onWechatAuthCallbackConsumed = onWechatAuthCallbackConsumed,
-                    persistSession = persistSession,
-                    clearPersistedSession = clearPersistedSession,
-                    avatarCache = avatarCache,
-                    onSessionVerified = onSessionVerified,
-                    onInvalidSession = onInvalidSession
+                    dependencies = WechatAccountManagementDependencies(
+                        deletionState = deletionState,
+                        accountRepository = accountRepository,
+                        wechatAuthGateway = wechatAuthGateway,
+                        wechatAuthCallback = wechatAuthCallback,
+                        avatarCache = avatarCache,
+                        sessionActions = WechatAccountSessionActions(
+                            onWechatAuthCallbackConsumed = onWechatAuthCallbackConsumed,
+                            persistSession = persistSession,
+                            clearPersistedSession = clearPersistedSession,
+                            onSessionVerified = onSessionVerified,
+                            onInvalidSession = onInvalidSession
+                        )
+                    )
                 )
                 OutlinedButton(
                     onClick = {

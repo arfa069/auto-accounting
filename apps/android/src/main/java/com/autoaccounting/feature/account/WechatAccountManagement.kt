@@ -1,46 +1,14 @@
 package com.autoaccounting.feature.account
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import com.autoaccounting.api.MergePreviewResponseContract
-import com.autoaccounting.api.IdentifierLinkPrepareResponseContract
-import com.autoaccounting.api.AccountIdentifierParser
 import com.autoaccounting.api.AccountIdentifierTypeContract
-import com.autoaccounting.ui.components.Button
-import com.autoaccounting.ui.components.OutlinedButton
-import com.autoaccounting.ui.components.OutlinedTextField
-import com.autoaccounting.ui.components.TextButton
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 
 internal enum class AccountIdentityPage {
     Idle,
@@ -82,19 +50,155 @@ internal data class AccountIdentityUiState(
     val errorMessage: String? = null
 )
 
+internal data class WechatAccountSessionActions(
+    val onWechatAuthCallbackConsumed: () -> Unit,
+    val persistSession: (AccountCredentials) -> Boolean,
+    val clearPersistedSession: () -> Boolean,
+    val onSessionVerified: (AccountCredentials) -> Unit,
+    val onInvalidSession: () -> Unit
+)
+
+internal data class WechatAccountManagementDependencies(
+    val deletionState: AccountDeletionUiState,
+    val accountRepository: AccountRepository,
+    val wechatAuthGateway: WechatAuthGateway?,
+    val wechatAuthCallback: WechatAuthCallback?,
+    val avatarCache: WechatAvatarCache,
+    val sessionActions: WechatAccountSessionActions
+)
+
+private class WechatAccountProfileActionHandler(
+    private val session: AccountSession.SignedIn,
+    private val authCoordinator: WechatAuthCoordinator?,
+    private val onStateChange: (AccountIdentityUiState) -> Unit,
+    private val onFailureMessage: (String) -> Unit,
+    private val onAvatarEditorRequested: () -> Unit
+) {
+    fun handle(action: WechatAccountProfileAction, state: AccountIdentityUiState) {
+        when (action) {
+            WechatAccountProfileAction.EditAvatar -> onAvatarEditorRequested()
+            WechatAccountProfileAction.EditNickname -> onStateChange(
+                state.copy(
+                    page = AccountIdentityPage.EditNickname,
+                    editNicknameInput = session.nickname.orEmpty()
+                )
+            )
+            WechatAccountProfileAction.ReplacePhone -> onStateChange(
+                AccountIdentityUiState(
+                    page = AccountIdentityPage.AttachIdentifier,
+                    targetIdentifierType = AccountIdentifierTypeContract.PHONE,
+                    replaceExistingIdentifier = true
+                )
+            )
+            WechatAccountProfileAction.BindPhone -> onStateChange(
+                AccountIdentityUiState(
+                    page = AccountIdentityPage.AttachIdentifier,
+                    targetIdentifierType = AccountIdentifierTypeContract.PHONE
+                )
+            )
+            WechatAccountProfileAction.ReplaceEmail -> onStateChange(
+                AccountIdentityUiState(
+                    page = AccountIdentityPage.AttachIdentifier,
+                    targetIdentifierType = AccountIdentifierTypeContract.EMAIL,
+                    replaceExistingIdentifier = true
+                )
+            )
+            WechatAccountProfileAction.BindEmail -> onStateChange(
+                AccountIdentityUiState(
+                    page = AccountIdentityPage.AttachIdentifier,
+                    targetIdentifierType = AccountIdentifierTypeContract.EMAIL
+                )
+            )
+            WechatAccountProfileAction.UnlinkWechat -> openWechatUnlink()
+            WechatAccountProfileAction.BindWechat -> startWechatLink(state)
+        }
+    }
+
+    private fun startWechatLink(state: AccountIdentityUiState) {
+        if (state.operationInProgress || authCoordinator == null) return
+        when (
+            authCoordinator.startAuthorization(
+                agreementAccepted = true,
+                purpose = WechatAuthPurpose.LinkCurrentAccount,
+                sessionFingerprint = wechatSessionFingerprint(session.token)
+            )
+        ) {
+            WechatAuthLaunchResult.Started -> onStateChange(state.copy(operationInProgress = true, errorMessage = null))
+            WechatAuthLaunchResult.NotInstalled -> onFailureMessage("未检测到微信，请先安装微信")
+            WechatAuthLaunchResult.VersionUnsupported -> onFailureMessage("当前微信版本过低，请升级后重试")
+            WechatAuthLaunchResult.NotConfigured -> onFailureMessage("微信登录暂未配置")
+            WechatAuthLaunchResult.SendFailed -> onFailureMessage("无法启动微信授权，请稍后重试")
+            WechatAuthLaunchResult.AgreementRequired -> onFailureMessage("请先同意用户协议和隐私政策")
+        }
+    }
+
+    private fun openWechatUnlink() {
+        if (session.phone == null && session.email == null && session.username == null) {
+            onFailureMessage("最后一种登录方式不可解绑")
+        } else {
+            onStateChange(
+                AccountIdentityUiState(
+                    page = AccountIdentityPage.UnlinkWechat,
+                    unlinkIdentifier = session.phone ?: session.email.orEmpty()
+                )
+            )
+        }
+    }
+}
+
+private data class WechatAccountSessionEffectActions(
+    val onStateChange: (AccountIdentityUiState) -> Unit,
+    val onFailureMessage: (String) -> Unit,
+    val onFailureResult: (AccountRepositoryResult.Failure) -> Unit,
+    val onCommit: suspend (AccountCredentials) -> Unit
+)
+
 @Composable
-fun WechatAccountManagementPanel(
+private fun WechatAccountSessionEffect(
     session: AccountSession.SignedIn,
-    deletionState: AccountDeletionUiState,
-    accountRepository: AccountRepository,
-    wechatAuthGateway: WechatAuthGateway?,
-    wechatAuthCallback: WechatAuthCallback?,
-    onWechatAuthCallbackConsumed: () -> Unit,
-    persistSession: (AccountCredentials) -> Boolean,
-    clearPersistedSession: () -> Boolean,
-    avatarCache: WechatAvatarCache,
-    onSessionVerified: (AccountCredentials) -> Unit,
-    onInvalidSession: () -> Unit,
+    dependencies: WechatAccountManagementDependencies,
+    state: AccountIdentityUiState,
+    actions: WechatAccountSessionEffectActions
+) {
+    LaunchedEffect(dependencies.wechatAuthCallback, session.token) {
+        val callback = dependencies.wechatAuthCallback ?: return@LaunchedEffect
+        if (callback.managementPurpose() != WechatAuthPurpose.LinkCurrentAccount) return@LaunchedEffect
+        dependencies.sessionActions.onWechatAuthCallbackConsumed()
+        if (!callback.matchesSession(session.token)) {
+            actions.onFailureMessage("登录状态已变化，请重新发起微信授权")
+            return@LaunchedEffect
+        }
+        when (callback) {
+            is WechatAuthCallback.Authorized -> {
+                actions.onStateChange(state.copy(operationInProgress = true, errorMessage = null))
+                when (val result = dependencies.accountRepository.exchangeWechatCode(callback.code, session.token)) {
+                    is AccountRepositoryResult.Failure -> actions.onFailureResult(result)
+                    is AccountRepositoryResult.Success -> when (val auth = result.value) {
+                        is AccountWechatAuthResult.SignedIn -> actions.onCommit(auth.credentials)
+                        is AccountWechatAuthResult.MergeRequired -> actions.onStateChange(
+                            AccountIdentityUiState(
+                                page = AccountIdentityPage.Merge,
+                                mergeTicket = auth.mergeTicket,
+                                sourceIdentifiers = auth.sourceIdentifiers,
+                                sourceNickname = auth.sourceNickname,
+                                sourceWechatLinked = true
+                            )
+                        )
+                        is AccountWechatAuthResult.RegistrationRequired -> actions.onFailureMessage("微信绑定状态异常，请重新授权")
+                    }
+                }
+            }
+            is WechatAuthCallback.Cancelled -> actions.onFailureMessage("已取消微信授权")
+            is WechatAuthCallback.Denied -> actions.onFailureMessage("微信授权已拒绝")
+            is WechatAuthCallback.Failed -> actions.onFailureMessage("微信授权失败，请重试")
+        }
+    }
+}
+
+@Composable
+internal fun WechatAccountManagementPanel(
+    session: AccountSession.SignedIn,
+    dependencies: WechatAccountManagementDependencies,
     modifier: Modifier = Modifier
 ) {
     var state by remember { mutableStateOf(AccountIdentityUiState()) }
@@ -102,11 +206,10 @@ fun WechatAccountManagementPanel(
     var avatarError by remember { mutableStateOf<String?>(null) }
     var showAvatarSourceDialog by rememberSaveable { mutableStateOf(false) }
     var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val authCoordinator = remember(wechatAuthGateway) {
-        wechatAuthGateway?.let(::WechatAuthCoordinator)
+    val authCoordinator = remember(dependencies.wechatAuthGateway) {
+        dependencies.wechatAuthGateway?.let(::WechatAuthCoordinator)
     }
+
     fun fail(message: String) {
         state = state.copy(operationInProgress = false, errorMessage = message)
     }
@@ -114,7 +217,7 @@ fun WechatAccountManagementPanel(
     fun handleFailure(failure: AccountRepositoryResult.Failure) {
         state = state.copy(operationInProgress = false)
         if (failure.kind == AccountFailureKind.InvalidSession) {
-            onInvalidSession()
+            dependencies.sessionActions.onInvalidSession()
         } else {
             fail(failure.message)
         }
@@ -123,601 +226,116 @@ fun WechatAccountManagementPanel(
     suspend fun commit(credentials: AccountCredentials, clearAvatar: Boolean = false) {
         val committed = persistAccountSessionOrRevoke(
             credentials = credentials,
-            accountRepository = accountRepository,
-            persistSession = persistSession,
-            clearPersistedSession = clearPersistedSession
+            accountRepository = dependencies.accountRepository,
+            persistSession = dependencies.sessionActions.persistSession,
+            clearPersistedSession = dependencies.sessionActions.clearPersistedSession
         )
         if (committed) {
-            if (clearAvatar) avatarCache.clear() else avatarCache.prepareUrl(credentials.avatarUrl)
+            if (clearAvatar) dependencies.avatarCache.clear()
+            else dependencies.avatarCache.prepareUrl(credentials.avatarUrl)
             state = AccountIdentityUiState()
-            onSessionVerified(credentials)
+            dependencies.sessionActions.onSessionVerified(credentials)
         } else {
-            avatarCache.clear()
+            dependencies.avatarCache.clear()
             state = AccountIdentityUiState(errorMessage = "无法安全保存新会话，已切换到本地模式")
-            onInvalidSession()
+            dependencies.sessionActions.onInvalidSession()
         }
     }
 
-    suspend fun handleCredentials(result: AccountRepositoryResult<AccountCredentials>, clearAvatar: Boolean = false) {
+    suspend fun handleCredentials(
+        result: AccountRepositoryResult<AccountCredentials>,
+        clearAvatar: Boolean = false
+    ) {
         when (result) {
             is AccountRepositoryResult.Success -> commit(result.value, clearAvatar)
             is AccountRepositoryResult.Failure -> handleFailure(result)
         }
     }
 
-    fun submitAvatar(uri: android.net.Uri, deleteAfterRead: Boolean = false) {
-        coroutineScope.launch {
-            state = state.copy(operationInProgress = true, errorMessage = null)
-            avatarError = null
-            val avatarDataUrl = try {
-                context.readCompressedAvatarDataUrl(uri)
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                avatarError = "无法读取图片，请换一张图片重试"
-                fail(avatarError!!)
-                return@launch
-            } finally {
-                if (deleteAfterRead) context.deleteAvatarCapture(uri)
-            }
-            when (
-                val result = accountRepository.updateAvatar(
-                    credentials = session.toCredentials(deletionState),
-                    avatarDataUrl = avatarDataUrl
-                )
-            ) {
-                is AccountRepositoryResult.Success -> {
-                    displayedAvatarUrl = result.value.avatarUrl
-                    avatarError = null
-                    commit(result.value)
-                }
-                is AccountRepositoryResult.Failure -> {
-                    avatarError = result.message
-                    handleFailure(result)
-                }
-            }
-        }
-    }
-
-    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        submitAvatar(uri)
-    }
-    val avatarCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
-        val uri = pendingCameraUri?.let(android.net.Uri::parse)
-        pendingCameraUri = null
-        if (uri == null) return@rememberLauncherForActivityResult
-        if (captured) {
-            submitAvatar(uri, deleteAfterRead = true)
-        } else {
-            context.deleteAvatarCapture(uri)
-        }
-    }
+    val profileActionHandler = WechatAccountProfileActionHandler(
+        session = session,
+        authCoordinator = authCoordinator,
+        onStateChange = { state = it },
+        onFailureMessage = ::fail,
+        onAvatarEditorRequested = { showAvatarSourceDialog = true }
+    )
 
     LaunchedEffect(session.avatarUrl) {
         displayedAvatarUrl = session.avatarUrl
     }
 
-    LaunchedEffect(wechatAuthCallback, session.token) {
-        val callback = wechatAuthCallback ?: return@LaunchedEffect
-        if (callback.managementPurpose() != WechatAuthPurpose.LinkCurrentAccount) return@LaunchedEffect
-        onWechatAuthCallbackConsumed()
-        if (!callback.matchesSession(session.token)) {
-            fail("登录状态已变化，请重新发起微信授权")
-            return@LaunchedEffect
-        }
-        when (callback) {
-            is WechatAuthCallback.Authorized -> {
+    WechatAccountSessionEffect(
+        session = session,
+        dependencies = dependencies,
+        state = state,
+        actions = WechatAccountSessionEffectActions(
+            onStateChange = { state = it },
+            onFailureMessage = ::fail,
+            onFailureResult = ::handleFailure,
+            onCommit = { commit(it) }
+        )
+    )
+
+    WechatAccountProfileContent(
+        session = session,
+        uiState = WechatAccountProfileUiState(
+            identityState = state,
+            displayedAvatarUrl = displayedAvatarUrl,
+            avatarError = avatarError,
+            wechatAuthAvailable = authCoordinator != null
+        ),
+        avatarCache = dependencies.avatarCache,
+        onAction = { profileActionHandler.handle(it, state) },
+        modifier = modifier
+    )
+
+    WechatAccountAvatarEditor(
+        session = session,
+        deletionState = dependencies.deletionState,
+        accountRepository = dependencies.accountRepository,
+        state = WechatAvatarEditorState(
+            showSourceDialog = showAvatarSourceDialog,
+            pendingCameraUri = pendingCameraUri
+        ),
+        actions = WechatAvatarEditorActions(
+            onStateChange = { next ->
+                showAvatarSourceDialog = next.showSourceDialog
+                pendingCameraUri = next.pendingCameraUri
+            },
+            onOperationStarted = {
                 state = state.copy(operationInProgress = true, errorMessage = null)
-                when (val result = accountRepository.exchangeWechatCode(callback.code, session.token)) {
-                    is AccountRepositoryResult.Failure -> handleFailure(result)
-                    is AccountRepositoryResult.Success -> when (val auth = result.value) {
-                        is AccountWechatAuthResult.SignedIn -> commit(auth.credentials)
-                        is AccountWechatAuthResult.MergeRequired -> state = AccountIdentityUiState(
-                            page = AccountIdentityPage.Merge,
-                            mergeTicket = auth.mergeTicket,
-                            sourceIdentifiers = auth.sourceIdentifiers,
-                            sourceNickname = auth.sourceNickname,
-                            sourceWechatLinked = true
-                        )
-                        is AccountWechatAuthResult.RegistrationRequired -> fail("微信绑定状态异常，请重新授权")
-                    }
-                }
-            }
-            is WechatAuthCallback.Cancelled -> fail("已取消微信授权")
-            is WechatAuthCallback.Denied -> fail("微信授权已拒绝")
-            is WechatAuthCallback.Failed -> fail("微信授权失败，请重试")
-        }
-    }
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text(
-                text = "个人信息",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            // 1. 头像
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("account-avatar"),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("头像", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    WechatAvatar(displayedAvatarUrl, avatarCache)
-                    TextButton(
-                        onClick = { showAvatarSourceDialog = true },
-                        enabled = !state.operationInProgress,
-                        modifier = Modifier.testTag("btn-edit-avatar")
-                    ) {
-                        Text(if (state.operationInProgress) "上传中…" else "修改 ›")
-                    }
-                }
-            }
-            avatarError?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag("avatar-error")
-                )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            // 2. 昵称
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("edit-nickname"),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("昵称", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = session.nickname ?: session.username ?: "未设置",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    TextButton(
-                        onClick = {
-                            state = state.copy(
-                                page = AccountIdentityPage.EditNickname,
-                                editNicknameInput = session.nickname.orEmpty()
-                            )
-                        },
-                        enabled = !state.operationInProgress,
-                        modifier = Modifier.testTag("btn-edit-nickname")
-                    ) {
-                        Text("修改 ›")
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            // 3. ID
-            val clipboardManager = LocalClipboardManager.current
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("ID", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val fullId = session.accountUuid
-                    val displayId = fullId?.maskAccountUuidForDisplay() ?: "暂不可用"
-                    Text(
-                        text = displayId,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    TextButton(
-                        onClick = {
-                            fullId?.let { clipboardManager.setText(AnnotatedString(it)) }
-                        },
-                        enabled = fullId != null,
-                        modifier = Modifier.testTag("copy-account-id")
-                    ) {
-                        Text("复制", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            // 4. 手机号
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("手机号", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (session.phone != null) {
-                        Text(
-                            text = session.phone!!.maskPhoneForIdentity(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(
-                            onClick = {
-                                state = AccountIdentityUiState(
-                                    page = AccountIdentityPage.AttachIdentifier,
-                                    targetIdentifierType = AccountIdentifierTypeContract.PHONE,
-                                    replaceExistingIdentifier = true
-                                )
-                            },
-                            enabled = !state.operationInProgress,
-                            modifier = Modifier.testTag("replace-phone")
-                        ) {
-                            Text("换绑 ›")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = {
-                                state = AccountIdentityUiState(
-                                    page = AccountIdentityPage.AttachIdentifier,
-                                    targetIdentifierType = AccountIdentifierTypeContract.PHONE
-                                )
-                            },
-                            enabled = !state.operationInProgress,
-                            modifier = Modifier.testTag("bind-phone")
-                        ) {
-                            Text("立即绑定 ›")
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            // 5. 邮箱
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("邮箱", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (session.email != null) {
-                        Text(
-                            text = session.email!!.maskEmailForIdentity(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(
-                            onClick = {
-                                state = AccountIdentityUiState(
-                                    page = AccountIdentityPage.AttachIdentifier,
-                                    targetIdentifierType = AccountIdentifierTypeContract.EMAIL,
-                                    replaceExistingIdentifier = true
-                                )
-                            },
-                            enabled = !state.operationInProgress,
-                            modifier = Modifier.testTag("replace-email")
-                        ) {
-                            Text("换绑 ›")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = {
-                                state = AccountIdentityUiState(
-                                    page = AccountIdentityPage.AttachIdentifier,
-                                    targetIdentifierType = AccountIdentifierTypeContract.EMAIL
-                                )
-                            },
-                            enabled = !state.operationInProgress,
-                            modifier = Modifier.testTag("bind-email")
-                        ) {
-                            Text("立即绑定 ›")
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-            // 6. 微信
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("微信", style = MaterialTheme.typography.bodyLarge)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (session.wechatLinked) {
-                        Text(
-                            text = "已绑定",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(
-                            onClick = {
-                                if (session.phone == null && session.email == null && session.username == null) {
-                                    fail("最后一种登录方式不可解绑")
-                                } else {
-                                    state = AccountIdentityUiState(
-                                        page = AccountIdentityPage.UnlinkWechat,
-                                        unlinkIdentifier = session.phone ?: session.email.orEmpty()
-                                    )
-                                }
-                            },
-                            enabled = !state.operationInProgress,
-                            modifier = Modifier.testTag("unlink-wechat")
-                        ) {
-                            Text("换绑/解绑 ›")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = {
-                                if (state.operationInProgress || authCoordinator == null) return@TextButton
-                                when (
-                                    authCoordinator.startAuthorization(
-                                        agreementAccepted = true,
-                                        purpose = WechatAuthPurpose.LinkCurrentAccount,
-                                        sessionFingerprint = wechatSessionFingerprint(session.token)
-                                    )
-                                ) {
-                                    WechatAuthLaunchResult.Started -> state = state.copy(operationInProgress = true, errorMessage = null)
-                                    WechatAuthLaunchResult.NotInstalled -> fail("未检测到微信，请先安装微信")
-                                    WechatAuthLaunchResult.VersionUnsupported -> fail("当前微信版本过低，请升级后重试")
-                                    WechatAuthLaunchResult.NotConfigured -> fail("微信登录暂未配置")
-                                    WechatAuthLaunchResult.SendFailed -> fail("无法启动微信授权，请稍后重试")
-                                    WechatAuthLaunchResult.AgreementRequired -> fail("请先同意用户协议和隐私政策")
-                                }
-                            },
-                            enabled = !state.operationInProgress && authCoordinator != null,
-                            modifier = Modifier.testTag("bind-wechat")
-                        ) {
-                            Text("立即绑定 ›")
-                        }
-                    }
-                }
-            }
-
-            state.errorMessage?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("identity-error"))
-            }
-        }
-    }
-
-    if (showAvatarSourceDialog) {
-        AlertDialog(
-            onDismissRequest = { showAvatarSourceDialog = false },
-            title = { Text("修改头像") },
-            text = { Text("请选择头像来源") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showAvatarSourceDialog = false
-                        val uri = runCatching { context.createAvatarCaptureUri() }
-                            .getOrElse {
-                                avatarError = "无法启动相机，请稍后重试"
-                                return@Button
-                            }
-                        pendingCameraUri = uri.toString()
-                        avatarCamera.launch(uri)
-                    },
-                    modifier = Modifier.testTag("take-avatar-photo")
-                ) {
-                    Text("拍照")
-                }
+                avatarError = null
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showAvatarSourceDialog = false
-                        avatarPicker.launch("image/*")
-                    },
-                    modifier = Modifier.testTag("pick-avatar-gallery")
-                ) {
-                    Text("从相册选择")
+            onAvatarError = { avatarError = it },
+            onFailureMessage = ::fail,
+            onResult = { result ->
+                when (result) {
+                    is AccountRepositoryResult.Success -> {
+                        displayedAvatarUrl = result.value.avatarUrl
+                        avatarError = null
+                        commit(result.value)
+                    }
+                    is AccountRepositoryResult.Failure -> {
+                        avatarError = result.message
+                        handleFailure(result)
+                    }
                 }
             }
         )
-    }
+    )
 
-    when (state.page) {
-        AccountIdentityPage.EditNickname -> EditNicknameDialog(
-            initialValue = state.editNicknameInput,
-            operationInProgress = state.operationInProgress,
-            onDismiss = { state = AccountIdentityUiState() },
-            onConfirm = { newNickname ->
-                coroutineScope.launch {
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    handleCredentials(
-                        accountRepository.updateNickname(
-                            credentials = session.toCredentials(deletionState),
-                            nickname = newNickname
-                        )
-                    )
-                }
-            }
-        )
-
-        AccountIdentityPage.AttachIdentifier -> AccountIdentityDialog(
-            title = when (state.targetIdentifierType) {
-                AccountIdentifierTypeContract.PHONE -> if (state.replaceExistingIdentifier) "换绑手机号" else "绑定手机号"
-                AccountIdentifierTypeContract.EMAIL -> if (state.replaceExistingIdentifier) "换绑邮箱" else "绑定邮箱"
-                else -> "绑定手机号或邮箱"
-            },
-            state = state,
-            allowPasswordMerge = !state.replaceExistingIdentifier &&
-                session.identifiers.isEmpty() && session.wechatLinked,
+    WechatAccountIdentityDialogHost(
+        session = session,
+        deletionState = dependencies.deletionState,
+        accountRepository = dependencies.accountRepository,
+        state = state,
+        actions = WechatAccountIdentityActions(
             onStateChange = { state = it },
-            onRequestSms = {
-                coroutineScope.launch {
-                    val parsedType = runCatching { AccountIdentifierParser.parse(state.phone).type }.getOrNull()
-                    if (parsedType == null || parsedType == AccountIdentifierTypeContract.USERNAME ||
-                        (state.targetIdentifierType != null && parsedType != state.targetIdentifierType)
-                    ) return@launch fail(state.expectedIdentifierError())
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    when (
-                        val result = accountRepository.prepareIdentifierLink(
-                            session.token,
-                            state.phone,
-                            state.replaceExistingIdentifier
-                        )
-                    ) {
-                        is AccountRepositoryResult.Success -> state = when (val prepared = result.value) {
-                            IdentifierLinkPrepareResponseContract.AlreadyLinked -> AccountIdentityUiState()
-                            is IdentifierLinkPrepareResponseContract.LinkTicketIssued -> state.copy(
-                                phoneTicket = prepared.linkTicket,
-                                operationInProgress = false,
-                                errorMessage = null
-                            )
-                            is IdentifierLinkPrepareResponseContract.MergeRequired -> state.copy(
-                                operationInProgress = false,
-                                errorMessage = "该标识已属于其他账号，不能绑定或合并"
-                            )
-                        }
-                        is AccountRepositoryResult.Failure -> handleFailure(result)
-                    }
-                }
-            },
-            onConfirm = {
-                coroutineScope.launch {
-                    val parsedType = runCatching { AccountIdentifierParser.parse(state.phone).type }.getOrNull()
-                    if (parsedType == null || parsedType == AccountIdentifierTypeContract.USERNAME ||
-                        (state.targetIdentifierType != null && parsedType != state.targetIdentifierType)
-                    ) return@launch fail(state.expectedIdentifierError())
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    if (state.identifierAttachMethod == IdentifierAttachMethod.PasswordMerge) {
-                        when (
-                            val result = accountRepository.prepareMergeWithIdentifierPassword(
-                                session.token,
-                                state.phone,
-                                state.password
-                            )
-                        ) {
-                            is AccountRepositoryResult.Success -> state = result.value.toMergeState()
-                            is AccountRepositoryResult.Failure -> handleFailure(result)
-                        }
-                    } else {
-                        val ticket = state.phoneTicket ?: return@launch fail("请先获取验证码")
-                        if (session.identifiers.isEmpty() && session.wechatLinked) {
-                            state = state.copy(
-                                page = AccountIdentityPage.SetPhonePassword,
-                                operationInProgress = false,
-                                errorMessage = null
-                            )
-                        } else {
-                            handleCredentials(
-                                accountRepository.completeIdentifierLink(
-                                    token = session.token,
-                                    linkTicket = ticket,
-                                    code = state.code
-                                )
-                            )
-                        }
-                    }
-                }
-            }
+            currentState = { state },
+            onOperationFinished = { state = state.copy(operationInProgress = false) },
+            onFailureMessage = ::fail,
+            onFailureResult = ::handleFailure,
+            onHandleCredentials = { result, clearAvatar -> handleCredentials(result, clearAvatar) }
         )
-        AccountIdentityPage.SetPhonePassword -> SimplePasswordDialog(
-            title = "设置登录密码",
-            password = state.password,
-            operationInProgress = state.operationInProgress,
-            errorMessage = state.errorMessage,
-            onPasswordChange = { state = state.copy(password = it, errorMessage = null) },
-            onDismiss = { if (!state.operationInProgress) state = AccountIdentityUiState() },
-            onConfirm = {
-                coroutineScope.launch {
-                    val ticket = state.phoneTicket ?: return@launch fail("绑定票据已失效")
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    handleCredentials(
-                        accountRepository.completeIdentifierLink(
-                            token = session.token,
-                            linkTicket = ticket,
-                            code = state.code,
-                            password = state.password
-                        )
-                    )
-                }
-            }
-        )
-        AccountIdentityPage.Merge -> MergeConfirmationDialog(
-            session = session,
-            state = state,
-            onConfirmTextChange = { state = state.copy(confirmText = it, errorMessage = null) },
-            onDismiss = { if (!state.operationInProgress) state = AccountIdentityUiState() },
-            onConfirm = {
-                coroutineScope.launch {
-                    val ticket = state.mergeTicket ?: return@launch fail("合并票据已失效")
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    handleCredentials(accountRepository.confirmMerge(session.token, ticket, state.confirmText))
-                }
-            }
-        )
-        AccountIdentityPage.UnlinkWechat -> UnlinkWechatDialog(
-            state = state,
-            availableIdentifiers = session.identifiers.filter {
-                it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE ||
-                    it.type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL
-            },
-            onStateChange = { state = it },
-            onRequestSms = {
-                coroutineScope.launch {
-                    val identifier = state.unlinkIdentifier.takeIf { it.isNotBlank() }
-                        ?: return@launch fail("请选择手机号或邮箱")
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    when (
-                        val result = accountRepository.requestVerificationCode(
-                            identifier = identifier,
-                            purpose = AccountVerificationPurpose.WechatUnlink,
-                            bearerToken = session.token
-                        )
-                    ) {
-                        is AccountRepositoryResult.Success -> state = state.copy(operationInProgress = false)
-                        is AccountRepositoryResult.Failure -> handleFailure(result)
-                    }
-                }
-            },
-            onConfirm = {
-                coroutineScope.launch {
-                    state = state.copy(operationInProgress = true, errorMessage = null)
-                    val result = when (state.unlinkMethod) {
-                        UnlinkMethod.Password -> accountRepository.unlinkWechatWithPassword(session.token, state.password)
-                        UnlinkMethod.Code -> accountRepository.unlinkWechatWithCode(
-                            session.token,
-                            state.unlinkIdentifier,
-                            state.code
-                        )
-                    }
-                    handleCredentials(result, clearAvatar = true)
-                }
-            }
-        )
-        AccountIdentityPage.Idle -> Unit
-    }
+    )
 }
