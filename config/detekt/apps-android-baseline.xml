@@ -61,10 +61,8 @@
     <ID>MatchingDeclarationName:ProfileScreen.kt$ProfileDestination</ID>
     <ID>MatchingDeclarationName:WechatAvatar.kt$WechatAvatarCache</ID>
     <ID>ReturnCount:ContinuousMonitoringState.kt$private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean</ID>
-    <ID>SwallowedException:AccountState.kt$e: Exception</ID>
     <ID>TooManyFunctions:AccountRepository.kt$AccountRepository</ID>
     <ID>TooManyFunctions:AccountRepository.kt$FakeAccountRepository : AccountRepository</ID>
-    <ID>TooManyFunctions:AccountState.kt$com.autoaccounting.feature.account.AccountState.kt</ID>
     <ID>TooManyFunctions:AndroidDiagnosticLogRepository.kt$AndroidDiagnosticLogRepository : DiagnosticLogRepository</ID>
     <ID>TooManyFunctions:DiagnosticEncryptedStore.kt$DiagnosticEncryptedStore</ID>
     <ID>TooManyFunctions:HttpAccountRepository.kt$HttpAccountRepository : AccountRepository</ID>

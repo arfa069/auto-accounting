@@ -8,98 +8,6 @@ enum class AccountFlow {
     LocalModeExplanation
 }
 
-sealed interface AccountSession {
-    data object LocalMode : AccountSession
-    data class SignedIn(
-        val accountId: Long? = null,
-        val primaryIdentifier: com.autoaccounting.api.AccountIdentifierContract? = null,
-        val identifiers: List<com.autoaccounting.api.AccountIdentifierContract> = emptyList(),
-        val rawPhone: String? = null,
-        val token: String = "",
-        val accountUuid: String? = null,
-        val wechatLinked: Boolean = false,
-        val nickname: String? = null,
-        val avatarUrl: String? = null
-    ) : AccountSession {
-        constructor(
-            phone: String?,
-            token: String = "",
-            wechatLinked: Boolean = false,
-            nickname: String? = null,
-            avatarUrl: String? = null
-        ) : this(
-            accountId = null,
-            accountUuid = null,
-            primaryIdentifier = phone?.let {
-                com.autoaccounting.api.AccountIdentifierContract(
-                    type = com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
-                    value = it
-                )
-            },
-            identifiers = phone?.let {
-                listOf(
-                    com.autoaccounting.api.AccountIdentifierContract(
-                        type = com.autoaccounting.api.AccountIdentifierTypeContract.PHONE,
-                        value = it
-                    )
-                )
-            } ?: emptyList(),
-            rawPhone = phone,
-            token = token,
-            wechatLinked = wechatLinked,
-            nickname = nickname,
-            avatarUrl = avatarUrl
-        )
-
-        val phone: String?
-            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE }?.value ?: rawPhone
-
-        val email: String?
-            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL }?.value
-
-        val username: String?
-            get() = identifiers.find { it.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME }?.value
-    }
-}
-
-enum class AccountRuntimeStatus {
-    LocalMode,
-    Validating,
-    Verified,
-    OfflineUnverified,
-    DeletionCoolingOff
-}
-
-data class AccountRuntimeState(
-    val status: AccountRuntimeStatus = AccountRuntimeStatus.LocalMode
-) {
-    val cloudWritesAllowed: Boolean
-        get() = status == AccountRuntimeStatus.Verified
-
-    val accountOperationsAllowed: Boolean
-        get() = status == AccountRuntimeStatus.Verified ||
-            status == AccountRuntimeStatus.DeletionCoolingOff
-}
-
-sealed interface AccountSessionVerificationDecision {
-    data class Verified(val credentials: AccountCredentials) : AccountSessionVerificationDecision
-    data object KeepOfflineSession : AccountSessionVerificationDecision
-    data object ClearInvalidSession : AccountSessionVerificationDecision
-}
-
-fun resolveAccountSessionVerification(
-    result: AccountRepositoryResult<AccountCredentials>
-): AccountSessionVerificationDecision = when (result) {
-    is AccountRepositoryResult.Success ->
-        AccountSessionVerificationDecision.Verified(result.value)
-    is AccountRepositoryResult.Failure ->
-        if (result.kind == AccountFailureKind.InvalidSession) {
-            AccountSessionVerificationDecision.ClearInvalidSession
-        } else {
-            AccountSessionVerificationDecision.KeepOfflineSession
-        }
-}
-
 data class AccountUiState(
     val flow: AccountFlow = AccountFlow.Landing,
     val phone: String = "",
@@ -143,18 +51,6 @@ sealed interface AccountAction {
     data object SubmitRegister : AccountAction
     data object SubmitRecovery : AccountAction
 }
-
-val AccountUiState.identifierType: com.autoaccounting.api.AccountIdentifierTypeContract
-    get() = try {
-        com.autoaccounting.api.AccountIdentifierParser.parse(phone).type
-    } catch (e: Exception) {
-        if (phone.contains("@")) com.autoaccounting.api.AccountIdentifierTypeContract.EMAIL
-        else if (phone.all { it.isDigit() }) com.autoaccounting.api.AccountIdentifierTypeContract.PHONE
-        else com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME
-    }
-
-val AccountUiState.requiresVerificationCode: Boolean
-    get() = identifierType != com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME
 
 fun reduceAccountState(
     state: AccountUiState,
@@ -279,26 +175,4 @@ private fun AccountUiState.clearErrors(): AccountUiState {
         passwordError = null,
         confirmPasswordError = null
     )
-}
-
-private fun validateIdentifier(identifier: String, flow: AccountFlow = AccountFlow.Landing): String? {
-    if (identifier.isBlank()) return "请输入手机号、邮箱或用户名"
-    val parseResult = try {
-        com.autoaccounting.api.AccountIdentifierParser.parse(identifier)
-    } catch (e: Exception) {
-        return "标识格式不正确"
-    }
-    if (flow == AccountFlow.Recovery && parseResult.type == com.autoaccounting.api.AccountIdentifierTypeContract.USERNAME) {
-        return "用户名不支持找回密码，请使用已绑定的手机号或邮箱"
-    }
-    return null
-}
-
-private fun validatePassword(password: String): String? {
-    val valid = password.length in 8..32 &&
-        password.any { it.isUpperCase() } &&
-        password.any { it.isLowerCase() } &&
-        password.any { it.isDigit() } &&
-        password.any { !it.isLetterOrDigit() }
-    return if (valid) null else "密码需 8-32 位，包含大小写字母、数字和符号"
 }
