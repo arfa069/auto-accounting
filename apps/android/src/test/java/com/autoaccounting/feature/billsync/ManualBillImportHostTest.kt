@@ -7,6 +7,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.autoaccounting.feature.diagnostics.DiagnosticComponent
+import com.autoaccounting.feature.diagnostics.DiagnosticSource
+import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.runBlocking
@@ -24,6 +27,82 @@ import org.robolectric.annotation.Config
 class ManualBillImportHostTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun blockedPrecheckRecordsDiagnosticEvent() {
+        val recorder = InMemoryDiagnosticRecorder()
+        composeRule.setContent {
+            ManualBillImportHost(
+                openRequestId = 1,
+                accessibilityAccessGranted = false,
+                accessibilityServiceConnected = false,
+                diagnosticRecorder = recorder
+            )
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            recorder.events.any { it.metadata.event == "manual_import_precheck" }
+        }
+        val precheck = recorder.events.single { it.metadata.event == "manual_import_precheck" }
+        assertEquals(DiagnosticComponent.ManualImport, precheck.metadata.component)
+        assertEquals("blocked", precheck.metadata.outcome)
+        assertEquals("PermissionMissing", precheck.metadata.reason)
+        assertTrue(precheck.metadata.source == DiagnosticSource.System)
+    }
+
+    @Test
+    fun healthyFlowRecordsPrecheckAndSessionDiagnosticEvents() {
+        val recorder = InMemoryDiagnosticRecorder()
+        val controller = BillSyncSessionController()
+        composeRule.setContent {
+            ManualBillImportHost(
+                openRequestId = 1,
+                accessibilityAccessGranted = true,
+                accessibilityServiceConnected = true,
+                onLaunchSource = { true },
+                sessionController = controller,
+                diagnosticRecorder = recorder
+            )
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            recorder.events.any { it.metadata.event == "manual_import_precheck" }
+        }
+        val precheck = recorder.events.single { it.metadata.event == "manual_import_precheck" }
+        assertEquals("success", precheck.metadata.outcome)
+        assertEquals("ready", precheck.metadata.reason)
+
+        composeRule.onNodeWithText("微信").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            recorder.events.any { it.metadata.event == "manual_import_session_started" }
+        }
+        val started = recorder.events.single { it.metadata.event == "manual_import_session_started" }
+        assertEquals("started", started.metadata.outcome)
+        assertEquals("source_launched", started.metadata.reason)
+        assertEquals(DiagnosticSource.WeChat, started.metadata.source)
+        assertTrue(started.metadata.sessionId != null)
+
+        runBlocking {
+            controller.submitBillPage(
+                packageName = BillSyncSource.WeChat.packageName,
+                pageText = "bill page"
+            ) { _, _ ->
+                BillSyncResult(
+                    steps = listOf(BillSyncStep.Completed),
+                    createdEntries = emptyList(),
+                    duplicateSkippedCount = 0,
+                    summary = "done"
+                )
+            }
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            recorder.events.any { it.metadata.event == "manual_import_completed" }
+        }
+        val completed = recorder.events.single { it.metadata.event == "manual_import_completed" }
+        assertEquals("success", completed.metadata.outcome)
+        assertEquals("completed", completed.metadata.reason)
+        assertEquals(0, completed.metadata.count)
+    }
 
     @Test
     fun missingAccessibilityPermissionShowsPurposeAndNeverLaunchesSource() {
