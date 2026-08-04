@@ -1,8 +1,6 @@
 package com.autoaccounting.feature.billsync
 
 import com.autoaccounting.data.local.ConfidenceState
-import com.autoaccounting.feature.dedupe.DedupeEngine
-import com.autoaccounting.feature.dedupe.DedupeMatchLevel
 import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
 import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
 import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
@@ -49,6 +47,31 @@ enum class AutomaticCaptureVerification {
 
 internal const val MANUAL_OCR_CAPTURE_REASON = "本机 OCR 补录"
 
+private data class BillSyncInvocation(
+    val source: BillSyncSource,
+    val pageText: String,
+    val existingPendingEntries: List<ReviewQueueEntry>,
+    val existingLedgerEntries: List<ReviewQueueEntry>,
+    val existingIgnoredEntries: List<ReviewQueueEntry>,
+    val capturedAtEpochMillis: Long,
+    val captureReasonLabel: String,
+    val retainRawEvidence: Boolean,
+    val automaticCaptureVerification: AutomaticCaptureVerification
+) {
+    val isWechatRedPacketAutomaticCapture: Boolean
+        get() = source == BillSyncSource.WeChat &&
+            captureReasonLabel == "支付结果自动捕获" &&
+            (
+                hasWechatSentRedPacketSuccessSignature(pageText) ||
+                    hasWechatReceivedRedPacketSuccessSignature(pageText)
+                )
+
+    val isNotificationVerifiedRedPacket: Boolean
+        get() = isWechatRedPacketAutomaticCapture &&
+            automaticCaptureVerification ==
+            AutomaticCaptureVerification.RequireRecentNotification
+}
+
 class BillSyncPipeline(
     private val parser: BillPageParser = BillPageParser(),
     private val captureTimeFormatter: (Long) -> String = ::formatCaptureTime
@@ -64,7 +87,21 @@ class BillSyncPipeline(
         retainRawEvidence: Boolean = true,
         automaticCaptureVerification: AutomaticCaptureVerification =
             AutomaticCaptureVerification.Standard
-    ): BillSyncResult {
+    ): BillSyncResult = sync(
+        BillSyncInvocation(
+            source = source,
+            pageText = pageText,
+            existingPendingEntries = existingPendingEntries,
+            existingLedgerEntries = existingLedgerEntries,
+            existingIgnoredEntries = existingIgnoredEntries,
+            capturedAtEpochMillis = capturedAtEpochMillis,
+            captureReasonLabel = captureReasonLabel,
+            retainRawEvidence = retainRawEvidence,
+            automaticCaptureVerification = automaticCaptureVerification
+        )
+    )
+
+    private fun sync(invocation: BillSyncInvocation): BillSyncResult {
         val successSteps = listOf(
             BillSyncStep.OpenSource,
             BillSyncStep.ReadBills,
@@ -74,178 +111,101 @@ class BillSyncPipeline(
             BillSyncStep.Completed
         )
         val parsedEntries = parser.parse(
-            source = source,
-            pageText = pageText,
-            fallbackTransactionTimeText = captureTimeFormatter(capturedAtEpochMillis)
+            source = invocation.source,
+            pageText = invocation.pageText,
+            fallbackTransactionTimeText =
+                captureTimeFormatter(invocation.capturedAtEpochMillis)
         )
         if (parsedEntries.isEmpty()) {
-            val (failureReason, errorMessage) = when (observeBillSyncPage(source, pageText)) {
-                BillSyncPageObservation.PaymentResult ->
-                    BillSyncFailureReason.PaymentResultMissingRequiredFields to
-                        "识别到支付结果页，但缺少明确金额或交易类型，未创建待确认记录"
-                BillSyncPageObservation.BlockedPaymentInitiation ->
-                    BillSyncFailureReason.PaymentInitiationBlocked to
-                        "当前页面像是付款或转账发起页，出于安全保护未采集；请打开账单、交易详情或支付信息页面"
-                BillSyncPageObservation.PaymentRecord ->
-                    BillSyncFailureReason.PaymentRecordMissingRequiredFields to
-                        "识别到支付记录页面，但缺少金额、时间、类型或对象，请打开完整交易详情页"
-                BillSyncPageObservation.Ignored ->
-                    BillSyncFailureReason.UnsupportedOrUnrelatedPage to
-                        "未识别到账单记录，请确认已打开对应账单页面"
-            }
-            return BillSyncResult(
-                steps = listOf(
-                    BillSyncStep.OpenSource,
-                    BillSyncStep.ReadBills,
-                    BillSyncStep.Parse,
-                    BillSyncStep.Failed
-                ),
-                createdEntries = emptyList(),
-                duplicateSkippedCount = 0,
-                summary = "未创建待确认记录",
-                errorMessage = errorMessage,
-                failureReason = failureReason
-            )
+            return invocation.failureResult()
         }
-        val createdEntries = mutableListOf<ReviewQueueEntry>()
-        val mergedEntries = mutableListOf<ReviewQueueEntry>()
-        var pendingEntries = existingPendingEntries
-        var ledgerDuplicateCount = 0
-        var ignoredDuplicateCount = 0
-        var persistentRedPacketDuplicateCount = 0
-        val hasWechatRedPacketSuccessSignature =
-            hasWechatSentRedPacketSuccessSignature(pageText) ||
-                hasWechatReceivedRedPacketSuccessSignature(pageText)
         val isWechatRedPacketAutomaticCapture =
-            source == BillSyncSource.WeChat &&
-                captureReasonLabel == AUTOMATIC_CAPTURE_REASON &&
-                hasWechatRedPacketSuccessSignature
-        val isNotificationVerifiedRedPacket =
-            isWechatRedPacketAutomaticCapture &&
-                automaticCaptureVerification ==
-                AutomaticCaptureVerification.RequireRecentNotification
-
-        parsedEntries
-            .mapNotNull { parsed ->
-                val requiresExplicitWechatMerchant =
-                    source == BillSyncSource.WeChat &&
-                        captureReasonLabel == AUTOMATIC_CAPTURE_REASON &&
-                        hasWechatMerchantPaymentSuccessSignature(pageText)
-                if (
-                    requiresExplicitWechatMerchant &&
-                    parsed.merchantTitleFromFallback
-                ) {
-                    return@mapNotNull null
-                }
-                val candidate = parsed.toPendingEntry(
-                    capturedAtEpochMillis = capturedAtEpochMillis,
-                    captureReasonLabel = captureReasonLabel,
-                    retainRawEvidence = retainRawEvidence
-                )
-                val verificationRequired = automaticCaptureVerification ==
-                    AutomaticCaptureVerification.RequireRecentNotification
-                val matchingNotifications = candidate.matchingRecentNotifications(
-                    existingPendingEntries = existingPendingEntries,
-                    verification = automaticCaptureVerification
-                )
-                if (verificationRequired && matchingNotifications.size != 1) {
-                    return@mapNotNull null
-                }
-                candidate.correlateWithUniqueRecentNotification(
-                    transactionTimeFromFallback = parsed.transactionTimeFromFallback,
-                    captureReasonLabel = captureReasonLabel,
-                    matchingNotifications = matchingNotifications
-                )
-            }
-            .forEach { candidate ->
-                val ignoredDedupeResult = DedupeEngine().addCandidate(
-                    existingIgnoredEntries,
-                    candidate
-                )
-                if (ignoredDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
-                    ignoredDuplicateCount += 1
-                    return@forEach
-                }
-                if (
-                    isWechatRedPacketAutomaticCapture &&
-                    !isNotificationVerifiedRedPacket &&
-                    (
-                        pendingEntries.any {
-                            it.hasAutomaticOcrCaptureEvidence &&
-                                it.hasSameStableIdentityAs(candidate)
-                        } ||
-                            existingLedgerEntries.any { it.hasSameStableIdentityAs(candidate) }
-                        )
-                ) {
-                    persistentRedPacketDuplicateCount += 1
-                    return@forEach
-                }
-                val ledgerEntriesForDedupe = if (isNotificationVerifiedRedPacket) {
-                    existingLedgerEntries.filterNot { it.hasSameStableIdentityAs(candidate) }
-                } else {
-                    existingLedgerEntries
-                }
-                val ledgerDedupeResult = DedupeEngine().addCandidate(
-                    ledgerEntriesForDedupe,
-                    candidate
-                )
-                if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
-                    ledgerDuplicateCount += 1
-                    return@forEach
-                }
-                val candidateAfterLedgerCheck = if (
-                    ledgerDedupeResult.matchLevel == DedupeMatchLevel.LOW_CONFIDENCE
-                ) {
-                    ledgerDedupeResult.pendingEntries.first { it.id == candidate.id }
-                } else {
-                    candidate
-                }
-                val excludedPriorOcrEntries = if (isNotificationVerifiedRedPacket) {
-                    pendingEntries.filter {
-                        it.hasAutomaticOcrCaptureEvidence &&
-                            it.hasSameStableIdentityAs(candidateAfterLedgerCheck)
-                    }
-                } else {
-                    emptyList()
-                }
-                val pendingEntriesForDedupe = if (excludedPriorOcrEntries.isEmpty()) {
-                    pendingEntries
-                } else {
-                    pendingEntries.filterNot { entry ->
-                        excludedPriorOcrEntries.any { excluded -> excluded.id == entry.id }
-                    }
-                }
-                val dedupeResult = DedupeEngine().addCandidate(
-                    pendingEntriesForDedupe,
-                    candidateAfterLedgerCheck
-                )
-                pendingEntries = dedupeResult.pendingEntries + excludedPriorOcrEntries
-                when (dedupeResult.matchLevel) {
-                    DedupeMatchLevel.NONE,
-                    DedupeMatchLevel.LOW_CONFIDENCE -> {
-                        createdEntries += dedupeResult.pendingEntries.first {
-                            it.id == candidateAfterLedgerCheck.id
-                        }
-                    }
-
-                    DedupeMatchLevel.HIGH_CONFIDENCE -> {
-                        val matchedId = dedupeResult.matchedEntry?.id
-                        dedupeResult.pendingEntries.firstOrNull { it.id == matchedId }?.let { merged ->
-                            mergedEntries += merged
-                        }
-                    }
-                }
-            }
-        val duplicateSkippedCount =
-            mergedEntries.size + ledgerDuplicateCount + ignoredDuplicateCount +
-                persistentRedPacketDuplicateCount
+            invocation.isWechatRedPacketAutomaticCapture
+        val isNotificationVerifiedRedPacket = invocation.isNotificationVerifiedRedPacket
+        val deduplication = BillSyncDeduplication(
+            existingPendingEntries = invocation.existingPendingEntries,
+            existingLedgerEntries = invocation.existingLedgerEntries,
+            existingIgnoredEntries = invocation.existingIgnoredEntries,
+            isWechatRedPacketAutomaticCapture = isWechatRedPacketAutomaticCapture,
+            isNotificationVerifiedRedPacket = isNotificationVerifiedRedPacket
+        )
+        invocation.prepareCandidates(parsedEntries)
+            .forEach(deduplication::addCandidate)
+        val deduplicationResult = deduplication.result()
 
         return BillSyncResult(
             steps = successSteps,
-            createdEntries = createdEntries,
-            mergedEntries = mergedEntries,
-            duplicateSkippedCount = duplicateSkippedCount,
-            summary = "已创建 ${createdEntries.size} 条，已去重 $duplicateSkippedCount 条"
+            createdEntries = deduplicationResult.createdEntries,
+            mergedEntries = deduplicationResult.mergedEntries,
+            duplicateSkippedCount = deduplicationResult.duplicateSkippedCount,
+            summary =
+                "已创建 ${deduplicationResult.createdEntries.size} 条，已去重 " +
+                    "${deduplicationResult.duplicateSkippedCount} 条"
+        )
+    }
+
+    private fun BillSyncInvocation.prepareCandidates(
+        parsedEntries: List<ParsedBillEntry>
+    ): List<ReviewQueueEntry> {
+        val requiresExplicitWechatMerchant =
+            source == BillSyncSource.WeChat &&
+                captureReasonLabel == AUTOMATIC_CAPTURE_REASON &&
+                hasWechatMerchantPaymentSuccessSignature(pageText)
+        val verificationRequired =
+            automaticCaptureVerification ==
+                AutomaticCaptureVerification.RequireRecentNotification
+
+        return parsedEntries.mapNotNull { parsed ->
+            if (requiresExplicitWechatMerchant && parsed.merchantTitleFromFallback) {
+                return@mapNotNull null
+            }
+            val candidate = parsed.toPendingEntry(
+                capturedAtEpochMillis = capturedAtEpochMillis,
+                captureReasonLabel = captureReasonLabel,
+                retainRawEvidence = retainRawEvidence
+            )
+            val matchingNotifications = candidate.matchingRecentNotifications(
+                existingPendingEntries = existingPendingEntries,
+                verification = automaticCaptureVerification
+            )
+            if (verificationRequired && matchingNotifications.size != 1) {
+                return@mapNotNull null
+            }
+            candidate.correlateWithUniqueRecentNotification(
+                transactionTimeFromFallback = parsed.transactionTimeFromFallback,
+                captureReasonLabel = captureReasonLabel,
+                matchingNotifications = matchingNotifications
+            )
+        }
+    }
+
+    private fun BillSyncInvocation.failureResult(): BillSyncResult {
+        val (failureReason, errorMessage) = when (observeBillSyncPage(source, pageText)) {
+            BillSyncPageObservation.PaymentResult ->
+                BillSyncFailureReason.PaymentResultMissingRequiredFields to
+                    "识别到支付结果页，但缺少明确金额或交易类型，未创建待确认记录"
+            BillSyncPageObservation.BlockedPaymentInitiation ->
+                BillSyncFailureReason.PaymentInitiationBlocked to
+                    "当前页面像是付款或转账发起页，出于安全保护未采集；请打开账单、交易详情或支付信息页面"
+            BillSyncPageObservation.PaymentRecord ->
+                BillSyncFailureReason.PaymentRecordMissingRequiredFields to
+                    "识别到支付记录页面，但缺少金额、时间、类型或对象，请打开完整交易详情页"
+            BillSyncPageObservation.Ignored ->
+                BillSyncFailureReason.UnsupportedOrUnrelatedPage to
+                    "未识别到账单记录，请确认已打开对应账单页面"
+        }
+        return BillSyncResult(
+            steps = listOf(
+                BillSyncStep.OpenSource,
+                BillSyncStep.ReadBills,
+                BillSyncStep.Parse,
+                BillSyncStep.Failed
+            ),
+            createdEntries = emptyList(),
+            duplicateSkippedCount = 0,
+            summary = "未创建待确认记录",
+            errorMessage = errorMessage,
+            failureReason = failureReason
         )
     }
 
@@ -324,12 +284,6 @@ class BillSyncPipeline(
                         existing.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
             }
     }
-
-    private fun ReviewQueueEntry.hasSameStableIdentityAs(other: ReviewQueueEntry): Boolean =
-        sourceLabel == other.sourceLabel &&
-            title.trim().equals(other.title.trim(), ignoreCase = true) &&
-            amountMinor == other.amountMinor &&
-            kindLabel == other.kindLabel
 
     private fun String.minutesFrom(other: String): Long? {
         val first = parseTransactionTime(this) ?: return null
