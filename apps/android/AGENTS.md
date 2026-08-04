@@ -20,15 +20,20 @@
 
 ## 验证
 
-先运行单个测试类：
+先运行与改动最相关的单个测试类或 feature package：
 
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.<feature>.<TestClass>"
 ```
 
-随后运行 `.\gradlew.bat :apps:android:testDebugUnitTest`；涉及资源、Manifest、权限或发布配置时，再运行 `.\gradlew.bat :apps:android:assembleDebug`。
-
-Compose 行为测试放在 `src/test` 并通过 Robolectric 运行。可恢复 UI 状态使用 `StateRestorationTester` 验证；窗口适配使用 `DeviceConfigurationOverride`，至少覆盖 400、610、900 dp 宽度以及 1.5 倍字体。
+- 每个开发阶段只运行专项测试与必要的 Detekt；
+- 同一轮连续改动期间，不重复运行 Android 全量测试；
+- 整轮改动完成后运行一次 `.\gradlew.bat :apps:android:testDebugUnitTest`；
+- 仅跨模块、影响较大或准备提交/发布时运行完整 `build`；
+- 除排查缓存、竞态或用户明确要求外，不使用 `--rerun-tasks`；
+- Gradle Daemon 只在整轮最终验证后停止；
+- 涉及资源、Manifest、权限或发布配置时，再运行 `.\gradlew.bat :apps:android:assembleDebug`。
+- Compose 行为测试放在 `src/test` 并通过 Robolectric 运行；可恢复 UI 状态使用 `StateRestorationTester` 验证；窗口适配使用 `DeviceConfigurationOverride`，至少覆盖 400、610、900 dp 宽度以及 1.5 倍字体。
 
 运行设备端 Room 测试：
 

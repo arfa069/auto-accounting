@@ -25,4 +25,6 @@
 .\gradlew.bat :services:backend:test --tests "com.autoaccounting.backend.<package>.<TestClass>"
 ```
 
-随后运行 `.\gradlew.bat :services:backend:test`。涉及应用组装、环境配置或数据库迁移时，必须同时运行相关集成测试和 `SecretScannerTest`。
+- 同一轮连续改动期间，只运行与当前阶段改动直接相关的测试类或 package，不重复运行 Backend 全量测试；
+- 整轮 Backend 改动完成后，运行一次 `.\gradlew.bat :services:backend:test`；
+- 涉及应用组装、环境配置或数据库迁移时，必须同时运行相关集成测试和 `SecretScannerTest`。
