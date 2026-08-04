@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -97,7 +98,6 @@ internal fun LedgerList(
 ) {
     var searchText by remember { mutableStateOf("") }
     var showFilters by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
     var sourceFilter by remember { mutableStateOf("") }
     var categoryFilter by remember { mutableStateOf("") }
     var kindFilter by remember { mutableStateOf("") }
@@ -128,22 +128,13 @@ internal fun LedgerList(
         categoryFilter,
         kindFilter
     ) {
-        val searchQuery = searchText.trim()
-        val sourceQuery = sourceFilter.trim()
-        val categoryQuery = categoryFilter.trim()
-        val kindQuery = kindFilter.trim()
-        entries
-            .asSequence()
-            .filter { it.monthKey == monthKey }
-            .filter {
-                val searchableText = "${it.title} ${it.note.orEmpty()} ${it.category}"
-                searchQuery.isBlank() || searchableText.contains(searchQuery, ignoreCase = true)
-            }
-            .filter { sourceQuery.isBlank() || it.sourceLabel.contains(sourceQuery) }
-            .filter { categoryQuery.isBlank() || it.category.contains(categoryQuery) }
-            .filter { kindQuery.isBlank() || it.kindLabel.contains(kindQuery) }
-            .sortedByDescending { it.transactionTimeEpochMillis }
-            .toList()
+        entries.filterLedgerEntries(
+            monthKey = monthKey,
+            searchText = searchText,
+            sourceFilter = sourceFilter,
+            categoryFilter = categoryFilter,
+            kindFilter = kindFilter
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -153,83 +144,19 @@ internal fun LedgerList(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    activeLedgerName,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box {
-                        TextButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.testTag(LedgerTestTags.MORE_MENU)
-                        ) {
-                            Text("更多")
-                        }
-                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag(LedgerTestTags.MANAGE_LEDGERS),
-                                text = { Text("账本管理") },
-                                onClick = {
-                                    showMenu = false
-                                    onLedgerBooksClick()
-                                }
-                            )
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag(LedgerTestTags.MANAGE_FUNDING_ACCOUNTS),
-                                text = { Text("资金账户") },
-                                onClick = {
-                                    showMenu = false
-                                    onFundingAccountsClick()
-                                }
-                            )
-                            DropdownMenuItem(
-                                modifier = Modifier.testTag(LedgerTestTags.RECENTLY_DELETED),
-                                text = { Text("最近删除") },
-                                onClick = {
-                                    showMenu = false
-                                    onRecentlyDeletedClick()
-                                }
-                            )
-                        }
-                    }
-                    HomeReturnButton(onClick = onNavigateHome)
-                }
-            }
+            LedgerListHeader(
+                activeLedgerName = activeLedgerName,
+                onLedgerBooksClick = onLedgerBooksClick,
+                onFundingAccountsClick = onFundingAccountsClick,
+                onRecentlyDeletedClick = onRecentlyDeletedClick,
+                onNavigateHome = onNavigateHome
+            )
             LedgerSummary(summary)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    label = { Text("搜索商户或备注") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .testTag(LedgerTestTags.SEARCH_FIELD)
-                )
-                OutlinedButton(
-                    onClick = { showFilters = !showFilters },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .offset(y = 4.dp)
-                        .testTag(LedgerTestTags.FILTER_BUTTON)
-                ) {
-                    Text("筛选")
-                }
-            }
+            LedgerSearchBar(
+                searchText = searchText,
+                onSearchChange = { searchText = it },
+                onToggleFilters = { showFilters = !showFilters }
+            )
             if (showFilters) {
                 FilterPanel(
                     sourceFilter = sourceFilter,
@@ -240,50 +167,201 @@ internal fun LedgerList(
                     onKindChange = { kindFilter = it }
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            LedgerMonthNavigation(
+                monthKey = monthKey,
+                monthIndex = monthIndex,
+                availableMonthKeys = availableMonthKeys,
+                onMonthChange = { monthKey = it }
+            )
+            LedgerEntryList(
+                entries = filteredEntries,
+                entryListState = entryListState,
+                hasCurrentMonthEntries = hasCurrentMonthEntries,
+                hasActiveFilters = hasActiveFilters,
+                onEntryClick = onEntryClick
+            )
+        }
+    }
+}
+
+internal fun List<LedgerUiEntry>.filterLedgerEntries(
+    monthKey: String,
+    searchText: String,
+    sourceFilter: String,
+    categoryFilter: String,
+    kindFilter: String
+): List<LedgerUiEntry> {
+    val searchQuery = searchText.trim()
+    val sourceQuery = sourceFilter.trim()
+    val categoryQuery = categoryFilter.trim()
+    val kindQuery = kindFilter.trim()
+    return asSequence()
+        .filter { it.monthKey == monthKey }
+        .filter {
+            val searchableText = "${it.title} ${it.note.orEmpty()} ${it.category}"
+            searchQuery.isBlank() || searchableText.contains(searchQuery, ignoreCase = true)
+        }
+        .filter { sourceQuery.isBlank() || it.sourceLabel.contains(sourceQuery) }
+        .filter { categoryQuery.isBlank() || it.category.contains(categoryQuery) }
+        .filter { kindQuery.isBlank() || it.kindLabel.contains(kindQuery) }
+        .sortedByDescending { it.transactionTimeEpochMillis }
+        .toList()
+}
+
+@Composable
+private fun LedgerListHeader(
+    activeLedgerName: String,
+    onLedgerBooksClick: () -> Unit,
+    onFundingAccountsClick: () -> Unit,
+    onRecentlyDeletedClick: () -> Unit,
+    onNavigateHome: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            activeLedgerName,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box {
                 TextButton(
-                    onClick = { monthKey = availableMonthKeys[monthIndex - 1] },
-                    enabled = monthIndex > 0
+                    onClick = { showMenu = true },
+                    modifier = Modifier.testTag(LedgerTestTags.MORE_MENU)
                 ) {
-                    Text("上一月")
+                    Text("更多")
                 }
-                Text(
-                    "$monthKey 明细",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                TextButton(
-                    onClick = { monthKey = availableMonthKeys[monthIndex + 1] },
-                    enabled = monthIndex in 0 until availableMonthKeys.lastIndex
-                ) {
-                    Text("下一月")
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag(LedgerTestTags.MANAGE_LEDGERS),
+                        text = { Text("账本管理") },
+                        onClick = {
+                            showMenu = false
+                            onLedgerBooksClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag(LedgerTestTags.MANAGE_FUNDING_ACCOUNTS),
+                        text = { Text("资金账户") },
+                        onClick = {
+                            showMenu = false
+                            onFundingAccountsClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag(LedgerTestTags.RECENTLY_DELETED),
+                        text = { Text("最近删除") },
+                        onClick = {
+                            showMenu = false
+                            onRecentlyDeletedClick()
+                        }
+                    )
                 }
             }
-            LazyColumn(
-                state = entryListState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag(LedgerTestTags.ENTRY_LIST),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (filteredEntries.isEmpty()) {
-                    item {
-                        if (!hasCurrentMonthEntries && !hasActiveFilters) {
-                            EmptyStatePanel("当前没有已确认账目")
-                        } else {
-                            EmptyStatePanel("没有符合当前筛选条件的账目")
-                        }
-                    }
+            HomeReturnButton(onClick = onNavigateHome)
+        }
+    }
+}
+
+@Composable
+private fun LedgerSearchBar(
+    searchText: String,
+    onSearchChange: (String) -> Unit,
+    onToggleFilters: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = searchText,
+            onValueChange = onSearchChange,
+            label = { Text("搜索商户或备注") },
+            singleLine = true,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .testTag(LedgerTestTags.SEARCH_FIELD)
+        )
+        OutlinedButton(
+            onClick = onToggleFilters,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .offset(y = 4.dp)
+                .testTag(LedgerTestTags.FILTER_BUTTON)
+        ) {
+            Text("筛选")
+        }
+    }
+}
+
+@Composable
+private fun LedgerMonthNavigation(
+    monthKey: String,
+    monthIndex: Int,
+    availableMonthKeys: List<String>,
+    onMonthChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            onClick = { onMonthChange(availableMonthKeys[monthIndex - 1]) },
+            enabled = monthIndex > 0
+        ) {
+            Text("上一月")
+        }
+        Text(
+            "$monthKey 明细",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        TextButton(
+            onClick = { onMonthChange(availableMonthKeys[monthIndex + 1]) },
+            enabled = monthIndex in 0 until availableMonthKeys.lastIndex
+        ) {
+            Text("下一月")
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.LedgerEntryList(
+    entries: List<LedgerUiEntry>,
+    entryListState: LazyListState,
+    hasCurrentMonthEntries: Boolean,
+    hasActiveFilters: Boolean,
+    onEntryClick: (String) -> Unit
+) {
+    LazyColumn(
+        state = entryListState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f)
+            .testTag(LedgerTestTags.ENTRY_LIST),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (entries.isEmpty()) {
+            item {
+                if (!hasCurrentMonthEntries && !hasActiveFilters) {
+                    EmptyStatePanel("当前没有已确认账目")
                 } else {
-                    items(filteredEntries, key = { it.id }) { entry ->
-                        LedgerEntryRow(entry) { onEntryClick(entry.id) }
-                    }
+                    EmptyStatePanel("没有符合当前筛选条件的账目")
                 }
+            }
+        } else {
+            items(entries, key = { it.id }) { entry ->
+                LedgerEntryRow(entry) { onEntryClick(entry.id) }
             }
         }
     }
@@ -292,16 +370,15 @@ internal fun LedgerList(
 @Composable
 private fun LedgerSummary(summary: MonthlySummary) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        SummaryChip("本月支出 ${formatMoney(summary.expenseMinor)}", Modifier.weight(1f))
-        SummaryChip("本月收入 ${formatMoney(summary.incomeMinor)}", Modifier.weight(1f))
-        SummaryChip("净额\n${formatSignedMoney(summary.netMinor)}", Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SummaryChip(text: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Text(text, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Text("本月支出 ${formatMoney(summary.expenseMinor)}", modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        }
+        Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Text("本月收入 ${formatMoney(summary.incomeMinor)}", modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        }
+        Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Text("净额\n${formatSignedMoney(summary.netMinor)}", modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
