@@ -4,6 +4,7 @@ import com.autoaccounting.data.local.ConfidenceState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -244,6 +245,67 @@ class ReviewQueueStateTest {
         assertEquals(ConfidenceState.HIGH, merged.confidence)
         assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
         assertTrue(merged.rawEvidenceText.contains("微信账单"))
+    }
+
+    @Test
+    fun addPendingNoOpsForSameEntryAndReplacesChangedEntry() {
+        val entry = sampleEntry()
+        val state = ReviewQueueState(pendingEntries = listOf(entry))
+
+        assertSame(
+            state,
+            reduceReviewQueue(state, ReviewQueueAction.AddPending(entry))
+        )
+
+        val withUndo = reduceReviewQueue(
+            ReviewQueueState(
+                pendingEntries = listOf(entry, sampleEntry(id = "pending-other"))
+            ),
+            ReviewQueueAction.Ignore("pending-other")
+        )
+        val replacement = entry.copy(title = "工作餐")
+
+        val next = reduceReviewQueue(withUndo, ReviewQueueAction.AddPending(replacement))
+
+        assertEquals(listOf(replacement), next.pendingEntries)
+        assertNull(next.lastAction)
+    }
+
+    @Test
+    fun missingActionTargetsLeaveStateUntouched() {
+        val state = ReviewQueueState(
+            pendingEntries = listOf(sampleEntry()),
+            ignoredEntries = listOf(
+                ReviewQueueIgnoredEntry.fromPending(sampleEntry(id = "ignored-source"))
+            )
+        )
+
+        assertSame(state, reduceReviewQueue(state, ReviewQueueAction.Confirm("missing")))
+        assertSame(state, reduceReviewQueue(state, ReviewQueueAction.Ignore("missing")))
+        assertSame(
+            state,
+            reduceReviewQueue(state, ReviewQueueAction.RecoverIgnored("missing"))
+        )
+    }
+
+    @Test
+    fun dismissUndoOnlyClearsLastAction() {
+        val state = reduceReviewQueue(
+            reduceReviewQueue(
+                ReviewQueueState(
+                    pendingEntries = listOf(
+                        sampleEntry(id = "confirmed"),
+                        sampleEntry(id = "ignored")
+                    )
+                ),
+                ReviewQueueAction.Confirm("confirmed")
+            ),
+            ReviewQueueAction.Ignore("ignored")
+        )
+
+        val dismissed = reduceReviewQueue(state, ReviewQueueAction.DismissUndo)
+
+        assertEquals(state.copy(lastAction = null), dismissed)
     }
 
     private fun sampleEntry(

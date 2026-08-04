@@ -146,35 +146,52 @@ fun reduceReviewQueue(
     state: ReviewQueueState,
     action: ReviewQueueAction
 ): ReviewQueueState = when (action) {
-    is ReviewQueueAction.AddPending -> {
-        val existingEntry = state.pendingEntries.firstOrNull { it.id == action.entry.id }
+    is ReviewQueueAction.AddPending -> ReviewQueueTransitions.addPendingEntry(state, action.entry)
+    is ReviewQueueAction.Confirm -> ReviewQueueTransitions.confirmPendingEntry(state, action.entryId)
+    is ReviewQueueAction.Ignore -> ReviewQueueTransitions.ignorePendingEntry(state, action.entryId)
+    ReviewQueueAction.UndoLastAction -> ReviewQueueTransitions.undoReviewQueueAction(state)
+    ReviewQueueAction.DismissUndo -> state.copy(lastAction = null)
+    is ReviewQueueAction.RecoverIgnored ->
+        ReviewQueueTransitions.recoverIgnoredEntry(state, action.ignoredEntryId)
+    is ReviewQueueAction.SaveEdit -> ReviewQueueTransitions.saveReviewEdit(state, action)
+}
+
+private object ReviewQueueTransitions {
+    fun addPendingEntry(
+        state: ReviewQueueState,
+        entry: ReviewQueueEntry
+    ): ReviewQueueState {
+        val existingEntry = state.pendingEntries.firstOrNull { it.id == entry.id }
         if (existingEntry != null) {
-            if (existingEntry == action.entry) {
+            return if (existingEntry == entry) {
                 state
             } else {
                 state.copy(
-                    pendingEntries = state.pendingEntries.map { entry ->
-                        if (entry.id == action.entry.id) action.entry else entry
+                    pendingEntries = state.pendingEntries.map {
+                        if (it.id == entry.id) entry else it
                     },
                     lastAction = null
                 )
             }
-        } else {
-            val dedupeResult = DedupeEngine().addCandidate(state.pendingEntries, action.entry)
-            state.copy(
-                pendingEntries = dedupeResult.pendingEntries,
-                lastAction = null
-            )
         }
+
+        val dedupeResult = DedupeEngine().addCandidate(state.pendingEntries, entry)
+        return state.copy(
+            pendingEntries = dedupeResult.pendingEntries,
+            lastAction = null
+        )
     }
 
-    is ReviewQueueAction.Confirm -> {
-        val entry = state.pendingEntries.firstOrNull { it.id == action.entryId }
+    fun confirmPendingEntry(
+        state: ReviewQueueState,
+        entryId: String
+    ): ReviewQueueState {
+        val entry = state.pendingEntries.firstOrNull { it.id == entryId }
             ?: return state
         val ledgerEntry = ReviewQueueConfirmedEntry.fromPending(entry)
         val nextEventSequence = state.undoEventSequence + 1
-        state.copy(
-            pendingEntries = state.pendingEntries.filterNot { it.id == action.entryId },
+        return state.copy(
+            pendingEntries = state.pendingEntries.filterNot { it.id == entryId },
             confirmedEntries = state.confirmedEntries + ledgerEntry,
             lastAction = ReviewQueueLastAction.Confirmed(
                 eventId = "review-undo-$nextEventSequence",
@@ -185,16 +202,19 @@ fun reduceReviewQueue(
         )
     }
 
-    is ReviewQueueAction.Ignore -> {
-        val entry = state.pendingEntries.firstOrNull { it.id == action.entryId }
+    fun ignorePendingEntry(
+        state: ReviewQueueState,
+        entryId: String
+    ): ReviewQueueState {
+        val entry = state.pendingEntries.firstOrNull { it.id == entryId }
             ?: return state
         val ignoredEntry = ReviewQueueIgnoredEntry.fromPending(
             entry = entry,
             ignoredAtEpochMillis = state.nowEpochMillis
         )
         val nextEventSequence = state.undoEventSequence + 1
-        state.copy(
-            pendingEntries = state.pendingEntries.filterNot { it.id == action.entryId },
+        return state.copy(
+            pendingEntries = state.pendingEntries.filterNot { it.id == entryId },
             ignoredEntries = state.ignoredEntries + ignoredEntry,
             lastAction = ReviewQueueLastAction.Ignored(
                 eventId = "review-undo-$nextEventSequence",
@@ -205,41 +225,46 @@ fun reduceReviewQueue(
         )
     }
 
-    ReviewQueueAction.UndoLastAction -> when (val lastAction = state.lastAction) {
-        is ReviewQueueLastAction.Confirmed -> state.copy(
-            pendingEntries = listOf(lastAction.entry) + state.pendingEntries,
-            confirmedEntries = state.confirmedEntries.filterNot {
-                it.id == lastAction.ledgerEntry.id
-            },
-            lastAction = null
-        )
+    fun undoReviewQueueAction(state: ReviewQueueState): ReviewQueueState =
+        when (val lastAction = state.lastAction) {
+            is ReviewQueueLastAction.Confirmed -> state.copy(
+                pendingEntries = listOf(lastAction.entry) + state.pendingEntries,
+                confirmedEntries = state.confirmedEntries.filterNot {
+                    it.id == lastAction.ledgerEntry.id
+                },
+                lastAction = null
+            )
 
-        is ReviewQueueLastAction.Ignored -> state.copy(
-            pendingEntries = listOf(lastAction.entry) + state.pendingEntries,
-            ignoredEntries = state.ignoredEntries.filterNot {
-                it.id == lastAction.ignoredEntry.id
-            },
-            lastAction = null
-        )
+            is ReviewQueueLastAction.Ignored -> state.copy(
+                pendingEntries = listOf(lastAction.entry) + state.pendingEntries,
+                ignoredEntries = state.ignoredEntries.filterNot {
+                    it.id == lastAction.ignoredEntry.id
+                },
+                lastAction = null
+            )
 
-        null -> state
-    }
+            null -> state
+        }
 
-    ReviewQueueAction.DismissUndo -> state.copy(lastAction = null)
-
-    is ReviewQueueAction.RecoverIgnored -> {
-        val ignored = state.recoverableIgnoredEntries.firstOrNull { it.id == action.ignoredEntryId }
+    fun recoverIgnoredEntry(
+        state: ReviewQueueState,
+        ignoredEntryId: String
+    ): ReviewQueueState {
+        val ignored = state.recoverableIgnoredEntries.firstOrNull { it.id == ignoredEntryId }
             ?: return state
-        state.copy(
+        return state.copy(
             pendingEntries = listOf(ignored.entry) + state.pendingEntries,
             ignoredEntries = state.ignoredEntries.filterNot { it.id == ignored.id },
             lastAction = null
         )
     }
 
-    is ReviewQueueAction.SaveEdit -> {
+    fun saveReviewEdit(
+        state: ReviewQueueState,
+        action: ReviewQueueAction.SaveEdit
+    ): ReviewQueueState {
         val amountMinor = parseReviewAmountMinor(action.amountText) ?: return state
-        state.copy(
+        return state.copy(
             pendingEntries = state.pendingEntries.map { entry ->
                 if (entry.id != action.entryId) {
                     entry
