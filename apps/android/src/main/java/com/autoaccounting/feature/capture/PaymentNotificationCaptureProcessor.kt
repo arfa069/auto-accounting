@@ -46,6 +46,47 @@ class PaymentNotificationCaptureProcessor(
     ): PaymentNotificationProcessResult? = captureCoordinator.serialize {
         reviewQueuePersistence.ensureSystemCategories()
         val evaluation = pipeline.evaluate(event)
+        val entry = recordRejectedDiagnosticIfRejected(evaluation, event, traceId)
+            ?: return@serialize null
+        diagnosticRecorder.record(entry.toNotificationDiagnosticEvent(event, traceId))
+        val categorizedEntry = categorizeEntry(event, entry)
+        val previousState = reviewQueuePersistence.observeState().first()
+        val candidateAfterLedgerCheck = resolveLedgerDedupeCandidate(
+            categorizedEntry,
+            event,
+            traceId
+        ) ?: return@serialize PaymentNotificationProcessResult(
+            state = previousState,
+            notification = null
+        )
+        val pendingOutcome = resolvePendingDedupeOutcome(
+            candidateAfterLedgerCheck,
+            previousState
+        ) ?: return@serialize null
+        val nextState = buildNextState(
+            previousState,
+            candidateAfterLedgerCheck,
+            pendingOutcome.entryToPersist
+        )
+        reviewQueuePersistence.persistTransition(previousState, nextState)
+        val notification = buildResultNotification(
+            pendingOutcome.matchLevel,
+            pendingOutcome.entryToPersist
+        )
+        recordPendingPersistedDiagnostic(
+            traceId,
+            event,
+            pendingOutcome.matchLevel,
+            pendingOutcome.entryToPersist
+        )
+        PaymentNotificationProcessResult(nextState, notification)
+    }
+
+    private fun recordRejectedDiagnosticIfRejected(
+        evaluation: NotificationCaptureEvaluation,
+        event: PaymentNotificationEvent,
+        traceId: String
+    ): ReviewQueueEntry? {
         val entry = evaluation.entry
         if (entry == null) {
             diagnosticRecorder.record(
@@ -72,9 +113,14 @@ class PaymentNotificationCaptureProcessor(
                     }
                 )
             )
-            return@serialize null
         }
-        diagnosticRecorder.record(entry.toNotificationDiagnosticEvent(event, traceId))
+        return entry
+    }
+
+    private suspend fun categorizeEntry(
+        event: PaymentNotificationEvent,
+        entry: ReviewQueueEntry
+    ): ReviewQueueEntry {
         val correlatedEntry = if (
             entry.isGenericAlipayExpenseNotification() &&
             alipayTransitContextStore.consumeForNotification(event.postedAtEpochMillis)
@@ -84,8 +130,14 @@ class PaymentNotificationCaptureProcessor(
             entry
         }
         val rules = preferencesRepository.categorizationRules.first()
-        val categorizedEntry = correlatedEntry.applyCategorizationSuggestion(rules)
-        val previousState = reviewQueuePersistence.observeState().first()
+        return correlatedEntry.applyCategorizationSuggestion(rules)
+    }
+
+    private suspend fun resolveLedgerDedupeCandidate(
+        categorizedEntry: ReviewQueueEntry,
+        event: PaymentNotificationEvent,
+        traceId: String
+    ): ReviewQueueEntry? {
         val ledgerEntriesForDedupe = reviewQueuePersistence.ledgerEntriesForDedupe()
             .filterNot { ledgerEntry ->
                 ledgerEntry.isPriorRedPacketLedgerFor(categorizedEntry)
@@ -98,45 +150,57 @@ class PaymentNotificationCaptureProcessor(
             diagnosticRecorder.record(
                 notificationMetadataEvent(traceId, event, "ledger_duplicate", "duplicate")
             )
-            return@serialize PaymentNotificationProcessResult(
-                state = previousState,
-                notification = null
-            )
+            return null
         }
-        val candidateAfterLedgerCheck = if (
-            ledgerDedupeResult.matchLevel == DedupeMatchLevel.LOW_CONFIDENCE
-        ) {
+        return if (ledgerDedupeResult.matchLevel == DedupeMatchLevel.LOW_CONFIDENCE) {
             ledgerDedupeResult.pendingEntries.first { it.id == categorizedEntry.id }
         } else {
             categorizedEntry
         }
+    }
+
+    private fun resolvePendingDedupeOutcome(
+        candidate: ReviewQueueEntry,
+        previousState: ReviewQueueState
+    ): PendingDedupeOutcome? {
         val hasPriorRedPacketNotification = previousState.pendingEntries.any { existing ->
-            existing.isPriorRedPacketNotificationFor(candidateAfterLedgerCheck)
+            existing.isPriorRedPacketNotificationFor(candidate)
         }
         val pendingEntriesForDedupe = if (hasPriorRedPacketNotification) {
             previousState.pendingEntries.filterNot { existing ->
-                existing.isPriorRedPacketNotificationFor(candidateAfterLedgerCheck)
+                existing.isPriorRedPacketNotificationFor(candidate)
             }
         } else {
             previousState.pendingEntries
         }
         val dedupeResult = DedupeEngine().addCandidate(
             pendingEntriesForDedupe,
-            candidateAfterLedgerCheck
+            candidate
         )
         val entryToPersist = when (dedupeResult.matchLevel) {
             DedupeMatchLevel.HIGH_CONFIDENCE -> {
-                val matchedId = dedupeResult.matchedEntry?.id ?: return@serialize null
+                val matchedId = dedupeResult.matchedEntry?.id ?: return null
                 dedupeResult.pendingEntries.first { it.id == matchedId }
             }
 
             DedupeMatchLevel.NONE,
             DedupeMatchLevel.LOW_CONFIDENCE ->
-                dedupeResult.pendingEntries.first { it.id == candidateAfterLedgerCheck.id }
+                dedupeResult.pendingEntries.first { it.id == candidate.id }
         }
-        val nextState = if (
+        return PendingDedupeOutcome(entryToPersist, dedupeResult.matchLevel)
+    }
+
+    private fun buildNextState(
+        previousState: ReviewQueueState,
+        candidate: ReviewQueueEntry,
+        entryToPersist: ReviewQueueEntry
+    ): ReviewQueueState {
+        val hasPriorRedPacketNotification = previousState.pendingEntries.any { existing ->
+            existing.isPriorRedPacketNotificationFor(candidate)
+        }
+        return if (
             hasPriorRedPacketNotification &&
-            entryToPersist.id == candidateAfterLedgerCheck.id
+            entryToPersist.id == candidate.id
         ) {
             previousState.copy(
                 pendingEntries = listOf(entryToPersist) +
@@ -149,17 +213,28 @@ class PaymentNotificationCaptureProcessor(
                 ReviewQueueAction.AddPending(entryToPersist)
             )
         }
-        reviewQueuePersistence.persistTransition(previousState, nextState)
+    }
 
-        val notification = if (dedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
-            null
-        } else {
+    private fun buildResultNotification(
+        matchLevel: DedupeMatchLevel,
+        entryToPersist: ReviewQueueEntry
+    ): BookkeepingResultNotification? = when (matchLevel) {
+        DedupeMatchLevel.HIGH_CONFIDENCE -> null
+        DedupeMatchLevel.NONE,
+        DedupeMatchLevel.LOW_CONFIDENCE ->
             BookkeepingResultNotification.PendingCreated(
                 key = entryToPersist.id,
                 count = 1,
                 category = entryToPersist.category.takeIf { it.isNotBlank() }
             )
-        }
+    }
+
+    private fun recordPendingPersistedDiagnostic(
+        traceId: String,
+        event: PaymentNotificationEvent,
+        matchLevel: DedupeMatchLevel,
+        entryToPersist: ReviewQueueEntry
+    ) {
         diagnosticRecorder.record(
             DiagnosticEvent(
                 metadata = DiagnosticEventMetadata(
@@ -169,15 +244,19 @@ class PaymentNotificationCaptureProcessor(
                     traceId = traceId,
                     source = event.diagnosticSource(),
                     outcome = "success",
-                    reason = dedupeResult.matchLevel.name,
+                    reason = matchLevel.name,
                     count = 1
                 ),
                 sensitivePayload = entryToPersist.toSensitiveDiagnosticPayload()
             )
         )
-        PaymentNotificationProcessResult(nextState, notification)
     }
 }
+
+private data class PendingDedupeOutcome(
+    val entryToPersist: ReviewQueueEntry,
+    val matchLevel: DedupeMatchLevel
+)
 
 private fun PaymentNotificationEvent.joinedText(): String =
     listOf(title, text).filter(String::isNotBlank).joinToString(" ")

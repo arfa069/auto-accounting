@@ -22,6 +22,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -100,6 +101,63 @@ class PaymentNotificationCaptureProcessorTest {
         assertEquals(ConfidenceState.HIGH, entry.confidence)
         assertEquals("Lunch", entry.suggestedCategoryLabel)
         assertTrue(entry.evidenceSummary.orEmpty().contains("---"))
+    }
+
+    @Test
+    fun processWithResultReturnsPendingCreatedWithEntryKeyAndCategory() = runBlocking {
+        LocalPreferencesRepository(database).replaceCategorizationRules(
+            listOf(
+                CategorizationRule(
+                    id = "lunch",
+                    merchantContains = "午餐",
+                    category = "Lunch"
+                )
+            )
+        )
+
+        val result = processor.processWithResult(paymentEvent(postedAtEpochMillis = NOW))
+
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        val notification = result?.notification as? BookkeepingResultNotification.PendingCreated
+        assertNotNull(notification)
+        assertEquals(entry.id, notification!!.key)
+        assertEquals(1, notification.count)
+        assertEquals("Lunch", notification.category)
+        assertEquals("Lunch", entry.suggestedCategoryLabel)
+    }
+
+    @Test
+    fun processWithResultReturnsNullNotificationForHighConfidencePendingMerge() = runBlocking {
+        processor.process(paymentEvent(postedAtEpochMillis = NOW))
+
+        val result = processor.processWithResult(paymentEvent(postedAtEpochMillis = NOW + 30_000))
+
+        assertNotNull(result)
+        assertNull(result?.notification)
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals(CaptureReason.DUPLICATE_MERGE, entry.captureReason)
+        assertEquals(ConfidenceState.HIGH, entry.confidence)
+    }
+
+    @Test
+    fun processWithResultReturnsUnchangedStateForLedgerHighConfidenceDuplicate() = runBlocking {
+        processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
+        val pendingState = persistence.observeState().first()
+        persistence.persistTransition(
+            pendingState,
+            reduceReviewQueue(
+                pendingState,
+                ReviewQueueAction.Confirm(pendingState.pendingEntries.single().id)
+            )
+        )
+
+        val stateBefore = persistence.observeState().first()
+        val result = processor.processWithResult(sentRedPacketEvent(postedAtEpochMillis = NOW))
+
+        assertNotNull(result)
+        assertNull(result?.notification)
+        assertEquals(stateBefore, result?.state)
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
     }
 
     @Test
