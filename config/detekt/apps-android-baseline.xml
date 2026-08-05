@@ -8,7 +8,6 @@
     <ID>CyclomaticComplexMethod:AccountManagementScreen.kt$@Composable fun AccountManagementScreen( session: AccountSession, runtimeState: AccountRuntimeState, deletionState: AccountDeletionUiState, accountRepository: AccountRepository, onSignInOrRegister: () -&gt; Unit, onSessionVerified: (AccountCredentials) -&gt; Unit, onInvalidSession: () -&gt; Unit, persistSession: (AccountCredentials) -&gt; Boolean = { true }, clearPersistedSession: () -&gt; Boolean, wechatAuthGateway: WechatAuthGateway? = null, wechatAuthCallback: WechatAuthCallback? = null, onWechatAuthCallbackConsumed: () -&gt; Unit = {}, avatarCacheOverride: WechatAvatarCache? = null, onSignedOut: () -&gt; Unit, onDeletionStateChange: (AccountDeletionUiState) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>CyclomaticComplexMethod:AccountState.kt$fun reduceAccountState( state: AccountUiState, action: AccountAction ): AccountUiState</ID>
     <ID>CyclomaticComplexMethod:AppVisuals.kt$@DrawableRes fun categoryArtworkRes( categoryId: String? = null, categoryName: String? = null, transactionKind: TransactionKind? = null ): Int</ID>
-    <ID>CyclomaticComplexMethod:ContinuousMonitoringState.kt$private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean</ID>
     <ID>CyclomaticComplexMethod:LedgerSyncCoordinator.kt$LedgerSyncCoordinator$private suspend fun synchronizeLocked(token: String): LedgerSyncOperationResult&lt;Unit&gt;</ID>
     <ID>CyclomaticComplexMethod:PaymentNotificationParser.kt$private fun String.transactionKindLabel(): String?</ID>
     <ID>CyclomaticComplexMethod:PersistedLocalDataBackup.kt$private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot</ID>
@@ -56,7 +55,6 @@
     <ID>MatchingDeclarationName:ComplianceAndPrivacyScreen.kt$ComplianceMaterialPage</ID>
     <ID>MatchingDeclarationName:ProfileScreen.kt$ProfileDestination</ID>
     <ID>MatchingDeclarationName:WechatAvatar.kt$WechatAvatarCache</ID>
-    <ID>ReturnCount:ContinuousMonitoringState.kt$private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean</ID>
     <ID>TooManyFunctions:AccountRepository.kt$AccountRepository</ID>
     <ID>TooManyFunctions:AccountRepository.kt$FakeAccountRepository : AccountRepository</ID>
     <ID>TooManyFunctions:AndroidDiagnosticLogRepository.kt$AndroidDiagnosticLogRepository : DiagnosticLogRepository</ID>

@@ -165,50 +165,59 @@ private fun ContinuousMonitoringEvent.isPaymentHistorySurface(): Boolean {
     if (!isContinuousMonitoringPackageAllowed(packageName)) return false
 
     val text = screenText.lowercase()
-    if (
-        packageName == ALIPAY_PACKAGE_NAME &&
-        hasAlipayTransactionListPageSignature(text)
-    ) {
-        return false
-    }
-    if (PAYMENT_INITIATION_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }) return false
-    val hasChatOrGenericMessage =
-        CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }
-    val hasCompletedPayment = PAYMENT_COMPLETION_KEYWORDS.any { keyword -> text.contains(keyword) } &&
-        PAYMENT_AMOUNT_REGEX.containsMatchIn(text)
-    if (packageName == "com.tencent.mm") {
-        if (
+    return when (packageName) {
+        "com.tencent.mm" -> if (
+            PAYMENT_INITIATION_DENY_KEYWORDS.any { keyword -> text.contains(keyword) }
+        ) {
+            false
+        } else if (
             hasWechatReceivedRedPacketSuccessSignature(text) ||
             hasWechatSentRedPacketSuccessSignature(text)
         ) {
-            return PAYMENT_AMOUNT_REGEX.containsMatchIn(text) &&
+            PAYMENT_AMOUNT_REGEX.containsMatchIn(text) &&
+                ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+        } else {
+            val hasCompletedPayment =
+                PAYMENT_COMPLETION_KEYWORDS.any { keyword -> text.contains(keyword) } &&
+                    PAYMENT_AMOUNT_REGEX.containsMatchIn(text)
+            val hasSupportedCompletion = hasWechatMerchantPaymentSuccessSignature(text) ||
+                hasWechatTransferCompletionContext(text)
+            hasCompletedPayment &&
+                hasSupportedCompletion &&
+                CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.none { keyword -> text.contains(keyword) } &&
                 ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
         }
-        val hasSupportedCompletion = hasWechatMerchantPaymentSuccessSignature(text) ||
-            hasWechatTransferCompletionContext(text)
-        return hasCompletedPayment &&
-            hasSupportedCompletion &&
-            !hasChatOrGenericMessage &&
-            ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+        ALIPAY_PACKAGE_NAME -> text.isAlipayPaymentHistorySurface()
+        else -> false
     }
+}
+
+private fun String.isAlipayPaymentHistorySurface(): Boolean {
+    if (hasAlipayTransactionListPageSignature(this)) return false
+    if (PAYMENT_INITIATION_DENY_KEYWORDS.any { keyword -> contains(keyword) }) return false
+
+    val hasCompletedPayment = PAYMENT_COMPLETION_KEYWORDS.any { keyword -> contains(keyword) } &&
+        PAYMENT_AMOUNT_REGEX.containsMatchIn(this)
     if (hasCompletedPayment) {
-        return hasAlipayPaymentResultPageSignature(text) &&
-            ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> text.contains(keyword) }
+        return hasAlipayPaymentResultPageSignature(this) &&
+            ACTIVE_CHAT_INPUT_KEYWORDS.none { keyword -> contains(keyword) }
     }
-    if (hasChatOrGenericMessage &&
-        PAYMENT_MESSAGE_CENTER_KEYWORDS.none { keyword -> text.contains(keyword) }
+    if (
+        CHAT_OR_GENERIC_MESSAGE_DENY_KEYWORDS.any { keyword -> contains(keyword) } &&
+        PAYMENT_MESSAGE_CENTER_KEYWORDS.none { keyword -> contains(keyword) }
     ) {
         return false
     }
-    if (TRANSFER_OR_RED_PACKET_KEYWORDS.any { keyword -> text.contains(keyword) } &&
-        PAYMENT_RECORD_CONTEXT_KEYWORDS.none { keyword -> text.contains(keyword) }
+    if (
+        TRANSFER_OR_RED_PACKET_KEYWORDS.any { keyword -> contains(keyword) } &&
+        PAYMENT_RECORD_CONTEXT_KEYWORDS.none { keyword -> contains(keyword) }
     ) {
         return false
     }
-    return PAYMENT_AMOUNT_REGEX.containsMatchIn(text) &&
+    return PAYMENT_AMOUNT_REGEX.containsMatchIn(this) &&
         (
-            PAYMENT_HISTORY_KEYWORDS.any { keyword -> text.contains(keyword) } ||
-                PAYMENT_MESSAGE_CENTER_KEYWORDS.any { keyword -> text.contains(keyword) }
+            PAYMENT_HISTORY_KEYWORDS.any { keyword -> contains(keyword) } ||
+                PAYMENT_MESSAGE_CENTER_KEYWORDS.any { keyword -> contains(keyword) }
             )
 }
 

@@ -377,6 +377,17 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
+    fun alipayPaymentResultRequiresAmountEvenWithResultPageSignature() {
+        val decision = decide(
+            ContinuousMonitoringState(enabled = true),
+            "com.eg.android.AlipayGphone",
+            "支付成功 收款方 测试门店 交易时间 2026-08-05 12:34"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.Ignored, decision.observation)
+    }
+
+    @Test
     fun emptyScreenTextIsIgnored() {
         val decision = decide(
             ContinuousMonitoringState(enabled = true),
