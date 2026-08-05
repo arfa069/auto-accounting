@@ -24,7 +24,9 @@ class HttpLedgerSyncRepositoryTest {
     @Test
     fun explicitHttpOverrideAllowsOnlyLoopbackAndRfc1918Hosts() {
         val allowed = listOf(
+            "http://localhost:8080",
             "http://127.0.0.1:8080",
+            "http://[::1]:8080",
             "http://10.0.0.2:8080",
             "http://172.16.0.2:8080",
             "http://172.31.255.254:8080",
@@ -32,6 +34,13 @@ class HttpLedgerSyncRepositoryTest {
         )
         val denied = listOf(
             "http://example.com",
+            "http://10.example.com",
+            "http://127.evil.test",
+            "http://192.168.example.com",
+            "http://192.168.1.256:8080",
+            "http://192.168.1:8080",
+            "http://192.168.x.3:8080",
+            "http://192.168.1.3.4:8080",
             "http://172.15.0.2:8080",
             "http://172.32.0.2:8080",
             "ftp://192.168.1.3"

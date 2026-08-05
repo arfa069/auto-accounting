@@ -181,10 +181,14 @@ class HttpLedgerSyncRepository(
 }
 
 private fun String?.isPrivateTestHost(): Boolean {
-    val host = this?.lowercase() ?: return false
-    if (host == "localhost" || host == "::1" || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")) {
+    val normalized = this?.lowercase() ?: return false
+    if (normalized == "localhost" || normalized == "::1" || normalized == "[::1]") {
         return true
     }
-    val parts = host.split('.')
-    return parts.size == 4 && parts[0] == "172" && (parts[1].toIntOrNull() ?: -1) in 16..31
+    val octets = normalized.split('.').map { it.toIntOrNull() ?: return false }
+    if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+    return octets[0] == 127 ||
+        octets[0] == 10 ||
+        (octets[0] == 192 && octets[1] == 168) ||
+        (octets[0] == 172 && octets[1] in 16..31)
 }
