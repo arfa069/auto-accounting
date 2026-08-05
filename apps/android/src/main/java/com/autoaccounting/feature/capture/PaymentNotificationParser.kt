@@ -138,26 +138,23 @@ private fun PaymentNotificationEvent.paymentSource(): PaymentNotificationSource?
 }
 
 private fun String.transactionKindLabel(): String? = when {
-    // 收到退款
     contains("退款") -> "退款"
-
-    // P2P incoming: receive red packet or transfer
-    contains("收到") && (contains("红包") || contains("转账")) -> "收入"
-    Regex("向你转账").containsMatchIn(this) -> "收入"
-
-    // P2P outgoing: send red packet or transfer
-    contains("发出红包") || contains("红包已发出") -> "支出"
-    contains("转账给") -> "支出"
-    Regex("向(?!你).*转账").containsMatchIn(this) -> "支出"
-
-    // Merchant payment keywords (original)
-    contains("收款") || contains("收款到账") || contains("到账") -> "收入"
-    contains("付款") || contains("支付成功") || contains("付款成功") || contains("已支付") -> "支出"
+    isIncomingPeerTransfer() -> "收入"
+    isOutgoingPeerTransfer() -> "支出"
+    contains("收款") || contains("到账") -> "收入"
+    contains("付款") || contains("支付成功") || contains("已支付") -> "支出"
     contains("支出") && contains("交易") -> "支出"
-
-    // else
     else -> null
 }
+
+private fun String.isIncomingPeerTransfer(): Boolean =
+    contains("收到") && (contains("红包") || contains("转账")) || contains("向你转账")
+
+private fun String.isOutgoingPeerTransfer(): Boolean =
+    contains("发出红包") ||
+        contains("红包已发出") ||
+        contains("转账给") ||
+        Regex("向(?!你).*转账").containsMatchIn(this)
 
 private fun extractCounterpartyTitle(rawText: String): String? {
     // Merchant payment patterns (original, highest priority)

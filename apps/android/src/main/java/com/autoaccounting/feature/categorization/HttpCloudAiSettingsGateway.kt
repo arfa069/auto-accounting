@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.categorization
 
 import com.autoaccounting.api.ApiJsonContracts
+import com.autoaccounting.feature.isPrivateTestHost
 import java.io.IOException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
@@ -119,17 +120,4 @@ internal fun String.toBackendEndpointOrNull(path: String, allowHttp: Boolean): S
     )
     if (!transportAllowed) return null
     return "$baseUrl$path"
-}
-
-private fun String.isPrivateTestHost(): Boolean {
-    val normalized = lowercase()
-    if (normalized == "localhost" || normalized == "::1" || normalized == "[::1]") {
-        return true
-    }
-    val octets = normalized.split('.').map { it.toIntOrNull() ?: return false }
-    if (octets.size != 4 || octets.any { it !in 0..255 }) return false
-    return octets[0] == 127 ||
-        octets[0] == 10 ||
-        (octets[0] == 192 && octets[1] == 168) ||
-        (octets[0] == 172 && octets[1] in 16..31)
 }

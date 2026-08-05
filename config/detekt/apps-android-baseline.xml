@@ -5,9 +5,6 @@
     <ID>CyclomaticComplexMethod:AccountManagementScreen.kt$@Composable fun AccountManagementScreen( session: AccountSession, runtimeState: AccountRuntimeState, deletionState: AccountDeletionUiState, accountRepository: AccountRepository, onSignInOrRegister: () -&gt; Unit, onSessionVerified: (AccountCredentials) -&gt; Unit, onInvalidSession: () -&gt; Unit, persistSession: (AccountCredentials) -&gt; Boolean = { true }, clearPersistedSession: () -&gt; Boolean, wechatAuthGateway: WechatAuthGateway? = null, wechatAuthCallback: WechatAuthCallback? = null, onWechatAuthCallbackConsumed: () -&gt; Unit = {}, avatarCacheOverride: WechatAvatarCache? = null, onSignedOut: () -&gt; Unit, onDeletionStateChange: (AccountDeletionUiState) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>CyclomaticComplexMethod:AccountState.kt$fun reduceAccountState( state: AccountUiState, action: AccountAction ): AccountUiState</ID>
     <ID>CyclomaticComplexMethod:AppVisuals.kt$@DrawableRes fun categoryArtworkRes( categoryId: String? = null, categoryName: String? = null, transactionKind: TransactionKind? = null ): Int</ID>
-    <ID>CyclomaticComplexMethod:LedgerSyncCoordinator.kt$LedgerSyncCoordinator$private suspend fun synchronizeLocked(token: String): LedgerSyncOperationResult&lt;Unit&gt;</ID>
-    <ID>CyclomaticComplexMethod:PaymentNotificationParser.kt$private fun String.transactionKindLabel(): String?</ID>
-    <ID>CyclomaticComplexMethod:PersistedLocalDataBackup.kt$private fun PersistedLocalDataSnapshot.validated(): PersistedLocalDataSnapshot</ID>
     <ID>LongMethod:AccountManagementScreen.kt$@Composable fun AccountManagementScreen( session: AccountSession, runtimeState: AccountRuntimeState, deletionState: AccountDeletionUiState, accountRepository: AccountRepository, onSignInOrRegister: () -&gt; Unit, onSessionVerified: (AccountCredentials) -&gt; Unit, onInvalidSession: () -&gt; Unit, persistSession: (AccountCredentials) -&gt; Boolean = { true }, clearPersistedSession: () -&gt; Boolean, wechatAuthGateway: WechatAuthGateway? = null, wechatAuthCallback: WechatAuthCallback? = null, onWechatAuthCallbackConsumed: () -&gt; Unit = {}, avatarCacheOverride: WechatAvatarCache? = null, onSignedOut: () -&gt; Unit, onDeletionStateChange: (AccountDeletionUiState) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>LongMethod:AutoAccountingDatabaseMigrationTest.kt$AutoAccountingDatabaseMigrationTest$@Test fun migrationFromFiveToCurrentAssignsEntriesAndAddsScopedIndex()</ID>
     <ID>LongMethod:AutoAccountingDatabaseMigrationTest.kt$AutoAccountingDatabaseMigrationTest$@Test fun migrationFromFourToSixRetainsLedgerFundingAndReportSemantics()</ID>
@@ -66,8 +63,6 @@
     <ID>TooManyFunctions:LedgerTypeConverters.kt$LedgerTypeConverters</ID>
     <ID>TooManyFunctions:LocalLedgerRepository.kt$LocalLedgerRepository : LedgerBookRepositoryLedgerEntryRepositoryFundingAccountRepository</ID>
     <ID>TooManyFunctions:MonitoringStateCoordinator.kt$MonitoringStateCoordinator</ID>
-    <ID>TooManyFunctions:PersistedLocalDataBackup.kt$com.autoaccounting.feature.settings.PersistedLocalDataBackup.kt</ID>
-    <ID>TooManyFunctions:ReportsScreen.kt$com.autoaccounting.feature.ledger.ReportsScreen.kt</ID>
     <ID>TooManyFunctions:ReviewQueuePersistenceMappers.kt$com.autoaccounting.feature.review.ReviewQueuePersistenceMappers.kt</ID>
     <ID>TooManyFunctions:SecureAccountSessionStore.kt$SecureAccountSessionStore</ID>
     <ID>TooManyFunctions:WechatAccountDialogs.kt$com.autoaccounting.feature.account.WechatAccountDialogs.kt</ID>

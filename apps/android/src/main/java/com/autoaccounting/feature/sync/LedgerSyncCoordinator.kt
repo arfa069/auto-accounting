@@ -138,6 +138,12 @@ class LedgerSyncCoordinator(
             )
         }
         localStore.reconcile()
+        val pushed = pushMutations(token)
+        if (pushed is LedgerSyncOperationResult.Failure) return pushed
+        return pullMutations(token)
+    }
+
+    private suspend fun pushMutations(token: String): LedgerSyncOperationResult<Unit> {
         while (true) {
             val mutations = localStore.listMutations(LEDGER_SYNC_MAX_BATCH_SIZE)
             if (mutations.isEmpty()) break
@@ -152,6 +158,10 @@ class LedgerSyncCoordinator(
                 }
             }
         }
+        return LedgerSyncOperationResult.Success(Unit)
+    }
+
+    private suspend fun pullMutations(token: String): LedgerSyncOperationResult<Unit> {
         var cursor = localStore.currentState().cursor
         while (true) {
             when (val pulled = repository.pull(token, deviceId(), cursor)) {
@@ -214,9 +224,6 @@ class LedgerSyncCoordinator(
         return LedgerSyncOperationResult.Success(SnapshotDownload(records, cursor))
     }
 
-    private fun LedgerSyncRemoteResult.Failure.toOperationFailure() =
-        LedgerSyncOperationResult.Failure(code, message, retryable)
-
     companion object {
         private val mutex = Mutex()
     }
@@ -226,3 +233,6 @@ class LedgerSyncCoordinator(
         val cursor: Long
     )
 }
+
+private fun LedgerSyncRemoteResult.Failure.toOperationFailure() =
+    LedgerSyncOperationResult.Failure(code, message, retryable)

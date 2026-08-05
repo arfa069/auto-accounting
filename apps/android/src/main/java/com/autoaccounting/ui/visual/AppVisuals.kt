@@ -30,49 +30,32 @@ private const val WALLPAPER_CACHE_MAX_BYTES = 21 * 1024 * 1024
 private const val DECORATIVE_IMAGE_CACHE_MAX_BYTES = 2 * 1024 * 1024
 private val WallpaperPlaceholder = Color(0xFFFEF8ED)
 
-private object WallpaperImageCache {
+private class ResourceImageCache(
+    maxSizeBytes: Int
+) {
     private val decodeMutex = Mutex()
-    private val images = object : LruCache<Int, ImageBitmap>(WALLPAPER_CACHE_MAX_BYTES) {
+    private val images = object : LruCache<Int, ImageBitmap>(maxSizeBytes) {
         override fun sizeOf(key: Int, value: ImageBitmap): Int =
             (value.width.toLong() * value.height * 4L)
                 .coerceAtMost(Int.MAX_VALUE.toLong())
                 .toInt()
     }
 
-    fun get(@DrawableRes backgroundRes: Int): ImageBitmap? = images.get(backgroundRes)
+    fun get(@DrawableRes resourceId: Int): ImageBitmap? = images.get(resourceId)
 
-    suspend fun load(resources: Resources, @DrawableRes backgroundRes: Int): ImageBitmap? =
+    suspend fun load(resources: Resources, @DrawableRes resourceId: Int): ImageBitmap? =
         withContext(Dispatchers.IO) {
             decodeMutex.withLock {
-                images.get(backgroundRes) ?: BitmapFactory
-                    .decodeResource(resources, backgroundRes)
+                images.get(resourceId) ?: BitmapFactory
+                    .decodeResource(resources, resourceId)
                     ?.asImageBitmap()
-                    ?.also { images.put(backgroundRes, it) }
+                    ?.also { images.put(resourceId, it) }
             }
         }
 }
 
-private object DecorativeImageCache {
-    private val decodeMutex = Mutex()
-    private val images = object : LruCache<Int, ImageBitmap>(DECORATIVE_IMAGE_CACHE_MAX_BYTES) {
-        override fun sizeOf(key: Int, value: ImageBitmap): Int =
-            (value.width.toLong() * value.height * 4L)
-                .coerceAtMost(Int.MAX_VALUE.toLong())
-                .toInt()
-    }
-
-    fun get(@DrawableRes imageRes: Int): ImageBitmap? = images.get(imageRes)
-
-    suspend fun load(resources: Resources, @DrawableRes imageRes: Int): ImageBitmap? =
-        withContext(Dispatchers.IO) {
-            decodeMutex.withLock {
-                images.get(imageRes) ?: BitmapFactory
-                    .decodeResource(resources, imageRes)
-                    ?.asImageBitmap()
-                    ?.also { images.put(imageRes, it) }
-            }
-        }
-}
+private val WallpaperImageCache = ResourceImageCache(WALLPAPER_CACHE_MAX_BYTES)
+private val DecorativeImageCache = ResourceImageCache(DECORATIVE_IMAGE_CACHE_MAX_BYTES)
 
 @Composable
 fun AppWallpaper(

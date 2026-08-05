@@ -110,6 +110,13 @@ flowchart LR
   - 导出 Job 继续由页面级 scope 持有，口令在 `finally` 中以 `\u0000` 覆盖，取消不创建文件，结果 Dialog 在口令 Dialog 关闭后仍可见；Lifecycle 后台重新遮罩与 `FLAG_SECURE` 边界保留在根函数。
   - Android Detekt baseline 从 96 项减少到 94 项，移除两条已解决的 `CyclomaticComplexMethod`/`LongMethod`，公开入口的 `LongParameterList` 兼容债务保留；新增导出失败后结果仍稳定可见的 UI 回归测试。
   - diagnostics/compliance 专项、Android 全量单元测试、`assembleDebug`、`coverageReport detekt build` 均通过，未执行真机操作。
+- **第二十四轮全项目收口重构（2026-08-05）**：保持产品 UI、Room/PostgreSQL schema、Shared API、HTTP/JSON、备份格式、同步事务与识别规则不变，只删除重复基础逻辑并收缩职责边界：
+  - `AppVisuals.kt` 将壁纸与装饰图片缓存收敛为同一私有实现，容量和对外行为分别保留；`BackendTransportPolicy.kt` 让 AI 设置、AI 分类和 Ledger Sync 共用同一私网 HTTP 测试主机判定。
+  - `ReportsScreen.kt` 保留路由与 Overview；分类圆环/排行和现金流面板分别位于 `ReportsCategoryBreakdown.kt`、`ReportsCashFlow.kt`，入口签名、绘制算法、语义节点和布局参数不变。
+  - `PersistedLocalDataBackup.kt` 保留 Snapshot/Repository 和恢复事务；校验、加密口令、版本 Codec、实体/元数据编码分别位于 settings 下的职责文件，V2/V3/V4 读取、字段顺序和错误语义不变。
+  - `LedgerSyncLocalStore.kt` 保留既有 Facade 和事务边界；记录应用、快照/outbox 操作、payload 映射和排序分别外提，`LedgerSyncCoordinator` 将同步拆为 push/pull 步骤，canonical remap、冲突、cursor 和调用顺序不变。Facade 的既有 `TooManyFunctions` 兼容 suppression 保留，未新增其他 suppression。
+  - Backend `AccountRoutesTest` 按 Session/Profile、限流、注销、微信和 Identifier 拆为五个路由测试类；未新增测试 Harness，生产代码不变。
+  - Android Detekt baseline 从 71 项降至 66 项，Backend 从 1 项降至 0 项；Shared API 7 项、Macrobenchmark 2 项保留，合计从 81 项降至 75 项。本轮专项测试、Android/Backend Detekt、根 `detekt build` 均通过；Android 全量 577 项、Backend 全量 213 项（3 项环境门控跳过）无失败，未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。
