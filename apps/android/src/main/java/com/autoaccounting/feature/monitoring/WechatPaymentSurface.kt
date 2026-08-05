@@ -25,13 +25,13 @@ internal fun hasWechatSentRedPacketSuccessSignature(screenText: String): Boolean
     val senderTitle = WECHAT_RED_PACKET_TITLE_REGEX.find(screenText) ?: return false
     val waiting = WECHAT_SENT_RED_PACKET_WAITING_REGEX.find(screenText)
     val refund = WECHAT_SENT_RED_PACKET_REFUND_REGEX.find(screenText)
-    if (
-        waiting != null &&
-        waiting.range.first > senderTitle.range.last &&
-        refund != null &&
-        refund.range.first > waiting.range.last
-    ) {
-        return true
+    if (waiting != null && refund != null) {
+        if (
+            waiting.range.first > senderTitle.range.last &&
+            refund.range.first > waiting.range.last
+        ) {
+            return true
+        }
     }
 
     val claimed = WECHAT_SENT_RED_PACKET_CLAIMED_REGEX.find(screenText)

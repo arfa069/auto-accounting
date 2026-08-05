@@ -276,6 +276,17 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
+    fun wechatSentRedPacketRejectsRefundBeforeWaitingMarker() {
+        assertFalse(
+            hasWechatSentRedPacketSuccessSignature(
+                "Arfa😘的红包\n" +
+                    "未领取的红包，将于24小时后发起退款\n" +
+                    "红包金额3.00元，等待对方领取"
+            )
+        )
+    }
+
+    @Test
     fun monitoringAllowsPaymentMessageCenterAndCompletedTransfer() {
         val state = ContinuousMonitoringState(enabled = true)
         val paymentMessage = decide(
