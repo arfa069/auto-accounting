@@ -2,7 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ComplexCondition:FundingAccountRepository.kt$RoomFundingAccountRepository$activeLedgerEntryCount &gt; 0 || deletedLedgerEntryCount &gt; 0 || pendingEntryCount &gt; 0 || ignoredEntryCount &gt; 0</ID>
     <ID>ComplexCondition:LedgerSyncRepository.kt$host == "localhost" || host == "::1" || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")</ID>
     <ID>CyclomaticComplexMethod:AccountManagementScreen.kt$@Composable fun AccountManagementScreen( session: AccountSession, runtimeState: AccountRuntimeState, deletionState: AccountDeletionUiState, accountRepository: AccountRepository, onSignInOrRegister: () -&gt; Unit, onSessionVerified: (AccountCredentials) -&gt; Unit, onInvalidSession: () -&gt; Unit, persistSession: (AccountCredentials) -&gt; Boolean = { true }, clearPersistedSession: () -&gt; Boolean, wechatAuthGateway: WechatAuthGateway? = null, wechatAuthCallback: WechatAuthCallback? = null, onWechatAuthCallbackConsumed: () -&gt; Unit = {}, avatarCacheOverride: WechatAvatarCache? = null, onSignedOut: () -&gt; Unit, onDeletionStateChange: (AccountDeletionUiState) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>CyclomaticComplexMethod:AccountState.kt$fun reduceAccountState( state: AccountUiState, action: AccountAction ): AccountUiState</ID>

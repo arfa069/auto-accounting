@@ -121,12 +121,9 @@ internal class RoomFundingAccountRepository(
             database.pendingEntryDao().countByFundingAccountId(fundingAccountId)
         val ignoredEntryCount =
             database.ignoredEntryDao().countByFundingAccountId(fundingAccountId)
-        if (
-            activeLedgerEntryCount > 0 ||
-            deletedLedgerEntryCount > 0 ||
-            pendingEntryCount > 0 ||
-            ignoredEntryCount > 0
-        ) {
+        val hasLedgerReference = activeLedgerEntryCount > 0 || deletedLedgerEntryCount > 0
+        val hasReviewReference = pendingEntryCount > 0 || ignoredEntryCount > 0
+        if (hasLedgerReference || hasReviewReference) {
             return@withTransaction FundingAccountDeleteResult.Referenced(
                 activeLedgerEntryCount = activeLedgerEntryCount,
                 deletedLedgerEntryCount = deletedLedgerEntryCount,
