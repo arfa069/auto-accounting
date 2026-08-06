@@ -21,7 +21,6 @@ internal class WechatAccountService(
     private val verificationCodeService: VerificationCodeService,
     private val sessionService: AccountSessionService
 ) : AccountServiceComponent(context) {
-    @Suppress("LongMethod", "CyclomaticComplexMethod", "ReturnCount")
     fun exchangeWechatCode(
         code: String,
         bearerToken: String? = null,
@@ -47,27 +46,25 @@ internal class WechatAccountService(
         val unionid = tokenResp.unionid ?: userInfoResp?.unionid
         val nickname = userInfoResp?.nickname
         val avatarUrl = userInfoResp?.avatarUrl
-        val now = clock.millis()
 
         val existingIdentity = (unionid?.let { store.findWechatIdentityByUnionid(it) })
             ?: store.findWechatIdentityByOpenid(wechatOAuthClient.appId, tokenResp.openid)
 
         val currentSessionAccount = bearerToken?.takeIf { it.isNotBlank() }?.let { sessionService.verifiedAccount(it) }
 
-        if (currentSessionAccount != null) {
-            val currentAccountId = currentSessionAccount.accountId
-            val currentIdentity = store.findWechatIdentityByAccountId(currentAccountId)
-            val matchesCurrentIdentity = currentIdentity?.matchesWechatIdentity(
-                appId = wechatOAuthClient.appId,
-                openid = tokenResp.openid,
-                unionid = unionid
-            ) ?: true
-            if (!matchesCurrentIdentity) {
-                return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
-            }
-
-            val candidateIdentity = StoredWechatIdentity(
-                accountId = currentAccountId,
+        if (currentSessionAccount == null) {
+            return exchangeWithoutVerifiedAccount(
+                existingIdentity = existingIdentity,
+                tokenResponse = tokenResp,
+                userInfoResponse = userInfoResp,
+                deviceId = deviceId,
+                ipAddress = ipAddress
+            )
+        }
+        val now = clock.millis()
+        return exchangeForVerifiedAccount(
+            candidateIdentity = StoredWechatIdentity(
+                accountId = currentSessionAccount.accountId,
                 appId = wechatOAuthClient.appId,
                 openid = tokenResp.openid,
                 unionid = unionid,
@@ -75,126 +72,148 @@ internal class WechatAccountService(
                 avatarUrl = avatarUrl,
                 createdAtMillis = now,
                 updatedAtMillis = now
-            )
-            val resolvedIdentity = existingIdentity ?: when (val claim = store.claimWechatIdentity(candidateIdentity)) {
-                WechatIdentityClaimResult.Claimed -> candidateIdentity
-                is WechatIdentityClaimResult.Conflict -> claim.existingIdentity
-            }
-            if (resolvedIdentity.accountId != currentAccountId) {
-                return mergeRequiredResult(
-                    existingIdentity = resolvedIdentity,
-                    currentAccountId = currentAccountId,
-                    fallbackNickname = nickname,
-                    now = now
-                )
-            }
-            if (!resolvedIdentity.matchesWechatIdentity(wechatOAuthClient.appId, tokenResp.openid, unionid)) {
-                return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
-            }
+            ),
+            existingIdentity = existingIdentity,
+            bearerToken = bearerToken,
+            deviceId = deviceId,
+            ipAddress = ipAddress
+        )
+    }
 
-            val updatedNickname = nickname ?: resolvedIdentity.nickname
-            val updatedAvatarUrl = avatarUrl ?: resolvedIdentity.avatarUrl
-            store.upsertWechatIdentity(
-                resolvedIdentity.copy(
-                    nickname = updatedNickname,
-                    avatarUrl = updatedAvatarUrl,
-                    updatedAtMillis = now
-                )
+    private fun exchangeForVerifiedAccount(
+        candidateIdentity: StoredWechatIdentity,
+        existingIdentity: StoredWechatIdentity?,
+        bearerToken: String?,
+        deviceId: String,
+        ipAddress: String
+    ): AccountResult<WechatExchangeResponseContract> {
+        val currentAccountId = candidateIdentity.accountId
+        val currentIdentity = store.findWechatIdentityByAccountId(currentAccountId)
+        val matchesCurrentIdentity = currentIdentity?.matchesWechatIdentity(
+            appId = wechatOAuthClient.appId,
+            openid = candidateIdentity.openid,
+            unionid = candidateIdentity.unionid
+        ) ?: true
+        if (!matchesCurrentIdentity) {
+            return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+        }
+
+        val resolvedIdentity = existingIdentity ?: when (val claim = store.claimWechatIdentity(candidateIdentity)) {
+            WechatIdentityClaimResult.Claimed -> candidateIdentity
+            is WechatIdentityClaimResult.Conflict -> claim.existingIdentity
+        }
+        if (resolvedIdentity.accountId != currentAccountId) {
+            return mergeRequiredResult(
+                store = store,
+                existingIdentity = resolvedIdentity,
+                currentAccountId = currentAccountId,
+                fallbackNickname = candidateIdentity.nickname,
+                now = candidateIdentity.updatedAtMillis
             )
-            sessionService.registerDevice(currentAccountId, deviceId, ipAddress, now)
-            val phone = sessionService.phoneIdentifier(currentAccountId)
-            val account = store.findAccount(currentAccountId)
-            val deletionStatus = account?.deletionRequestedAtMillis?.let { account.deletionStatus(phone, it) }
-            val sessionContract = AccountSessionResponseContract(
-                accountId = currentAccountId,
-                accountUuid = account?.publicId,
-                primaryIdentifier = sessionService.primaryIdentifierForAccount(currentAccountId),
-                identifiers = sessionService.identifierContracts(currentAccountId),
-                token = bearerToken,
-                wechatLinked = true,
+        }
+        if (!resolvedIdentity.matchesWechatIdentity(wechatOAuthClient.appId, candidateIdentity.openid, candidateIdentity.unionid)) {
+            return AccountResult.Failure(AccountError.WECHAT_ALREADY_LINKED)
+        }
+
+        val updatedNickname = candidateIdentity.nickname ?: resolvedIdentity.nickname
+        val updatedAvatarUrl = candidateIdentity.avatarUrl ?: resolvedIdentity.avatarUrl
+        store.upsertWechatIdentity(
+            resolvedIdentity.copy(
                 nickname = updatedNickname,
                 avatarUrl = updatedAvatarUrl,
-                deletionStatus = deletionStatus?.toSessionContract() ?: AccountDeletionStatusContract()
+                updatedAtMillis = candidateIdentity.updatedAtMillis
             )
-            return AccountResult.Success(
-                WechatExchangeResponseContract(
-                    result = WechatAuthResultContract.SignedIn(sessionContract)
-                )
+        )
+        sessionService.registerDevice(currentAccountId, deviceId, ipAddress, candidateIdentity.updatedAtMillis)
+        val phone = sessionService.phoneIdentifier(currentAccountId)
+        val account = store.findAccount(currentAccountId)
+        val deletionStatus = account?.deletionRequestedAtMillis?.let { account.deletionStatus(phone, it) }
+        val sessionContract = AccountSessionResponseContract(
+            accountId = currentAccountId,
+            accountUuid = account?.publicId,
+            primaryIdentifier = sessionService.primaryIdentifierForAccount(currentAccountId),
+            identifiers = sessionService.identifierContracts(currentAccountId),
+            token = bearerToken,
+            wechatLinked = true,
+            nickname = updatedNickname,
+            avatarUrl = updatedAvatarUrl,
+            deletionStatus = deletionStatus?.toSessionContract() ?: AccountDeletionStatusContract()
+        )
+        return signedInWechatResult(sessionContract)
+    }
+
+    private fun exchangeWithoutVerifiedAccount(
+        existingIdentity: StoredWechatIdentity?,
+        tokenResponse: WechatTokenResponse,
+        userInfoResponse: WechatUserInfoResponse?,
+        deviceId: String,
+        ipAddress: String
+    ): AccountResult<WechatExchangeResponseContract> {
+        val now = clock.millis()
+        if (existingIdentity != null) {
+            val identity = existingIdentity.copy(
+                nickname = userInfoResponse?.nickname ?: existingIdentity.nickname,
+                avatarUrl = userInfoResponse?.avatarUrl ?: existingIdentity.avatarUrl,
+                updatedAtMillis = now
             )
-        } else {
-            if (existingIdentity != null) {
-                val updatedNickname = nickname ?: existingIdentity.nickname
-                val updatedAvatarUrl = avatarUrl ?: existingIdentity.avatarUrl
-                store.upsertWechatIdentity(
-                    existingIdentity.copy(
-                        nickname = updatedNickname,
-                        avatarUrl = updatedAvatarUrl,
-                        updatedAtMillis = now
-                    )
-                )
-                sessionService.registerDevice(existingIdentity.accountId, deviceId, ipAddress, now)
-                val phone = sessionService.phoneIdentifier(existingIdentity.accountId)
-                val sessionResult = sessionService.issueSession(
-                    accountId = existingIdentity.accountId,
-                    phone = phone,
-                    deviceId = deviceId,
-                    now = now
-                )
-                val sessionToken = when (sessionResult) {
-                    is AccountResult.Success -> sessionResult.value
-                    is AccountResult.Failure -> return sessionResult
-                }
-
-                val sessionContract = AccountSessionResponseContract(
-                    accountId = sessionToken.accountId,
-                    accountUuid = sessionToken.accountUuid,
-                    primaryIdentifier = sessionToken.primaryIdentifier,
-                    identifiers = sessionToken.identifiers,
-                    token = sessionToken.token,
-                    wechatLinked = true,
-                    nickname = updatedNickname,
-                    avatarUrl = updatedAvatarUrl,
-                    deletionStatus = sessionToken.deletionStatus?.toSessionContract() ?: AccountDeletionStatusContract()
-                )
-                return AccountResult.Success(
-                    WechatExchangeResponseContract(
-                        result = WechatAuthResultContract.SignedIn(sessionContract)
-                    )
-                )
-            } else {
-                val wechatTicketPlain = secureToken()
-                val wechatTicketHash = hashToken(wechatTicketPlain)
-                val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
-
-                val payload = buildJsonObject {
-                    put("appId", wechatOAuthClient.appId)
-                    put("openid", tokenResp.openid)
-                    if (unionid != null) put("unionid", unionid) else put("unionid", JsonNull)
-                    if (nickname != null) put("nickname", nickname) else put("nickname", JsonNull)
-                    if (avatarUrl != null) put("avatarUrl", avatarUrl) else put("avatarUrl", JsonNull)
-                }.toString()
-
-                store.createOneTimeTicket(
-                    StoredOneTimeTicket(
-                        ticketHash = wechatTicketHash,
-                        ticketType = "WECHAT_AUTH",
-                        payloadJson = payload,
-                        expiresAtMillis = ticketExpiresAt
-                    )
-                )
-
-                return AccountResult.Success(
-                    WechatExchangeResponseContract(
-                        result = WechatAuthResultContract.RegistrationRequired(
-                            wechatTicket = wechatTicketPlain,
-                            nickname = nickname,
-                            avatarUrl = avatarUrl,
-                            ticketExpiresAtMillis = ticketExpiresAt
-                        )
-                    )
-                )
+            store.upsertWechatIdentity(identity)
+            sessionService.registerDevice(identity.accountId, deviceId, ipAddress, now)
+            val phone = sessionService.phoneIdentifier(identity.accountId)
+            val sessionResult = sessionService.issueSession(
+                accountId = identity.accountId,
+                phone = phone,
+                deviceId = deviceId,
+                now = now
+            )
+            val sessionToken = when (sessionResult) {
+                is AccountResult.Success -> sessionResult.value
+                is AccountResult.Failure -> return sessionResult
             }
+            val sessionContract = AccountSessionResponseContract(
+                accountId = sessionToken.accountId,
+                accountUuid = sessionToken.accountUuid,
+                primaryIdentifier = sessionToken.primaryIdentifier,
+                identifiers = sessionToken.identifiers,
+                token = sessionToken.token,
+                wechatLinked = true,
+                nickname = identity.nickname,
+                avatarUrl = identity.avatarUrl,
+                deletionStatus = sessionToken.deletionStatus?.toSessionContract() ?: AccountDeletionStatusContract()
+            )
+            return signedInWechatResult(sessionContract)
         }
+
+        val wechatTicketPlain = secureToken()
+        val wechatTicketHash = hashToken(wechatTicketPlain)
+        val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
+        val unionid = tokenResponse.unionid ?: userInfoResponse?.unionid
+        val nickname = userInfoResponse?.nickname
+        val avatarUrl = userInfoResponse?.avatarUrl
+        val payload = buildJsonObject {
+            put("appId", wechatOAuthClient.appId)
+            put("openid", tokenResponse.openid)
+            if (unionid != null) put("unionid", unionid) else put("unionid", JsonNull)
+            if (nickname != null) put("nickname", nickname) else put("nickname", JsonNull)
+            if (avatarUrl != null) put("avatarUrl", avatarUrl) else put("avatarUrl", JsonNull)
+        }.toString()
+        store.createOneTimeTicket(
+            StoredOneTimeTicket(
+                ticketHash = wechatTicketHash,
+                ticketType = "WECHAT_AUTH",
+                payloadJson = payload,
+                expiresAtMillis = ticketExpiresAt
+            )
+        )
+        return AccountResult.Success(
+            WechatExchangeResponseContract(
+                result = WechatAuthResultContract.RegistrationRequired(
+                    wechatTicket = wechatTicketPlain,
+                    nickname = nickname,
+                    avatarUrl = avatarUrl,
+                    ticketExpiresAtMillis = ticketExpiresAt
+                )
+            )
+        )
     }
 
     fun registerWithWechat(
@@ -613,48 +632,55 @@ internal class WechatAccountService(
         ).mapAccountToken(sessionService::enrichAccountToken)
     }
 
-    private fun mergeRequiredResult(
-        existingIdentity: StoredWechatIdentity,
-        currentAccountId: Long,
-        fallbackNickname: String?,
-        now: Long
-    ): AccountResult<WechatExchangeResponseContract> {
-        val sourceAccountId = existingIdentity.accountId
-        val sourceIdentifiers = store.findIdentifiersByAccountId(sourceAccountId).map {
-            com.autoaccounting.api.AccountIdentifierContract(
-                type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(it.identifierType),
-                value = it.rawValue
-            )
-        }
-        val mergeTicketPlain = secureToken()
-        val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
-        val payload = buildJsonObject {
-            put("targetAccountId", currentAccountId)
-            put("sourceAccountId", sourceAccountId)
-        }.toString()
-
-        store.createOneTimeTicket(
-            StoredOneTimeTicket(
-                ticketHash = hashToken(mergeTicketPlain),
-                ticketType = "ACCOUNT_MERGE",
-                accountId = currentAccountId,
-                payloadJson = payload,
-                expiresAtMillis = ticketExpiresAt
-            )
-        )
-        return AccountResult.Success(
-            WechatExchangeResponseContract(
-                result = WechatAuthResultContract.MergeRequired(
-                    mergeTicket = mergeTicketPlain,
-                    sourceNickname = existingIdentity.nickname ?: fallbackNickname,
-                    sourceIdentifiers = sourceIdentifiers,
-                    ticketExpiresAtMillis = ticketExpiresAt
-                )
-            )
-        )
-    }
-
 }
 
+private fun mergeRequiredResult(
+    store: AccountStore,
+    existingIdentity: StoredWechatIdentity,
+    currentAccountId: Long,
+    fallbackNickname: String?,
+    now: Long
+): AccountResult<WechatExchangeResponseContract> {
+    val sourceAccountId = existingIdentity.accountId
+    val sourceIdentifiers = store.findIdentifiersByAccountId(sourceAccountId).map {
+        com.autoaccounting.api.AccountIdentifierContract(
+            type = com.autoaccounting.api.AccountIdentifierTypeContract.valueOf(it.identifierType),
+            value = it.rawValue
+        )
+    }
+    val mergeTicketPlain = secureToken()
+    val ticketExpiresAt = now + TICKET_VALIDITY_MILLIS
+    val payload = buildJsonObject {
+        put("targetAccountId", currentAccountId)
+        put("sourceAccountId", sourceAccountId)
+    }.toString()
 
+    store.createOneTimeTicket(
+        StoredOneTimeTicket(
+            ticketHash = hashToken(mergeTicketPlain),
+            ticketType = "ACCOUNT_MERGE",
+            accountId = currentAccountId,
+            payloadJson = payload,
+            expiresAtMillis = ticketExpiresAt
+        )
+    )
+    return AccountResult.Success(
+        WechatExchangeResponseContract(
+            result = WechatAuthResultContract.MergeRequired(
+                mergeTicket = mergeTicketPlain,
+                sourceNickname = existingIdentity.nickname ?: fallbackNickname,
+                sourceIdentifiers = sourceIdentifiers,
+                ticketExpiresAtMillis = ticketExpiresAt
+            )
+        )
+    )
+}
 
+private fun signedInWechatResult(
+    session: AccountSessionResponseContract
+): AccountResult<WechatExchangeResponseContract> =
+    AccountResult.Success(
+        WechatExchangeResponseContract(
+            result = WechatAuthResultContract.SignedIn(session)
+        )
+    )

@@ -117,6 +117,10 @@ flowchart LR
   - `LedgerSyncLocalStore.kt` 保留既有 Facade 和事务边界；记录应用、快照/outbox 操作、payload 映射和排序分别外提，`LedgerSyncCoordinator` 将同步拆为 push/pull 步骤，canonical remap、冲突、cursor 和调用顺序不变。Facade 的既有 `TooManyFunctions` 兼容 suppression 保留，未新增其他 suppression。
   - Backend `AccountRoutesTest` 按 Session/Profile、限流、注销、微信和 Identifier 拆为五个路由测试类；未新增测试 Harness，生产代码不变。
   - Android Detekt baseline 从 71 项降至 66 项，Backend 从 1 项降至 0 项；Shared API 7 项、Macrobenchmark 2 项保留，合计从 81 项降至 75 项。本轮专项测试、Android/Backend Detekt、根 `detekt build` 均通过；Android 全量 577 项、Backend 全量 213 项（3 项环境门控跳过）无失败，未执行真机操作。
+- **第二十五轮微信账号服务收口重构（2026-08-05）**：保持产品 UI、Room/PostgreSQL schema、Shared API、HTTP/JSON、备份格式、同步事务和微信账号结果语义不变，只收缩单一调用方职责：
+  - `WechatAccountService.exchangeWechatCode()` 保留配置/输入校验、OAuth code 交换、用户资料回退、UnionID/OpenID 查找和结果分派；已验证 Session、无 Session 已有身份登录、新身份 `WECHAT_AUTH` 一次性票据及 MergeRequired 处理收口到同文件私有 helper，Session、设备、资料更新和身份 claim 顺序不变。
+  - `PersistedLocalDataBackupValidationSupport.kt` 的校验小逻辑回并到 `PersistedLocalDataBackupValidation.kt`；`LedgerSyncSnapshotOperationsSupport.kt` 的 push result 与 business-key canonicalization 逻辑回并到 `LedgerSyncSnapshotOperations.kt`，outbox、metadata、canonical remap、冲突和排序语义不变。
+  - 本轮未新增路由、Shared API、环境变量、数据库 schema、UI、事务外壳、Detekt baseline 或 suppression；未执行真机操作。
 - **静态代码质量检查**：
   - 通过自动化 Detekt 静态分析 (`config/detekt/detekt.yml`)，在所有 Kotlin 模块中强制约束类最大长度（600 行）、圈复杂度上限及空 catch 块检查。
   - 各叶子模块保存已知问题 baseline，`maxIssues=0`，因此历史问题可逐步消除而任何新增问题都会使构建失败。

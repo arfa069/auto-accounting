@@ -65,7 +65,8 @@ private fun PersistedLocalDataSnapshot.validatePendingEntries(
             entry.currency == SUPPORTED_BACKUP_CURRENCY &&
             entry.transactionTimeEpochMillis >= 0 &&
             entry.capturedAtEpochMillis >= 0 &&
-            referencesExist(entry.suggestedCategoryId, entry.fundingAccountId, categoryIds, fundingAccountIds)
+            (entry.suggestedCategoryId == null || entry.suggestedCategoryId in categoryIds) &&
+            (entry.fundingAccountId == null || entry.fundingAccountId in fundingAccountIds)
     }) { "Backup contains an invalid pending entry" }
 }
 
@@ -84,7 +85,8 @@ private fun PersistedLocalDataSnapshot.validateLedgerEntries(
             entry.updatedAtEpochMillis >= entry.confirmedAtEpochMillis &&
             (entry.deletedAtEpochMillis == null || entry.deletedAtEpochMillis >= entry.confirmedAtEpochMillis) &&
             entry.ledgerBookId in ledgerBookIds &&
-            referencesExist(entry.categoryId, entry.fundingAccountId, categoryIds, fundingAccountIds)
+            (entry.categoryId == null || entry.categoryId in categoryIds) &&
+            (entry.fundingAccountId == null || entry.fundingAccountId in fundingAccountIds)
     }) { "Backup contains an invalid ledger entry" }
 }
 
@@ -96,7 +98,8 @@ private fun PersistedLocalDataSnapshot.validateIgnoredEntries(
     require(ignoredEntries.all {
         it.id.isNotBlank() &&
             it.ignoredAtEpochMillis >= 0 &&
-            referencesExist(it.suggestedCategoryId, it.fundingAccountId, categoryIds, fundingAccountIds)
+            (it.suggestedCategoryId == null || it.suggestedCategoryId in categoryIds) &&
+            (it.fundingAccountId == null || it.fundingAccountId in fundingAccountIds)
     }) {
         "Backup contains an invalid ignored entry"
     }
@@ -119,5 +122,7 @@ private fun PersistedLocalDataSnapshot.validateSettings(ledgerBookIds: Set<Strin
             (settings.aiConsentGranted || !settings.enhancedContextGranted)
     ) { "Backup contains invalid local settings" }
 }
+
+private fun <T> List<T>.allDistinct(): Boolean = size == toSet().size
 
 internal const val SUPPORTED_BACKUP_CURRENCY = "CNY"
