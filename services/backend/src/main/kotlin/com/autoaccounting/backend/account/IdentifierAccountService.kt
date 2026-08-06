@@ -119,35 +119,9 @@ internal class IdentifierAccountService(
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
 
         val now = clock.millis()
-        if (cred.lockedUntilMillis > now) {
-            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-        }
-
-        if (!PasswordHash(cred.passwordSalt, cred.passwordHash).matches(password)) {
-            val failedLoginCount = cred.failedLoginCount + 1
-            val lockedUntil = if (failedLoginCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else cred.lockedUntilMillis
-            store.updatePasswordCredential(
-                cred.copy(
-                    failedLoginCount = failedLoginCount,
-                    lockedUntilMillis = lockedUntil,
-                    updatedAtMillis = now
-                )
-            )
-            return if (lockedUntil > now) {
-                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-            } else {
-                AccountResult.Failure(AccountError.LOGIN_FAILED)
-            }
-        }
-
-        if (cred.failedLoginCount > 0 || cred.lockedUntilMillis > 0) {
-            store.updatePasswordCredential(
-                cred.copy(
-                    failedLoginCount = 0,
-                    lockedUntilMillis = 0,
-                    updatedAtMillis = now
-                )
-            )
+        when (val passwordResult = verifyPasswordWithLoginLockout(store, cred, password, now)) {
+            is AccountResult.Failure -> return passwordResult
+            is AccountResult.Success -> Unit
         }
 
         sessionService.registerDevice(account.accountId, deviceId, ipAddress, now)
@@ -348,6 +322,5 @@ internal class IdentifierAccountService(
     }
 
 }
-
 
 

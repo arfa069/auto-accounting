@@ -84,6 +84,49 @@ internal fun isValidPassword(password: String): Boolean {
         password.any { !it.isLetterOrDigit() }
 }
 
+internal fun verifyPasswordWithLoginLockout(
+    store: AccountIdentifierStore,
+    credential: StoredPasswordCredential,
+    password: String,
+    now: Long
+): AccountResult<Unit> {
+    if (credential.lockedUntilMillis > now) {
+        return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+    }
+
+    if (!PasswordHash(credential.passwordSalt, credential.passwordHash).matches(password)) {
+        val failedLoginCount = credential.failedLoginCount + 1
+        val lockedUntilMillis = if (failedLoginCount >= MAX_LOGIN_FAILURES) {
+            now + LOGIN_LOCK_MILLIS
+        } else {
+            credential.lockedUntilMillis
+        }
+        store.updatePasswordCredential(
+            credential.copy(
+                failedLoginCount = failedLoginCount,
+                lockedUntilMillis = lockedUntilMillis,
+                updatedAtMillis = now
+            )
+        )
+        return if (lockedUntilMillis > now) {
+            AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+        } else {
+            AccountResult.Failure(AccountError.LOGIN_FAILED)
+        }
+    }
+
+    if (credential.failedLoginCount > 0 || credential.lockedUntilMillis > 0) {
+        store.updatePasswordCredential(
+            credential.copy(
+                failedLoginCount = 0,
+                lockedUntilMillis = 0,
+                updatedAtMillis = now
+            )
+        )
+    }
+    return AccountResult.Success(Unit)
+}
+
 internal fun isValidDeviceId(deviceId: String): Boolean {
     return deviceId.length <= 128 && deviceId.none(Char::isWhitespace)
 }

@@ -64,12 +64,16 @@ class AccountAuthenticationTest {
         val service = AccountService(store = store, clock = clock)
 
         service.registerIdentifier("lockuser", null, "Password123!")
+        clock.advanceBy(1)
 
         // 4 failed attempts
         repeat(4) {
             val res = service.loginIdentifier("lockuser", "WrongPass123!")
             assertEquals(AccountResult.Failure(AccountError.LOGIN_FAILED), res)
         }
+        val afterFourthFailure = store.findPasswordCredentialByAccountId(1L)!!
+        assertEquals(4, afterFourthFailure.failedLoginCount)
+        assertEquals(1001, afterFourthFailure.updatedAtMillis)
 
         // 5th failed attempt triggers lock
         val fifthRes = service.loginIdentifier("lockuser", "WrongPass123!")
@@ -83,6 +87,10 @@ class AccountAuthenticationTest {
         clock.advanceBy(15 * 60 * 1000L + 1)
         val unlockedRes = service.loginIdentifier("lockuser", "Password123!")
         assertTrue(unlockedRes is AccountResult.Success)
+        val afterSuccessfulLogin = store.findPasswordCredentialByAccountId(1L)!!
+        assertEquals(0, afterSuccessfulLogin.failedLoginCount)
+        assertEquals(0, afterSuccessfulLogin.lockedUntilMillis)
+        assertEquals(clock.millis(), afterSuccessfulLogin.updatedAtMillis)
     }
 
     @Test

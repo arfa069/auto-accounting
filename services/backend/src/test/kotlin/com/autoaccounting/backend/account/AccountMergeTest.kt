@@ -118,6 +118,47 @@ class AccountMergeTest {
     }
 
     @Test
+    fun passwordMergeFailurePreservesExistingExpiredLockDeadline() {
+        val store = InMemoryAccountStore()
+        val clock = createClock()
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            clock = clock,
+            wechatOAuthClient = FakeWechatOAuthClient(configured = true)
+        )
+
+        val sourceToken = registerPhoneUser(service, clock, "13800138000")
+        val sourceAccountId = sourceToken.accountId
+        val sourceCredential = store.findPasswordCredentialByAccountId(sourceAccountId)!!
+        val existingLockDeadline = clock.millis() - 1
+        store.updatePasswordCredential(
+            sourceCredential.copy(
+                lockedUntilMillis = existingLockDeadline,
+                updatedAtMillis = clock.millis()
+            )
+        )
+        clock.advanceBy(1)
+
+        val exchange = service.exchangeWechatCode("good_code", null, "dev-2") as AccountResult.Success
+        val targetTicket = (exchange.value.result as WechatAuthResultContract.RegistrationRequired).wechatTicket
+        val targetToken = (service.registerWithWechat(targetTicket, "dev-2") as AccountResult.Success).value
+
+        assertEquals(
+            AccountResult.Failure(AccountError.LOGIN_FAILED),
+            service.prepareMergeWithIdentifierPassword(
+                bearerToken = targetToken.token,
+                identifier = "13800138000",
+                password = "WrongPass123!"
+            )
+        )
+        val afterFailure = store.findPasswordCredentialByAccountId(sourceAccountId)!!
+        assertEquals(1, afterFailure.failedLoginCount)
+        assertEquals(existingLockDeadline, afterFailure.lockedUntilMillis)
+        assertEquals(clock.millis(), afterFailure.updatedAtMillis)
+    }
+
+    @Test
     fun testPhoneTargetMergesPureWechatSourceViaExchange() {
         val store = InMemoryAccountStore()
         val clock = createClock()

@@ -120,6 +120,7 @@ class WechatRegisterAndLinkTest {
 
         val accountId = store.findAccountByIdentifier("PHONE", "13800138000")!!.accountId
         val failedCountBeforeInvalidTicket = store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount
+        val credentialBeforeInvalidTicket = store.findPasswordCredentialByAccountId(accountId)!!
         val invalidTicketResult = service.linkWechatWithPassword(
             wechatTicket = "invalid_ticket",
             identifier = "13800138000",
@@ -128,6 +129,54 @@ class WechatRegisterAndLinkTest {
         )
         assertEquals(AccountError.TICKET_EXPIRED, (invalidTicketResult as AccountResult.Failure).error)
         assertEquals(failedCountBeforeInvalidTicket, store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount)
+        assertEquals(credentialBeforeInvalidTicket, store.findPasswordCredentialByAccountId(accountId))
+    }
+
+    @Test
+    fun testLinkWechatWithPasswordUsesSharedLockoutState() {
+        val store = InMemoryAccountStore()
+        val clock = MutableClock(1000)
+        val fakeClient = FakeWechatOAuthClient(configured = true)
+        val service = AccountService(
+            store = store,
+            smsCodeGenerator = { "123456" },
+            clock = clock,
+            wechatOAuthClient = fakeClient
+        )
+
+        service.issueVerificationCode("13800138000", "dev_1", "127.0.0.1")
+        service.registerIdentifier("13800138000", "123456", "Pass1234!", "dev_1", "127.0.0.1")
+        val exchangeRes = service.exchangeWechatCode("good_code") as AccountResult.Success
+        val ticket = (exchangeRes.value.result as WechatAuthResultContract.RegistrationRequired).wechatTicket
+        val accountId = store.findAccountByIdentifier("PHONE", "13800138000")!!.accountId
+
+        clock.advanceBy(1)
+        repeat(4) {
+            assertEquals(
+                AccountResult.Failure(AccountError.LOGIN_FAILED),
+                service.linkWechatWithPassword(ticket, "13800138000", "WrongPassword1!", "dev_1")
+            )
+        }
+        assertEquals(4, store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount)
+        assertEquals(
+            AccountResult.Failure(AccountError.ACCOUNT_LOCKED),
+            service.linkWechatWithPassword(ticket, "13800138000", "WrongPassword1!", "dev_1")
+        )
+        assertEquals(
+            AccountResult.Failure(AccountError.ACCOUNT_LOCKED),
+            service.linkWechatWithPassword(ticket, "13800138000", "Pass1234!", "dev_1")
+        )
+
+        clock.advanceBy(LOGIN_LOCK_MILLIS + 1)
+        val retryExchange = service.exchangeWechatCode("good_code") as AccountResult.Success
+        val retryTicket = (retryExchange.value.result as WechatAuthResultContract.RegistrationRequired).wechatTicket
+        assertTrue(
+            service.linkWechatWithPassword(retryTicket, "13800138000", "Pass1234!", "dev_1") is AccountResult.Success
+        )
+        val credentialAfterSuccess = store.findPasswordCredentialByAccountId(accountId)!!
+        assertEquals(0, credentialAfterSuccess.failedLoginCount)
+        assertEquals(0, credentialAfterSuccess.lockedUntilMillis)
+        assertEquals(clock.millis(), credentialAfterSuccess.updatedAtMillis)
     }
 
     @Test

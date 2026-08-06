@@ -269,22 +269,10 @@ internal class WechatAccountService(
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
         val passCred = store.findPasswordCredentialByAccountId(account.accountId)
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
-        if (passCred.lockedUntilMillis > now) {
-            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+        when (val passwordResult = verifyPasswordWithLoginLockout(store, passCred, password, now)) {
+            is AccountResult.Failure -> return passwordResult
+            is AccountResult.Success -> Unit
         }
-
-        if (!PasswordHash(passCred.passwordSalt, passCred.passwordHash).matches(password)) {
-            val failedCount = passCred.failedLoginCount + 1
-            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else passCred.lockedUntilMillis
-            store.updatePasswordCredential(passCred.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
-            return if (failedCount >= MAX_LOGIN_FAILURES) {
-                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-            } else {
-                AccountResult.Failure(AccountError.LOGIN_FAILED)
-            }
-        }
-
-        store.updatePasswordCredential(passCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
 
         val targetExistingIdentity = store.findWechatIdentityByAccountId(account.accountId)
         if (targetExistingIdentity != null) {
@@ -399,20 +387,10 @@ internal class WechatAccountService(
         val now = clock.millis()
         val passCred = store.findPasswordCredentialByAccountId(current.accountId)
             ?: return AccountResult.Failure(AccountError.LAST_LOGIN_METHOD_CANNOT_UNLINK)
-        if (passCred.lockedUntilMillis > now) {
-            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
+        when (val passwordResult = verifyPasswordWithLoginLockout(store, passCred, password, now)) {
+            is AccountResult.Failure -> return passwordResult
+            is AccountResult.Success -> Unit
         }
-        if (!PasswordHash(passCred.passwordSalt, passCred.passwordHash).matches(password)) {
-            val failedCount = passCred.failedLoginCount + 1
-            val lockedUntil = if (failedCount >= MAX_LOGIN_FAILURES) now + LOGIN_LOCK_MILLIS else passCred.lockedUntilMillis
-            store.updatePasswordCredential(passCred.copy(failedLoginCount = failedCount, lockedUntilMillis = lockedUntil))
-            return if (failedCount >= MAX_LOGIN_FAILURES) {
-                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-            } else {
-                AccountResult.Failure(AccountError.LOGIN_FAILED)
-            }
-        }
-        store.updatePasswordCredential(passCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
 
         val boundPhone = identifiers.find { it.identifierType == "PHONE" }?.normalizedValue
 
@@ -514,27 +492,9 @@ internal class WechatAccountService(
             ?: return AccountResult.Failure(AccountError.LOGIN_FAILED)
 
         val now = clock.millis()
-        if (sourcePassCred.lockedUntilMillis > now) {
-            return AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-        }
-
-        if (!PasswordHash(sourcePassCred.passwordSalt, sourcePassCred.passwordHash).matches(password)) {
-            val updatedCount = sourcePassCred.failedLoginCount + 1
-            val lockUntil = if (updatedCount >= MAX_LOGIN_FAILURES) {
-                now + LOGIN_LOCK_MILLIS
-            } else {
-                0L
-            }
-            store.updatePasswordCredential(sourcePassCred.copy(failedLoginCount = updatedCount, lockedUntilMillis = lockUntil))
-            return if (lockUntil > now) {
-                AccountResult.Failure(AccountError.ACCOUNT_LOCKED)
-            } else {
-                AccountResult.Failure(AccountError.LOGIN_FAILED)
-            }
-        }
-
-        if (sourcePassCred.failedLoginCount > 0 || sourcePassCred.lockedUntilMillis > 0) {
-            store.updatePasswordCredential(sourcePassCred.copy(failedLoginCount = 0, lockedUntilMillis = 0))
+        when (val passwordResult = verifyPasswordWithLoginLockout(store, sourcePassCred, password, now)) {
+            is AccountResult.Failure -> return passwordResult
+            is AccountResult.Success -> Unit
         }
 
         val sourceAccountId = sourceAccount.accountId

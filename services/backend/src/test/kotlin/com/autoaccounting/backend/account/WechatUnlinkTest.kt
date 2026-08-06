@@ -210,6 +210,41 @@ class WechatUnlinkTest {
     }
 
     @Test
+    fun passwordUnlinkUsesSharedLockoutState() {
+        val store = InMemoryAccountStore()
+        val clock = createClock()
+        val service = createService(store, clock)
+        val (_, linkedSession) = registerAndLink(service, clock, "13900139000")
+
+        clock.advanceBy(1)
+        repeat(4) {
+            assertEquals(
+                AccountResult.Failure(AccountError.LOGIN_FAILED),
+                service.unlinkWechatWithPassword(linkedSession.token, "Wrong123456!")
+            )
+        }
+        val accountId = linkedSession.accountId
+        assertEquals(4, store.findPasswordCredentialByAccountId(accountId)!!.failedLoginCount)
+        assertEquals(
+            AccountResult.Failure(AccountError.ACCOUNT_LOCKED),
+            service.unlinkWechatWithPassword(linkedSession.token, "Wrong123456!")
+        )
+        assertEquals(
+            AccountResult.Failure(AccountError.ACCOUNT_LOCKED),
+            service.unlinkWechatWithPassword(linkedSession.token, PASSWORD)
+        )
+
+        clock.advanceBy(LOGIN_LOCK_MILLIS + 1)
+        assertTrue(
+            service.unlinkWechatWithPassword(linkedSession.token, PASSWORD) is AccountResult.Success
+        )
+        val credentialAfterSuccess = store.findPasswordCredentialByAccountId(accountId)!!
+        assertEquals(0, credentialAfterSuccess.failedLoginCount)
+        assertEquals(0, credentialAfterSuccess.lockedUntilMillis)
+        assertEquals(clock.millis(), credentialAfterSuccess.updatedAtMillis)
+    }
+
+    @Test
     fun jdbcFailureWhileIssuingReplacementSessionRollsBackUnlink() {
         val databaseUrl = "jdbc:h2:mem:wechat_unlink_${System.nanoTime()};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
         val store = JdbcAccountStore(databaseUrl)
