@@ -392,6 +392,27 @@ class BillPageParserTest {
     }
 
     @Test
+    fun parsesAlipayCompletedPaymentWordingAsExpense() {
+        val entry = BillPageParser().parse(
+            source = BillSyncSource.Alipay,
+            pageText = """
+                完成支付
+                收款方
+                便利店
+                金额
+                ¥20.00
+                付款方式
+                支付宝余额
+            """.trimIndent(),
+            fallbackTransactionTimeText = "2026-08-06 12:34"
+        ).single()
+
+        assertEquals("支出", entry.transactionKindLabel)
+        assertEquals(2_000L, entry.amountMinor)
+        assertEquals("便利店", entry.merchantTitle)
+    }
+
+    @Test
     fun completedPaymentResultIgnoresPromotionalAmountsBelowPrimaryAmount() {
         val entries = BillPageParser().parse(
             source = BillSyncSource.WeChat,

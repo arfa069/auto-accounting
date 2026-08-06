@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.capture
 
 import android.app.Notification
+import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
@@ -215,17 +216,22 @@ internal fun isAutomaticBookkeepingNotificationCaptureEnabled(
 private fun StatusBarNotification.toPaymentNotificationEvent(): PaymentNotificationEvent {
     val extras = notification.extras
     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-    val text = (
-        extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
-            ?: extras.getCharSequence(Notification.EXTRA_TEXT)
-        )?.toString().orEmpty()
     return PaymentNotificationEvent(
         packageName = packageName,
         title = title,
-        text = text,
+        text = extractNotificationText(extras),
         postedAtEpochMillis = postTime
     )
 }
+
+internal fun extractNotificationText(extras: Bundle): String = buildList {
+    extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.let(::add)
+        ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.let(::add)
+    extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+        .orEmpty()
+        .map(CharSequence::toString)
+        .forEach(::add)
+}.filter(String::isNotBlank).distinct().joinToString("\n")
 
 private fun formatCaptureTime(epochMillis: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

@@ -108,6 +108,24 @@ class AlipayOcrCaptureDecisionTest {
     }
 
     @Test
+    fun ocrAcceptsAlipayCompletedPaymentWording() {
+        val decision = decideAlipayOcrCapture(
+            """
+                完成支付
+                收款方
+                便利店
+                金额
+                ¥20.00
+                付款方式
+                支付宝余额
+            """.trimIndent()
+        )
+
+        assertTrue(decision.shouldCapture)
+        assertEquals(null, decision.rejectionReason)
+    }
+
+    @Test
     fun ocrResultRejectsMissingMerchantFundingOrAmbiguousAmount() {
         val missingMerchant = "支付成功\n收款方\n金额\n¥20.00\n付款方式\n支付宝余额"
         val missingFunding = "支付成功\n收款方\n便利店\n金额\n¥20.00\n付款方式"

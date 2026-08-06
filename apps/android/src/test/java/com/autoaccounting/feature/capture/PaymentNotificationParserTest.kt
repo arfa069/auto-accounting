@@ -60,6 +60,22 @@ class PaymentNotificationParserTest {
     }
 
     @Test
+    fun parsesAlipayCompletedPaymentNotificationWording() {
+        val parsed = PaymentNotificationParser().parse(
+            PaymentNotificationEvent(
+                packageName = "com.eg.android.AlipayGphone",
+                title = "支付宝",
+                text = "完成支付 ¥20.00",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertNotNull(parsed)
+        assertEquals("支出", parsed!!.transactionKindLabel)
+        assertEquals(2_000L, parsed.amountMinor)
+    }
+
+    @Test
     fun ignoresUnrelatedNotificationsAndUnsupportedSources() {
         val parser = PaymentNotificationParser()
 

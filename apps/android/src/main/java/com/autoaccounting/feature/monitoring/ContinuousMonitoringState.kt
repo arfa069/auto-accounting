@@ -277,6 +277,8 @@ private val PAYMENT_MESSAGE_CENTER_KEYWORDS = listOf(
 
 private val PAYMENT_COMPLETION_KEYWORDS = listOf(
     "支付成功",
+    "完成支付",
+    "支付完成",
     "付款成功",
     "交易成功",
     "转账成功",

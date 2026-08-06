@@ -62,6 +62,8 @@ private fun String.hasExpenseTransactionEvidence(): Boolean =
         "支出",
         "付款",
         "支付成功",
+        "完成支付",
+        "支付完成",
         "交易成功",
         "转账成功",
         "扫码支付",
@@ -97,6 +99,8 @@ private val PAYMENT_RECORD_SURFACE_KEYWORDS = listOf(
 
 private val PAYMENT_COMPLETION_KEYWORDS = listOf(
     "支付成功",
+    "完成支付",
+    "支付完成",
     "付款成功",
     "交易成功",
     "转账成功",

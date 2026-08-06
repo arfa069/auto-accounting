@@ -171,6 +171,17 @@ class ContinuousMonitoringStateTest {
     }
 
     @Test
+    fun monitoringAcceptsAlipayCompletedPaymentWording() {
+        val result = decide(
+            ContinuousMonitoringState(enabled = true),
+            "com.eg.android.AlipayGphone",
+            "完成支付 ¥20.00 收款方 便利店"
+        )
+
+        assertEquals(ContinuousMonitoringObservation.PaymentRelated, result.observation)
+    }
+
+    @Test
     fun monitoringKeepsChatsAndPaymentInitiationSurfacesDenied() {
         val state = ContinuousMonitoringState(enabled = true)
         val chat = decide(state, "com.tencent.mm", "聊天 消息 微信支付助手")

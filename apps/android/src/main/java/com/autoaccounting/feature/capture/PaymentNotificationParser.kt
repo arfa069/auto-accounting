@@ -100,7 +100,7 @@ class PaymentNotificationParser {
 private fun String.hasPaymentNotificationSignature(): Boolean {
     val paymentWord = Regex("支付|付款|收款|到账|交易|转账|红包|退款|扣款|消费")
     val amount = Regex("(?:¥|￥|\\d+(?:\\.\\d{1,2})?\\s*元)")
-    val paymentOutcome = Regex("成功|到账|退款|转账|红包|已支付|已付款")
+    val paymentOutcome = Regex("成功|完成支付|支付完成|到账|退款|转账|红包|已支付|已付款")
     return paymentWord.containsMatchIn(this) &&
         (amount.containsMatchIn(this) || paymentOutcome.containsMatchIn(this))
 }
@@ -142,7 +142,11 @@ private fun String.transactionKindLabel(): String? = when {
     isIncomingPeerTransfer() -> "收入"
     isOutgoingPeerTransfer() -> "支出"
     contains("收款") || contains("到账") -> "收入"
-    contains("付款") || contains("支付成功") || contains("已支付") -> "支出"
+    contains("付款") ||
+        contains("支付成功") ||
+        contains("完成支付") ||
+        contains("支付完成") ||
+        contains("已支付") -> "支出"
     contains("支出") && contains("交易") -> "支出"
     else -> null
 }

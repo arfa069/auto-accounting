@@ -306,6 +306,17 @@ class PaymentNotificationCaptureProcessorTest {
         assertTrue(alipayTransitContextStore.consumeForNotification(NOW + 90_000))
     }
 
+    @Test
+    fun completedAlipayPaymentNotificationPersistsPendingEntry() = runBlocking {
+        processor.process(
+            alipayExpenseEvent(NOW).copy(text = "完成支付 ¥20.00")
+        )
+
+        val entry = database.pendingEntryDao().listPendingEntries().single()
+        assertEquals(2_000L, entry.amountMinor)
+        assertEquals(TransactionKind.EXPENSE, entry.transactionKind)
+    }
+
     private fun paymentEvent(postedAtEpochMillis: Long): PaymentNotificationEvent =
         PaymentNotificationEvent(
             packageName = "com.tencent.mm",
