@@ -1,6 +1,7 @@
 package com.autoaccounting
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -33,7 +34,9 @@ internal fun AutoAccountingReviewRoute(
         categories = runtime.ledgerState.categories,
         fundingAccounts = runtime.ledgerState.fundingAccounts,
         onStateChange = context.actions::persistReviewState,
-        modifier = Modifier.padding(innerPadding),
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding),
         onCategorizationRuleRequested = { rule ->
             context.actions.persistCategorizationRules(runtime.categorizationRules.upsert(rule))
         },
@@ -102,7 +105,9 @@ internal fun AutoAccountingLedgerRoute(
             }
         },
         onNavigateHome = onNavigateHome,
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 
@@ -117,7 +122,9 @@ internal fun AutoAccountingReportsRoute(
         reportUiModel = context.presentation.reportUiModel,
         categoryRankingListState = context.appState.reportCategoryRankingListState,
         onNavigateHome = onNavigateHome,
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 

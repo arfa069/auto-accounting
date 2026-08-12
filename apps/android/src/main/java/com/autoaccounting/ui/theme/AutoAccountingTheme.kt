@@ -2,13 +2,11 @@ package com.autoaccounting.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -52,6 +50,7 @@ private val XiaolaiFontFamily = FontFamily(
 
 private val DefaultTypography = Typography()
 
+// Keep the high-cost CJK font out of body and label text so scrolling reuses the system glyph cache.
 private val AutoAccountingTypography = Typography(
     displayLarge = DefaultTypography.displayLarge.copy(fontFamily = XiaolaiFontFamily),
     displayMedium = DefaultTypography.displayMedium.copy(fontFamily = XiaolaiFontFamily),
@@ -61,13 +60,7 @@ private val AutoAccountingTypography = Typography(
     headlineSmall = DefaultTypography.headlineSmall.copy(fontFamily = XiaolaiFontFamily),
     titleLarge = DefaultTypography.titleLarge.copy(fontFamily = XiaolaiFontFamily),
     titleMedium = DefaultTypography.titleMedium.copy(fontFamily = XiaolaiFontFamily),
-    titleSmall = DefaultTypography.titleSmall.copy(fontFamily = XiaolaiFontFamily),
-    bodyLarge = DefaultTypography.bodyLarge.copy(fontFamily = XiaolaiFontFamily),
-    bodyMedium = DefaultTypography.bodyMedium.copy(fontFamily = XiaolaiFontFamily),
-    bodySmall = DefaultTypography.bodySmall.copy(fontFamily = XiaolaiFontFamily),
-    labelLarge = DefaultTypography.labelLarge.copy(fontFamily = XiaolaiFontFamily),
-    labelMedium = DefaultTypography.labelMedium.copy(fontFamily = XiaolaiFontFamily),
-    labelSmall = DefaultTypography.labelSmall.copy(fontFamily = XiaolaiFontFamily)
+    titleSmall = DefaultTypography.titleSmall.copy(fontFamily = XiaolaiFontFamily)
 )
 
 @Composable
@@ -76,10 +69,5 @@ fun AutoAccountingTheme(content: @Composable () -> Unit) {
         colorScheme = AutoAccountingColors,
         typography = AutoAccountingTypography,
         shapes = AutoAccountingShapes
-    ) {
-        ProvideTextStyle(
-            value = TextStyle(fontFamily = XiaolaiFontFamily),
-            content = content
-        )
-    }
+    ) { content() }
 }

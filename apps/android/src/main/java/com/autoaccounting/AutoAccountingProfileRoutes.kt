@@ -1,6 +1,7 @@
 package com.autoaccounting
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -47,7 +48,9 @@ private fun AutoAccountingProfileOverviewRoute(
         onDestinationSelected = { context.appState.profileDestination.value = it },
         onNavigateHome = onNavigateHome,
         ledgerSyncEnabled = context.runtime.ledgerSyncUiState.enabled,
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 
@@ -103,7 +106,9 @@ private fun AutoAccountingAccountManagementRoute(
             )
         },
         onBack = { appState.profileDestination.value = null },
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 
@@ -130,7 +135,9 @@ private fun AutoAccountingAutomaticBookkeepingRoute(
         continuousMonitoringPermissionHealth = context.presentation.continuousMonitoringPermissionHealth,
         onContinuousMonitoringStateChange = context.actions::persistContinuousMonitoringState,
         onBack = { context.appState.profileDestination.value = null },
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 
@@ -143,7 +150,9 @@ private fun AutoAccountingCategorizationRoute(
     CategorizationRulesScreen(
         rules = runtime.categorizationRules,
         onRulesChange = context.actions::persistCategorizationRules,
-        modifier = Modifier.padding(innerPadding),
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding),
         aiUiState = CategorizationAiUiState(
             settings = context.presentation.effectiveAiSettings,
             signedIn = runtime.accountSession is AccountSession.SignedIn,
@@ -191,7 +200,9 @@ private fun AutoAccountingDataAndBackupRoute(
         onResolveLedgerSyncConflict = { conflictId, version, choice ->
             context.resolveLedgerSyncConflict(conflictId, version, choice)
         },
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }
 
@@ -203,6 +214,8 @@ private fun AutoAccountingComplianceRoute(
     ComplianceAndPrivacyScreen(
         isDebugBuild = BuildConfig.DEBUG,
         onBack = { context.appState.profileDestination.value = null },
-        modifier = Modifier.padding(innerPadding)
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
     )
 }

@@ -9,8 +9,6 @@ import com.autoaccounting.feature.account.WechatAuthCallback
 import com.autoaccounting.feature.account.WechatAuthCallbackIntent
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.monitoring.MonitoringStateCoordinator
-import com.autoaccounting.ui.requestHighRefreshRate
-
 class MainActivity : ComponentActivity() {
     private val coordinator by lazy { MonitoringStateCoordinator(this) }
     private val reviewNavigationRequest = mutableStateOf(0L)
@@ -45,7 +43,6 @@ class MainActivity : ComponentActivity() {
                 )
             )
         }
-        requestHighRefreshRate()
     }
 
     override fun onNewIntent(intent: Intent) {
