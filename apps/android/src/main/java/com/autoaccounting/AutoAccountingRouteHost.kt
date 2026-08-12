@@ -128,17 +128,17 @@ internal fun AutoAccountingRouteHost(context: AutoAccountingRouteContext) {
                     manualEntryOpen = manualEntryOpen
                 )
             }
-            SlidePageTransition(
-                targetState = route,
-                modifier = Modifier.fillMaxSize()
-            ) { targetRoute ->
-                val wallpaperRes = when {
-                    targetRoute.manualEntryOpen -> R.drawable.aa_bg_ledger
-                    targetRoute.tab == null -> R.drawable.aa_bg_account
-                    targetRoute.profileDestination != null -> R.drawable.aa_bg_neutral
-                    else -> targetRoute.tab.backgroundRes
-                }
-                AppWallpaper(wallpaperRes) {
+            val wallpaperRes = when {
+                route.manualEntryOpen -> R.drawable.aa_bg_ledger
+                route.tab == null -> R.drawable.aa_bg_account
+                route.profileDestination != null -> R.drawable.aa_bg_neutral
+                else -> route.tab.backgroundRes
+            }
+            AppWallpaper(wallpaperRes) {
+                SlidePageTransition(
+                    targetState = route,
+                    modifier = Modifier.fillMaxSize()
+                ) { targetRoute ->
                     AutoAccountingRouteContent(
                         contentContext = AutoAccountingRouteContentContext(
                             context = context,

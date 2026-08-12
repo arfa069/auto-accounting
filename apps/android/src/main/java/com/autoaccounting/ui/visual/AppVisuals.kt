@@ -1,6 +1,7 @@
 package com.autoaccounting.ui.visual
 
 import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.annotation.DrawableRes
@@ -28,10 +29,12 @@ import kotlinx.coroutines.withContext
 
 private const val WALLPAPER_CACHE_MAX_BYTES = 21 * 1024 * 1024
 private const val DECORATIVE_IMAGE_CACHE_MAX_BYTES = 2 * 1024 * 1024
+private const val WALLPAPER_FORCED_SAMPLE_SIZE = 2
 private val WallpaperPlaceholder = Color(0xFFFEF8ED)
 
 private class ResourceImageCache(
-    maxSizeBytes: Int
+    maxSizeBytes: Int,
+    private val minimumSampleSize: Int = 1
 ) {
     private val decodeMutex = Mutex()
     private val images = object : LruCache<Int, ImageBitmap>(maxSizeBytes) {
@@ -46,16 +49,56 @@ private class ResourceImageCache(
     suspend fun load(resources: Resources, @DrawableRes resourceId: Int): ImageBitmap? =
         withContext(Dispatchers.IO) {
             decodeMutex.withLock {
-                images.get(resourceId) ?: BitmapFactory
-                    .decodeResource(resources, resourceId)
+                images.get(resourceId) ?: decodeResource(resources, resourceId)
                     ?.asImageBitmap()
                     ?.also { images.put(resourceId, it) }
             }
         }
+
+    private fun decodeResource(resources: Resources, @DrawableRes resourceId: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeResource(resources, resourceId, bounds)
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateDecodeSampleSize(
+                sourceWidth = bounds.outWidth,
+                sourceHeight = bounds.outHeight,
+                targetWidth = resources.displayMetrics.widthPixels,
+                targetHeight = resources.displayMetrics.heightPixels,
+                minimumSampleSize = minimumSampleSize
+            )
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeResource(resources, resourceId, options)?.also {
+            it.prepareToDraw()
+        }
+    }
 }
 
-private val WallpaperImageCache = ResourceImageCache(WALLPAPER_CACHE_MAX_BYTES)
+private val WallpaperImageCache = ResourceImageCache(
+    maxSizeBytes = WALLPAPER_CACHE_MAX_BYTES,
+    minimumSampleSize = WALLPAPER_FORCED_SAMPLE_SIZE
+)
 private val DecorativeImageCache = ResourceImageCache(DECORATIVE_IMAGE_CACHE_MAX_BYTES)
+
+internal fun calculateDecodeSampleSize(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    targetWidth: Int,
+    targetHeight: Int,
+    minimumSampleSize: Int = 1
+): Int {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) return 1
+
+    var sampleSize = minimumSampleSize.coerceAtLeast(1)
+    while (
+        sourceWidth / (sampleSize * 2) >= targetWidth &&
+        sourceHeight / (sampleSize * 2) >= targetHeight
+    ) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
 
 @Composable
 fun AppWallpaper(
