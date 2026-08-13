@@ -18,7 +18,7 @@ internal class JdbcAccountLifecycleProfileStore(
     override fun findAccount(accountId: Long): StoredAccount? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, deletion_claimed_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -31,6 +31,7 @@ internal class JdbcAccountLifecycleProfileStore(
                         publicId = rs.getString("public_id"),
                         primaryIdentifierType = rs.getString("primary_identifier_type"),
                         deletionRequestedAtMillis = rs.getNullableLong("deletion_requested_at_millis"),
+                        deletionClaimedAtMillis = rs.getNullableLong("deletion_claimed_at_millis"),
                         createdAtMillis = rs.getLong("created_at_millis")
                     )
                 } else {
@@ -53,10 +54,44 @@ internal class JdbcAccountLifecycleProfileStore(
         }
     }
 
+    override fun cancelAccountDeletion(accountId: Long): Boolean = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE accounts
+            SET deletion_requested_at_millis = NULL
+            WHERE account_id = ? AND deletion_requested_at_millis IS NOT NULL
+                AND deletion_claimed_at_millis IS NULL
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, accountId)
+            statement.executeUpdate() == 1
+        }
+    }
+
+    override fun claimAccountDeletion(
+        accountId: Long,
+        cutoffMillis: Long,
+        claimedAtMillis: Long
+    ): Boolean = connection().use { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE accounts
+            SET deletion_claimed_at_millis = ?
+            WHERE account_id = ? AND deletion_requested_at_millis <= ?
+                AND deletion_claimed_at_millis IS NULL
+            """.trimIndent()
+        ).use { statement ->
+            statement.setLong(1, claimedAtMillis)
+            statement.setLong(2, accountId)
+            statement.setLong(3, cutoffMillis)
+            statement.executeUpdate() == 1
+        }
+    }
+
     override fun accountsPendingDeletion(): List<StoredAccount> = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, deletion_claimed_at_millis, created_at_millis
             FROM accounts
             WHERE deletion_requested_at_millis IS NOT NULL
             """.trimIndent()

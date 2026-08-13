@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -96,16 +97,16 @@ internal fun LedgerList(
     onRecentlyDeletedClick: () -> Unit,
     onNavigateHome: () -> Unit
 ) {
-    var searchText by remember { mutableStateOf("") }
-    var showFilters by remember { mutableStateOf(false) }
-    var sourceFilter by remember { mutableStateOf("") }
-    var categoryFilter by remember { mutableStateOf("") }
-    var kindFilter by remember { mutableStateOf("") }
+    var searchText by rememberSaveable { mutableStateOf("") }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    var sourceFilter by rememberSaveable { mutableStateOf("") }
+    var categoryFilter by rememberSaveable { mutableStateOf("") }
+    var kindFilter by rememberSaveable { mutableStateOf("") }
 
     val availableMonthKeys = remember(entries) {
         entries.map { it.monthKey }.distinct().sorted()
     }
-    var monthKey by remember { mutableStateOf(latestMonthKey(entries)) }
+    var monthKey by rememberSaveable { mutableStateOf(latestMonthKey(entries)) }
     LaunchedEffect(availableMonthKeys) {
         if (monthKey !in availableMonthKeys) {
             monthKey = availableMonthKeys.lastOrNull() ?: latestMonthKey(entries)

@@ -32,11 +32,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 class BillSyncAccessibilityService : AccessibilityService() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val database by lazy {
         AutoAccountingDatabaseProvider.get(this)
@@ -110,7 +111,11 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 this@BillSyncAccessibilityService.currentWechatWindowEvidence(windowId, windowIdentity)
 
             override suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
-                this@BillSyncAccessibilityService.captureScreenBitmap(windowId)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    this@BillSyncAccessibilityService.captureScreenBitmapApi30(windowId)
+                } else {
+                    null
+                }
 
             override suspend fun recognizeScreen(bitmap: Bitmap): String =
                 ocrRecognizer.recognize(bitmap)
@@ -274,32 +279,35 @@ class BillSyncAccessibilityService : AccessibilityService() {
     }
 
 
-
     private fun captureManualBillSync(
         packageName: String,
         pageText: String
     ) {
         val source = BillSyncSource.fromPackageName(packageName) ?: return
-        val observation = observeBillSyncPage(source, pageText)
-        if (observation == BillSyncPageObservation.Ignored) {
-            diagnosticRecorder.recordMetadata(
-                event = "manual_page_rejected",
-                outcome = "rejected",
-                reason = "unrelated_page",
-                source = source.accessibilityDiagnosticSource()
-            )
-            return
-        }
         val traceId = newDiagnosticTraceId()
         val sessionId = BillSyncSessions.controller.state.value.sessionId
 
         serviceScope.launch {
+            val observation = withContext(Dispatchers.Default) {
+                observeBillSyncPage(source, pageText)
+            }
+            if (observation == BillSyncPageObservation.Ignored) {
+                diagnosticRecorder.recordMetadata(
+                    event = "manual_page_rejected",
+                    outcome = "rejected",
+                    reason = "unrelated_page",
+                    source = source.accessibilityDiagnosticSource()
+                )
+                return@launch
+            }
             runCatching {
                 BillSyncSessions.controller.submitBillPage(
                     packageName = packageName,
                     pageText = pageText,
                     process = { billSource, text ->
-                        processor.process(billSource, text, traceId, sessionId)
+                        withContext(Dispatchers.IO) {
+                            processor.process(billSource, text, traceId, sessionId)
+                        }
                     }
                 )
             }.onFailure { error ->
@@ -307,13 +315,6 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 diagnosticRecorder.recordFailure("manual_capture_failed", traceId, source, sessionId, error)
             }
         }
-    }
-
-    private suspend fun captureScreenBitmap(windowId: Int): Bitmap? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            return null
-        }
-        return captureScreenBitmapApi30(windowId)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

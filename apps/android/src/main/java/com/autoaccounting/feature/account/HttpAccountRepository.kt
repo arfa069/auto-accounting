@@ -6,6 +6,8 @@ import com.autoaccounting.api.AccountSessionResponseContract
 import com.autoaccounting.api.MergePreviewResponseContract
 import com.autoaccounting.api.IdentifierLinkPrepareResponseContract
 import com.autoaccounting.api.WechatAuthResultContract
+import com.autoaccounting.feature.categorization.toBackendEndpointOrNull
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -82,8 +84,19 @@ internal class HttpUrlConnectionAccountTransport(
                 val status = connection.responseCode
                 observer.onStage(AccountHttpStage.ResponseHeadersReceived)
                 val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                    ?.bufferedReader(Charsets.UTF_8)
-                    ?.use { it.readText() }
+                    ?.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var bytesRead = input.read(buffer)
+                        while (bytesRead >= 0) {
+                            if (output.size() + bytesRead > MAX_RESPONSE_BYTES) {
+                                throw IOException("Account response is too large")
+                            }
+                            output.write(buffer, 0, bytesRead)
+                            bytesRead = input.read(buffer)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    }
                     .orEmpty()
                 observer.onStage(AccountHttpStage.ResponseBodyRead)
                 val response = AccountHttpResponse(statusCode = status, body = body)
@@ -101,15 +114,17 @@ internal class HttpUrlConnectionAccountTransport(
     private companion object {
         const val CONNECT_TIMEOUT_MILLIS = 10_000
         const val READ_TIMEOUT_MILLIS = 15_000
+        const val MAX_RESPONSE_BYTES = 256 * 1024
     }
 }
 
 internal class HttpAccountRepository(
     backendUrl: String,
     private val installationId: () -> String,
-    private val transport: AccountHttpTransport = HttpUrlConnectionAccountTransport()
+    private val transport: AccountHttpTransport = HttpUrlConnectionAccountTransport(),
+    allowHttp: Boolean = false
 ) : AccountRepository {
-    private val baseUrl = backendUrl.trim().trimEnd('/')
+    private val baseUrl = backendUrl.toBackendEndpointOrNull("", allowHttp)?.trimEnd('/').orEmpty()
 
     override suspend fun requestVerificationCode(
         identifier: String,

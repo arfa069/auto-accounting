@@ -7,13 +7,13 @@ import com.autoaccounting.api.AccountApiJsonContracts
 import com.autoaccounting.api.AccountDeletionStatusContract
 import com.autoaccounting.api.AccountErrorResponseContract
 import com.autoaccounting.api.AccountSessionResponseContract
+import com.autoaccounting.backend.receiveParameters
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.plugins.origin
-import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post

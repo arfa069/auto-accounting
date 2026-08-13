@@ -22,6 +22,7 @@ internal const val PURPOSE_RECOVERY = "RECOVERY"
 internal const val PURPOSE_IDENTIFIER_LINK = "IDENTIFIER_LINK"
 internal const val LOGIN_LOCK_MILLIS = 15 * 60_000L
 internal const val ACCOUNT_DELETION_COOLING_OFF_MILLIS = 7 * 24 * 60 * 60 * 1_000L
+internal const val ACCOUNT_SESSION_TTL_MILLIS = 30L * 24L * 60L * 60L * 1_000L
 
 @Suppress("LongParameterList")
 internal class AccountServiceContext(

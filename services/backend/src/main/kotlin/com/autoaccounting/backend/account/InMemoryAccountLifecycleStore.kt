@@ -17,6 +17,29 @@ internal class InMemoryAccountLifecycleStore(
         accounts[accountId] = account.copy(deletionRequestedAtMillis = requestedAtMillis)
     }
 
+    override fun cancelAccountDeletion(accountId: Long): Boolean = synchronized(state.lock) {
+        val account = accounts[accountId] ?: return@synchronized false
+        if (account.deletionRequestedAtMillis == null || account.deletionClaimedAtMillis != null) {
+            return@synchronized false
+        }
+        accounts[accountId] = account.copy(deletionRequestedAtMillis = null)
+        true
+    }
+
+    override fun claimAccountDeletion(
+        accountId: Long,
+        cutoffMillis: Long,
+        claimedAtMillis: Long
+    ): Boolean = synchronized(state.lock) {
+        val account = accounts[accountId] ?: return@synchronized false
+        val requestedAtMillis = account.deletionRequestedAtMillis ?: return@synchronized false
+        if (account.deletionClaimedAtMillis != null || requestedAtMillis > cutoffMillis) {
+            return@synchronized false
+        }
+        accounts[accountId] = account.copy(deletionClaimedAtMillis = claimedAtMillis)
+        true
+    }
+
     override fun accountsPendingDeletion(): List<StoredAccount> {
         return accounts.values.filter { it.deletionRequestedAtMillis != null }
     }

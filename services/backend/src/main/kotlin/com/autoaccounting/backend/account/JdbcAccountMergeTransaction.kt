@@ -157,12 +157,13 @@ internal class JdbcAccountMergeTransaction(
             val token = tokenGenerator()
             val tokenHash = hashTokenString(token)
             connection.prepareStatement(
-                "INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis) VALUES (?, ?, ?, ?)"
+                "INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis, expires_at_millis) VALUES (?, ?, ?, ?, ?)"
             ).use { stmt ->
                 stmt.setString(1, tokenHash)
                 stmt.setLong(2, targetAccountId)
                 stmt.setString(3, deviceId)
                 stmt.setLong(4, now)
+                stmt.setLong(5, now + ACCOUNT_SESSION_TTL_MILLIS)
                 stmt.executeUpdate()
             }
 
@@ -230,9 +231,16 @@ internal class JdbcAccountMergeTransaction(
                     avatarUrl = finalWechat?.avatarUrl
                 )
             )
-        } catch (e: Exception) {
+        } catch (error: SQLException) {
             connection.rollback()
-            throw e
+            if (error.sqlState == UNIQUE_VIOLATION_SQL_STATE) {
+                AccountResult.Failure(AccountError.MERGE_BLOCKED)
+            } else {
+                throw error
+            }
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
         } finally {
             connection.autoCommit = true
         }
@@ -240,7 +248,7 @@ internal class JdbcAccountMergeTransaction(
 
     private fun findOneTimeTicketWithConnection(connection: Connection, ticketHash: String): StoredOneTimeTicket? {
         return connection.prepareStatement(
-            "SELECT ticket_hash, ticket_type, account_id, payload_json, expires_at_millis, used_at_millis FROM account_one_time_tickets WHERE ticket_hash = ?"
+            "SELECT ticket_hash, ticket_type, account_id, payload_json, expires_at_millis, used_at_millis FROM account_one_time_tickets WHERE ticket_hash = ? FOR UPDATE"
         ).use { stmt ->
             stmt.setString(1, ticketHash)
             stmt.executeQuery().use { rs ->

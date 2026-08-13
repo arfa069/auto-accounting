@@ -118,6 +118,26 @@ class HttpAccountRepositoryTest {
             .requestVerificationCode("13800138000", AccountVerificationPurpose.Register) as AccountRepositoryResult.Failure
         assertEquals(AccountFailureKind.ConfigurationMissing, missing.kind)
 
+        val publicHttp = HttpAccountRepository(
+            "http://example.test",
+            { "install-id" },
+            RecordingTransport(okResponse()),
+            allowHttp = true
+        ).requestVerificationCode(
+            "13800138000",
+            AccountVerificationPurpose.Register
+        ) as AccountRepositoryResult.Failure
+        assertEquals(AccountFailureKind.ConfigurationMissing, publicHttp.kind)
+
+        val privateTransport = RecordingTransport(okResponse())
+        HttpAccountRepository(
+            "http://127.0.0.1:8080",
+            { "install-id" },
+            privateTransport,
+            allowHttp = true
+        ).requestVerificationCode("13800138000", AccountVerificationPurpose.Register)
+        assertEquals("http://127.0.0.1:8080/account/verification-code", privateTransport.lastUrl)
+
         val networkTransport = RecordingTransport(IOException("offline"))
         val network = repository(networkTransport).requestVerificationCode(
             "13800138000",

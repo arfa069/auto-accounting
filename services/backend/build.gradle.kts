@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.ktor.server.forwarded.header)
     implementation(libs.logback.classic)
     implementation(libs.postgresql)
+    implementation(libs.hikaricp)
 
     testImplementation(libs.junit)
     testImplementation(libs.ktor.server.test.host)

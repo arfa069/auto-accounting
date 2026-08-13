@@ -2,6 +2,7 @@ package com.autoaccounting.feature.capture
 
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import java.security.MessageDigest
 
 class NotificationCapturePipeline(
     private val parser: PaymentNotificationParser = PaymentNotificationParser(),
@@ -13,7 +14,7 @@ class NotificationCapturePipeline(
         val parsing = parser.parseDetailed(event)
         val parsed = parsing.parsed ?: return NotificationCaptureEvaluation(parsing = parsing)
         val entry = ReviewQueueEntry(
-            id = "notification-${parsed.sourceLabel}-${event.postedAtEpochMillis}-${parsed.amountMinor}"
+            id = "notification-${parsed.sourceLabel}-${event.stableIdentityDigest()}"
                 .replace(Regex("\\s+"), "-"),
             title = parsed.merchantTitle,
             amountMinor = parsed.amountMinor,
@@ -32,6 +33,14 @@ class NotificationCapturePipeline(
         )
         return NotificationCaptureEvaluation(entry = entry, parsing = parsing)
     }
+}
+
+private fun PaymentNotificationEvent.stableIdentityDigest(): String {
+    val identity = listOf(packageName, title, text, postedAtEpochMillis.toString()).joinToString("\u0000")
+    return MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(Charsets.UTF_8))
+        .take(12)
+        .joinToString("") { byte -> "%02x".format(byte) }
 }
 
 data class NotificationCaptureEvaluation(

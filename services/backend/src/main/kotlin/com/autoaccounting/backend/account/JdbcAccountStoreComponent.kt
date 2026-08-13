@@ -194,14 +194,15 @@ internal abstract class JdbcAccountStoreComponent(
     protected fun insertSession(connection: Connection, session: StoredSession) {
         connection.prepareStatement(
             """
-            INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis, expires_at_millis)
+            VALUES (?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, session.tokenHash)
             statement.setLong(2, session.accountId)
             statement.setString(3, session.deviceId)
             statement.setLong(4, session.issuedAtMillis)
+            statement.setLong(5, session.expiresAtMillis)
             statement.executeUpdate()
         }
     }
@@ -240,7 +241,7 @@ internal abstract class JdbcAccountStoreComponent(
     protected fun queryAccount(connection: Connection, accountId: Long): StoredAccount? {
         return connection.prepareStatement(
             """
-            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, deletion_claimed_at_millis, created_at_millis
             FROM accounts
             WHERE account_id = ?
             """.trimIndent()
@@ -260,7 +261,7 @@ internal abstract class JdbcAccountStoreComponent(
         val accounts = mutableListOf<StoredAccount>()
         connection.prepareStatement(
             """
-            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, created_at_millis
+            SELECT account_id, public_id, primary_identifier_type, deletion_requested_at_millis, deletion_claimed_at_millis, created_at_millis
             FROM accounts
             WHERE account_id IN (?, ?)
             ORDER BY account_id

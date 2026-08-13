@@ -81,6 +81,7 @@ class SmsProviderTest {
 
         val result = provider.sendCode("13800138000", "123456")
         assertEquals(SmsProviderResult.Sent, result)
+        assertEquals(java.time.Duration.ofSeconds(10), mockHttpClient.lastRequest?.timeout()?.orElse(null))
     }
 
     @Test
@@ -107,6 +108,8 @@ class SmsProviderTest {
         private val statusCode: Int,
         private val responseBody: String
     ) : HttpClient() {
+        var lastRequest: HttpRequest? = null
+
         override fun cookieHandler() = java.util.Optional.empty<java.net.CookieHandler>()
         override fun connectTimeout() = java.util.Optional.empty<java.time.Duration>()
         override fun followRedirects() = Redirect.NEVER
@@ -119,6 +122,7 @@ class SmsProviderTest {
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : Any?> send(request: HttpRequest?, responseBodyHandler: HttpResponse.BodyHandler<T>?): HttpResponse<T> {
+            lastRequest = request
             val mockResponse = object : HttpResponse<T> {
                 override fun statusCode() = statusCode
                 override fun request() = request

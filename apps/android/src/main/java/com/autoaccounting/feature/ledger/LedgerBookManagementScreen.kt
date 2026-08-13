@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -39,7 +40,7 @@ internal fun LedgerBookManagementContent(
     snackbarHostState: SnackbarHostState,
     actions: LedgerBookManagementActions
 ) {
-    var showCreateDialog by remember { mutableStateOf(false) }
+    var showCreateDialog by rememberSaveable { mutableStateOf(false) }
     var createError by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<LedgerBookUiModel?>(null) }
     var blockedDeleteMessage by remember { mutableStateOf<String?>(null) }
@@ -301,7 +302,7 @@ private fun LedgerBookCreateDialog(
     onDismiss: () -> Unit,
     onCreate: (String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("新建账本") },

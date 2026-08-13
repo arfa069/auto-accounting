@@ -9,13 +9,13 @@ import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.accountBearerToken
 import com.autoaccounting.backend.account.respondAccountFailure
+import com.autoaccounting.backend.receiveParameters
 import com.autoaccounting.backend.config.CloudConfigService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
-import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post

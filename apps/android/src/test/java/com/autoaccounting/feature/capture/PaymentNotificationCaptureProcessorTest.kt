@@ -13,6 +13,7 @@ import com.autoaccounting.data.local.TransactionKind
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.review.ReviewQueueAction
 import com.autoaccounting.feature.review.ReviewQueuePersistence
+import com.autoaccounting.feature.review.formatReviewDateTime
 import com.autoaccounting.feature.review.reduceReviewQueue
 import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
 import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
@@ -23,6 +24,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -64,7 +66,7 @@ class PaymentNotificationCaptureProcessorTest {
         alipayTransitContextStore.clear()
         processor = PaymentNotificationCaptureProcessor(
             pipeline = NotificationCapturePipeline(
-                captureTimeFormatter = { "2026-07-08 12:21" }
+                captureTimeFormatter = { formatReviewDateTime(it, ZoneId.of("UTC")) }
             ),
             reviewQueuePersistence = persistence,
             preferencesRepository = LocalPreferencesRepository(database),
@@ -197,6 +199,24 @@ class PaymentNotificationCaptureProcessorTest {
     }
 
     @Test
+    fun replayedIgnoredNotificationDoesNotRecreatePendingEntry() = runBlocking {
+        processor.process(paymentEvent(postedAtEpochMillis = NOW))
+        val pendingState = persistence.observeState().first()
+        val ignoredState = reduceReviewQueue(
+            pendingState,
+            ReviewQueueAction.Ignore(pendingState.pendingEntries.single().id)
+        )
+        persistence.persistTransition(pendingState, ignoredState)
+
+        val result = processor.processWithResult(paymentEvent(postedAtEpochMillis = NOW))
+
+        assertNotNull(result)
+        assertNull(result?.notification)
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+        assertEquals(1, database.ignoredEntryDao().listAll().size)
+    }
+
+    @Test
     fun distinctSentRedPacketNotificationsWithSameAmountStaySeparate() = runBlocking {
         processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
         processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW + 30_000))
@@ -215,6 +235,7 @@ class PaymentNotificationCaptureProcessorTest {
     fun newSentRedPacketNotificationIsNotMergedIntoEarlierLedgerEntry() = runBlocking {
         processor.process(sentRedPacketEvent(postedAtEpochMillis = NOW))
         val pendingState = persistence.observeState().first()
+        val confirmedOriginId = pendingState.pendingEntries.single().id
         val confirmedState = reduceReviewQueue(
             pendingState,
             ReviewQueueAction.Confirm(pendingState.pendingEntries.single().id)
@@ -228,13 +249,14 @@ class PaymentNotificationCaptureProcessorTest {
 
         val pendingEntries = database.pendingEntryDao().listPendingEntries()
         assertEquals(1, pendingEntries.size)
-        assertTrue(pendingEntries.single().id.contains((NOW + 30_000).toString()))
+        assertNotEquals(confirmedOriginId, pendingEntries.single().id)
     }
 
     @Test
     fun newReceivedRedPacketNotificationIsNotMergedIntoEarlierLedgerEntry() = runBlocking {
         processor.process(receivedRedPacketEvent(postedAtEpochMillis = NOW))
         val pendingState = persistence.observeState().first()
+        val confirmedOriginId = pendingState.pendingEntries.single().id
         val confirmedState = reduceReviewQueue(
             pendingState,
             ReviewQueueAction.Confirm(pendingState.pendingEntries.single().id)
@@ -250,7 +272,7 @@ class PaymentNotificationCaptureProcessorTest {
         assertEquals(1, pendingEntries.size)
         assertEquals("张三", pendingEntries.single().merchantTitle)
         assertEquals(TransactionKind.INCOME, pendingEntries.single().transactionKind)
-        assertTrue(pendingEntries.single().id.contains((NOW + 30_000).toString()))
+        assertNotEquals(confirmedOriginId, pendingEntries.single().id)
     }
 
     @Test

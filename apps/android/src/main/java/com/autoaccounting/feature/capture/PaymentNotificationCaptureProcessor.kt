@@ -51,6 +51,19 @@ class PaymentNotificationCaptureProcessor(
         diagnosticRecorder.record(entry.toNotificationDiagnosticEvent(event, traceId))
         val categorizedEntry = categorizeEntry(event, entry)
         val previousState = reviewQueuePersistence.observeState().first()
+        val ignoredDedupeResult = DedupeEngine().addCandidate(
+            previousState.ignoredEntries.map { it.entry },
+            categorizedEntry
+        )
+        if (ignoredDedupeResult.matchLevel == DedupeMatchLevel.HIGH_CONFIDENCE) {
+            diagnosticRecorder.record(
+                notificationMetadataEvent(traceId, event, "ignored_duplicate", "duplicate")
+            )
+            return@serialize PaymentNotificationProcessResult(
+                state = previousState,
+                notification = null
+            )
+        }
         val candidateAfterLedgerCheck = resolveLedgerDedupeCandidate(
             categorizedEntry,
             event,
@@ -138,7 +151,7 @@ class PaymentNotificationCaptureProcessor(
         event: PaymentNotificationEvent,
         traceId: String
     ): ReviewQueueEntry? {
-        val ledgerEntriesForDedupe = reviewQueuePersistence.ledgerEntriesForDedupe()
+        val ledgerEntriesForDedupe = reviewQueuePersistence.ledgerEntriesForDedupe(event.postedAtEpochMillis)
             .filterNot { ledgerEntry ->
                 ledgerEntry.isPriorRedPacketLedgerFor(categorizedEntry)
             }

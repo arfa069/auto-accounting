@@ -19,14 +19,15 @@ internal class JdbcAccountSessionStore(
         connection().use { connection ->
             connection.prepareStatement(
                 """
-                INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO account_sessions (token_hash, account_id, device_id, issued_at_millis, expires_at_millis)
+                VALUES (?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, session.tokenHash)
                 statement.setLong(2, session.accountId)
                 statement.setString(3, session.deviceId)
                 statement.setLong(4, session.issuedAtMillis)
+                statement.setLong(5, session.expiresAtMillis)
                 statement.executeUpdate()
             }
         }
@@ -35,7 +36,7 @@ internal class JdbcAccountSessionStore(
     override fun findSession(tokenHash: String): StoredSession? = connection().use { connection ->
         connection.prepareStatement(
             """
-            SELECT token_hash, account_id, device_id, issued_at_millis
+            SELECT token_hash, account_id, device_id, issued_at_millis, expires_at_millis
             FROM account_sessions
             WHERE token_hash = ?
             """.trimIndent()
@@ -47,7 +48,8 @@ internal class JdbcAccountSessionStore(
                         tokenHash = rs.getString("token_hash"),
                         accountId = rs.getLong("account_id"),
                         deviceId = rs.getString("device_id").orEmpty(),
-                        issuedAtMillis = rs.getLong("issued_at_millis")
+                        issuedAtMillis = rs.getLong("issued_at_millis"),
+                        expiresAtMillis = rs.getLong("expires_at_millis")
                     )
                 } else {
                     null

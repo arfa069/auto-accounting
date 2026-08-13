@@ -10,6 +10,7 @@ internal fun ResultSet.toStoredAccount(): StoredAccount {
         publicId = getString("public_id"),
         primaryIdentifierType = getString("primary_identifier_type"),
         deletionRequestedAtMillis = getNullableLong("deletion_requested_at_millis"),
+        deletionClaimedAtMillis = getNullableLong("deletion_claimed_at_millis"),
         createdAtMillis = getLong("created_at_millis")
     )
 }

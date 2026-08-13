@@ -5,6 +5,7 @@ import com.autoaccounting.api.LedgerSyncJsonContracts
 import com.autoaccounting.api.LedgerSyncPayloadContract
 import java.util.UUID
 
+@Suppress("TooManyFunctions")
 internal class LocalSyncMutationRecorder(
     private val database: AutoAccountingDatabase,
     private val clock: () -> Long,
@@ -12,15 +13,21 @@ internal class LocalSyncMutationRecorder(
 ) {
     suspend fun reconcileAll() {
         if (database.ledgerSyncDao().getState()?.enabled != true) return
-        database.fundingAccountDao().getAllFundingAccounts()
-            .filter { it.syncId == null }
+        val fundingAccounts = database.fundingAccountDao().getAllFundingAccounts()
+        fundingAccounts.filter { it.syncId == null }
             .forEach { account -> check(database.fundingAccountDao().setSyncId(account.id, idGenerator()) == 1) }
+        val currentFundingAccounts = if (fundingAccounts.any { it.syncId == null }) {
+            database.fundingAccountDao().getAllFundingAccounts()
+        } else {
+            fundingAccounts
+        }
+        val fundingSyncIdsById = currentFundingAccounts.associate { it.id to requireNotNull(it.syncId) }
         val currentKeys = mutableSetOf<Pair<String, String>>()
         database.categoryDao().getAllCategories().forEach {
             record(it)
             currentKeys += LedgerSyncEntityTypeContract.CATEGORY.name to it.id
         }
-        database.fundingAccountDao().getAllFundingAccounts().forEach {
+        currentFundingAccounts.forEach {
             record(it)
             currentKeys += LedgerSyncEntityTypeContract.FUNDING_ACCOUNT.name to requireNotNull(it.syncId)
         }
@@ -29,7 +36,7 @@ internal class LocalSyncMutationRecorder(
             currentKeys += LedgerSyncEntityTypeContract.LEDGER_BOOK.name to it.id
         }
         database.ledgerEntryDao().listAllLedgerEntries().forEach {
-            record(it)
+            record(it, fundingSyncIdsById)
             currentKeys += LedgerSyncEntityTypeContract.LEDGER_ENTRY.name to it.id
         }
         database.categorizationRuleDao().listRules().forEach {
@@ -38,7 +45,8 @@ internal class LocalSyncMutationRecorder(
         }
         database.ledgerSyncDao().getAllMetadata()
             .filter { !it.deleted && !it.blockedByConflict && (it.entityType to it.entityId) !in currentKeys }
-            .forEach { recordDelete(LedgerSyncEntityTypeContract.valueOf(it.entityType), it.entityId) }
+            .groupBy { LedgerSyncEntityTypeContract.valueOf(it.entityType) }
+            .forEach { (type, metadata) -> recordDeletes(type, metadata.map(AccountSyncMetadataEntity::entityId)) }
     }
 
     suspend fun record(category: CategoryEntity) = recordPayload(
@@ -66,8 +74,16 @@ internal class LocalSyncMutationRecorder(
     )
 
     suspend fun record(entry: LedgerEntryEntity) {
-        val fundingSyncId = entry.fundingAccountId?.let {
-            database.fundingAccountDao().getById(it)?.syncId
+        record(entry, null)
+    }
+
+    private suspend fun record(
+        entry: LedgerEntryEntity,
+        fundingSyncIdsById: Map<Long, String>?
+    ) {
+        val fundingSyncId = entry.fundingAccountId?.let { fundingAccountId ->
+            fundingSyncIdsById?.get(fundingAccountId)
+                ?: database.fundingAccountDao().getById(fundingAccountId)?.syncId
         }
         recordPayload(
             LedgerSyncEntityTypeContract.LEDGER_ENTRY,
@@ -97,6 +113,13 @@ internal class LocalSyncMutationRecorder(
         record(type, entityId, deleted = true, payload = null)
     }
 
+    suspend fun recordDeletes(type: LedgerSyncEntityTypeContract, entityIds: List<String>) {
+        if (entityIds.isEmpty() || database.ledgerSyncDao().getState()?.enabled != true) return
+        entityIds.forEach { entityId ->
+            record(type, entityId, deleted = true, payload = null, skipEnabledCheck = true)
+        }
+    }
+
     private suspend fun recordPayload(
         type: LedgerSyncEntityTypeContract,
         entityId: String,
@@ -114,9 +137,10 @@ internal class LocalSyncMutationRecorder(
         type: LedgerSyncEntityTypeContract,
         entityId: String,
         deleted: Boolean,
-        payload: String?
+        payload: String?,
+        skipEnabledCheck: Boolean = false
     ) {
-        if (database.ledgerSyncDao().getState()?.enabled != true) return
+        if (!skipEnabledCheck && database.ledgerSyncDao().getState()?.enabled != true) return
         val existing = database.ledgerSyncDao().findOutbox(type.name, entityId)
         if (existing != null) {
             database.ledgerSyncDao().upsertOutbox(existing.copy(deleted = deleted, payload = payload))

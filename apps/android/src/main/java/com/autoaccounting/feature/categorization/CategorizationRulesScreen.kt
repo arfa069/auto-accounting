@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,9 +79,12 @@ fun CategorizationRulesScreen(
     aiUiState: CategorizationAiUiState = CategorizationAiUiState(),
     actions: CategorizationRulesActions = CategorizationRulesActions()
 ) {
-    var editingRule by remember { mutableStateOf<CategorizationRule?>(null) }
-    var isCreating by remember { mutableStateOf(false) }
-    var selectedFilter by remember { mutableStateOf(RuleFilter.All) }
+    var editingRuleId by rememberSaveable { mutableStateOf<String?>(null) }
+    var isCreating by rememberSaveable { mutableStateOf(false) }
+    var selectedFilter by rememberSaveable { mutableStateOf(RuleFilter.All) }
+    val editingRule = remember(rules, editingRuleId) {
+        rules.firstOrNull { it.id == editingRuleId }
+    }
 
     Column(
         modifier = modifier
@@ -99,7 +103,7 @@ fun CategorizationRulesScreen(
         RuleListHeading(
             ruleCount = rules.size,
             onCreate = {
-                editingRule = null
+                editingRuleId = null
                 isCreating = true
             }
         )
@@ -109,7 +113,7 @@ fun CategorizationRulesScreen(
             selectedFilter = selectedFilter,
             onSelectedFilter = { selectedFilter = it },
             onEdit = { rule ->
-                editingRule = rule
+                editingRuleId = rule.id
                 isCreating = false
             },
             onDelete = { rule ->
@@ -125,7 +129,7 @@ fun CategorizationRulesScreen(
             initialRule = editingRule,
             onDismiss = {
                 isCreating = false
-                editingRule = null
+                editingRuleId = null
             },
             onSave = { savedRule ->
                 val nextRules = if (editingRule == null) {
@@ -144,7 +148,7 @@ fun CategorizationRulesScreen(
                 }
                 onRulesChange(nextRules)
                 isCreating = false
-                editingRule = null
+                editingRuleId = null
             }
         )
     }

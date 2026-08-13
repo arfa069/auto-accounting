@@ -125,13 +125,33 @@ class LedgerEntryEditorScreenTest {
         composeRule.onNodeWithTag("manual-entry-merchant")
             .performScrollTo()
             .performTextInput("未保存早餐")
+        composeRule.onNodeWithTag("manual-entry-back").performClick()
+        composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
 
         restorationTester.emulateSavedInstanceStateRestore()
 
+        composeRule.onNodeWithText("放弃未保存的修改？").assertDoesNotExist()
         composeRule.onNodeWithTag("manual-entry-amount").assertTextContains("12.34")
         composeRule.onNodeWithTag("manual-entry-merchant").assertTextContains("未保存早餐")
         composeRule.onNodeWithTag("manual-entry-back").performClick()
         composeRule.onNodeWithText("放弃未保存的修改？").assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerEditDraftIsRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            LedgerScreen(entries = listOf(sampleEntries().first()))
+        }
+
+        composeRule.onNodeWithText("午餐").performClick()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("未保存工作餐")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("编辑账目").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-merchant").assertTextContains("未保存工作餐")
     }
 
     @Test

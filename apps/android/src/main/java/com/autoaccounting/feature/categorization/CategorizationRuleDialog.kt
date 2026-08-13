@@ -8,7 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -22,11 +22,21 @@ internal fun CategorizationRuleDialog(
     onDismiss: () -> Unit,
     onSave: (CategorizationRule) -> Unit
 ) {
-    var merchantContains by remember(initialRule?.id) { mutableStateOf(initialRule?.merchantContains.orEmpty()) }
-    var titleContains by remember(initialRule?.id) { mutableStateOf(initialRule?.titleContains.orEmpty()) }
-    var sourceLabel by remember(initialRule?.id) { mutableStateOf(initialRule?.sourceLabel.orEmpty()) }
-    var transactionKind by remember(initialRule?.id) { mutableStateOf(initialRule?.transactionKind.orEmpty()) }
-    var category by remember(initialRule?.id) { mutableStateOf(initialRule?.category.orEmpty()) }
+    var merchantContains by rememberSaveable(initialRule?.id) {
+        mutableStateOf(initialRule?.merchantContains.orEmpty())
+    }
+    var titleContains by rememberSaveable(initialRule?.id) {
+        mutableStateOf(initialRule?.titleContains.orEmpty())
+    }
+    var sourceLabel by rememberSaveable(initialRule?.id) {
+        mutableStateOf(initialRule?.sourceLabel.orEmpty())
+    }
+    var transactionKind by rememberSaveable(initialRule?.id) {
+        mutableStateOf(initialRule?.transactionKind.orEmpty())
+    }
+    var category by rememberSaveable(initialRule?.id) {
+        mutableStateOf(initialRule?.category.orEmpty())
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,

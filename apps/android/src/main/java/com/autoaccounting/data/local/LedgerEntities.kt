@@ -168,7 +168,8 @@ data class LedgerEntryEntity(
         Index(value = ["source"]),
         Index(value = ["ignored_at_epoch_millis"]),
         Index(value = ["expires_at_epoch_millis"]),
-        Index(value = ["original_pending_entry_id"])
+        Index(value = ["original_pending_entry_id"]),
+        Index(value = ["funding_account_id"])
     ]
 )
 data class IgnoredEntryEntity(

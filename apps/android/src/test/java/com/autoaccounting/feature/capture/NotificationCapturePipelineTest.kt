@@ -36,6 +36,33 @@ class NotificationCapturePipelineTest {
     }
 
     @Test
+    fun sameTimestampAndAmountWithDifferentEvidenceProduceDifferentIds() {
+        val pipeline = NotificationCapturePipeline()
+        val first = requireNotNull(
+            pipeline.capture(
+                PaymentNotificationEvent(
+                    packageName = "com.tencent.mm",
+                    title = "微信支付",
+                    text = "付款成功 商户：午餐 金额：¥35.90",
+                    postedAtEpochMillis = NOW
+                )
+            )
+        )
+        val second = requireNotNull(
+            pipeline.capture(
+                PaymentNotificationEvent(
+                    packageName = "com.tencent.mm",
+                    title = "微信支付",
+                    text = "付款成功 商户：晚餐 金额：¥35.90",
+                    postedAtEpochMillis = NOW
+                )
+            )
+        )
+
+        assertTrue(first.id != second.id)
+    }
+
+    @Test
     fun reviewQueueReceivesCapturedPendingEntry() {
         val pipeline = NotificationCapturePipeline(
             parser = PaymentNotificationParser(),

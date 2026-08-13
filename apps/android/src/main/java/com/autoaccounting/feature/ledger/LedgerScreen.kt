@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -114,8 +115,8 @@ fun LedgerScreen(
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var view by remember { mutableStateOf(LedgerView.LIST) }
-    var selectedEntryId by remember { mutableStateOf<String?>(null) }
+    var view by rememberSaveable { mutableStateOf(LedgerView.LIST) }
+    var selectedEntryId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val selectedEntry = remember(entries, selectedEntryId) {

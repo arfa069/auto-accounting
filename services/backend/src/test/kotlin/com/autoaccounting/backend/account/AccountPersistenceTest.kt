@@ -145,7 +145,7 @@ class AccountPersistenceTest {
                 }
             }
 
-            assertEquals(11, appliedMigrationCount)
+            assertEquals(14, appliedMigrationCount)
             assertTrue(accountTableCount >= 9)
         }
     }

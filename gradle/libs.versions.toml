@@ -17,8 +17,9 @@ logback = "1.5.18"
 junit = "4.13.2"
 jacoco = "0.8.13"
 robolectric = "4.15.1"
-postgres = "42.7.4"
+postgres = "42.7.13"
 h2 = "2.2.224"
+hikaricp = "6.2.1"
 kotlinxSerializationJson = "1.9.0"
 mlKitTextRecognitionChinese = "16.0.1"
 androidxTracingPerfetto = "1.0.0"
@@ -72,6 +73,7 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgres" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlKitTextRecognitionChinese" }
 wechat-sdk-android = { module = "com.tencent.mm.opensdk:wechat-sdk-android", version.ref = "wechatOpenSdk" }

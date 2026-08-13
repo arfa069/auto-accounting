@@ -8,6 +8,8 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.autoaccounting.AppTab
 import com.autoaccounting.feature.profile.ProfileDestination
 import com.autoaccounting.ui.components.AppBottomNavigationItem
@@ -17,15 +19,16 @@ import com.autoaccounting.ui.components.AppBottomNavigationItem
  * and bottom bar items for [AutoAccountingApp].
  */
 @Stable
+@Suppress("LongParameterList")
 internal class AutoAccountingAppState(
     val snackbarHostState: SnackbarHostState,
     val ledgerEntryListState: LazyListState,
     val reportCategoryRankingListState: LazyListState,
-    val tabs: List<AppTab>
+    val tabs: List<AppTab>,
+    val selectedTab: MutableState<AppTab?>,
+    val manualEntryOpen: MutableState<Boolean>,
+    val profileDestination: MutableState<ProfileDestination?>
 ) {
-    val selectedTab: MutableState<AppTab?> = mutableStateOf(null)
-    val manualEntryOpen: MutableState<Boolean> = mutableStateOf(false)
-    val profileDestination: MutableState<ProfileDestination?> = mutableStateOf(null)
 
     val bottomNavigationItems: List<AppBottomNavigationItem> = tabs.map { tab ->
         AppBottomNavigationItem(
@@ -43,12 +46,35 @@ internal fun rememberAutoAccountingAppState(
     reportCategoryRankingListState: LazyListState = rememberLazyListState(),
     tabs: List<AppTab> = remember { AppTab.entries.toList() }
 ): AutoAccountingAppState {
-    return remember(snackbarHostState, ledgerEntryListState, reportCategoryRankingListState, tabs) {
+    val selectedTab = rememberSaveable(
+        stateSaver = nullableEnumStateSaver(AppTab::valueOf)
+    ) { mutableStateOf(null) }
+    val manualEntryOpen = rememberSaveable { mutableStateOf(false) }
+    val profileDestination = rememberSaveable(
+        stateSaver = nullableEnumStateSaver(ProfileDestination::valueOf)
+    ) { mutableStateOf(null) }
+    return remember(
+        snackbarHostState,
+        ledgerEntryListState,
+        reportCategoryRankingListState,
+        tabs,
+        selectedTab,
+        manualEntryOpen,
+        profileDestination
+    ) {
         AutoAccountingAppState(
             snackbarHostState = snackbarHostState,
             ledgerEntryListState = ledgerEntryListState,
             reportCategoryRankingListState = reportCategoryRankingListState,
-            tabs = tabs
+            tabs = tabs,
+            selectedTab = selectedTab,
+            manualEntryOpen = manualEntryOpen,
+            profileDestination = profileDestination
         )
     }
 }
+
+private fun <T : Enum<T>> nullableEnumStateSaver(valueOf: (String) -> T): Saver<T?, String> = Saver(
+    save = { value -> value?.name.orEmpty() },
+    restore = { value -> value.takeIf(String::isNotEmpty)?.let(valueOf) }
+)

@@ -3,12 +3,17 @@ package com.autoaccounting.backend.account
 import com.autoaccounting.api.AccountApiJsonContracts
 import com.autoaccounting.backend.module
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
+import io.ktor.http.content.OutgoingContent
 import io.ktor.server.testing.testApplication
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeFully
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -98,6 +103,37 @@ class AccountSessionProfileRoutesTest {
             "data:image/jpeg;base64,/9j/",
             AccountApiJsonContracts.parseSessionResponse(avatarVerified.bodyAsText()).avatarUrl
         )
+    }
+
+    @Test
+    fun oversizedFormIsRejectedBeforeAccountProcessing() = testApplication {
+        application { module(accountService = AccountService()) }
+
+        val response = client.post("/account/login") {
+            header(HttpHeaders.ContentType, "application/x-www-form-urlencoded")
+            setBody("identifier=${"x".repeat(384 * 1024)}")
+        }
+
+        assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+    }
+
+    @Test
+    fun oversizedFormWithoutContentLengthIsRejected() = testApplication {
+        application { module(accountService = AccountService()) }
+
+        val response = client.post("/account/login") {
+            setBody(object : OutgoingContent.WriteChannelContent() {
+                override val contentType = io.ktor.http.ContentType.Application.FormUrlEncoded
+                override val contentLength: Long? = null
+
+                override suspend fun writeTo(channel: ByteWriteChannel) {
+                    channel.writeFully("identifier=${"x".repeat(384 * 1024)}".toByteArray())
+                    channel.flush()
+                }
+            })
+        }
+
+        assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
     }
 
     @Test

@@ -131,23 +131,17 @@ interface LedgerBookDao {
         SELECT
             ledger_books.id AS id,
             ledger_books.name AS name,
-            SUM(
-                CASE
-                    WHEN ledger_entries.id IS NOT NULL
-                        AND ledger_entries.deleted_at_epoch_millis IS NULL THEN 1
-                    ELSE 0
-                END
+            (
+                SELECT COUNT(*) FROM ledger_entries
+                WHERE ledger_entries.ledger_book_id = ledger_books.id
+                    AND ledger_entries.deleted_at_epoch_millis IS NULL
             ) AS activeEntryCount,
-            SUM(
-                CASE
-                    WHEN ledger_entries.deleted_at_epoch_millis IS NOT NULL THEN 1
-                    ELSE 0
-                END
+            (
+                SELECT COUNT(*) FROM ledger_entries
+                WHERE ledger_entries.ledger_book_id = ledger_books.id
+                    AND ledger_entries.deleted_at_epoch_millis IS NOT NULL
             ) AS deletedEntryCount
         FROM ledger_books
-        LEFT JOIN ledger_entries
-            ON ledger_entries.ledger_book_id = ledger_books.id
-        GROUP BY ledger_books.id, ledger_books.name, ledger_books.created_at_epoch_millis
         ORDER BY ledger_books.created_at_epoch_millis ASC, ledger_books.id ASC
         """
     )
@@ -324,6 +318,16 @@ interface LedgerEntryDao {
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
     suspend fun listAllLedgerEntries(): List<LedgerEntryEntity>
 
+    @Query(
+        "SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NULL " +
+            "AND transaction_time_epoch_millis BETWEEN :startEpochMillis AND :endEpochMillis " +
+            "ORDER BY transaction_time_epoch_millis DESC"
+    )
+    suspend fun listLedgerEntriesBetween(
+        startEpochMillis: Long,
+        endEpochMillis: Long
+    ): List<LedgerEntryEntity>
+
     @Query("SELECT * FROM ledger_entries ORDER BY transaction_time_epoch_millis DESC")
     fun observeAllLedgerEntries(): Flow<List<LedgerEntryEntity>>
 
@@ -392,6 +396,9 @@ interface LedgerEntryDao {
 
     @Query("SELECT * FROM ledger_entries WHERE deleted_at_epoch_millis IS NOT NULL AND deleted_at_epoch_millis <= :cutoff")
     suspend fun listDeletedBefore(cutoff: Long): List<LedgerEntryEntity>
+
+    @Query("SELECT id FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId LIMIT 1")
+    suspend fun findIdByOriginPendingEntryId(pendingEntryId: String): String?
 
     @Query("DELETE FROM ledger_entries WHERE origin_pending_entry_id = :pendingEntryId")
     suspend fun deleteByOriginPendingEntryId(pendingEntryId: String)

@@ -7,6 +7,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -186,6 +189,31 @@ class CategorizationRulesScreenTest {
         composeRule.onNodeWithTag("rule-card-expense").assertIsDisplayed()
         composeRule.onNodeWithTag("rule-card-income").assertDoesNotExist()
         composeRule.onNodeWithTag("rule-card-other").assertDoesNotExist()
+    }
+
+    @Test
+    fun ruleDraftAndFilterAreRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            CategorizationRulesScreen(
+                rules = listOf(
+                    CategorizationRule(id = "expense", transactionKind = "支出", category = "餐饮"),
+                    CategorizationRule(id = "income", transactionKind = "收入", category = "工资")
+                ),
+                onRulesChange = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("rule-filter-Expense").performClick()
+        composeRule.onNodeWithTag("create-rule").performClick()
+        composeRule.onNodeWithText("商户包含").performTextInput("星巴克")
+        composeRule.onNodeWithText("分类").performTextInput("餐饮")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("商户包含").assertTextContains("星巴克")
+        composeRule.onNodeWithText("分类").assertTextContains("餐饮")
+        composeRule.onNodeWithTag("rule-filter-Expense").assertIsSelected()
     }
 
 }

@@ -57,7 +57,7 @@ internal fun ReviewQueueListContent(
     actions: ReviewQueueListActions,
     modifier: Modifier = Modifier
 ) {
-    val sortedEntries = state.sortedPendingEntries
+    val sortedEntries = remember(state.pendingEntries) { state.sortedPendingEntries }
 
     LazyColumn(
         modifier = modifier

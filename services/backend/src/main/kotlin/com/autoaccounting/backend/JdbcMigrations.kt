@@ -667,6 +667,27 @@ val allBackendMigrations = listOf(
         statements = listOf(
             "ALTER TABLE cloud_config ADD COLUMN default_funding_account_sync_id VARCHAR(128)"
         )
+    ),
+    Migration(
+        version = 12,
+        statements = listOf(
+            "ALTER TABLE account_sessions ADD COLUMN expires_at_millis BIGINT",
+            "UPDATE account_sessions SET expires_at_millis = issued_at_millis + 2592000000 WHERE expires_at_millis IS NULL",
+            "ALTER TABLE account_sessions ALTER COLUMN expires_at_millis SET NOT NULL"
+        )
+    ),
+    Migration(
+        version = 13,
+        statements = listOf(
+            "ALTER TABLE accounts ADD COLUMN deletion_claimed_at_millis BIGINT"
+        )
+    ),
+    Migration(
+        version = 14,
+        statements = listOf(
+            "CREATE INDEX ledger_sync_records_business_key_idx " +
+                "ON ledger_sync_records(account_id, entity_type, business_key, entity_id)"
+        )
     )
 )
 

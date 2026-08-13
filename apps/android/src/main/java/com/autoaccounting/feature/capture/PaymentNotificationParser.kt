@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.autoaccounting.feature.capture
 
 import java.math.BigDecimal
@@ -63,11 +65,11 @@ class PaymentNotificationParser {
         )
         val counterpartyTitle = extractCounterpartyTitle(rawText)
             ?: FALLBACK_COUNTERPARTY
-        val account = rawText.extractLabeledValue("(?:付款账户|支付账户|付款账号|支付账号|账号)")
-        val paymentMethod = rawText.extractLabeledValue("(?:付款方式|支付方式)") ?: source.label
-        val note = rawText.extractLabeledValue("(?:备注|商品说明)")
-        val merchantOrderNumber = rawText.extractLabeledValue("商户订单号")
-        val orderNumber = rawText.extractLabeledValue("(?:交易单号|交易号|(?<!商户)订单号)")
+        val account = rawText.extractLabeledValue(ACCOUNT_LABEL_REGEX)
+        val paymentMethod = rawText.extractLabeledValue(PAYMENT_METHOD_LABEL_REGEX) ?: source.label
+        val note = rawText.extractLabeledValue(NOTE_LABEL_REGEX)
+        val merchantOrderNumber = rawText.extractLabeledValue(MERCHANT_ORDER_LABEL_REGEX)
+        val orderNumber = rawText.extractLabeledValue(ORDER_LABEL_REGEX)
 
         return PaymentNotificationParseResult(
             parsed = ParsedPaymentNotification(
@@ -97,20 +99,12 @@ class PaymentNotificationParser {
     }
 }
 
-private fun String.hasPaymentNotificationSignature(): Boolean {
-    val paymentWord = Regex("支付|付款|收款|到账|交易|转账|红包|退款|扣款|消费")
-    val amount = Regex("(?:¥|￥|\\d+(?:\\.\\d{1,2})?\\s*元)")
-    val paymentOutcome = Regex("成功|完成支付|支付完成|到账|退款|转账|红包|已支付|已付款")
-    return paymentWord.containsMatchIn(this) &&
-        (amount.containsMatchIn(this) || paymentOutcome.containsMatchIn(this))
-}
+private fun String.hasPaymentNotificationSignature(): Boolean =
+    PAYMENT_WORD_REGEX.containsMatchIn(this) &&
+        (PAYMENT_AMOUNT_REGEX.containsMatchIn(this) || PAYMENT_OUTCOME_REGEX.containsMatchIn(this))
 
-private fun String.extractLabeledValue(labelPattern: String): String? =
-    Regex(
-        "(?:$labelPattern)\\s*[:：]\\s*" +
-            "([^\\n\\r，,；;]{1,80}?)(?=\\s+(?:$ALL_DETAIL_LABELS)\\s*[:：]|$)"
-    )
-        .find(this)
+private fun String.extractLabeledValue(regex: Regex): String? =
+    regex.find(this)
         ?.groupValues
         ?.getOrNull(1)
         ?.trim()
@@ -118,6 +112,38 @@ private fun String.extractLabeledValue(labelPattern: String): String? =
 
 private const val ALL_DETAIL_LABELS =
     "付款账户|支付账户|付款账号|支付账号|账号|付款方式|支付方式|备注|商品说明|商户订单号|交易单号|交易号|订单号"
+
+private fun labeledValueRegex(labelPattern: String) = Regex(
+    """(?:$labelPattern)\s*[:：]\s*([^\n\r，,；;]{1,80}?)(?=\s+(?:$ALL_DETAIL_LABELS)\s*[:：]|$)"""
+)
+
+private val PAYMENT_WORD_REGEX = Regex("支付|付款|收款|到账|交易|转账|红包|退款|扣款|消费")
+private val PAYMENT_AMOUNT_REGEX = Regex("""(?:¥|￥|\d+(?:\.\d{1,2})?\s*元)""")
+private val PAYMENT_OUTCOME_REGEX = Regex("成功|完成支付|支付完成|到账|退款|转账|红包|已支付|已付款")
+private val ACCOUNT_LABEL_REGEX = labeledValueRegex("(?:付款账户|支付账户|付款账号|支付账号|账号)")
+private val PAYMENT_METHOD_LABEL_REGEX = labeledValueRegex("(?:付款方式|支付方式)")
+private val NOTE_LABEL_REGEX = labeledValueRegex("(?:备注|商品说明)")
+private val MERCHANT_ORDER_LABEL_REGEX = labeledValueRegex("商户订单号")
+private val ORDER_LABEL_REGEX = labeledValueRegex("(?:交易单号|交易号|(?<!商户)订单号)")
+private val OUTGOING_TRANSFER_REGEX = Regex("向(?!你).*转账")
+private val MERCHANT_REGEXES = listOf(
+    Regex("""商户[:：]\s*([^\s，,]+)"""),
+    Regex("""支付成功\s+([^\s，,]+)\s+\d"""),
+    Regex("""付款成功\s+([^\s，,]+)\s+\d""")
+)
+private val P2P_REGEXES = listOf(
+    Regex("收到(.+?)的红包"),
+    Regex("收到(.+?)的转账"),
+    Regex("""([^\s]+?)向你转账"""),
+    Regex("""转账给(.+?)\s"""),
+    Regex("转账给(.+?)$"),
+    Regex("""向([^\s]+?)转账""")
+)
+private val EXPLICIT_AMOUNT_REGEXES = listOf(
+    Regex("""(?:¥|￥)\s*(\d+(?:\.\d{1,2})?)"""),
+    Regex("""(\d+(?:\.\d{1,2})?)\s*元""")
+)
+private val IMPLICIT_AMOUNT_REGEX = Regex("""\d+(?:\.\d{1,2})?""")
 
 internal const val FALLBACK_COUNTERPARTY = "未知来源"
 
@@ -158,15 +184,11 @@ private fun String.isOutgoingPeerTransfer(): Boolean =
     contains("发出红包") ||
         contains("红包已发出") ||
         contains("转账给") ||
-        Regex("向(?!你).*转账").containsMatchIn(this)
+        OUTGOING_TRANSFER_REGEX.containsMatchIn(this)
 
 private fun extractCounterpartyTitle(rawText: String): String? {
     // Merchant payment patterns (original, highest priority)
-    val merchantRegexes = listOf(
-        Regex("商户[:：]\\s*([^\\s，,]+)"),
-        Regex("支付成功\\s+([^\\s，,]+)\\s+\\d"),
-        Regex("付款成功\\s+([^\\s，,]+)\\s+\\d")
-    )
+    val merchantRegexes = MERCHANT_REGEXES
     merchantRegexes
         .asSequence()
         .mapNotNull { it.find(rawText)?.groupValues?.getOrNull(1)?.trim() }
@@ -174,17 +196,7 @@ private fun extractCounterpartyTitle(rawText: String): String? {
         ?.let { return it }
 
     // P2P patterns: red packets and transfers (both directions)
-    val p2pRegexes = listOf(
-        // Received red packet: "收到xxx的红包"
-        Regex("收到(.+?)的红包"),
-        // Received transfer: "收到xxx的转账" or "xxx向你转账"
-        Regex("收到(.+?)的转账"),
-        Regex("([^\\s]+?)向你转账"),
-        // Sent transfer: "转账给xxx" or "向xxx转账"
-        Regex("转账给(.+?)\\s"),
-        Regex("转账给(.+?)$"),
-        Regex("向([^\\s]+?)转账")
-    )
+    val p2pRegexes = P2P_REGEXES
     p2pRegexes
         .asSequence()
         .mapNotNull { it.find(rawText)?.groupValues?.getOrNull(1)?.trim() }
@@ -200,10 +212,7 @@ private fun extractCounterpartyTitle(rawText: String): String? {
 }
 
 private fun parseAmountMinor(rawText: String): Long? {
-    val explicitAmount = listOf(
-        Regex("(?:¥|￥)\\s*(\\d+(?:\\.\\d{1,2})?)"),
-        Regex("(\\d+(?:\\.\\d{1,2})?)\\s*元")
-    )
+    val explicitAmount = EXPLICIT_AMOUNT_REGEXES
         .asSequence()
         .flatMap { it.findAll(rawText).map { match -> match.groupValues[1] } }
         .firstOrNull()
@@ -211,7 +220,7 @@ private fun parseAmountMinor(rawText: String): Long? {
         return explicitAmount.toAmountMinor()
     }
 
-    val implicitAmounts = Regex("\\d+(?:\\.\\d{1,2})?")
+    val implicitAmounts = IMPLICIT_AMOUNT_REGEX
         .findAll(rawText)
         .map { it.value }
         .toList()

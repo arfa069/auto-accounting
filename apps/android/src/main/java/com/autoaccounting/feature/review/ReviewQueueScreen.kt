@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,11 +32,10 @@ import com.autoaccounting.feature.categorization.AiCategorizationSkipReason
 import com.autoaccounting.feature.categorization.CategorizationRule
 
 @Composable
+@Suppress("LongParameterList")
 fun ReviewQueueScreen(
     modifier: Modifier = Modifier,
-    initialState: ReviewQueueState = ReviewQueueState(
-        pendingEntries = sampleReviewQueueEntries()
-    ),
+    initialState: ReviewQueueState = ReviewQueueState(),
     targetLedgerName: String = "默认账本",
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
@@ -84,14 +84,17 @@ fun ReviewQueueScreen(
     openPendingEntryRequestId: Long = 0,
     onNavigateHome: () -> Unit = {}
 ) {
-    var editingEntry by remember { mutableStateOf<ReviewQueueEntry?>(null) }
+    var editingEntryId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingEntry = remember(state.pendingEntries, editingEntryId) {
+        state.pendingEntries.firstOrNull { it.id == editingEntryId }
+    }
     var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
     var showIgnoredList by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(openPendingEntryRequestId, openPendingEntryId, state.pendingEntries) {
         if (openPendingEntryRequestId > 0 && openPendingEntryId != null) {
-            editingEntry = state.pendingEntries.firstOrNull { it.id == openPendingEntryId }
+            editingEntryId = state.pendingEntries.firstOrNull { it.id == openPendingEntryId }?.id
         }
     }
 
@@ -103,7 +106,7 @@ fun ReviewQueueScreen(
         val editedState = reduceReviewQueue(state, edit.toSaveAction(entry.id))
         onStateChange(reduceReviewQueue(editedState, ReviewQueueAction.Confirm(entry.id)))
         pendingRuleSave = null
-        editingEntry = null
+        editingEntryId = null
     }
 
     fun applyEdit(pending: PendingCategoryRuleSave) {
@@ -140,7 +143,7 @@ fun ReviewQueueScreen(
                 targetLedgerName = targetLedgerName,
                 actions = ReviewQueueListActions(
                     onAction = ::dispatch,
-                    onEdit = { editingEntry = it },
+                    onEdit = { editingEntryId = it.id },
                     onShowIgnoredList = { showIgnoredList = true },
                     onOpenBillImport = onOpenBillImport,
                     onNavigateHome = onNavigateHome
@@ -159,7 +162,7 @@ fun ReviewQueueScreen(
             config = ReviewPendingEntryEditorConfig(
                 modifier = modifier,
                 snackbarHostState = snackbarHostState,
-                onExit = { editingEntry = null },
+                onExit = { editingEntryId = null },
                 onAiSuggest = { draft, categoryCandidates ->
                     val gateway = aiCategorizationGateway
                     if (gateway == null) {

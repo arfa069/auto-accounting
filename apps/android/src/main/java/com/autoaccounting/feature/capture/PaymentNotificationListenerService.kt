@@ -233,7 +233,9 @@ internal fun extractNotificationText(extras: Bundle): String = buildList {
         .forEach(::add)
 }.filter(String::isNotBlank).distinct().joinToString("\n")
 
+private val captureTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
 private fun formatCaptureTime(epochMillis: Long): String =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    captureTimeFormatter
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMillis))

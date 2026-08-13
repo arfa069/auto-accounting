@@ -7,8 +7,11 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+private const val DEDUPE_WINDOW_MILLIS = 10 * 60_000L
 
 class ReviewQueuePersistence(
     private val repository: LocalLedgerRepository,
@@ -38,6 +41,12 @@ class ReviewQueuePersistence(
     suspend fun ledgerEntriesForDedupe(): List<ReviewQueueEntry> =
         repository.listLedgerEntries().map { it.toReviewEntryForDedupe(zoneId) }
 
+    suspend fun ledgerEntriesForDedupe(transactionEpochMillis: Long): List<ReviewQueueEntry> =
+        repository.listLedgerEntriesBetween(
+            startEpochMillis = transactionEpochMillis - DEDUPE_WINDOW_MILLIS,
+            endEpochMillis = transactionEpochMillis + DEDUPE_WINDOW_MILLIS
+        ).map { it.toReviewEntryForDedupe(zoneId) }
+
     suspend fun ensureSystemCategories() {
         repository.seedSystemCategories()
     }
@@ -47,13 +56,25 @@ class ReviewQueuePersistence(
         next: ReviewQueueState,
         targetLedgerBookId: String = DEFAULT_LEDGER_BOOK_ID
     ): Unit = transitionMutex.withLock {
-        val previousPendingById = previous.pendingEntries.associateBy { it.id }
+        // Re-read Room while holding the lock so stale UI snapshots cannot erase capture changes.
+        val persistedState = observeState().first()
+        val previousPendingById = persistedState.pendingEntries.associateBy { it.id }
+        val requestedPreviousPendingById = previous.pendingEntries.associateBy { it.id }
         val previousPendingIds = previousPendingById.keys
-        val nextPendingIds = next.pendingEntries.map { it.id }.toSet()
-        val previousConfirmedOriginIds = previous.confirmedEntries.map { it.originPendingId }.toSet()
-        val nextConfirmedOriginIds = next.confirmedEntries.map { it.originPendingId }.toSet()
-        val previousIgnoredById = previous.ignoredEntries.associateBy { it.id }
-        val nextIgnoredById = next.ignoredEntries.associateBy { it.id }
+        val persistedPendingIds = previousPendingById.keys
+        val nextPendingIds = next.pendingEntries.map { it.id }.toSet() +
+            (persistedPendingIds - previous.pendingEntries.map { it.id }.toSet())
+        val previousConfirmedOriginIds = repository.listLedgerEntries()
+            .mapNotNull { it.originPendingEntryId }
+            .toSet()
+        val persistedConfirmedOriginIds = previousConfirmedOriginIds
+        val nextConfirmedOriginIds = next.confirmedEntries.map { it.originPendingId }.toSet() +
+            (persistedConfirmedOriginIds - previous.confirmedEntries.map { it.originPendingId }.toSet())
+        val previousIgnoredById = persistedState.ignoredEntries.associateBy { it.id }
+        val nextIgnoredById = next.ignoredEntries.associateBy { it.id } +
+            persistedState.ignoredEntries
+                .filter { it.id !in previous.ignoredEntries.map { ignored -> ignored.id } }
+                .associateBy { it.id }
 
         next.confirmedEntries
             .filterNot { it.originPendingId in previousConfirmedOriginIds }
@@ -68,7 +89,7 @@ class ReviewQueuePersistence(
             }
 
         next.pendingEntries
-            .filter { entry -> previousPendingById[entry.id] != entry }
+            .filter { entry -> requestedPreviousPendingById[entry.id] != entry }
             .forEach { entry ->
                 repository.upsertPending(entry.toEntity(zoneId))
             }
@@ -86,7 +107,7 @@ class ReviewQueuePersistence(
         previousConfirmedOriginIds
             .filterNot { it in nextConfirmedOriginIds }
             .forEach { pendingEntryId ->
-                repository.deleteLedgerByOriginPendingEntryId(pendingEntryId)
+                repository.moveLedgerEntryToDeletedByOriginPendingEntryId(pendingEntryId)
             }
 
         previousPendingIds

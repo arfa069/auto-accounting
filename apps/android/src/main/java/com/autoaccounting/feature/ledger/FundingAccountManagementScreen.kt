@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -42,8 +43,11 @@ internal fun FundingAccountManagementContent(
     snackbarHostState: SnackbarHostState,
     actions: FundingAccountManagementActions
 ) {
-    var showEditor by remember { mutableStateOf(false) }
-    var editingAccount by remember { mutableStateOf<FundingAccountEntity?>(null) }
+    var showEditor by rememberSaveable { mutableStateOf(false) }
+    var editingAccountId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editingAccount = remember(fundingAccounts, editingAccountId) {
+        fundingAccounts.firstOrNull { it.id == editingAccountId }
+    }
     var editorError by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<FundingAccountEntity?>(null) }
     var blockedDeleteMessage by remember { mutableStateOf<String?>(null) }
@@ -68,7 +72,7 @@ internal fun FundingAccountManagementContent(
     }
 
     fun openEditor(account: FundingAccountEntity?) {
-        editingAccount = account
+        editingAccountId = account?.id
         editorError = null
         showEditor = true
     }
@@ -108,7 +112,7 @@ internal fun FundingAccountManagementContent(
             onInputChanged = { editorError = null },
             onDismiss = {
                 showEditor = false
-                editingAccount = null
+                editingAccountId = null
                 editorError = null
             },
             onSave = { enteredLabel, paymentSource ->
@@ -134,7 +138,7 @@ internal fun FundingAccountManagementContent(
                         }
                             .onSuccess {
                                 showEditor = false
-                                editingAccount = null
+                                editingAccountId = null
                             }
                             .onFailure { editorError = it.userMessage() }
                     }
@@ -288,8 +292,8 @@ private fun FundingAccountEditorDialog(
     onDismiss: () -> Unit,
     onSave: (String, PaymentSource?) -> Unit
 ) {
-    var label by remember(account?.id) { mutableStateOf(account?.label.orEmpty()) }
-    var paymentSource by remember(account?.id) { mutableStateOf(account?.paymentSource) }
+    var label by rememberSaveable(account?.id) { mutableStateOf(account?.label.orEmpty()) }
+    var paymentSource by rememberSaveable(account?.id) { mutableStateOf(account?.paymentSource) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (account == null) "新增资金账户" else "编辑资金账户") },

@@ -118,7 +118,9 @@ internal class AccountLifecycleService(
         if (account.deletionRequestedAtMillis == null) {
             return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
         }
-        store.updateAccountDeletionRequestedAt(account.accountId, null)
+        if (!store.cancelAccountDeletion(account.accountId)) {
+            return AccountResult.Failure(AccountError.ACCOUNT_DELETION_NOT_PENDING)
+        }
         return AccountResult.Success(Unit)
     }
 
@@ -138,10 +140,11 @@ internal class AccountLifecycleService(
 
     fun accountsDueForDeletion(): List<Long> {
         val now = clock.millis()
+        val cutoffMillis = now - ACCOUNT_DELETION_COOLING_OFF_MILLIS
         return store.accountsPendingDeletion()
             .filter { account ->
-                val requestedAt = account.deletionRequestedAtMillis
-                requestedAt != null && now >= requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS
+                account.deletionClaimedAtMillis != null ||
+                    store.claimAccountDeletion(account.accountId, cutoffMillis, now)
             }
             .map { it.accountId }
     }
@@ -149,6 +152,7 @@ internal class AccountLifecycleService(
     fun finalizeAccountDeletion(accountId: Long): Boolean {
         val account = store.findAccount(accountId) ?: return false
         val requestedAt = account.deletionRequestedAtMillis ?: return false
+        if (account.deletionClaimedAtMillis == null) return false
         if (clock.millis() < requestedAt + ACCOUNT_DELETION_COOLING_OFF_MILLIS) return false
         store.deleteAccount(accountId)
         return true

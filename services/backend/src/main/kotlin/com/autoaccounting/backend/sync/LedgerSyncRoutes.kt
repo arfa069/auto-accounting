@@ -6,10 +6,11 @@ import com.autoaccounting.backend.account.AccountResult
 import com.autoaccounting.backend.account.AccountService
 import com.autoaccounting.backend.account.accountBearerToken
 import com.autoaccounting.backend.account.respondAccountFailure
+import com.autoaccounting.backend.receiveText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
-import io.ktor.server.request.receiveText
+import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
 
@@ -98,8 +99,9 @@ private suspend fun ApplicationCall.verifiedAccountId(accountService: AccountSer
     }
 
 private suspend fun <T> ApplicationCall.parseBodyOrReject(parser: (String) -> T): T? {
-    val body = receiveText()
-    if (body.toByteArray(Charsets.UTF_8).size > LEDGER_SYNC_MAX_REQUEST_BYTES) {
+    val body = try {
+        receiveText(LEDGER_SYNC_MAX_REQUEST_BYTES)
+    } catch (_: PayloadTooLargeException) {
         respondSyncError("SYNC_PAYLOAD_TOO_LARGE", HttpStatusCode.PayloadTooLarge)
         return null
     }

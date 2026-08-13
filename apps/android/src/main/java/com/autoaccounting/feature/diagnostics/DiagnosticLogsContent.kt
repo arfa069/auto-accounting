@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -54,9 +55,9 @@ internal fun DiagnosticLogsContent(
     actions: DiagnosticLogsContentActions,
     modifier: Modifier = Modifier
 ) {
-    var query by remember { mutableStateOf("") }
-    var levelFilter by remember { mutableStateOf<DiagnosticLevel?>(null) }
-    var componentFilter by remember { mutableStateOf<DiagnosticComponent?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var levelFilter by rememberSaveable { mutableStateOf<DiagnosticLevel?>(null) }
+    var componentFilter by rememberSaveable { mutableStateOf<DiagnosticComponent?>(null) }
     val filtered = events.filter { event ->
         (levelFilter == null || event.metadata.level == levelFilter) &&
             (componentFilter == null || event.metadata.component == componentFilter) &&

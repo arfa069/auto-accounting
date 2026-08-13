@@ -1,6 +1,8 @@
 package com.autoaccounting.feature.ledger
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -262,6 +264,49 @@ class LedgerManagementScreenTest {
         composeRule.onNodeWithText(
             "该账户仍被 1 笔当前账目、2 笔最近删除账目、3 条待确认记录和 4 条忽略记录引用。"
         ).assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerCreateDraftIsRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            LedgerScreen(entries = emptyList())
+        }
+
+        openLedgerManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.ADD_LEDGER).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.LEDGER_NAME).performTextInput("工作账本")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithTag(LedgerTestTags.LEDGER_NAME).assertTextContains("工作账本")
+    }
+
+    @Test
+    fun fundingAccountEditDraftIsRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            LedgerScreen(
+                entries = emptyList(),
+                fundingAccounts = listOf(
+                    fundingAccount(id = 7, label = "零钱", source = PaymentSource.WECHAT)
+                )
+            )
+        }
+
+        openFundingAccountManagement()
+        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextClearance()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput("微信零钱")
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_SOURCE).performClick()
+        composeRule.onNodeWithText("支付宝").performClick()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("编辑资金账户").assertIsDisplayed()
+        composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL)
+            .assertTextContains("微信零钱")
+        composeRule.onNodeWithText("支付来源：支付宝").assertIsDisplayed()
     }
 
     private fun openLedgerManagement() {

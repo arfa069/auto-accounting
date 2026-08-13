@@ -277,6 +277,24 @@ class ReviewQueuePersistenceTest {
     }
 
     @Test
+    fun staleUiTransitionPreservesPendingEntryCapturedAfterSnapshot() = runBlocking {
+        repository.upsertPending(samplePending(id = "pending-ui"))
+        val staleUiState = persistence.observeState().first()
+        repository.upsertPending(samplePending(id = "pending-captured"))
+        val editedUiState = staleUiState.copy(
+            pendingEntries = staleUiState.pendingEntries.map { entry ->
+                if (entry.id == "pending-ui") entry.copy(note = "edited") else entry
+            }
+        )
+
+        persistence.persistTransition(staleUiState, editedUiState)
+
+        val persisted = persistence.observeState().first().pendingEntries.associateBy { it.id }
+        assertEquals(setOf("pending-ui", "pending-captured"), persisted.keys)
+        assertEquals("edited", persisted.getValue("pending-ui").note)
+    }
+
+    @Test
     fun customSuggestedCategorySurvivesPendingPersistence() = runBlocking {
         val previous = ReviewQueueState(
             nowEpochMillis = NOW,

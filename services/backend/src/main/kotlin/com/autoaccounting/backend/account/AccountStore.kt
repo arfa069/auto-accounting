@@ -5,6 +5,8 @@ package com.autoaccounting.backend.account
 interface AccountLifecycleStore {
     fun findAccount(accountId: Long): StoredAccount?
     fun updateAccountDeletionRequestedAt(accountId: Long, requestedAtMillis: Long?)
+    fun cancelAccountDeletion(accountId: Long): Boolean
+    fun claimAccountDeletion(accountId: Long, cutoffMillis: Long, claimedAtMillis: Long): Boolean
     fun accountsPendingDeletion(): List<StoredAccount>
     fun deleteAccount(accountId: Long)
 }

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -200,6 +201,26 @@ class ReviewQueueEditorTest {
             .performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("支付宝余额").assertIsDisplayed()
+    }
+
+    @Test
+    fun editorDraftIsRestoredAfterRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry()))
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.onNodeWithTag("manual-entry-merchant").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("manual-entry-merchant").performTextInput("未保存工作餐")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("编辑待确认账目").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual-entry-merchant").assertTextContains("未保存工作餐")
     }
 
     private fun category(

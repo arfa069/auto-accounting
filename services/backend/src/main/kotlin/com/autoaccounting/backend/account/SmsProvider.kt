@@ -6,6 +6,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 
 interface SmsProvider {
     fun sendCode(phone: String, code: String): SmsProviderResult
@@ -30,7 +31,7 @@ object MissingSmsProvider : SmsProvider {
 class WebhookSmsProvider(
     private val webhookUrl: String,
     private val apiKey: String,
-    private val httpClient: HttpClient = HttpClient.newHttpClient()
+    private val httpClient: HttpClient = defaultSmsHttpClient()
 ) : SmsProvider {
     override fun sendCode(phone: String, code: String): SmsProviderResult {
         return try {
@@ -41,6 +42,7 @@ class WebhookSmsProvider(
                 "${key}=${URLEncoder.encode(value, StandardCharsets.UTF_8)}"
             }
             val request = HttpRequest.newBuilder(URI.create(webhookUrl))
+                .timeout(SMS_REQUEST_TIMEOUT)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -70,7 +72,7 @@ class WebhookSmsProvider(
 
 class AliyunPnvsSmsProvider internal constructor(
     private val config: AliyunPnvsSmsConfig,
-    private val httpClient: HttpClient = HttpClient.newHttpClient()
+    private val httpClient: HttpClient = defaultSmsHttpClient()
 ) : SmsProvider {
 
     @Suppress("LongParameterList")
@@ -81,7 +83,7 @@ class AliyunPnvsSmsProvider internal constructor(
         templateCode: String,
         schemeName: String = "",
         endpoint: String = "https://dypnsapi.aliyuncs.com",
-        httpClient: HttpClient = HttpClient.newHttpClient()
+        httpClient: HttpClient = defaultSmsHttpClient()
     ) : this(
         config = AliyunPnvsSmsConfig(
             accessKeyId = accessKeyId,
@@ -128,6 +130,7 @@ class AliyunPnvsSmsProvider internal constructor(
             val requestBody = "Signature=${percentEncode(signature)}&$canonicalizedQueryString"
 
             val request = HttpRequest.newBuilder(URI.create(config.endpoint))
+                .timeout(SMS_REQUEST_TIMEOUT)
                 .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build()
@@ -174,6 +177,12 @@ class AliyunPnvsSmsProvider internal constructor(
         }
     }
 }
+
+private val SMS_REQUEST_TIMEOUT: Duration = Duration.ofSeconds(10)
+
+private fun defaultSmsHttpClient(): HttpClient = HttpClient.newBuilder()
+    .connectTimeout(SMS_REQUEST_TIMEOUT)
+    .build()
 
 fun SmsProvider.Companion.fromEnvironment(env: Map<String, String> = System.getenv()): SmsProvider {
     val provider = env["AUTO_ACCOUNTING_SMS_PROVIDER"].orEmpty().lowercase()

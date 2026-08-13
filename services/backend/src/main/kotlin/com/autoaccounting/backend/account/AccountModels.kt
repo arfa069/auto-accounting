@@ -9,6 +9,7 @@ data class StoredAccount(
     val publicId: String = java.util.UUID.randomUUID().toString(),
     val primaryIdentifierType: String? = null,
     val deletionRequestedAtMillis: Long? = null,
+    val deletionClaimedAtMillis: Long? = null,
     val createdAtMillis: Long
 )
 
@@ -58,7 +59,8 @@ data class StoredSession(
     val tokenHash: String,
     val accountId: Long,
     val deviceId: String = "",
-    val issuedAtMillis: Long
+    val issuedAtMillis: Long,
+    val expiresAtMillis: Long = issuedAtMillis + ACCOUNT_SESSION_TTL_MILLIS
 )
 
 data class StoredRegisteredDevice(

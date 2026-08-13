@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
 class AutoAccountingDatabaseMigrationTest {
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(9, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(10, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
@@ -63,6 +63,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 
@@ -248,6 +249,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 
@@ -383,6 +385,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_6_7)
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 

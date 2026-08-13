@@ -14,6 +14,8 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.application.log
+import io.ktor.server.engine.applicationEnvironment
+import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.forwardedheaders.XForwardedHeaders
@@ -29,8 +31,14 @@ fun main() {
     val serverConfig = BackendServerConfig.fromEnvironment(backendEnvironment)
     embeddedServer(
         factory = Netty,
-        port = serverConfig.port,
-        host = serverConfig.host,
+        environment = applicationEnvironment(),
+        configure = {
+            connector {
+                port = serverConfig.port
+                host = serverConfig.host
+            }
+            callGroupSize = maxOf(8, Runtime.getRuntime().availableProcessors())
+        },
         module = { module(env = backendEnvironment) }
     ).start(wait = true)
 }

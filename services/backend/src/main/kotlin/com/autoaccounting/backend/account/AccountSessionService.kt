@@ -91,17 +91,27 @@ internal class AccountSessionService(
         if (token.isBlank()) return AccountResult.Failure(AccountError.TOKEN_INVALID)
         val session = store.findSession(hashToken(token))
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        if (session.expiresAtMillis <= clock.millis()) {
+            store.deleteSession(session.tokenHash)
+            return AccountResult.Failure(AccountError.TOKEN_INVALID)
+        }
         val account = store.findAccount(session.accountId)
             ?: return AccountResult.Failure(AccountError.TOKEN_INVALID)
-        val phone = phoneIdentifier(account.accountId)
+        val identifiers = identifierContracts(account.accountId)
+        val phone = identifiers.firstOrNull {
+            it.type == com.autoaccounting.api.AccountIdentifierTypeContract.PHONE
+        }?.value
+        val primaryIdentifier = account.primaryIdentifierType?.let { primaryType ->
+            identifiers.firstOrNull { it.type.name == primaryType }
+        }
         val wechatIdentity = store.findWechatIdentityByAccountId(account.accountId)
         val profile = store.findProfileByAccountId(account.accountId)
         return AccountResult.Success(
             AccountToken(
                 accountId = account.accountId,
                 accountUuid = account.publicId,
-                primaryIdentifier = primaryIdentifierForAccount(account.accountId),
-                identifiers = identifierContracts(account.accountId),
+                primaryIdentifier = primaryIdentifier,
+                identifiers = identifiers,
                 phone = phone,
                 token = token,
                 deletionStatus = account.deletionRequestedAtMillis?.let { requestedAt ->

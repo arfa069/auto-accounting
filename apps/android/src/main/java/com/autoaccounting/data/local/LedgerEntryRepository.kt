@@ -141,14 +141,11 @@ internal class RoomLedgerEntryRepository(
         database.withTransaction {
             val cutoff = nowEpochMillis - LocalLedgerRepository.DELETED_RETENTION_MILLIS
             val expired = database.ledgerEntryDao().listDeletedBefore(cutoff)
-            expired.forEach { entry ->
-                database.ledgerEntryDao().deleteById(entry.id)
-                syncRecorder.recordDelete(
-                    com.autoaccounting.api.LedgerSyncEntityTypeContract.LEDGER_ENTRY,
-                    entry.id
-                )
-            }
-            expired.size
+            syncRecorder.recordDeletes(
+                com.autoaccounting.api.LedgerSyncEntityTypeContract.LEDGER_ENTRY,
+                expired.map(LedgerEntryEntity::id)
+            )
+            database.ledgerEntryDao().purgeDeletedBefore(cutoff)
         }
 }
 

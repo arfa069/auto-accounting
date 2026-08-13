@@ -189,8 +189,6 @@ jacoco {
 
 tasks.withType<Test>().configureEach {
     maxHeapSize = "1g"
-    forkEvery = 5
-
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
@@ -217,7 +215,7 @@ tasks.register<JacocoReport>("jacocoDebugTestReport") {
     )
     classDirectories.setFrom(
         files(
-            fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+            fileTree(layout.buildDirectory.dir("intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes")) {
                 exclude(coverageExclusions)
             },
             fileTree(

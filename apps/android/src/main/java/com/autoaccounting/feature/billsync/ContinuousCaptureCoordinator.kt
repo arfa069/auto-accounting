@@ -9,9 +9,11 @@ import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
 import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal data class ContinuousCaptureDependencies(
     val scope: CoroutineScope,
@@ -37,34 +39,28 @@ internal class ContinuousCaptureCoordinator(
         pageText: String,
         currentPermissionHealth: ContinuousMonitoringPermissionHealth
     ) {
+        if (isCapturing) return
         val traceId = newDiagnosticTraceId()
-        val decision = decideContinuousMonitoringCapture(
-            state = dependencies.state(),
-            event = ContinuousMonitoringEvent(packageName, pageText),
-            permissionHealth = currentPermissionHealth
-        )
-        if (!decision.shouldCapture) {
-            recordRejectedPage(packageName, pageText, traceId, decision.observation.name)
-            return
-        }
-        if (isCapturing) {
+        captureJob = dependencies.scope.launch {
+            val decision = withContext(Dispatchers.Default) {
+                decideContinuousMonitoringCapture(
+                    state = dependencies.state(),
+                    event = ContinuousMonitoringEvent(packageName, pageText),
+                    permissionHealth = currentPermissionHealth
+                )
+            }
+            if (!decision.shouldCapture) {
+                recordRejectedPage(packageName, pageText, traceId, decision.observation.name)
+                captureJob = null
+                return@launch
+            }
             dependencies.diagnostics.recordMetadata(
-                "accessibility_stability_wait_rejected",
-                "rejected",
-                "stability_job_active",
+                "accessibility_stability_wait_started",
+                "started",
+                "payment_related",
                 traceId = traceId,
                 source = packageName.accessibilityDiagnosticSource()
             )
-            return
-        }
-        dependencies.diagnostics.recordMetadata(
-            "accessibility_stability_wait_started",
-            "started",
-            "payment_related",
-            traceId = traceId,
-            source = packageName.accessibilityDiagnosticSource()
-        )
-        captureJob = dependencies.scope.launch {
             delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
             captureJob = null
             processSettledPage(packageName, pageText, traceId)
@@ -81,12 +77,16 @@ internal class ContinuousCaptureCoordinator(
         fallbackPageText: String,
         traceId: String
     ) {
-        val pageText = dependencies.settledPageText(packageName, fallbackPageText)
-        val decision = decideContinuousMonitoringCapture(
-            state = dependencies.state(),
-            event = ContinuousMonitoringEvent(packageName, pageText),
-            permissionHealth = dependencies.permissionHealth()
-        )
+        val pageText = runCatching {
+            dependencies.settledPageText(packageName, fallbackPageText)
+        }.getOrDefault(fallbackPageText)
+        val decision = withContext(Dispatchers.Default) {
+            decideContinuousMonitoringCapture(
+                state = dependencies.state(),
+                event = ContinuousMonitoringEvent(packageName, pageText),
+                permissionHealth = dependencies.permissionHealth()
+            )
+        }
         if (!decision.shouldCapture) {
             dependencies.diagnostics.recordPageDecision(
                 event = "accessibility_window_rejected",
@@ -109,7 +109,9 @@ internal class ContinuousCaptureCoordinator(
         }
         val source = BillSyncSource.fromPackageName(packageName) ?: return
         runCatching {
-            dependencies.processor().processAutomatic(source = source, pageText = pageText, traceId = traceId)
+            withContext(Dispatchers.IO) {
+                dependencies.processor().processAutomatic(source = source, pageText = pageText, traceId = traceId)
+            }
         }.onSuccess { result ->
             result.toBookkeepingResultNotification(source.label)?.let { notification ->
                 dependencies.diagnostics.recordMetadata(

@@ -90,8 +90,8 @@ internal fun SharedLedgerEntryForm(
     var state by rememberSaveable(initial, stateSaver = LedgerEntryFormState.Saver) {
         mutableStateOf(initial)
     }
-    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
-    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val categoryOptions = remember(categories, state.flowDirection, state.transactionKind) {

@@ -137,6 +137,12 @@ class LocalLedgerRepository private constructor(
     suspend fun listAllLedgerEntries(): List<LedgerEntryEntity> =
         database.ledgerEntryDao().listAllLedgerEntries()
 
+    suspend fun listLedgerEntriesBetween(
+        startEpochMillis: Long,
+        endEpochMillis: Long
+    ): List<LedgerEntryEntity> =
+        database.ledgerEntryDao().listLedgerEntriesBetween(startEpochMillis, endEpochMillis)
+
     suspend fun purgeExpiredDeletedLedgerEntries(): Int =
         purgeExpiredDeletedLedgerEntries(clock())
 
@@ -259,6 +265,12 @@ class LocalLedgerRepository private constructor(
         database.ignoredEntryDao().deleteById(ignoredEntryId)
     }
 
+    suspend fun moveLedgerEntryToDeletedByOriginPendingEntryId(pendingEntryId: String) {
+        val ledgerEntryId = database.ledgerEntryDao().findIdByOriginPendingEntryId(pendingEntryId)
+            ?: return
+        components.ledgerEntries.moveLedgerEntryToDeleted(ledgerEntryId)
+    }
+
     suspend fun deleteLedgerByOriginPendingEntryId(pendingEntryId: String) {
         database.ledgerEntryDao().deleteByOriginPendingEntryId(pendingEntryId)
     }
@@ -272,6 +284,7 @@ class LocalLedgerRepository private constructor(
         database.ledgerBookDao().deleteAll()
         database.categorizationRuleDao().deleteAll()
         database.localSettingsDao().deleteAll()
+        database.defaultFundingAccountCacheDao().deleteAll()
         database.ledgerBookDao().insert(components.ledgerBooks.defaultLedgerBook())
         database.categoryDao().insertIgnore(DefaultCategories.systemDefaults(clock()))
         database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)

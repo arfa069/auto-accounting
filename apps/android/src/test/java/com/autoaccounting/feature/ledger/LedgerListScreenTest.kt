@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -80,6 +82,43 @@ class LedgerListScreenTest {
         composeRule.onNodeWithText("本月支出 ¥224.00").assertIsDisplayed()
         composeRule.onNodeWithText("下一月").performClick()
         composeRule.onNodeWithText("2026-07 明细").assertIsDisplayed()
+    }
+
+    @Test
+    fun ledgerSearchFiltersAndMonthSurviveRestoration() {
+        val historicalEntry = sampleEntries().first().copy(
+            id = "historical-payment",
+            title = "历史支付",
+            monthKey = "2026-06",
+            transactionTimeText = "2026-06-01 16:57"
+        )
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            LedgerList(
+                entries = sampleEntries() + historicalEntry,
+                entryListState = rememberLazyListState(),
+                activeLedgerName = "本地账本",
+                onEntryClick = {},
+                onLedgerBooksClick = {},
+                onFundingAccountsClick = {},
+                onRecentlyDeletedClick = {},
+                onNavigateHome = {}
+            )
+        }
+
+        composeRule.onNodeWithTag(LedgerTestTags.SEARCH_FIELD).performTextInput("历史")
+        composeRule.onNodeWithText("上一月").performClick()
+        composeRule.onNodeWithText("2026-06 明细").assertIsDisplayed()
+        composeRule.onNodeWithTag(LedgerTestTags.FILTER_BUTTON).performClick()
+        composeRule.onNodeWithText("来源").performTextInput("微信")
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithTag(LedgerTestTags.SEARCH_FIELD).assertTextContains("历史")
+        composeRule.onNodeWithText("来源").assertTextContains("微信")
+        composeRule.onNodeWithTag(LedgerTestTags.FILTER_BUTTON).performClick()
+        composeRule.onNodeWithText("2026-06 明细").assertExists()
+        composeRule.onNodeWithText("历史支付").assertExists()
     }
 
     @Test

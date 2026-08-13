@@ -85,7 +85,8 @@ internal fun rememberAutoAccountingAppDependencies(
     val productionAccountRepository = remember(installationIdStore) {
         HttpAccountRepository(
             backendUrl = BuildConfig.AUTO_ACCOUNTING_BACKEND_URL,
-            installationId = installationIdStore::getOrCreate
+            installationId = installationIdStore::getOrCreate,
+            allowHttp = BuildConfig.AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC
         )
     }
     val productionAiCategorizationGateway = remember {

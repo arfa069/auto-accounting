@@ -42,6 +42,25 @@ class AccountServiceTest {
     }
 
     @Test
+    fun sessionExpiresAtConfiguredTtlBoundary() {
+        val service = accountService()
+        service.issueVerificationCode("13800138000", "device-a", "127.0.0.1")
+        val registration = service.registerIdentifier(
+            "13800138000",
+            "123456",
+            "Aa123456!",
+            "device-a",
+            "127.0.0.1"
+        ) as AccountResult.Success<AccountToken>
+
+        service.advanceTimeBy(ACCOUNT_SESSION_TTL_MILLIS - 1)
+        assertTrue(service.verifyToken(registration.value.token) is AccountResult.Success)
+
+        service.advanceTimeBy(1)
+        assertEquals(AccountError.TOKEN_INVALID, service.verifyToken(registration.value.token).error)
+    }
+
+    @Test
     fun serverRejectsMalformedPhoneCodePasswordAndDeviceId() {
         val service = accountService()
 
@@ -251,6 +270,10 @@ class AccountServiceTest {
 
         service.advanceTimeBy(1)
         val dueAccountId = service.accountsDueForDeletion().single()
+        assertEquals(
+            AccountError.ACCOUNT_DELETION_NOT_PENDING,
+            service.cancelAccountDeletion(token).error
+        )
         assertTrue(service.finalizeAccountDeletion(dueAccountId))
         assertTrue(service.accountsDueForDeletion().isEmpty())
         assertEquals(AccountError.TOKEN_INVALID, service.requestAccountDeletion(token).error)

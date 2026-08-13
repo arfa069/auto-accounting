@@ -3,10 +3,14 @@ package com.autoaccounting.feature.diagnostics
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.Lifecycle
@@ -107,6 +111,39 @@ class DiagnosticLogsScreenTest {
     }
 
     @Test
+    fun queryAndFiltersSurviveRestoration() {
+        val repository = FakeDiagnosticRepository(initialEnabled = true)
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            DiagnosticLogsScreen(
+                isDebugBuild = true,
+                onBack = {},
+                repositoryOverride = repository,
+                applySecureWindowFlag = false
+            )
+        }
+
+        composeRule.onNodeWithText("筛选事件、原因、traceId / sessionId")
+            .performScrollTo()
+            .performTextInput("parsed")
+        composeRule.onNodeWithText("Info").performScrollTo().performClick()
+        composeRule.onNodeWithTag("diagnostic-event-list").performScrollToIndex(COMPONENT_FILTER_INDEX)
+        composeRule.onNodeWithText("NotificationParser").performScrollTo().performClick()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("筛选事件、原因、traceId / sessionId")
+            .performScrollTo()
+            .assertTextContains("parsed")
+        composeRule.onNodeWithText("Info").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithTag("diagnostic-event-list").performScrollToIndex(COMPONENT_FILTER_INDEX)
+        composeRule.onNodeWithText("NotificationParser").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithText("payment_notification_parsed", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun exportShowsProgressAndCanBeCancelled() {
         val repository = FakeDiagnosticRepository(initialEnabled = true).apply {
             blockExport = true
@@ -182,6 +219,7 @@ class DiagnosticLogsScreenTest {
 
     private companion object {
         const val ACTIONS_ITEM_INDEX = 4
+        const val COMPONENT_FILTER_INDEX = 7
         const val EVENT_ITEM_INDEX = 8
     }
 }
