@@ -54,6 +54,9 @@ sealed interface AccountSession {
     }
 }
 
+internal fun AccountSession.SignedIn.cloudConfigAccountKey(): String? =
+    accountUuid?.takeIf { it.isNotBlank() } ?: accountId?.toString()
+
 enum class AccountRuntimeStatus {
     LocalMode,
     Validating,

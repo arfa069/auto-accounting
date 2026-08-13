@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 interface FundingAccountRepository {
     val fundingAccounts: Flow<List<FundingAccountEntity>>
 
+    suspend fun setDefaultFundingAccount(fundingAccountId: Long?)
+    suspend fun getDefaultFundingAccountSyncId(): String?
+
     suspend fun ensureFundingAccount(source: PaymentSource, label: String): FundingAccountEntity
     suspend fun createFundingAccount(label: String, paymentSource: PaymentSource?): FundingAccountEntity
     suspend fun updateFundingAccount(
@@ -19,6 +22,7 @@ interface FundingAccountRepository {
     suspend fun deleteFundingAccount(fundingAccountId: Long): FundingAccountDeleteResult
 }
 
+@Suppress("TooManyFunctions")
 internal class RoomFundingAccountRepository(
     private val database: AutoAccountingDatabase,
     private val clock: () -> Long,
@@ -26,6 +30,18 @@ internal class RoomFundingAccountRepository(
 ) : FundingAccountRepository {
     private val syncRecorder = LocalSyncMutationRecorder(database, clock, idGenerator)
     override val fundingAccounts = database.fundingAccountDao().observeFundingAccounts()
+
+    override suspend fun setDefaultFundingAccount(fundingAccountId: Long?) = database.withTransaction {
+        val syncId = fundingAccountId?.let {
+            requireNotNull(database.fundingAccountDao().getById(it)) { "Funding account not found: $it" }.syncId
+        }
+        database.localSettingsDao().upsert(
+            requireNotNull(database.localSettingsDao().getById()).copy(defaultFundingAccountSyncId = syncId)
+        )
+    }
+
+    override suspend fun getDefaultFundingAccountSyncId(): String? =
+        database.localSettingsDao().getById()?.defaultFundingAccountSyncId
 
     override suspend fun ensureFundingAccount(
         source: PaymentSource,
@@ -132,6 +148,11 @@ internal class RoomFundingAccountRepository(
             )
         }
         val target = requireNotNull(database.fundingAccountDao().getById(fundingAccountId))
+        if (target.syncId != null && database.localSettingsDao().getById()?.defaultFundingAccountSyncId == target.syncId) {
+            database.localSettingsDao().upsert(
+                requireNotNull(database.localSettingsDao().getById()).copy(defaultFundingAccountSyncId = null)
+            )
+        }
         check(database.fundingAccountDao().deleteById(fundingAccountId) == 1)
         target.syncId?.let {
             syncRecorder.recordDelete(
@@ -150,16 +171,16 @@ internal class RoomFundingAccountRepository(
             requireNotNull(database.fundingAccountDao().getById(fundingAccountId)) {
                 "Funding account not found: $fundingAccountId"
             }
-            return fundingAccountId
+            return defaultFundingAccountIdOr(fundingAccountId)
         }
         val label = input.newFundingAccountLabel?.trim().orEmpty()
         if (label.isEmpty()) {
-            return null
+            return defaultFundingAccountIdOr(null)
         }
         val scope = fundingAccountScope(input.paymentSource)
         val existing = database.fundingAccountDao().findByScopeAndLabel(scope, label)
         if (existing != null) {
-            return existing.id
+            return defaultFundingAccountIdOr(existing.id)
         }
         val account = FundingAccountEntity(
             syncId = idGenerator(),
@@ -173,8 +194,13 @@ internal class RoomFundingAccountRepository(
             requireNotNull(database.fundingAccountDao().findByScopeAndLabel(scope, label)).id
         } else {
             syncRecorder.record(account.copy(id = id))
-            id
+            defaultFundingAccountIdOr(id)
         }
+    }
+
+    private suspend fun defaultFundingAccountIdOr(fallback: Long?): Long? {
+        val syncId = database.localSettingsDao().getById()?.defaultFundingAccountSyncId ?: return fallback
+        return database.fundingAccountDao().findBySyncId(syncId)?.id ?: fallback
     }
 
     internal suspend fun resolvePending(pending: PendingEntryEntity): Long? {

@@ -27,6 +27,21 @@ class LocalPreferencesRepositoryTest {
     val instantTaskExecutorRule = InstantTaskExecutorRule()
 
     @Test
+    fun defaultFundingCacheIsIsolatedByAccountKeyAndRetainsPendingUpload() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(), AutoAccountingDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val repository = LocalPreferencesRepository(database)
+        repository.cacheDefaultFundingAccount("account-a", "funding-a", pendingUpload = true)
+        repository.cacheDefaultFundingAccount("account-b", null, pendingUpload = false)
+
+        assertEquals("funding-a", repository.getCachedDefaultFundingAccount("account-a")?.syncId)
+        assertTrue(repository.getCachedDefaultFundingAccount("account-a")!!.pendingUpload)
+        assertEquals(null, repository.getCachedDefaultFundingAccount("account-b")?.syncId)
+        database.close()
+    }
+
+    @Test
     fun newDatabaseStartsWithEditableDefaultRules() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "default-rules-${System.nanoTime()}.db"

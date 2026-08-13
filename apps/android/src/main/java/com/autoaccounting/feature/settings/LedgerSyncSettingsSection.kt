@@ -116,7 +116,7 @@ private fun EnableSyncContent(
     onPreviewed: (LedgerSyncPreview) -> Unit
 ) {
     var syncBusy by remember { mutableStateOf(false) }
-    Text("同步账本、正式及最近删除账目、分类、资金账户和分类规则。待确认记录与设备设置不会上传。")
+    Text("同步账本、正式及最近删除账目、分类、资金账户和分类规则。默认资金账户仅按账号同步，不进入账本同步。")
     Button(
         onClick = {
             syncBusy = true
@@ -243,7 +243,7 @@ private fun FirstSyncConfirmationDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("本机 ${preview.localRecordCount} 项，云端 ${preview.cloudRecordCount} 项。")
-                Text("正式账本数据将上传并以服务端可读取的形式保存；待确认记录、设备设置和诊断日志不会上传。")
+                Text("正式账本数据将上传并以服务端可读取的形式保存；待确认记录和诊断日志不会上传。默认资金账户单独按账号保存。")
                 Text("生产环境仅通过 HTTPS 传输；账号最终注销将删除云端同步数据，本机账本仍会保留。")
                 if (preview.insecureHttpTestMode) {
                     Text("当前使用局域网 HTTP，仅适用于受控测试环境。", color = MaterialTheme.colorScheme.error)

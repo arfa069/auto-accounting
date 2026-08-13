@@ -19,7 +19,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AccountSyncStateEntity::class,
         AccountSyncMetadataEntity::class,
         AccountSyncOutboxEntity::class,
-        AccountSyncConflictEntity::class
+        AccountSyncConflictEntity::class,
+        DefaultFundingAccountCacheEntity::class
     ],
     version = AutoAccountingDatabase.SCHEMA_VERSION,
     exportSchema = true
@@ -35,9 +36,10 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun categorizationRuleDao(): CategorizationRuleDao
     abstract fun localSettingsDao(): LocalSettingsDao
     abstract fun ledgerSyncDao(): LedgerSyncDao
+    abstract fun defaultFundingAccountCacheDao(): DefaultFundingAccountCacheDao
 
     companion object {
-        const val SCHEMA_VERSION = 8
+        const val SCHEMA_VERSION = 9
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -357,6 +359,13 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_settings ADD COLUMN default_funding_account_sync_id TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `default_funding_account_cache` (`accountKey` TEXT NOT NULL, `sync_id` TEXT, `pending_upload` INTEGER NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`accountKey`))")
             }
         }
     }

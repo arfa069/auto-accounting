@@ -9,6 +9,7 @@ import com.autoaccounting.api.LedgerSyncConflictChoiceContract
 import com.autoaccounting.data.local.FundingAccountDeleteResult as DataFundingAccountDeleteResult
 import com.autoaccounting.data.local.LedgerBookDeleteResult as DataLedgerBookDeleteResult
 import com.autoaccounting.feature.account.AccountSession
+import com.autoaccounting.feature.account.cloudConfigAccountKey
 import com.autoaccounting.feature.ledger.FundingAccountDeleteResult as UiFundingAccountDeleteResult
 import com.autoaccounting.feature.ledger.LedgerBookDeleteResult as UiLedgerBookDeleteResult
 import com.autoaccounting.feature.ledger.LedgerScreen
@@ -51,6 +52,7 @@ internal fun AutoAccountingReviewRoute(
 }
 
 @Composable
+@Suppress("CyclomaticComplexMethod")
 internal fun AutoAccountingLedgerRoute(
     context: AutoAccountingRouteContext,
     innerPadding: PaddingValues,
@@ -66,6 +68,7 @@ internal fun AutoAccountingLedgerRoute(
         deletedEntries = presentation.deletedLedgerEntries,
         categories = runtime.ledgerState.categories,
         fundingAccounts = runtime.ledgerState.fundingAccounts,
+        defaultFundingAccountSyncId = runtime.ledgerState.defaultFundingAccountSyncId,
         ledgerBooks = presentation.ledgerBookUiModels,
         activeLedgerName = presentation.activeLedgerName,
         onUpdateEntry = { id, input -> dependencies.local.ledgerRepository.updateLedgerEntry(id, input) },
@@ -91,6 +94,40 @@ internal fun AutoAccountingLedgerRoute(
         },
         onUpdateFundingAccount = { id, label, paymentSource ->
             dependencies.local.ledgerRepository.updateFundingAccount(id, label, paymentSource)
+        },
+        onSetDefaultFundingAccount = { id ->
+            dependencies.local.ledgerRepository.setDefaultFundingAccount(id)
+            val signedIn = runtime.accountSession as? AccountSession.SignedIn
+            if (
+                signedIn != null &&
+                runtime.accountRuntimeState.cloudWritesAllowed &&
+                runtime.accountDeletionState.cloudWritesAllowed
+            ) {
+                val syncId = id?.let { accountId ->
+                    runtime.ledgerState.fundingAccounts.firstOrNull { it.id == accountId }?.syncId
+                }
+                val accountKey = signedIn.cloudConfigAccountKey()
+                if (accountKey != null) {
+                    dependencies.local.preferencesRepository.cacheDefaultFundingAccount(
+                        accountKey = accountKey,
+                        syncId = syncId,
+                        pendingUpload = true
+                    )
+                }
+                when (val result = dependencies.cloudAiSettingsGateway.writeDefaultFundingAccount(signedIn.token, syncId)) {
+                    is com.autoaccounting.feature.categorization.CloudAiSettingsGatewayResult.Success -> {
+                        if (accountKey != null && result.supportsDefaultFundingAccount) {
+                            dependencies.local.preferencesRepository.cacheDefaultFundingAccount(
+                                accountKey = accountKey,
+                                syncId = result.defaultFundingAccountSyncId,
+                                pendingUpload = false
+                            )
+                        }
+                    }
+                    is com.autoaccounting.feature.categorization.CloudAiSettingsGatewayResult.Failure ->
+                        context.appState.snackbarHostState.showSnackbar("默认账户已保存到本机，云端同步失败")
+                }
+            }
         },
         onDeleteFundingAccount = { id ->
             when (val result = dependencies.local.ledgerRepository.deleteFundingAccount(id)) {

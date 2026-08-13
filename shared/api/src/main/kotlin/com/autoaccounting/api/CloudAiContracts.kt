@@ -41,7 +41,9 @@ data class CloudConfigContract(
     val ok: Boolean,
     val aiConsentGranted: Boolean,
     val enhancedContextGranted: Boolean,
-    val featureFlags: Map<String, Boolean> = emptyMap()
+    val featureFlags: Map<String, Boolean> = emptyMap(),
+    val defaultFundingAccountSyncId: String? = null,
+    val supportsDefaultFundingAccount: Boolean = false
 )
 
 object ApiJsonContracts {
@@ -131,6 +133,8 @@ object ApiJsonContracts {
             put("aiConsentGranted", response.aiConsentGranted)
             put("enhancedContextGranted", response.enhancedContextGranted)
             put("featureFlags", featureFlagsObject(response.featureFlags))
+            response.defaultFundingAccountSyncId?.let { put("defaultFundingAccountSyncId", it) }
+            put("supportsDefaultFundingAccount", response.supportsDefaultFundingAccount)
         }.toString()
     }
 
@@ -140,7 +144,9 @@ object ApiJsonContracts {
             ok = root.requiredBoolean("ok"),
             aiConsentGranted = root.requiredBoolean("aiConsentGranted"),
             enhancedContextGranted = root.requiredBoolean("enhancedContextGranted"),
-            featureFlags = root["featureFlags"]?.jsonObject?.toBooleanMap().orEmpty()
+            featureFlags = root["featureFlags"]?.jsonObject?.toBooleanMap().orEmpty(),
+            defaultFundingAccountSyncId = root["defaultFundingAccountSyncId"]?.requiredStringContent(),
+            supportsDefaultFundingAccount = root["supportsDefaultFundingAccount"]?.jsonPrimitive?.booleanOrNull ?: false
         )
     }
 

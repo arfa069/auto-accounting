@@ -14,6 +14,52 @@ import org.junit.Test
 
 class HttpCloudAiSettingsGatewayTest {
     @Test
+    fun defaultFundingAccountWriteUsesEmptyStringToClearAndReturnsCapability() = runBlocking {
+        val transport = RecordingSettingsTransport(
+            AiHttpResponse(
+                200,
+                ApiJsonContracts.encodeCloudConfigResponse(
+                    CloudConfigContract(
+                        ok = true,
+                        aiConsentGranted = false,
+                        enhancedContextGranted = false,
+                        defaultFundingAccountSyncId = "funding-1",
+                        supportsDefaultFundingAccount = true
+                    )
+                )
+            )
+        )
+        val result = HttpCloudAiSettingsGateway("https://backend.example.test", transport)
+            .writeDefaultFundingAccount("token", null)
+
+        assertTrue(result is CloudAiSettingsGatewayResult.Success)
+        assertEquals("", transport.requests.single().form["defaultFundingAccountSyncId"])
+        val success = result as CloudAiSettingsGatewayResult.Success
+        assertEquals("funding-1", success.defaultFundingAccountSyncId)
+        assertTrue(success.supportsDefaultFundingAccount)
+    }
+
+    @Test
+    fun failedDefaultWriteCanBeRetriedWithoutChangingRequestSemantics() = runBlocking {
+        val transport = object : AiHttpTransport {
+            var attempts = 0
+            override suspend fun post(url: String, form: Map<String, String>, bearerToken: String): AiHttpResponse {
+                attempts++
+                return if (attempts == 1) AiHttpResponse(503, "{}") else AiHttpResponse(
+                    200,
+                    ApiJsonContracts.encodeCloudConfigResponse(
+                        CloudConfigContract(true, false, false, defaultFundingAccountSyncId = "funding-2", supportsDefaultFundingAccount = true)
+                    )
+                )
+            }
+        }
+        val gateway = HttpCloudAiSettingsGateway("https://backend.example.test", transport)
+        assertTrue(gateway.writeDefaultFundingAccount("token", "funding-2") is CloudAiSettingsGatewayResult.Failure)
+        val retry = gateway.writeDefaultFundingAccount("token", "funding-2")
+        assertTrue(retry is CloudAiSettingsGatewayResult.Success)
+        assertEquals(2, transport.attempts)
+    }
+    @Test
     fun readsAndWritesCloudAiConsentThroughBackend() = runBlocking {
         val transport = RecordingSettingsTransport(
             AiHttpResponse(

@@ -81,6 +81,7 @@ private val WallpaperImageCache = ResourceImageCache(
 )
 private val DecorativeImageCache = ResourceImageCache(DECORATIVE_IMAGE_CACHE_MAX_BYTES)
 
+@Suppress("ComplexCondition")
 internal fun calculateDecodeSampleSize(
     sourceWidth: Int,
     sourceHeight: Int,

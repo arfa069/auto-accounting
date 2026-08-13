@@ -243,7 +243,7 @@ fun findUnlistedSdkOrNetworkServices(
         "sentry",
         "crashlytics",
         "flurry",
-        "adjust",
+        "com.adjust",
         "appsflyer",
         "facebook",
         "wechat-sdk",

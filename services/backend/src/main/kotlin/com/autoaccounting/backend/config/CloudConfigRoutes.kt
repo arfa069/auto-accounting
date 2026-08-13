@@ -33,7 +33,9 @@ fun Route.cloudConfigRoutes(
                     ok = true,
                     aiConsentGranted = config.aiConsentGranted,
                     enhancedContextGranted = config.enhancedContextGranted,
-                    featureFlags = config.featureFlags
+                    featureFlags = config.featureFlags,
+                    defaultFundingAccountSyncId = config.defaultFundingAccountSyncId,
+                    supportsDefaultFundingAccount = true
                 )
             ),
             contentType = ContentType.Application.Json,
@@ -69,8 +71,10 @@ fun Route.cloudConfigRoutes(
                         CloudConfigContract(
                             ok = true,
                             aiConsentGranted = config.aiConsentGranted,
-                            enhancedContextGranted = config.enhancedContextGranted,
-                            featureFlags = config.featureFlags
+                        enhancedContextGranted = config.enhancedContextGranted,
+                        featureFlags = config.featureFlags,
+                        defaultFundingAccountSyncId = config.defaultFundingAccountSyncId,
+                        supportsDefaultFundingAccount = true
                         )
                     ),
                     contentType = ContentType.Application.Json,
@@ -98,7 +102,10 @@ private fun io.ktor.http.Parameters.toCloudConfigUpdate(): CloudConfigUpdate {
                         "featureFlags must be a JSON object with boolean values."
                     )
                 }
-            }
+            },
+        defaultFundingAccountSyncId = this["defaultFundingAccountSyncId"]?.trim()?.also {
+            require(it.length <= 128) { "defaultFundingAccountSyncId is too long." }
+        }
     )
 }
 

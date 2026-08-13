@@ -67,6 +67,7 @@ internal fun ManualLedgerEntryScreen(
                 onSave = onCreateEntry,
                 onDelete = null,
                 snackbarHostState = snackbarHostState
+                ,showDefaultFundingAccountHint = true
             )
         )
         SnackbarHost(
@@ -148,6 +149,9 @@ internal fun SharedLedgerEntryForm(
                 allowCreateFundingAccount = config.allowCreateFundingAccount,
                 onStateChange = { state = it }
             )
+            if (config.showDefaultFundingAccountHint) {
+                Text("保存时将优先使用默认资金账户", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (config.onDelete != null) {
                 OutlinedButton(
                     onClick = { confirmDelete = true },

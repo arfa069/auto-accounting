@@ -218,7 +218,16 @@ data class LocalSettingsEntity(
     @ColumnInfo(
         name = "active_ledger_id",
         defaultValue = "'default-ledger'"
-    ) val activeLedgerId: String = DEFAULT_LEDGER_BOOK_ID
+    ) val activeLedgerId: String = DEFAULT_LEDGER_BOOK_ID,
+    @ColumnInfo(name = "default_funding_account_sync_id") val defaultFundingAccountSyncId: String? = null
+)
+
+@Entity(tableName = "default_funding_account_cache")
+data class DefaultFundingAccountCacheEntity(
+    @PrimaryKey val accountKey: String,
+    @ColumnInfo(name = "sync_id") val syncId: String?,
+    @ColumnInfo(name = "pending_upload") val pendingUpload: Boolean,
+    @ColumnInfo(name = "updated_at_epoch_millis") val updatedAtEpochMillis: Long
 )
 
 const val LOCAL_SETTINGS_ID = "local"

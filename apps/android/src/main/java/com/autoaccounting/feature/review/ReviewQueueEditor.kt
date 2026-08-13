@@ -133,6 +133,7 @@ internal fun ReviewPendingEntryEditor(
                 },
                 onDelete = null,
                 snackbarHostState = config.snackbarHostState,
+                showDefaultFundingAccountHint = true,
                 leadingContent = { draft, onDraftChange ->
                     ReviewEditorTools(
                         entry = entry,

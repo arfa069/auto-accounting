@@ -48,6 +48,7 @@ internal data class FundingAccountManagementActions(
     val onBack: () -> Unit,
     val onCreateFundingAccount: suspend (String, PaymentSource?) -> Unit,
     val onUpdateFundingAccount: suspend (Long, String, PaymentSource?) -> Unit,
+    val onSetDefaultFundingAccount: suspend (Long?) -> Unit,
     val onDeleteFundingAccount: suspend (Long) -> FundingAccountDeleteResult
 )
 
@@ -67,11 +68,13 @@ internal fun LedgerBookManagementScreen(
 @Composable
 internal fun FundingAccountManagementScreen(
     fundingAccounts: List<FundingAccountEntity>,
+    defaultFundingAccountSyncId: String? = null,
     snackbarHostState: SnackbarHostState,
     actions: FundingAccountManagementActions
 ) {
     FundingAccountManagementContent(
         fundingAccounts = fundingAccounts,
+        defaultFundingAccountSyncId = defaultFundingAccountSyncId,
         snackbarHostState = snackbarHostState,
         actions = actions
     )

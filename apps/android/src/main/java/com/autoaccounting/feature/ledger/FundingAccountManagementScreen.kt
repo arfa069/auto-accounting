@@ -38,6 +38,7 @@ import com.autoaccounting.data.local.PaymentSource
 @Composable
 internal fun FundingAccountManagementContent(
     fundingAccounts: List<FundingAccountEntity>,
+    defaultFundingAccountSyncId: String? = null,
     snackbarHostState: SnackbarHostState,
     actions: FundingAccountManagementActions
 ) {
@@ -93,6 +94,8 @@ internal fun FundingAccountManagementContent(
         }
         FundingAccountList(
             fundingAccounts = fundingAccounts,
+            defaultFundingAccountSyncId = defaultFundingAccountSyncId,
+            onSetDefault = { id -> scope.launch { actions.onSetDefaultFundingAccount(id) } },
             onEdit = ::openEditor,
             onRequestDelete = { pendingDelete = it }
         )
@@ -172,6 +175,8 @@ private suspend fun handleFundingAccountDeleteResult(
 @Composable
 private fun FundingAccountList(
     fundingAccounts: List<FundingAccountEntity>,
+    defaultFundingAccountSyncId: String?,
+    onSetDefault: (Long?) -> Unit,
     onEdit: (FundingAccountEntity) -> Unit,
     onRequestDelete: (FundingAccountEntity) -> Unit
 ) {
@@ -181,6 +186,8 @@ private fun FundingAccountList(
         fundingAccounts.forEach { account ->
             FundingAccountCard(
                 account = account,
+                isDefault = account.syncId == defaultFundingAccountSyncId,
+                onSetDefault = { onSetDefault(if (account.syncId == defaultFundingAccountSyncId) null else account.id) },
                 onEdit = { onEdit(account) },
                 onRequestDelete = { onRequestDelete(account) }
             )
@@ -191,6 +198,8 @@ private fun FundingAccountList(
 @Composable
 private fun FundingAccountCard(
     account: FundingAccountEntity,
+    isDefault: Boolean,
+    onSetDefault: () -> Unit,
     onEdit: () -> Unit,
     onRequestDelete: () -> Unit
 ) {
@@ -208,8 +217,10 @@ private fun FundingAccountCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(account.label, fontWeight = FontWeight.SemiBold)
+            if (isDefault) Text("默认", color = MaterialTheme.colorScheme.primary)
             Text("支付来源：${account.paymentSource.labelOrNone()}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onSetDefault) { Text(if (isDefault) "取消默认" else "设为默认") }
                 TextButton(
                     onClick = onEdit,
                     modifier = Modifier.testTag(LedgerTestTags.editFundingAccount(account.id))

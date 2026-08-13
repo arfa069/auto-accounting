@@ -288,13 +288,14 @@ internal class JdbcAccountMergeTransaction(
                 kotlinx.serialization.serializer(), mergedFlags
             )
             connection.prepareStatement(
-                "UPDATE cloud_config SET ai_consent_granted = ?, enhanced_context_granted = ?, feature_flags = ?, updated_at_millis = ? WHERE account_id = ?"
+                "UPDATE cloud_config SET ai_consent_granted = ?, enhanced_context_granted = ?, feature_flags = ?, default_funding_account_sync_id = ?, updated_at_millis = ? WHERE account_id = ?"
             ).use { stmt ->
                 stmt.setBoolean(1, targetConfig.aiConsentGranted)
                 stmt.setBoolean(2, targetConfig.enhancedContextGranted)
                 stmt.setString(3, mergedFlagsJson)
-                stmt.setLong(4, now)
-                stmt.setLong(5, targetAccountId)
+                stmt.setString(4, targetConfig.defaultFundingAccountSyncId ?: sourceConfig.defaultFundingAccountSyncId)
+                stmt.setLong(5, now)
+                stmt.setLong(6, targetAccountId)
                 stmt.executeUpdate()
             }
             connection.prepareStatement(
@@ -310,12 +311,13 @@ internal class JdbcAccountMergeTransaction(
         val accountId: Long,
         val aiConsentGranted: Boolean,
         val enhancedContextGranted: Boolean,
-        val featureFlags: Map<String, Boolean>
+        val featureFlags: Map<String, Boolean>,
+        val defaultFundingAccountSyncId: String?
     )
 
     private fun findCloudConfigInternal(connection: Connection, accountId: Long): CloudConfigRow? {
         return connection.prepareStatement(
-            "SELECT account_id, ai_consent_granted, enhanced_context_granted, feature_flags FROM cloud_config WHERE account_id = ?"
+            "SELECT account_id, ai_consent_granted, enhanced_context_granted, feature_flags, default_funding_account_sync_id FROM cloud_config WHERE account_id = ?"
         ).use { stmt ->
             stmt.setLong(1, accountId)
             stmt.executeQuery().use { rs ->
@@ -328,7 +330,8 @@ internal class JdbcAccountMergeTransaction(
                         accountId = rs.getLong("account_id"),
                         aiConsentGranted = rs.getBoolean("ai_consent_granted"),
                         enhancedContextGranted = rs.getBoolean("enhanced_context_granted"),
-                        featureFlags = flags
+                        featureFlags = flags,
+                        defaultFundingAccountSyncId = rs.getString("default_funding_account_sync_id")
                     )
                 } else null
             }
@@ -424,4 +427,3 @@ internal class JdbcAccountMergeTransaction(
         }
     }
 }
-

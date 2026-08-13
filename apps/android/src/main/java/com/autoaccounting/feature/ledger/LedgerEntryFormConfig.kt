@@ -14,6 +14,7 @@ internal data class LedgerEntryFormConfig(
     val onSave: suspend (LedgerEntryInput) -> Unit,
     val onDelete: (() -> Unit)?,
     val snackbarHostState: SnackbarHostState,
+    val showDefaultFundingAccountHint: Boolean = false,
     val leadingContent: @Composable (
         LedgerEntryFormState,
         (LedgerEntryFormState) -> Unit

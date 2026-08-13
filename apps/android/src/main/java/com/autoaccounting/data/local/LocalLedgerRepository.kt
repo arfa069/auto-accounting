@@ -34,7 +34,8 @@ data class LedgerRepositoryState(
     val ledgerEntries: List<LedgerEntryEntity> = emptyList(),
     val deletedLedgerEntries: List<LedgerEntryEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
-    val fundingAccounts: List<FundingAccountEntity> = emptyList()
+    val fundingAccounts: List<FundingAccountEntity> = emptyList(),
+    val defaultFundingAccountSyncId: String? = null
 )
 
 private data class LedgerRepositoryComponents(
@@ -103,6 +104,8 @@ class LocalLedgerRepository private constructor(
                 categories = categories,
                 fundingAccounts = fundingAccounts
             )
+        }.combine(database.localSettingsDao().observeById()) { state, settings ->
+            state.copy(defaultFundingAccountSyncId = settings?.defaultFundingAccountSyncId)
         }
     }
 

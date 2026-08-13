@@ -11,6 +11,7 @@ import com.autoaccounting.feature.account.AccountRuntimeStatus
 import com.autoaccounting.feature.account.AccountSession
 import com.autoaccounting.feature.account.AccountSessionRestoreResult
 import com.autoaccounting.feature.account.AccountSessionVerificationDecision
+import com.autoaccounting.feature.account.cloudConfigAccountKey
 import com.autoaccounting.feature.account.persistRefreshedAccountSession
 import com.autoaccounting.feature.account.resolveAccountSessionVerification
 import com.autoaccounting.feature.account.toCredentials
@@ -325,11 +326,31 @@ private fun AutoAccountingCloudSettingsEffects(context: AutoAccountingAppEffects
         runtime.cloudAiSettingsLoadedToken = null
         runtime.aiSettingsSyncInFlight = true
         try {
-            when (val result = dependencies.cloudAiSettingsGateway.read(signedIn.token)) {
+            val accountKey = signedIn.cloudConfigAccountKey()
+            val cached = accountKey?.let {
+                dependencies.local.preferencesRepository.getCachedDefaultFundingAccount(it)
+            }
+            dependencies.local.preferencesRepository.setDefaultFundingAccountSyncId(cached?.syncId)
+            val result = if (cached?.pendingUpload == true) {
+                dependencies.cloudAiSettingsGateway.writeDefaultFundingAccount(signedIn.token, cached.syncId)
+            } else {
+                dependencies.cloudAiSettingsGateway.read(signedIn.token)
+            }
+            when (result) {
                 is CloudAiSettingsGatewayResult.Success -> {
                     runtime.aiSettings = result.settings
                     runtime.cloudAiSettingsLoadedToken = signedIn.token
                     dependencies.local.preferencesRepository.updateAiSettings(result.settings)
+                    if (accountKey != null && result.supportsDefaultFundingAccount) {
+                        dependencies.local.preferencesRepository.cacheDefaultFundingAccount(
+                            accountKey = accountKey,
+                            syncId = result.defaultFundingAccountSyncId,
+                            pendingUpload = false
+                        )
+                        dependencies.local.preferencesRepository.setDefaultFundingAccountSyncId(
+                            result.defaultFundingAccountSyncId
+                        )
+                    }
                 }
                 is CloudAiSettingsGatewayResult.Failure -> Unit
             }

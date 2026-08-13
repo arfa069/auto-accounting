@@ -31,6 +31,8 @@ class CloudConfigService(
                 aiConsentGranted = aiConsentGranted,
                 enhancedContextGranted = enhancedContextGranted,
                 featureFlags = update.featureFlags ?: current.featureFlags,
+                defaultFundingAccountSyncId = update.defaultFundingAccountSyncId?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: if (update.defaultFundingAccountSyncId == null) current.defaultFundingAccountSyncId else null,
                 updatedAtMillis = now
             )
         )
@@ -79,5 +81,6 @@ sealed interface CloudConfigResult {
 data class CloudConfigUpdate(
     val aiConsentGranted: Boolean? = null,
     val enhancedContextGranted: Boolean? = null,
-    val featureFlags: Map<String, Boolean>? = null
+    val featureFlags: Map<String, Boolean>? = null,
+    val defaultFundingAccountSyncId: String? = null
 )

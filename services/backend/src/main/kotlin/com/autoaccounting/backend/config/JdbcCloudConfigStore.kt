@@ -22,7 +22,7 @@ class JdbcCloudConfigStore(
         connection.prepareStatement(
             """
             SELECT account_id, ai_consent_granted, enhanced_context_granted,
-                   feature_flags, updated_at_millis
+                   feature_flags, default_funding_account_sync_id, updated_at_millis
             FROM cloud_config
             WHERE account_id = ?
             """.trimIndent()
@@ -37,6 +37,7 @@ class JdbcCloudConfigStore(
                         featureFlags = ApiJsonContracts.parseFeatureFlags(
                             rs.getString("feature_flags").orEmpty().ifBlank { "{}" }
                         ),
+                        defaultFundingAccountSyncId = rs.getString("default_funding_account_sync_id"),
                         updatedAtMillis = rs.getLong("updated_at_millis")
                     )
                 } else {
@@ -52,15 +53,16 @@ class JdbcCloudConfigStore(
                 """
                 UPDATE cloud_config
                 SET ai_consent_granted = ?, enhanced_context_granted = ?,
-                    feature_flags = ?, updated_at_millis = ?
+                    feature_flags = ?, default_funding_account_sync_id = ?, updated_at_millis = ?
                 WHERE account_id = ?
                 """.trimIndent()
             ).use { statement ->
                 statement.setBoolean(1, config.aiConsentGranted)
                 statement.setBoolean(2, config.enhancedContextGranted)
                 statement.setString(3, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
-                statement.setLong(4, config.updatedAtMillis)
-                statement.setLong(5, config.accountId)
+                statement.setString(4, config.defaultFundingAccountSyncId)
+                statement.setLong(5, config.updatedAtMillis)
+                statement.setLong(6, config.accountId)
                 statement.executeUpdate()
             }
             if (updated == 0) {
@@ -68,15 +70,16 @@ class JdbcCloudConfigStore(
                     """
                     INSERT INTO cloud_config (
                         account_id, ai_consent_granted, enhanced_context_granted,
-                        feature_flags, updated_at_millis
-                    ) VALUES (?, ?, ?, ?, ?)
+                        feature_flags, default_funding_account_sync_id, updated_at_millis
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """.trimIndent()
                 ).use { statement ->
                     statement.setLong(1, config.accountId)
                     statement.setBoolean(2, config.aiConsentGranted)
                     statement.setBoolean(3, config.enhancedContextGranted)
                     statement.setString(4, ApiJsonContracts.encodeFeatureFlags(config.featureFlags))
-                    statement.setLong(5, config.updatedAtMillis)
+                    statement.setString(5, config.defaultFundingAccountSyncId)
+                    statement.setLong(6, config.updatedAtMillis)
                     statement.executeUpdate()
                 }
             }

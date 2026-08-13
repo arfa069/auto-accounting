@@ -7,7 +7,11 @@ import java.net.URI
 import kotlinx.coroutines.CancellationException
 
 sealed interface CloudAiSettingsGatewayResult {
-    data class Success(val settings: AiCategorizationSettings) : CloudAiSettingsGatewayResult
+    data class Success(
+        val settings: AiCategorizationSettings,
+        val defaultFundingAccountSyncId: String? = null,
+        val supportsDefaultFundingAccount: Boolean = false
+    ) : CloudAiSettingsGatewayResult
     data class Failure(val reason: AiCategorizationFailureReason) : CloudAiSettingsGatewayResult
 }
 
@@ -18,6 +22,13 @@ interface CloudAiSettingsGateway {
         token: String,
         settings: AiCategorizationSettings
     ): CloudAiSettingsGatewayResult
+
+    suspend fun writeDefaultFundingAccount(
+        token: String,
+        syncId: String?
+    ): CloudAiSettingsGatewayResult = CloudAiSettingsGatewayResult.Failure(
+        AiCategorizationFailureReason.BACKEND_NOT_CONFIGURED
+    )
 }
 
 class HttpCloudAiSettingsGateway internal constructor(
@@ -52,6 +63,15 @@ class HttpCloudAiSettingsGateway internal constructor(
             )
         )
     }
+
+    override suspend fun writeDefaultFundingAccount(
+        token: String,
+        syncId: String?
+    ): CloudAiSettingsGatewayResult = execute(
+        writeUrl,
+        token,
+        mapOf("defaultFundingAccountSyncId" to (syncId ?: ""))
+    )
 
     private suspend fun execute(
         url: String?,
@@ -91,7 +111,9 @@ class HttpCloudAiSettingsGateway internal constructor(
                 AiCategorizationSettings(
                     aiConsentGranted = contract.aiConsentGranted,
                     enhancedContextGranted = contract.enhancedContextGranted
-                )
+                ),
+                defaultFundingAccountSyncId = contract.defaultFundingAccountSyncId,
+                supportsDefaultFundingAccount = contract.supportsDefaultFundingAccount
             )
         } catch (_: RuntimeException) {
             CloudAiSettingsGatewayResult.Failure(

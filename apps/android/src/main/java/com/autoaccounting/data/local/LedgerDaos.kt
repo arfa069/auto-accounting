@@ -493,3 +493,13 @@ interface LocalSettingsDao {
     @Query("DELETE FROM local_settings")
     suspend fun deleteAll()
 }
+
+@Dao
+interface DefaultFundingAccountCacheDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(value: DefaultFundingAccountCacheEntity)
+    @Query("SELECT * FROM default_funding_account_cache WHERE accountKey = :accountKey")
+    suspend fun get(accountKey: String): DefaultFundingAccountCacheEntity?
+    @Query("DELETE FROM default_funding_account_cache")
+    suspend fun deleteAll()
+}

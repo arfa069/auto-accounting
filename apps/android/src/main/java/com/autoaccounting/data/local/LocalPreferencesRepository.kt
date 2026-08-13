@@ -83,14 +83,31 @@ class LocalPreferencesRepository(
                 aiConsentGranted = false,
                 enhancedContextGranted = false,
                 continuousBillSyncCompleted = false,
-                continuousMonitoringEnabled = false
+                continuousMonitoringEnabled = false,
+                defaultFundingAccountSyncId = null
             )
         )
+        database.defaultFundingAccountCacheDao().deleteAll()
         database.ledgerSyncDao().upsertState(AccountSyncStateEntity())
         database.ledgerSyncDao().deleteAllMetadata()
         database.ledgerSyncDao().deleteAllOutbox()
         database.ledgerSyncDao().deleteAllConflicts()
     }
+
+    suspend fun setDefaultFundingAccountSyncId(syncId: String?) = database.withTransaction {
+        database.localSettingsDao().upsert(currentSettingsEntity().copy(defaultFundingAccountSyncId = syncId))
+    }
+
+    suspend fun getDefaultFundingAccountSyncId(): String? =
+        currentSettingsEntity().defaultFundingAccountSyncId
+
+    suspend fun cacheDefaultFundingAccount(accountKey: String, syncId: String?, pendingUpload: Boolean) =
+        database.defaultFundingAccountCacheDao().upsert(
+            DefaultFundingAccountCacheEntity(accountKey, syncId, pendingUpload, System.currentTimeMillis())
+        )
+
+    suspend fun getCachedDefaultFundingAccount(accountKey: String): DefaultFundingAccountCacheEntity? =
+        database.defaultFundingAccountCacheDao().get(accountKey)
 
     private suspend fun currentSettingsEntity(): LocalSettingsEntity =
         database.localSettingsDao().getById() ?: LocalSettingsEntity(

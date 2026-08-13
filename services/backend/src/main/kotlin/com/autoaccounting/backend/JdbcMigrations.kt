@@ -661,6 +661,12 @@ val allBackendMigrations = listOf(
         statements = listOf(
             "ALTER TABLE accounts ALTER COLUMN public_id SET NOT NULL"
         )
+    ),
+    Migration(
+        version = 11,
+        statements = listOf(
+            "ALTER TABLE cloud_config ADD COLUMN default_funding_account_sync_id VARCHAR(128)"
+        )
     )
 )
 

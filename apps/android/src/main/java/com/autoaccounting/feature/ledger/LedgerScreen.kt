@@ -85,6 +85,7 @@ import kotlin.math.max
 import kotlinx.coroutines.launch
 
 @Composable
+@Suppress("LongParameterList", "LongMethod")
 fun LedgerScreen(
     entries: List<LedgerUiEntry>,
     entryListState: LazyListState = rememberLazyListState(),
@@ -108,6 +109,8 @@ fun LedgerScreen(
     onDeleteFundingAccount: suspend (Long) -> FundingAccountDeleteResult = {
         FundingAccountDeleteResult.Deleted
     },
+    defaultFundingAccountSyncId: String? = null,
+    onSetDefaultFundingAccount: suspend (Long?) -> Unit = {},
     onNavigateHome: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -242,12 +245,14 @@ fun LedgerScreen(
 
                 LedgerView.FUNDING_ACCOUNTS -> FundingAccountManagementScreen(
                     fundingAccounts = fundingAccounts,
+                    defaultFundingAccountSyncId = defaultFundingAccountSyncId,
                     snackbarHostState = snackbarHostState,
                     actions = FundingAccountManagementActions(
                         onBack = { view = LedgerView.LIST },
                         onCreateFundingAccount = onCreateFundingAccount,
                         onUpdateFundingAccount = onUpdateFundingAccount,
-                        onDeleteFundingAccount = onDeleteFundingAccount
+                        onDeleteFundingAccount = onDeleteFundingAccount,
+                        onSetDefaultFundingAccount = onSetDefaultFundingAccount
                     )
                 )
             }
