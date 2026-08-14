@@ -34,6 +34,7 @@ internal fun AutoAccountingReviewRoute(
         targetLedgerName = presentation.activeLedgerName,
         categories = runtime.ledgerState.categories,
         fundingAccounts = runtime.ledgerState.fundingAccounts,
+        defaultFundingAccountSyncId = runtime.ledgerState.defaultFundingAccountSyncId,
         onStateChange = context.actions::persistReviewState,
         modifier = Modifier
             .padding(innerPadding)

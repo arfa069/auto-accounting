@@ -204,6 +204,27 @@ class ReviewQueueEditorTest {
     }
 
     @Test
+    fun sharedEditorSelectsDefaultFundingAccount() {
+        composeRule.setContent {
+            ReviewQueueScreen(
+                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
+                fundingAccounts = listOf(
+                    fundingAccount(42, "微信零钱", PaymentSource.WECHAT),
+                    fundingAccount(84, "支付宝余额", PaymentSource.ALIPAY)
+                ),
+                defaultFundingAccountSyncId = "funding-84"
+            )
+        }
+        composeRule.waitForIdle()
+        scrollToFirstPendingEntry()
+
+        composeRule.onNodeWithTag("detail-pending-lunch").performClick()
+        composeRule.onNodeWithTag("manual-entry-funding-account")
+            .performScrollTo()
+            .assertTextContains("支付宝余额")
+    }
+
+    @Test
     fun editorDraftIsRestoredAfterRecreation() {
         val restorationTester = StateRestorationTester(composeRule)
         restorationTester.setContent {
@@ -243,6 +264,7 @@ class ReviewQueueEditorTest {
         source: PaymentSource
     ): FundingAccountEntity = FundingAccountEntity(
         id = id,
+        syncId = "funding-$id",
         sourceScope = when (source) {
             PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
             PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY

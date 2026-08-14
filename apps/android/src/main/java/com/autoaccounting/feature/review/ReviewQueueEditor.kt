@@ -112,10 +112,17 @@ internal fun ReviewPendingEntryEditor(
     entry: ReviewQueueEntry,
     availableCategories: List<CategoryEntity>,
     fundingAccounts: List<FundingAccountEntity>,
+    defaultFundingAccountSyncId: String?,
     config: ReviewPendingEntryEditorConfig
 ) {
-    val initial = remember(entry, availableCategories, fundingAccounts) {
-        entry.toLedgerEntryFormState(availableCategories, fundingAccounts)
+    val initial = remember(entry, availableCategories, fundingAccounts, defaultFundingAccountSyncId) {
+        val entryState = entry.toLedgerEntryFormState(availableCategories, fundingAccounts)
+        entryState.copy(
+            fundingAccountId = fundingAccounts
+                .firstOrNull { it.syncId == defaultFundingAccountSyncId }
+                ?.id
+                ?: entryState.fundingAccountId
+        )
     }
     Box(modifier = config.modifier.fillMaxSize()) {
         SharedLedgerEntryForm(

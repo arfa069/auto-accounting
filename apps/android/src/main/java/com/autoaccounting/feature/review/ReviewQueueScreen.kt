@@ -39,6 +39,7 @@ fun ReviewQueueScreen(
     targetLedgerName: String = "默认账本",
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
+    defaultFundingAccountSyncId: String? = null,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
@@ -55,6 +56,7 @@ fun ReviewQueueScreen(
         targetLedgerName = targetLedgerName,
         categories = categories,
         fundingAccounts = fundingAccounts,
+        defaultFundingAccountSyncId = defaultFundingAccountSyncId,
         modifier = modifier,
         onCategorizationRuleRequested = onCategorizationRuleRequested,
         accountSession = accountSession,
@@ -68,12 +70,14 @@ fun ReviewQueueScreen(
 }
 
 @Composable
+@Suppress("LongParameterList", "LongMethod")
 fun ReviewQueueScreen(
     state: ReviewQueueState,
     onStateChange: (ReviewQueueState) -> Unit,
     targetLedgerName: String = "默认账本",
     categories: List<CategoryEntity> = emptyList(),
     fundingAccounts: List<FundingAccountEntity> = emptyList(),
+    defaultFundingAccountSyncId: String? = null,
     modifier: Modifier = Modifier,
     onCategorizationRuleRequested: (CategorizationRule) -> Unit = {},
     accountSession: AccountSession? = null,
@@ -159,6 +163,7 @@ fun ReviewQueueScreen(
             entry = activeEdit,
             availableCategories = availableCategories,
             fundingAccounts = fundingAccounts,
+            defaultFundingAccountSyncId = defaultFundingAccountSyncId,
             config = ReviewPendingEntryEditorConfig(
                 modifier = modifier,
                 snackbarHostState = snackbarHostState,
