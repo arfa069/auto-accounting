@@ -1,20 +1,28 @@
 package com.autoaccounting.feature.ledger
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,13 +31,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autoaccounting.ui.components.Button
 import com.autoaccounting.ui.components.EmptyStatePanel
-import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.OutlinedTextField
 import com.autoaccounting.ui.components.TextButton
 import kotlinx.coroutines.launch
@@ -77,33 +86,13 @@ internal fun FundingAccountManagementContent(
         showEditor = true
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        TextButton(onClick = actions.onBack) { Text("返回账本") }
-        Text(
-            "资金账户",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Button(
-            onClick = { openEditor(null) },
-            modifier = Modifier.testTag(LedgerTestTags.ADD_FUNDING_ACCOUNT)
-        ) {
-            Text("新增资金账户")
-        }
-        FundingAccountList(
-            fundingAccounts = fundingAccounts,
-            defaultFundingAccountSyncId = defaultFundingAccountSyncId,
-            onSetDefault = { id -> scope.launch { actions.onSetDefaultFundingAccount(id) } },
-            onEdit = ::openEditor,
-            onRequestDelete = { pendingDelete = it }
-        )
-    }
+    FundingAccountGrid(
+        fundingAccounts = fundingAccounts,
+        defaultFundingAccountSyncId = defaultFundingAccountSyncId,
+        actions = actions,
+        onEdit = ::openEditor,
+        onRequestDelete = { pendingDelete = it }
+    )
 
     if (showEditor) {
         FundingAccountEditorDialog(
@@ -162,6 +151,156 @@ internal fun FundingAccountManagementContent(
     }
 }
 
+@Composable
+private fun FundingAccountGrid(
+    fundingAccounts: List<FundingAccountEntity>,
+    defaultFundingAccountSyncId: String?,
+    actions: FundingAccountManagementActions,
+    onEdit: (FundingAccountEntity?) -> Unit,
+    onRequestDelete: (FundingAccountEntity) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val defaultAccount = remember(fundingAccounts, defaultFundingAccountSyncId) {
+        fundingAccounts.firstOrNull { it.syncId == defaultFundingAccountSyncId }
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(320.dp),
+        modifier = Modifier
+            .fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            FundingAccountHeader(
+                accountCount = fundingAccounts.size,
+                onBack = actions.onBack,
+                onAdd = { onEdit(null) }
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            FundingAccountOverview(
+                accountCount = fundingAccounts.size,
+                defaultAccount = defaultAccount
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Text(
+                "全部账户",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        if (fundingAccounts.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                EmptyStatePanel("还没有资金账户。新增后可在记账时直接选择。")
+            }
+        } else {
+            items(fundingAccounts, key = { it.id }) { account ->
+                FundingAccountCard(
+                    account = account,
+                    isDefault = account.syncId == defaultFundingAccountSyncId,
+                    onSetDefault = {
+                        scope.launch {
+                            val id = if (account.syncId == defaultFundingAccountSyncId) null else account.id
+                            actions.onSetDefaultFundingAccount(id)
+                        }
+                    },
+                    onEdit = { onEdit(account) },
+                    onRequestDelete = { onRequestDelete(account) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FundingAccountHeader(
+    accountCount: Int,
+    onBack: () -> Unit,
+    onAdd: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(onClick = onBack) { Text("返回") }
+            Button(
+                onClick = onAdd,
+                modifier = Modifier.testTag(LedgerTestTags.ADD_FUNDING_ACCOUNT)
+            ) {
+                Text("＋ 新增账户")
+            }
+        }
+        Text(
+            "资金账户",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "跨账本共享 · $accountCount 个账户",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun FundingAccountOverview(
+    accountCount: Int,
+    defaultAccount: FundingAccountEntity?
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "账户总数",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        accountCount.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        "默认账户",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        defaultAccount?.label ?: "未设置",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Text(
+                "默认账户仅用于新账目和待确认入账",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 private suspend fun handleFundingAccountDeleteResult(
     result: FundingAccountDeleteResult,
     account: FundingAccountEntity,
@@ -177,29 +316,6 @@ private suspend fun handleFundingAccountDeleteResult(
 }
 
 @Composable
-private fun FundingAccountList(
-    fundingAccounts: List<FundingAccountEntity>,
-    defaultFundingAccountSyncId: String?,
-    onSetDefault: (Long?) -> Unit,
-    onEdit: (FundingAccountEntity) -> Unit,
-    onRequestDelete: (FundingAccountEntity) -> Unit
-) {
-    if (fundingAccounts.isEmpty()) {
-        EmptyStatePanel("暂无资金账户")
-    } else {
-        fundingAccounts.forEach { account ->
-            FundingAccountCard(
-                account = account,
-                isDefault = account.syncId == defaultFundingAccountSyncId,
-                onSetDefault = { onSetDefault(if (account.syncId == defaultFundingAccountSyncId) null else account.id) },
-                onEdit = { onEdit(account) },
-                onRequestDelete = { onRequestDelete(account) }
-            )
-        }
-    }
-}
-
-@Composable
 private fun FundingAccountCard(
     account: FundingAccountEntity,
     isDefault: Boolean,
@@ -211,19 +327,83 @@ private fun FundingAccountCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(LedgerTestTags.fundingAccount(account.id)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        border = BorderStroke(
+            if (isDefault) 1.5.dp else 1.dp,
+            if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDefault) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(account.label, fontWeight = FontWeight.SemiBold)
-            if (isDefault) Text("默认", color = MaterialTheme.colorScheme.primary)
-            Text("支付来源：${account.paymentSource.labelOrNone()}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            when (account.paymentSource) {
+                                PaymentSource.WECHAT -> "微"
+                                PaymentSource.ALIPAY -> "支"
+                                null -> "账"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        account.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "支付来源 · ${account.paymentSource.labelOrNone()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (isDefault) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "默认",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextButton(onClick = onSetDefault) { Text(if (isDefault) "取消默认" else "设为默认") }
                 TextButton(
                     onClick = onEdit,
@@ -231,11 +411,11 @@ private fun FundingAccountCard(
                 ) {
                     Text("编辑")
                 }
-                OutlinedButton(
+                TextButton(
                     onClick = onRequestDelete,
                     modifier = Modifier.testTag(LedgerTestTags.deleteFundingAccount(account.id))
                 ) {
-                    Text("删除")
+                    Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             }
         }

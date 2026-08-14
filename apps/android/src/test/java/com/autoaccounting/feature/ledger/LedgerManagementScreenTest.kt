@@ -1,5 +1,14 @@
 package com.autoaccounting.feature.ledger
 
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -11,12 +20,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import com.autoaccounting.data.local.FundingAccountEntity
 import com.autoaccounting.data.local.FundingAccountSourceScope
 import com.autoaccounting.data.local.PaymentSource
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -190,7 +203,7 @@ class LedgerManagementScreenTest {
         assertEquals("工资卡", created.get()?.first)
         assertEquals(PaymentSource.ALIPAY, created.get()?.second)
 
-        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performScrollTo().performClick()
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextClearance()
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput("微信零钱")
         composeRule.onNodeWithTag(LedgerTestTags.SAVE_FUNDING_ACCOUNT).performClick()
@@ -199,7 +212,7 @@ class LedgerManagementScreenTest {
         assertEquals("微信零钱", updated.get()?.second)
         assertEquals(PaymentSource.WECHAT, updated.get()?.third)
 
-        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performScrollTo().performClick()
         assertNull(deletedId.get())
         composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { deletedId.get() != null }
@@ -219,7 +232,7 @@ class LedgerManagementScreenTest {
         }
 
         openFundingAccountManagement()
-        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performScrollTo().performClick()
         composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -258,7 +271,7 @@ class LedgerManagementScreenTest {
         assertNull(created.get())
 
         composeRule.onNodeWithText("取消").performClick()
-        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.deleteFundingAccount(7)).performScrollTo().performClick()
         composeRule.onNodeWithTag(LedgerTestTags.CONFIRM_DELETE_FUNDING_ACCOUNT).performClick()
         composeRule.onNodeWithText("无法删除资金账户").assertIsDisplayed()
         composeRule.onNodeWithText(
@@ -295,7 +308,7 @@ class LedgerManagementScreenTest {
         }
 
         openFundingAccountManagement()
-        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performClick()
+        composeRule.onNodeWithTag(LedgerTestTags.editFundingAccount(7)).performScrollTo().performClick()
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextClearance()
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL).performTextInput("微信零钱")
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_SOURCE).performClick()
@@ -307,6 +320,67 @@ class LedgerManagementScreenTest {
         composeRule.onNodeWithTag(LedgerTestTags.FUNDING_ACCOUNT_LABEL)
             .assertTextContains("微信零钱")
         composeRule.onNodeWithText("支付来源：支付宝").assertIsDisplayed()
+    }
+
+    @Test
+    fun fundingAccountLayoutAdaptsAndDefaultCanBeCleared() {
+        var forcedSize by mutableStateOf(DpSize(400.dp, 1_400.dp))
+        var fontScale by mutableFloatStateOf(1f)
+        val selectedDefaultId = AtomicReference<Long?>(Long.MIN_VALUE)
+        val accounts = listOf(
+            fundingAccount(id = 7, label = "零钱", source = PaymentSource.WECHAT),
+            fundingAccount(id = 8, label = "工资卡", source = PaymentSource.ALIPAY)
+        )
+        composeRule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(forcedSize) then
+                    DeviceConfigurationOverride.FontScale(fontScale)
+            ) {
+                FundingAccountManagementContent(
+                    fundingAccounts = accounts,
+                    defaultFundingAccountSyncId = "funding-7",
+                    snackbarHostState = remember { SnackbarHostState() },
+                    actions = FundingAccountManagementActions(
+                        onBack = {},
+                        onCreateFundingAccount = { _, _ -> },
+                        onUpdateFundingAccount = { _, _, _ -> },
+                        onSetDefaultFundingAccount = { selectedDefaultId.set(it) },
+                        onDeleteFundingAccount = { FundingAccountDeleteResult.Deleted }
+                    )
+                )
+            }
+        }
+
+        listOf(
+            Triple(DpSize(400.dp, 1_400.dp), 1f, false),
+            Triple(DpSize(610.dp, 1_400.dp), 1f, false),
+            Triple(DpSize(900.dp, 1_400.dp), 1f, true),
+            Triple(DpSize(400.dp, 1_400.dp), 1.5f, false)
+        ).forEach { (size, scale, sideBySide) ->
+            composeRule.runOnIdle {
+                forcedSize = size
+                fontScale = scale
+            }
+            composeRule.waitForIdle()
+            val first = composeRule.onNodeWithTag(LedgerTestTags.fundingAccount(7))
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            val second = composeRule.onNodeWithTag(LedgerTestTags.fundingAccount(8))
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            if (sideBySide) {
+                assertTrue(second.left > first.left)
+                assertTrue(kotlin.math.abs(first.top - second.top) < 1f)
+            } else {
+                assertTrue(kotlin.math.abs(first.left - second.left) < 1f)
+                assertTrue(second.top > first.top)
+            }
+        }
+
+        composeRule.onNodeWithText("跨账本共享 · 2 个账户").assertIsDisplayed()
+        composeRule.onNodeWithText("取消默认").performClick()
+        composeRule.waitUntil { selectedDefaultId.get() != Long.MIN_VALUE }
+        assertNull(selectedDefaultId.get())
     }
 
     private fun openLedgerManagement() {
@@ -327,6 +401,7 @@ class LedgerManagementScreenTest {
         source: PaymentSource?
     ): FundingAccountEntity = FundingAccountEntity(
         id = id,
+        syncId = "funding-$id",
         sourceScope = when (source) {
             PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
             PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
