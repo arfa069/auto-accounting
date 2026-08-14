@@ -27,3 +27,5 @@ captures/
 .codex/config.toml
 /.agents
 reasonix.toml
+/.gradle-local
+/.build-home

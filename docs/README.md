@@ -9,6 +9,7 @@
 - [开发切片规划 (Development Slices)](./DEVELOPMENT-SLICES.md)
 - [阶段 2 切片规划 (Phase 2 Slices)](./PHASE-2-SLICES.md)
 - [阶段 2 基线审计 (Phase 2 Baseline Audit)](./PHASE-2-BASELINE-AUDIT.md)
+- [代码质量与性能审计报告 (2026-08-13)](./CODE-QUALITY-AUDIT-2026-08-13.md)
 - [阶段 2 Issue 规划 (Phase 2 Issues)](./PHASE-2-ISSUES.md)
 - [阶段 2 Issue 跟踪文件](./issues/phase-2/)
 - [当前未完成事项](../todos.md)
