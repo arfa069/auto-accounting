@@ -74,6 +74,7 @@ android {
             "AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC",
             allowHttpLedgerSync.toString()
         )
+        manifestPlaceholders["allowHttpLedgerSync"] = allowHttpLedgerSync
     }
 
     signingConfigs {
