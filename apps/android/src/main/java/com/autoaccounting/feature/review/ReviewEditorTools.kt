@@ -291,7 +291,9 @@ private fun EvidenceSection(entry: ReviewQueueEntry) {
         entry.parsedFields.forEach { field ->
             Text(field, style = MaterialTheme.typography.bodySmall)
         }
-        Text("原始文本", fontWeight = FontWeight.SemiBold)
-        Text(entry.rawEvidenceText, style = MaterialTheme.typography.bodySmall)
+        parseReviewEvidenceText(entry.rawEvidenceText).forEach { (label, text) ->
+            Text(label, fontWeight = FontWeight.SemiBold)
+            Text(text, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }

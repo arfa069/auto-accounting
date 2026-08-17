@@ -2,6 +2,8 @@ package com.autoaccounting.feature.capture
 
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import com.autoaccounting.feature.review.NOTIFICATION_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.reviewEvidenceText
 import java.security.MessageDigest
 
 class NotificationCapturePipeline(
@@ -28,7 +30,10 @@ class NotificationCapturePipeline(
             capturedAtEpochMillis = event.postedAtEpochMillis,
             captureTimeText = captureTimeFormatter(event.postedAtEpochMillis),
             note = parsed.note,
-            rawEvidenceText = parsed.rawEvidenceText,
+            rawEvidenceText = reviewEvidenceText(
+                NOTIFICATION_EVIDENCE_LABEL,
+                parsed.rawEvidenceText
+            ),
             parsedFields = parsed.parsedFields
         )
         return NotificationCaptureEvaluation(entry = entry, parsing = parsing)

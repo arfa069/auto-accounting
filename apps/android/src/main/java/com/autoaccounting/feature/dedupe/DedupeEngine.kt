@@ -2,6 +2,7 @@ package com.autoaccounting.feature.dedupe
 
 import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import com.autoaccounting.feature.review.mergeReviewEvidenceText
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -84,6 +85,7 @@ class DedupeEngine {
 
     private fun ReviewQueueEntry.mergeWith(candidate: ReviewQueueEntry): ReviewQueueEntry {
         val preferCandidateDetails = hasGenericTitle && !candidate.hasGenericTitle
+        val preferCandidateFunding = candidate.hasExplicitFundingAccount && !hasExplicitFundingAccount
         return copy(
             title = candidate.title.takeIf { preferCandidateDetails } ?: title,
             confidence = ConfidenceState.HIGH,
@@ -94,11 +96,10 @@ class DedupeEngine {
             } else {
                 category.ifBlank { candidate.category }
             },
-            fundingAccountLabel = fundingAccountLabel.ifBlank { candidate.fundingAccountLabel },
+            fundingAccountLabel = candidate.fundingAccountLabel.takeIf { preferCandidateFunding }
+                ?: fundingAccountLabel.ifBlank { candidate.fundingAccountLabel },
             note = note ?: candidate.note,
-            rawEvidenceText = listOf(rawEvidenceText, candidate.rawEvidenceText)
-                .filter { it.isNotBlank() }
-                .joinToString(separator = "\n---\n"),
+            rawEvidenceText = mergeReviewEvidenceText(rawEvidenceText, candidate.rawEvidenceText),
             parsedFields = (
                 parsedFields + candidate.parsedFields +
                     listOf(
@@ -125,7 +126,21 @@ class DedupeEngine {
         get() = title.trim().lowercase()
 
     private val ReviewQueueEntry.hasGenericTitle: Boolean
-        get() = normalizedTitle in GENERIC_TITLES
+        get() = normalizedTitle == "未知来源" ||
+            normalizedTitle == "${sourceLabel}支付".lowercase()
+
+    private val ReviewQueueEntry.hasExplicitFundingAccount: Boolean
+        get() {
+            if (parsedFields.any { it == "支付方式来源=默认" }) return false
+            if (parsedFields.any { it.startsWith("paymentAccount=") || it.startsWith("支付方式=") }) {
+                return true
+            }
+            val paymentMethod = parsedFields.firstOrNull { it.startsWith("paymentMethod=") }
+                ?.substringAfter('=')
+                ?.trim()
+            return !paymentMethod.isNullOrBlank() &&
+                !paymentMethod.equals(sourceLabel, ignoreCase = true)
+        }
 
     private fun String.minutesFrom(other: String): Long? {
         val first = parseTransactionTime(this) ?: return null
@@ -140,7 +155,6 @@ class DedupeEngine {
     private companion object {
         const val LOW_CONFIDENCE_WINDOW_MINUTES = 10
         const val CROSS_CAPTURE_WINDOW_MINUTES = 2
-        val GENERIC_TITLES = setOf("未知来源", "微信支付", "支付宝支付")
         val transactionTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }

@@ -155,6 +155,32 @@ class DedupeEngineTest {
     }
 
     @Test
+    fun mergePrefersExplicitPageFundingOverNotificationFallback() {
+        val notification = entry(
+            title = "未知来源",
+            source = "支付宝",
+            captureReason = "通知捕获"
+        ).copy(
+            fundingAccountLabel = "支付宝余额",
+            parsedFields = listOf("paymentMethod=支付宝")
+        )
+        val automatic = entry(
+            id = "automatic-1",
+            title = "中国电信",
+            source = "支付宝",
+            captureReason = "支付结果自动捕获"
+        ).copy(
+            fundingAccountLabel = "花呗",
+            parsedFields = listOf("支付方式=花呗")
+        )
+
+        val merged = DedupeEngine().addCandidate(listOf(notification), automatic)
+            .pendingEntries.single()
+
+        assertEquals("花呗", merged.fundingAccountLabel)
+    }
+
+    @Test
     fun differentSpecificTitlesStayDuplicateSuspectsAcrossCaptureSources() {
         val notification = entry(
             title = "午餐",

@@ -171,9 +171,14 @@ class ReviewQueueContentTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("查看证据").performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithText("通知捕获").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("微信支付收款凭证 午餐 35.90")
             .performScrollTo()
             .assertIsDisplayed()
+        composeRule.onNodeWithText("无障碍节点").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("支付成功 午餐").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("ML Kit OCR").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("支付成功 午餐 ¥35.90").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("商户=午餐")
             .performScrollTo()
             .assertIsDisplayed()
@@ -206,7 +211,16 @@ class ReviewQueueContentTest {
         capturedAtEpochMillis = NOW,
         captureTimeText = "2026-07-08 12:21",
         note = null,
-        rawEvidenceText = "微信支付收款凭证 午餐 35.90",
+        rawEvidenceText = """
+            [通知捕获]
+            微信支付收款凭证 午餐 35.90
+
+            [无障碍节点]
+            支付成功 午餐
+
+            [ML Kit OCR]
+            支付成功 午餐 ¥35.90
+        """.trimIndent(),
         parsedFields = listOf("商户=午餐", "金额=35.90")
     )
 

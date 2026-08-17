@@ -66,6 +66,8 @@ class BillSyncCaptureProcessor(
         source: BillSyncSource,
         pageText: String,
         retainRawEvidence: Boolean = true,
+        rawEvidenceText: String? = null,
+        capturedAtEpochMillis: Long = clock(),
         automaticCaptureVerification: AutomaticCaptureVerification =
             AutomaticCaptureVerification.Standard,
         traceId: String = newDiagnosticTraceId()
@@ -74,6 +76,8 @@ class BillSyncCaptureProcessor(
         pageText = pageText,
         captureReasonLabel = "支付结果自动捕获",
         retainRawEvidence = retainRawEvidence,
+        rawEvidenceText = rawEvidenceText,
+        capturedAtEpochMillis = capturedAtEpochMillis,
         automaticCaptureVerification = automaticCaptureVerification,
         traceId = traceId,
         isOcr = !retainRawEvidence
@@ -143,6 +147,8 @@ class BillSyncCaptureProcessor(
         pageText: String,
         captureReasonLabel: String,
         retainRawEvidence: Boolean = true,
+        rawEvidenceText: String? = null,
+        capturedAtEpochMillis: Long = clock(),
         automaticCaptureVerification: AutomaticCaptureVerification =
             AutomaticCaptureVerification.Standard,
         traceId: String,
@@ -178,9 +184,10 @@ class BillSyncCaptureProcessor(
             existingPendingEntries = previousState.pendingEntries,
             existingLedgerEntries = existingLedgerEntries,
             existingIgnoredEntries = previousState.ignoredEntries.map { it.entry },
-            capturedAtEpochMillis = clock(),
+            capturedAtEpochMillis = capturedAtEpochMillis,
             captureReasonLabel = captureReasonLabel,
             retainRawEvidence = retainRawEvidence,
+            rawEvidenceText = rawEvidenceText,
             automaticCaptureVerification = automaticCaptureVerification
         )
         if (result.errorMessage != null) {

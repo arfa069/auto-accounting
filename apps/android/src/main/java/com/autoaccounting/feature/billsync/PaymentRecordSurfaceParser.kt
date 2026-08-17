@@ -139,6 +139,7 @@ private data class PaymentRecordWindowContext(
             add("类型=$transactionKindLabel")
             add("交易时间=${resolvedTime.text}")
             add("支付方式=$fundingAccountLabel")
+            if (extractedFundingAccountLabel == null) add("支付方式来源=默认")
             add("商品=$productText")
             add("商品名称=$merchantTitle")
             add("商户或收款方=$counterpartyText")

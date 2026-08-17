@@ -5,6 +5,7 @@ import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSign
 import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
 import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
 import com.autoaccounting.feature.review.ReviewQueueEntry
+import com.autoaccounting.feature.review.mergeReviewEvidenceText
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -56,6 +57,7 @@ private data class BillSyncInvocation(
     val capturedAtEpochMillis: Long,
     val captureReasonLabel: String,
     val retainRawEvidence: Boolean,
+    val rawEvidenceText: String?,
     val automaticCaptureVerification: AutomaticCaptureVerification
 ) {
     val isWechatRedPacketAutomaticCapture: Boolean
@@ -85,6 +87,7 @@ class BillSyncPipeline(
         capturedAtEpochMillis: Long,
         captureReasonLabel: String = "补录账单",
         retainRawEvidence: Boolean = true,
+        rawEvidenceText: String? = null,
         automaticCaptureVerification: AutomaticCaptureVerification =
             AutomaticCaptureVerification.Standard
     ): BillSyncResult = sync(
@@ -97,6 +100,7 @@ class BillSyncPipeline(
             capturedAtEpochMillis = capturedAtEpochMillis,
             captureReasonLabel = captureReasonLabel,
             retainRawEvidence = retainRawEvidence,
+            rawEvidenceText = rawEvidenceText,
             automaticCaptureVerification = automaticCaptureVerification
         )
     )
@@ -162,7 +166,8 @@ class BillSyncPipeline(
             val candidate = parsed.toPendingEntry(
                 capturedAtEpochMillis = capturedAtEpochMillis,
                 captureReasonLabel = captureReasonLabel,
-                retainRawEvidence = retainRawEvidence
+                retainRawEvidence = retainRawEvidence,
+                rawEvidenceText = rawEvidenceText
             )
             val matchingNotifications = candidate.matchingRecentNotifications(
                 existingPendingEntries = existingPendingEntries,
@@ -212,7 +217,8 @@ class BillSyncPipeline(
     private fun ParsedBillEntry.toPendingEntry(
         capturedAtEpochMillis: Long,
         captureReasonLabel: String,
-        retainRawEvidence: Boolean
+        retainRawEvidence: Boolean,
+        rawEvidenceText: String?
     ): ReviewQueueEntry =
         ReviewQueueEntry(
             id = stableId(),
@@ -236,7 +242,10 @@ class BillSyncPipeline(
             note = "商户未识别，请人工确认".takeIf {
                 captureReasonLabel == MANUAL_OCR_CAPTURE_REASON && merchantTitleFromFallback
             },
-            rawEvidenceText = rawLine.takeIf { retainRawEvidence }.orEmpty(),
+            rawEvidenceText = mergeReviewEvidenceText(
+                rawEvidenceText.orEmpty(),
+                rawLine.takeIf { retainRawEvidence && rawEvidenceText.isNullOrBlank() }.orEmpty()
+            ),
             parsedFields = parsedFields
         )
 

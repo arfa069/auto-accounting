@@ -1,6 +1,8 @@
 package com.autoaccounting.feature.billsync
 
 import android.os.Build
+import android.view.accessibility.AccessibilityEvent
+import com.autoaccounting.feature.monitoring.hasAlipayPaymentResultPageSignature
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -11,28 +13,47 @@ class AlipayOcrCaptureDecisionTest {
     fun resultPageWithIncompleteAccessibilityFieldsTriggersOcrFallback() {
         assertTrue(
             shouldAttemptAlipayOcrFallback(
-                request("支付成功\n收款方\n付款方式", isWindowStateChanged = false)
+                request("支付成功\n收款方\n付款方式")
             )
         )
     }
 
     @Test
-    fun blankResultPageRequiresRecentPaymentFlowButNotWindowTransition() {
+    fun completeAccessibilityFieldsStillTriggerEvidenceFusionOcr() {
+        assertTrue(
+            shouldAttemptAlipayOcrFallback(
+                request("支付成功\n中国电信\n¥7.98\n交易方式\n花呗\n回首页")
+            )
+        )
+    }
+
+    @Test
+    fun blankResultPageAllowsWindowTransitionOrRecentPaymentFlow() {
         val pageText = ""
         assertTrue(
             shouldAttemptAlipayOcrFallback(
                 request(pageText, hasRecentPaymentFlow = true)
             )
         )
-        assertFalse(
+        assertTrue(
             shouldAttemptAlipayOcrFallback(
-                request(pageText)
+                request(pageText, eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
             )
         )
+        assertTrue(
+            shouldAttemptAlipayOcrFallback(
+                request(
+                    pageText,
+                    eventType = AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+                    windowId = -1
+                )
+            )
+        )
+        assertFalse(shouldAttemptAlipayOcrFallback(request(pageText)))
     }
 
     @Test
-    fun homeRecentMessageAndPaymentInitiationDoNotTriggerOcr() {
+    fun homeAndPaymentInitiationNeverTriggerResultOcr() {
         val homeText = "支付宝 首页\n最近消息\n便利店 付款成功 ¥20.00"
         assertFalse(
             shouldAttemptAlipayOcrFallback(
@@ -52,31 +73,47 @@ class AlipayOcrCaptureDecisionTest {
     }
 
     @Test
-    fun recentPaymentFlowAllowsSuccessCueWithoutAccessibilityResultContext() {
+    fun successCueAllowsProbeWithoutAccessibilityResultContext() {
         assertTrue(
             shouldAttemptAlipayOcrFallback(
                 request("支付成功\n¥20.00", hasRecentPaymentFlow = true)
             )
         )
-        assertFalse(
+        assertTrue(
             shouldAttemptAlipayOcrFallback(
                 request("支付成功\n¥20.00")
             )
         )
     }
 
+    @Test
+    fun notificationTriggerAllowsProbeButDoesNotBypassFinalValidation() {
+        assertTrue(
+            shouldAttemptAlipayOcrFallback(
+                request("", hasNotificationTrigger = true)
+            )
+        )
+        assertEquals(
+            AlipayOcrRejectionReason.BlankText,
+            decideAlipayOcrCapture("").rejectionReason
+        )
+    }
+
     private fun request(
         pageText: String,
-        isWindowStateChanged: Boolean = true,
-        hasRecentPaymentFlow: Boolean = false
+        hasRecentPaymentFlow: Boolean = false,
+        eventType: Int = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+        hasNotificationTrigger: Boolean = false,
+        windowId: Int = 1
     ): AlipayOcrFallbackRequest = AlipayOcrFallbackRequest(
         packageName = BillSyncSource.Alipay.packageName,
         pageText = pageText,
         sdkInt = Build.VERSION_CODES.R,
         isApplicationWindow = true,
-        isWindowStateChanged = isWindowStateChanged,
         hasRecentPaymentFlow = hasRecentPaymentFlow,
-        accessibilityNeedsOcr = true
+        eventType = eventType,
+        windowId = windowId,
+        hasNotificationTrigger = hasNotificationTrigger
     )
 
     @Test
@@ -98,7 +135,7 @@ class AlipayOcrCaptureDecisionTest {
         val entry = BillPageParser().parse(
             source = BillSyncSource.Alipay,
             pageText = pageText,
-            fallbackTransactionTimeText = ALIPAY_OCR_FALLBACK_TRANSACTION_TIME
+            fallbackTransactionTimeText = "1970-01-01 00:00"
         ).single()
         assertEquals("便利店", entry.merchantTitle)
         assertEquals("支付宝余额", entry.fundingAccountLabel)
@@ -126,22 +163,24 @@ class AlipayOcrCaptureDecisionTest {
     }
 
     @Test
-    fun ocrResultRejectsMissingMerchantFundingOrAmbiguousAmount() {
+    fun ocrResultAllowsPartialFieldsButRejectsAmbiguousAmount() {
         val missingMerchant = "支付成功\n收款方\n金额\n¥20.00\n付款方式\n支付宝余额"
         val missingFunding = "支付成功\n收款方\n便利店\n金额\n¥20.00\n付款方式"
         val ambiguousAmount = "支付成功\n收款方\n便利店\n¥20.00\n¥5.00\n付款方式\n支付宝余额"
 
-        assertEquals(
-            AlipayOcrRejectionReason.MerchantMissing,
-            decideAlipayOcrCapture(missingMerchant).rejectionReason
-        )
-        assertEquals(
-            AlipayOcrRejectionReason.FundingAccountMissing,
-            decideAlipayOcrCapture(missingFunding).rejectionReason
-        )
+        assertTrue(decideAlipayOcrCapture(missingMerchant).shouldCapture)
+        assertTrue(decideAlipayOcrCapture(missingFunding).shouldCapture)
         assertEquals(
             AlipayOcrRejectionReason.TransactionAmountMissingOrAmbiguous,
             decideAlipayOcrCapture(ambiguousAmount).rejectionReason
+        )
+    }
+
+    @Test
+    fun resultContextAndAmountDoNotReplaceCompletionEvidence() {
+        assertEquals(
+            AlipayOcrRejectionReason.PaymentCompletionMissing,
+            decideAlipayOcrCapture("支付信息\n收款方：便利店\n金额 ¥20.00").rejectionReason
         )
     }
 
@@ -158,6 +197,11 @@ class AlipayOcrCaptureDecisionTest {
                 pageText = pageText,
                 allowRecentPaymentContext = true
             ).shouldCapture
+        )
+        assertTrue(
+            hasAlipayPaymentResultPageSignature(
+                pageText.withTrustedAlipayPaymentContext(allowRecentPaymentContext = true)
+            )
         )
     }
 

@@ -1,13 +1,17 @@
 package com.autoaccounting.feature.billsync
 
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.PaymentNotificationCaptureTriggers
 import com.autoaccounting.feature.capture.toBookkeepingResultNotification
+import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
-import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
+import com.autoaccounting.feature.review.ACCESSIBILITY_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.mergeReviewEvidenceText
+import com.autoaccounting.feature.review.reviewEvidenceText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,11 +112,39 @@ internal class ContinuousCaptureCoordinator(
             return
         }
         val source = BillSyncSource.fromPackageName(packageName) ?: return
+        val notificationTrigger = PaymentNotificationCaptureTriggers.awaitPendingFor(packageName)
+        if (
+            notificationTrigger != null &&
+            !PaymentNotificationCaptureTriggers.tryClaimFusion(notificationTrigger.captureId)
+        ) {
+            return
+        }
+        val fusedPageText = fusePaymentEvidenceText(
+            source = source,
+            accessibilityEvidence = PaymentTextEvidence(pageText),
+            ocrEvidence = null,
+            notificationEvidence = notificationTrigger?.toPaymentTextEvidence()
+        )
         runCatching {
             withContext(Dispatchers.IO) {
-                dependencies.processor().processAutomatic(source = source, pageText = pageText, traceId = traceId)
+                dependencies.processor().processAutomatic(
+                    source = source,
+                    pageText = fusedPageText,
+                    rawEvidenceText = mergeReviewEvidenceText(
+                        notificationTrigger?.rawNotificationEvidence.orEmpty(),
+                        reviewEvidenceText(ACCESSIBILITY_EVIDENCE_LABEL, pageText)
+                    ),
+                    traceId = traceId
+                )
             }
         }.onSuccess { result ->
+            if (notificationTrigger != null) {
+                if (result.errorMessage == null) {
+                    PaymentNotificationCaptureTriggers.complete(notificationTrigger.captureId)
+                } else {
+                    PaymentNotificationCaptureTriggers.releaseFusion(notificationTrigger.captureId)
+                }
+            }
             result.toBookkeepingResultNotification(source.label)?.let { notification ->
                 dependencies.diagnostics.recordMetadata(
                     "result_notification_requested",
@@ -124,6 +156,9 @@ internal class ContinuousCaptureCoordinator(
                 dependencies.resultNotifier().notify(notification)
             }
         }.onFailure { error ->
+            notificationTrigger?.let {
+                PaymentNotificationCaptureTriggers.releaseFusion(it.captureId)
+            }
             dependencies.diagnostics.recordFailure("automatic_page_capture_failed", traceId, source, null, error)
         }
     }
@@ -156,4 +191,3 @@ internal class ContinuousCaptureCoordinator(
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
     }
 }
-

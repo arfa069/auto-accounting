@@ -11,7 +11,7 @@
 
 - 交易发生时自动识别：
   - 通知监听读取微信、支付宝通知。
-  - 开启自动记账功能后，无障碍服务观察支付完成页；微信以及支付宝结果页在无障碍节点文本不可用或字段不完整时，可走受限的本机OCR。
+  - 开启自动记账功能后，无障碍服务观察支付完成页；受支持结果页会把当前无障碍节点与一次性本机 OCR 作为同一捕获批次的可选证据，不要求通知先到或存在。
   - 支付宝乘车出站页只有在无障碍节点暴露乘车线索但缺少完整场景时，才使用受限的本机 OCR 补足“已出站”场景；该 OCR 不解析金额或创建独立交易。
 
 - 账单补录：
@@ -195,7 +195,7 @@
 
 ### 3.2 交易发生时：自动页面识别
 
-支付宝自动路径优先使用无障碍节点文本。支付结果页刚从付款流程切换出来、无障碍节点为空或无法同时提取商户与付款方式时，Android 11 及以上可执行一次受限的本机截图 OCR；OCR 只作为该结果页的兜底，不改变交易页面签名。支付宝手动补录仍只读取无障碍节点，不使用截图 OCR。
+支付宝自动路径由通知或支付结果页任一可信信号触发。结果页在 Android 11 及以上立即截图，并把通知、无障碍节点与本机 OCR 中实际存在的数据按字段融合；三者均可缺失且没有固定到达顺序。支付宝手动补录仍只读取无障碍节点，不使用截图 OCR。
 
 #### 支付、收款、转账与退款完成页
 
@@ -206,7 +206,7 @@
 3. 含至少一个支付宝结果页上下文：`收款方`、`付款方式`、`支付方式`、`交易方式`、`付款渠道`、`交易时间`、`订单号`、`交易单号`、`支付信息`、`支付凭证`、`交易详情`、`账单详情`、`查看账单`或`返回首页`。
 4. 能按通用页面类型规则判断为`支出`、`收入`、`退款`、`转账`或`红包`。
 
-当自动路径需要 OCR 兜底时，OCR 结果必须包含明确的商户/收款方和一个无歧义金额；付款方式/交易方式优先使用页面明确值。若无障碍节点没有结果页上下文标签，只有在本次 OCR 前已观察到同一支付宝付款流程时才允许用该流程上下文补足，并沿用“支付宝余额”默认账户；缺商户、金额冲突或没有可信付款流程时拒绝入账，不能单凭“支付成功”放行。截图只在内存中短暂处理，OCR 原文不写入账本或待确认队列，仅沿用受控诊断敏感字段链路，不作为普通运行日志。
+自动路径仍要求可信完成态和一个无歧义金额；商户、付款方式与明确交易时间属于可补全字段。融合时保留 OCR 行坐标和无障碍节点边界，商户优先取明确标签，否则取视觉主金额附近的有效标题，不依赖纯文本先后顺序。付款方式优先使用页面或通知中的明确值；时间优先使用页面时间，其次通知时间，最后使用截图捕获时间而非 OCR 完成时间。金额冲突或没有可信付款流程时拒绝创建；缺少通知、商户或付款方式不会阻止生成待确认项。截图只在内存中短暂处理，绝不保存或上传。通知、无障碍节点和 ML Kit OCR 原文会分区保存在对应待确认证据中，存在多条通知候选时不猜测关联。
 
 类型判断重点：
 
@@ -277,6 +277,7 @@
 ## 5. 实现依据
 
 - 通知入口与类型判断：[PaymentNotificationParser.kt](../apps/android/src/main/java/com/autoaccounting/feature/capture/PaymentNotificationParser.kt)
+- 支付结果页字段融合：[PaymentEvidenceFusion.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/PaymentEvidenceFusion.kt)
 - 自动页面入口边界：[ContinuousMonitoringState.kt](../apps/android/src/main/java/com/autoaccounting/feature/monitoring/ContinuousMonitoringState.kt)
 - 微信完成页签名：[WechatPaymentSurface.kt](../apps/android/src/main/java/com/autoaccounting/feature/monitoring/WechatPaymentSurface.kt)
 - 页面字段与类型解析：[BillPageParser.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt)

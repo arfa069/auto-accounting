@@ -144,7 +144,7 @@ internal fun String.isMeaningfulPaymentRecordValue(): Boolean {
     return true
 }
 
-private fun String.isMeaningfulPaymentRecordTitle(): Boolean {
+internal fun String.isMeaningfulPaymentRecordTitle(): Boolean {
     val value = trim()
     return value.length in 2..64 &&
         value.isMeaningfulPaymentRecordValue() &&
@@ -238,6 +238,9 @@ private val PAYMENT_RECORD_NOISE_CONTAINS = listOf(
 
 private val PAYMENT_RECORD_TITLE_NOISE_VALUES = listOf(
     "返回",
+    "返回商家",
+    "回首页",
+    "返回首页",
     "更多",
     "帮助",
     "投诉",

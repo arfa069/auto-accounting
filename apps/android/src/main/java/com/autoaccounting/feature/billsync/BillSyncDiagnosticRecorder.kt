@@ -52,9 +52,21 @@ internal class BillSyncDiagnosticRecorder(
         traceId: String = newDiagnosticTraceId(),
         sessionId: Long? = null,
         source: DiagnosticSource = DiagnosticSource.System,
-        component: DiagnosticComponent = DiagnosticComponent.AccessibilityService
+        component: DiagnosticComponent = DiagnosticComponent.AccessibilityService,
+        sensitivePayload: DiagnosticSensitivePayload = DiagnosticSensitivePayload()
     ) {
-        record(BillSyncDiagnosticRecord(event, outcome, reason, traceId, sessionId, source, component))
+        record(
+            BillSyncDiagnosticRecord(
+                event,
+                outcome,
+                reason,
+                traceId,
+                sessionId,
+                source,
+                component,
+                sensitivePayload = sensitivePayload
+            )
+        )
     }
 
     fun recordFailure(
@@ -104,4 +116,3 @@ internal class BillSyncDiagnosticRecorder(
         )
     }
 }
-

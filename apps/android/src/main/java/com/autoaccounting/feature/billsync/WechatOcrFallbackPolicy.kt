@@ -1,6 +1,7 @@
 package com.autoaccounting.feature.billsync
 
 import android.os.Build
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autoaccounting.feature.monitoring.hasOnlyGenericWechatAccessibilityText
 import com.autoaccounting.feature.monitoring.hasWechatMerchantPaymentSuccessSignature
@@ -97,15 +98,25 @@ internal class PaymentScreenOcrSessionGuard {
     }
 }
 
-internal fun AccessibilityNodeInfo.collectVisibleText(): String {
-    val lines = linkedSetOf<String>()
+internal fun AccessibilityNodeInfo.collectVisibleText(): String = collectVisibleTextEvidence().text
+
+internal fun AccessibilityNodeInfo.collectVisibleTextEvidence(): PaymentTextEvidence {
+    val observations = linkedMapOf<String, PaymentTextObservation>()
     var visitedNodeCount = 0
     var collectedCharacterCount = 0
 
-    fun addLine(value: CharSequence?) {
+    fun addLine(value: CharSequence?, bounds: Rect) {
         val line = value?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: return
         if (collectedCharacterCount + line.length > MAX_VISIBLE_TEXT_CHARACTERS) return
-        if (lines.add(line)) {
+        if (line !in observations) {
+            observations[line] = PaymentTextObservation(
+                text = line,
+                height = bounds.height(),
+                left = bounds.left,
+                top = bounds.top,
+                bottom = bounds.bottom,
+                right = bounds.right
+            )
             collectedCharacterCount += line.length
         }
     }
@@ -119,8 +130,9 @@ internal fun AccessibilityNodeInfo.collectVisibleText(): String {
             return
         }
         visitedNodeCount += 1
-        addLine(node.text)
-        addLine(node.contentDescription)
+        val bounds = Rect().also(node::getBoundsInScreen)
+        addLine(node.text, bounds)
+        addLine(node.contentDescription, bounds)
         if (
             depth == MAX_VISIBLE_TEXT_DEPTH ||
             visitedNodeCount >= MAX_VISIBLE_TEXT_NODES ||
@@ -135,8 +147,13 @@ internal fun AccessibilityNodeInfo.collectVisibleText(): String {
         }
     }
 
+    val rootBounds = Rect().also(::getBoundsInScreen)
     collect(this, depth = 0)
-    return lines.joinToString("\n")
+    return PaymentTextEvidence(
+        text = observations.keys.joinToString("\n"),
+        observations = observations.values.toList(),
+        imageHeight = rootBounds.height()
+    )
 }
 
 private const val MAX_VISIBLE_TEXT_NODES = 512

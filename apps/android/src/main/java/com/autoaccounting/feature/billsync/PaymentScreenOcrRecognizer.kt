@@ -14,7 +14,9 @@ internal class PaymentScreenOcrRecognizer : Closeable {
         ChineseTextRecognizerOptions.Builder().build()
     )
 
-    suspend fun recognize(bitmap: Bitmap): String = suspendCoroutine { continuation ->
+    suspend fun recognize(bitmap: Bitmap): String = recognizeEvidence(bitmap).text
+
+    suspend fun recognizeEvidence(bitmap: Bitmap): PaymentTextEvidence = suspendCoroutine { continuation ->
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
                 val lines = result.textBlocks.flatMap { block -> block.lines }
@@ -32,7 +34,13 @@ internal class PaymentScreenOcrRecognizer : Closeable {
                     lines = observations,
                     imageHeight = bitmap.height
                 )
-                continuation.resume(normalizedText)
+                continuation.resume(
+                    PaymentTextEvidence(
+                        text = normalizedText,
+                        observations = observations,
+                        imageHeight = bitmap.height
+                    )
+                )
             }
             .addOnFailureListener(continuation::resumeWithException)
     }
@@ -42,12 +50,21 @@ internal class PaymentScreenOcrRecognizer : Closeable {
     }
 }
 
-internal data class OcrLineObservation(
+internal data class PaymentTextObservation(
     val text: String,
     val height: Int,
     val left: Int? = null,
     val top: Int? = null,
-    val bottom: Int? = null
+    val bottom: Int? = null,
+    val right: Int? = null
+)
+
+internal typealias OcrLineObservation = PaymentTextObservation
+
+internal data class PaymentTextEvidence(
+    val text: String,
+    val observations: List<PaymentTextObservation> = emptyList(),
+    val imageHeight: Int = 0
 )
 
 internal fun normalizePaymentScreenOcrText(

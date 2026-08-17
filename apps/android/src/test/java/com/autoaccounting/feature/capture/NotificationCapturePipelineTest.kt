@@ -30,7 +30,10 @@ class NotificationCapturePipelineTest {
         assertEquals(3590, entry.amountMinor)
         assertEquals("通知捕获", entry.captureReasonLabel)
         assertEquals(ConfidenceState.NEEDS_REVIEW, entry.confidence)
-        assertEquals("微信支付 付款成功 商户：午餐 金额：¥35.90", entry.rawEvidenceText)
+        assertEquals(
+            "[通知捕获]\n微信支付 付款成功 商户：午餐 金额：¥35.90",
+            entry.rawEvidenceText
+        )
         assertTrue(entry.parsedFields.contains("来源=微信"))
         assertTrue(entry.parsedFields.contains("金额=35.90"))
     }

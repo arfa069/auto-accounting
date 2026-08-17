@@ -147,6 +147,21 @@ class BillSyncPipelineTest {
     }
 
     @Test
+    fun namedEvidenceDoesNotAlsoStoreDuplicateUnlabeledPageText() {
+        val evidence = "[无障碍节点]\n支付信息 支付成功 中国电信 金额 ¥2.98"
+        val result = BillSyncPipeline(parser = BillPageParser()).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付信息\n支付成功\n中国电信\n金额 ¥2.98",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获",
+            rawEvidenceText = evidence
+        )
+
+        assertEquals(evidence, result.createdEntries.single().rawEvidenceText)
+    }
+
+    @Test
     fun receivedWechatRedPacketCreatesPendingWithoutPersistingOcrText() {
         val result = BillSyncPipeline(
             parser = BillPageParser(),
@@ -463,6 +478,25 @@ class BillSyncPipelineTest {
         assertEquals(1, result.mergedEntries.size)
         assertEquals("notification-1", result.mergedEntries.single().id)
         assertEquals("重复合并", result.mergedEntries.single().captureReasonLabel)
+    }
+
+    @Test
+    fun paymentResultWithoutTimeOrNotificationUsesCaptureTime() {
+        val result = BillSyncPipeline(
+            parser = BillPageParser(),
+            captureTimeFormatter = { "2026-08-17 00:44" }
+        ).sync(
+            source = BillSyncSource.Alipay,
+            pageText = "支付成功\n中国电信\n¥7.98\n交易方式\n花呗\n回首页",
+            existingPendingEntries = emptyList(),
+            capturedAtEpochMillis = NOW,
+            captureReasonLabel = "支付结果自动捕获"
+        )
+
+        val entry = result.createdEntries.single()
+        assertEquals("2026-08-17 00:44", entry.transactionTimeText)
+        assertEquals("中国电信", entry.title)
+        assertEquals("支付宝", entry.sourceLabel)
     }
 
     @Test

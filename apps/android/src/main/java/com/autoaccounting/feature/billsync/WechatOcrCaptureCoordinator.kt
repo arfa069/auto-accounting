@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.SystemClock
 import com.autoaccounting.feature.capture.BookkeepingResultNotificationOrigin
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.PaymentNotificationCaptureTriggers
 import com.autoaccounting.feature.capture.toBookkeepingResultNotification
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
@@ -11,6 +12,10 @@ import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
+import com.autoaccounting.feature.review.ACCESSIBILITY_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.OCR_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.mergeReviewEvidenceText
+import com.autoaccounting.feature.review.reviewEvidenceText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -233,7 +238,7 @@ internal class WechatOcrCaptureCoordinator(
                 )
                 val nodePageText = activeRoot.collectVisibleText()
                 val hasRecentPaymentNotification = !windowEvidence.isApplicationWindow &&
-                    processor().hasRecentWechatNotificationCaptureCandidate()
+                    PaymentNotificationCaptureTriggers.pendingFor(packageName) != null
                 if (
                     !shouldAttemptWechatOcrFallback(
                         packageName = packageName,
@@ -271,7 +276,7 @@ internal class WechatOcrCaptureCoordinator(
                     )
                     val currentHasRecentPaymentNotification =
                         !currentWindowEvidence.isApplicationWindow &&
-                            processor().hasRecentWechatNotificationCaptureCandidate()
+                            PaymentNotificationCaptureTriggers.pendingFor(packageName) != null
                     if (
                         !shouldAttemptWechatOcrFallback(
                             packageName = packageName,
@@ -286,6 +291,7 @@ internal class WechatOcrCaptureCoordinator(
                     }
                     processAutomaticResult(
                         packageName,
+                        currentRoot.collectVisibleText(),
                         host.recognizeScreen(screenshot),
                         currentWindowEvidence,
                         traceId
@@ -330,6 +336,7 @@ internal class WechatOcrCaptureCoordinator(
     @Suppress("CyclomaticComplexMethod", "LongMethod", "ReturnCount")
     private suspend fun processAutomaticResult(
         packageName: String,
+        accessibilityPageText: String,
         pageText: String,
         windowEvidence: WechatWindowEvidence,
         traceId: String
@@ -353,8 +360,9 @@ internal class WechatOcrCaptureCoordinator(
             reject("ocr_output_rejected", "payment_fingerprint_missing", packageName, traceId)
             return false
         }
+        val notificationTrigger = PaymentNotificationCaptureTriggers.awaitPendingFor(packageName)
         val hasNewMatchingNotification = transactionFingerprint.isRedPacket &&
-            processor().hasUniqueUnlinkedRecentWechatNotification(transactionFingerprint)
+            notificationTrigger != null
         if (!sessionGuard.shouldProcess(transactionFingerprint, hasNewMatchingNotification)) {
             reject("ocr_output_rejected", "session_duplicate", packageName, traceId)
             return false
@@ -385,19 +393,43 @@ internal class WechatOcrCaptureCoordinator(
         }
 
         val source = BillSyncSource.fromPackageName(packageName) ?: return false
+        if (
+            notificationTrigger != null &&
+            !PaymentNotificationCaptureTriggers.tryClaimFusion(notificationTrigger.captureId)
+        ) {
+            return true
+        }
+        val fusedPageText = fusePaymentEvidenceText(
+            source = source,
+            accessibilityEvidence = PaymentTextEvidence(accessibilityPageText),
+            ocrEvidence = PaymentTextEvidence(pageText),
+            notificationEvidence = notificationTrigger?.toPaymentTextEvidence()
+        )
         val outcome = runCatching {
             processor().processAutomatic(
                 source = source,
-                pageText = pageText,
+                pageText = fusedPageText,
                 retainRawEvidence = false,
-                automaticCaptureVerification = if (hasNewMatchingNotification) {
-                    AutomaticCaptureVerification.RequireRecentNotification
+                rawEvidenceText = mergeReviewEvidenceText(
+                    notificationTrigger?.rawNotificationEvidence.orEmpty(),
+                    reviewEvidenceText(ACCESSIBILITY_EVIDENCE_LABEL, accessibilityPageText),
+                    reviewEvidenceText(OCR_EVIDENCE_LABEL, pageText)
+                ),
+                automaticCaptureVerification = if (notificationTrigger != null) {
+                    AutomaticCaptureVerification.Standard
                 } else {
                     ocrDecision.verification
                 },
                 traceId = traceId
             )
         }.onSuccess { result ->
+            if (notificationTrigger != null) {
+                if (result.errorMessage == null) {
+                    PaymentNotificationCaptureTriggers.complete(notificationTrigger.captureId)
+                } else {
+                    PaymentNotificationCaptureTriggers.releaseFusion(notificationTrigger.captureId)
+                }
+            }
             result.toBookkeepingResultNotification(source.label)?.let { notification ->
                 diagnostics.recordMetadata(
                     "result_notification_requested",
@@ -409,6 +441,9 @@ internal class WechatOcrCaptureCoordinator(
                 resultNotifier().notify(notification)
             }
         }.onFailure { error ->
+            notificationTrigger?.let {
+                PaymentNotificationCaptureTriggers.releaseFusion(it.captureId)
+            }
             diagnostics.recordFailure("automatic_ocr_processor_failed", traceId, source, null, error)
         }
         val processed = outcome.isSuccess && outcome.getOrNull()?.errorMessage == null

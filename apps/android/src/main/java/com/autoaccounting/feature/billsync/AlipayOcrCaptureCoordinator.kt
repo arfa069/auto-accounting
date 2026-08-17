@@ -1,24 +1,51 @@
 package com.autoaccounting.feature.billsync
 
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.PaymentNotificationCaptureTrigger
+import com.autoaccounting.feature.capture.PaymentNotificationCaptureTriggers
 import com.autoaccounting.feature.capture.toBookkeepingResultNotification
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitivePayload
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
 import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringEvent
 import com.autoaccounting.feature.monitoring.PaymentScreenCaptureDebouncer
 import com.autoaccounting.feature.monitoring.decideContinuousMonitoringCapture
+import com.autoaccounting.feature.review.ACCESSIBILITY_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.OCR_EVIDENCE_LABEL
+import com.autoaccounting.feature.review.mergeReviewEvidenceText
+import com.autoaccounting.feature.review.reviewEvidenceText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private data class AlipayPaymentCaptureRequest(
+    val packageName: String,
+    val accessibilityText: PaymentTextEvidence,
+    val windowId: Int,
+    val notificationTrigger: PaymentNotificationCaptureTrigger?,
+    val windowContext: String,
+    val traceId: String,
+    val generation: Long,
+    val allowRecentPaymentContext: Boolean
+)
+
+private data class AlipayPaymentCaptureFrame(
+    val request: AlipayPaymentCaptureRequest,
+    val capturedAtEpochMillis: Long,
+    val bitmap: Bitmap?
+)
+
 // Payment-result and transit-exit capture share one lifecycle and cancellation boundary.
-@Suppress("LongParameterList", "TooManyFunctions")
+@Suppress("LargeClass", "LongParameterList", "TooManyFunctions")
 internal class AlipayOcrCaptureCoordinator(
     private val scope: CoroutineScope,
     private val host: AccessibilityCaptureHost,
@@ -29,12 +56,18 @@ internal class AlipayOcrCaptureCoordinator(
 ) {
     private var transitJob: Job? = null
     private var paymentJob: Job? = null
+    private var paymentCaptureJob: Job? = null
+    private var pendingPaymentCaptureRequest: AlipayPaymentCaptureRequest? = null
+    private var pendingPaymentCaptureFrame: AlipayPaymentCaptureFrame? = null
+    private var paymentCaptureGeneration: Long = 0L
     private var lastTransitAttemptAtElapsedMillis: Long = 0L
     private var lastPaymentAttemptAtElapsedMillis: Long = 0L
     private var paymentFlowObservedAtElapsedMillis: Long = 0L
     private var transitSurfaceInspected: Boolean = false
     private var paymentSurfaceInspected: Boolean = false
     private var paymentSurfaceFingerprint: Int? = null
+    private var paymentProbeStartedAtElapsedMillis: Long? = null
+    private var paymentProbeWindowId: Int? = null
 
     fun observePaymentFlow(
         packageName: String,
@@ -56,7 +89,10 @@ internal class AlipayOcrCaptureCoordinator(
         pageText: String,
         shouldConsiderContinuousMonitoring: Boolean,
         activeRoot: AccessibilityNodeInfo?,
-        isWindowStateChanged: Boolean
+        eventType: Int,
+        eventWindowId: Int,
+        notificationTrigger: PaymentNotificationCaptureTrigger? = null,
+        windowContext: String = ""
     ): Boolean {
         if (handleTransitSurface(packageName, pageText, shouldConsiderContinuousMonitoring, activeRoot)) {
             return true
@@ -66,19 +102,33 @@ internal class AlipayOcrCaptureCoordinator(
             pageText,
             shouldConsiderContinuousMonitoring,
             activeRoot,
-            isWindowStateChanged
+            eventType,
+            eventWindowId,
+            notificationTrigger,
+            windowContext
         )
     }
+
+    fun handleNotificationTrigger(
+        trigger: PaymentNotificationCaptureTrigger,
+        activeRoot: AccessibilityNodeInfo,
+        windowContext: String = ""
+    ): Boolean = handlePaymentSurface(
+        packageName = trigger.packageName,
+        pageText = activeRoot.collectVisibleText(),
+        shouldConsiderContinuousMonitoring = true,
+        activeRoot = activeRoot,
+        eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+        eventWindowId = activeRoot.windowId,
+        notificationTrigger = trigger,
+        windowContext = windowContext
+    )
 
     fun cancel() {
         transitJob?.cancel()
         transitJob = null
-        paymentJob?.cancel()
-        paymentJob = null
-        paymentFlowObservedAtElapsedMillis = 0L
+        resetPaymentState()
         transitSurfaceInspected = false
-        paymentSurfaceInspected = false
-        paymentSurfaceFingerprint = null
     }
 
     private fun handleTransitSurface(
@@ -122,12 +172,16 @@ internal class AlipayOcrCaptureCoordinator(
         return false
     }
 
+    @Suppress("CyclomaticComplexMethod")
     private fun handlePaymentSurface(
         packageName: String,
         pageText: String,
         shouldConsiderContinuousMonitoring: Boolean,
         activeRoot: AccessibilityNodeInfo?,
-        isWindowStateChanged: Boolean
+        eventType: Int,
+        eventWindowId: Int,
+        notificationTrigger: PaymentNotificationCaptureTrigger?,
+        windowContext: String
     ): Boolean {
         if (packageName != BillSyncSource.Alipay.packageName) {
             resetPaymentState()
@@ -135,54 +189,66 @@ internal class AlipayOcrCaptureCoordinator(
         }
         if (
             !shouldConsiderContinuousMonitoring ||
-            activeRoot == null ||
-            activeRoot.packageName?.toString() != packageName
+            (activeRoot != null && activeRoot.packageName?.toString() != packageName)
         ) {
             resetPaymentState()
             return false
         }
 
-        val windowId = activeRoot.windowId
-        val isApplicationWindow = host.isApplicationWindow(windowId)
+        val windowId = activeRoot?.windowId ?: eventWindowId
+        val isApplicationWindow = activeRoot != null && host.isApplicationWindow(windowId)
         val hasRecentPaymentFlow = hasRecentPaymentFlow()
+        val hasActiveResultProbe = hasActiveResultProbe(windowId)
         val shouldAttempt = shouldAttemptAlipayOcrFallback(
             AlipayOcrFallbackRequest(
                 packageName = packageName,
                 pageText = pageText,
                 sdkInt = Build.VERSION.SDK_INT,
                 isApplicationWindow = isApplicationWindow,
-                isWindowStateChanged = isWindowStateChanged,
                 hasRecentPaymentFlow = hasRecentPaymentFlow,
-                accessibilityNeedsOcr = accessibilityNeedsOcr(pageText)
+                eventType = eventType,
+                windowId = windowId,
+                hasNotificationTrigger = notificationTrigger != null,
+                hasActiveResultProbe = hasActiveResultProbe
             )
         )
         if (!shouldAttempt) {
-            if (!hasRecentPaymentFlow && pageText.isNotBlank()) {
-                paymentSurfaceInspected = false
-                paymentSurfaceFingerprint = null
+            if (pageText.isNotBlank()) {
+                resetPaymentSurface()
+                clearPaymentProbe()
             }
             return false
         }
 
-        val surfaceFingerprint = 31 * windowId + pageText.hashCode()
+        if (!hasActiveResultProbe) startPaymentProbe(windowId)
+
+        val surfaceFingerprint = listOf(
+            windowId,
+            eventType,
+            pageText.hashCode(),
+            notificationTrigger?.captureId
+        ).hashCode()
         if (surfaceFingerprint != paymentSurfaceFingerprint) {
             paymentSurfaceInspected = false
             paymentSurfaceFingerprint = surfaceFingerprint
         }
-        if (paymentSurfaceInspected || paymentJob?.isActive == true) return true
+        if (paymentSurfaceInspected) return true
 
         paymentSurfaceInspected = true
-        capturePaymentFallback(packageName)
+        val accessibilityEvidence = activeRoot?.collectVisibleTextEvidence()
+            ?.takeIf { it.text.isNotBlank() }
+            ?: PaymentTextEvidence(pageText)
+        capturePaymentFallback(
+            packageName = packageName,
+            accessibilityText = accessibilityEvidence,
+            windowId = windowId,
+            notificationTrigger = notificationTrigger,
+            windowContext = windowContext,
+            allowRecentPaymentContext = hasRecentPaymentFlow ||
+                notificationTrigger != null ||
+                hasActiveResultProbe(windowId)
+        )
         return true
-    }
-
-    private fun accessibilityNeedsOcr(pageText: String): Boolean {
-        val parsedEntry = BillPageParser().parse(
-            source = BillSyncSource.Alipay,
-            pageText = pageText,
-            fallbackTransactionTimeText = ALIPAY_OCR_FALLBACK_TRANSACTION_TIME
-        ).singleOrNull() ?: return true
-        return parsedEntry.merchantTitleFromFallback || parsedEntry.fundingAccountFromFallback
     }
 
     private fun hasRecentPaymentFlow(): Boolean {
@@ -191,9 +257,32 @@ internal class AlipayOcrCaptureCoordinator(
             ageMillis in 0..ALIPAY_PAYMENT_FLOW_WINDOW_MILLIS
     }
 
+    private fun hasActiveResultProbe(windowId: Int): Boolean {
+        val startedAt = paymentProbeStartedAtElapsedMillis ?: return false
+        val ageMillis = SystemClock.elapsedRealtime() - startedAt
+        return paymentProbeWindowId == windowId && ageMillis in 0..ALIPAY_RESULT_PROBE_WINDOW_MILLIS
+    }
+
+    private fun startPaymentProbe(windowId: Int) {
+        paymentProbeStartedAtElapsedMillis = SystemClock.elapsedRealtime()
+        paymentProbeWindowId = windowId
+    }
+
+    private fun clearPaymentProbe() {
+        paymentProbeStartedAtElapsedMillis = null
+        paymentProbeWindowId = null
+    }
+
     private fun resetPaymentState() {
         paymentFlowObservedAtElapsedMillis = 0L
+        clearPaymentProbe()
         resetPaymentSurface()
+        paymentCaptureGeneration += 1L
+        pendingPaymentCaptureRequest = null
+        pendingPaymentCaptureFrame?.bitmap?.recycle()
+        pendingPaymentCaptureFrame = null
+        paymentCaptureJob?.cancel()
+        paymentCaptureJob = null
         paymentJob?.cancel()
         paymentJob = null
     }
@@ -203,125 +292,256 @@ internal class AlipayOcrCaptureCoordinator(
         paymentSurfaceFingerprint = null
     }
 
-    private fun capturePaymentFallback(packageName: String) {
+    private fun capturePaymentFallback(
+        packageName: String,
+        accessibilityText: PaymentTextEvidence,
+        windowId: Int,
+        notificationTrigger: PaymentNotificationCaptureTrigger?,
+        windowContext: String,
+        allowRecentPaymentContext: Boolean
+    ) {
         if (!host.isScreenReady()) {
-            recordPaymentRejection("screen_off_or_locked")
+            recordPaymentRejection(
+                reason = "screen_off_or_locked",
+                windowContext = windowContext
+            )
             resetPaymentSurface()
             return
         }
-        if (paymentJob?.isActive == true) return
         val nowElapsedMillis = SystemClock.elapsedRealtime()
-        if (nowElapsedMillis - lastPaymentAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS) {
-            recordPaymentRejection("cooldown")
+        if (
+            lastPaymentAttemptAtElapsedMillis > 0L &&
+            nowElapsedMillis - lastPaymentAttemptAtElapsedMillis < OCR_ATTEMPT_COOLDOWN_MILLIS
+        ) {
+            recordPaymentRejection(reason = "cooldown", windowContext = windowContext)
             resetPaymentSurface()
             return
         }
-        lastPaymentAttemptAtElapsedMillis = nowElapsedMillis
         val traceId = newDiagnosticTraceId()
         diagnostics.recordMetadata(
             event = "alipay_ocr_started",
             outcome = "started",
-            reason = "payment_result_accessibility_incomplete",
+            reason = "payment_result_evidence_fusion",
             traceId = traceId,
             source = DiagnosticSource.Alipay,
-            component = DiagnosticComponent.Ocr
+            component = DiagnosticComponent.Ocr,
+            sensitivePayload = windowContext.toWindowContextPayload()
         )
 
-        paymentJob = scope.launch {
-            var processed = false
+        enqueuePaymentCapture(
+            AlipayPaymentCaptureRequest(
+                packageName = packageName,
+                accessibilityText = accessibilityText,
+                windowId = windowId,
+                notificationTrigger = notificationTrigger,
+                windowContext = windowContext,
+                traceId = traceId,
+                generation = paymentCaptureGeneration,
+                allowRecentPaymentContext = allowRecentPaymentContext
+            )
+        )
+    }
+
+    private fun enqueuePaymentCapture(request: AlipayPaymentCaptureRequest) {
+        pendingPaymentCaptureRequest = request
+        if (paymentCaptureJob?.isActive == true) return
+        paymentCaptureJob = scope.launch {
             try {
-                delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
-                val initialRoot = currentPaymentRoot(packageName)
-                if (initialRoot == null) {
-                    recordPaymentRejection("settled_context_invalid", traceId)
-                    return@launch
-                }
-                val windowId = initialRoot.windowId
-                val screenshot = host.captureScreenBitmap(windowId)
-                if (screenshot == null) {
-                    recordPaymentRejection("screenshot_unavailable", traceId)
-                    return@launch
-                }
-                try {
-                    val currentRoot = currentPaymentRoot(packageName)
-                    if (currentRoot == null || currentRoot.windowId != windowId) {
-                        recordPaymentRejection("window_changed_before_ocr", traceId)
-                        return@launch
+                while (true) {
+                    val pendingRequest = pendingPaymentCaptureRequest ?: break
+                    pendingPaymentCaptureRequest = null
+                    if (pendingRequest.generation != paymentCaptureGeneration) continue
+
+                    var screenshot: Bitmap? = null
+                    try {
+                        delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+                        screenshot = host.captureCurrentDisplayBitmap(pendingRequest.traceId)
+                        if (screenshot == null && pendingRequest.windowId >= 0) {
+                            delay(AUTOMATIC_CAPTURE_SETTLE_MILLIS)
+                            screenshot = host.captureScreenBitmap(
+                                pendingRequest.windowId,
+                                pendingRequest.traceId
+                            )
+                        }
+                        if (pendingRequest.generation != paymentCaptureGeneration) continue
+                        enqueuePaymentFrame(
+                            AlipayPaymentCaptureFrame(
+                                request = pendingRequest,
+                                capturedAtEpochMillis = System.currentTimeMillis(),
+                                bitmap = screenshot
+                            )
+                        )
+                        screenshot = null
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        diagnostics.recordFailure(
+                            "alipay_screenshot_failed",
+                            pendingRequest.traceId,
+                            BillSyncSource.Alipay,
+                            null,
+                            error
+                        )
+                    } finally {
+                        screenshot?.recycle()
                     }
-                    processed = processPaymentResult(
-                        packageName = packageName,
-                        pageText = host.recognizeScreen(screenshot),
-                        traceId = traceId,
-                        allowRecentPaymentContext = hasRecentPaymentFlow()
-                    )
-                } finally {
-                    screenshot.recycle()
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                diagnostics.recordFailure("alipay_ocr_failed", traceId, BillSyncSource.Alipay, null, error)
             } finally {
-                if (!processed) resetPaymentSurface()
+                paymentCaptureJob = null
+            }
+        }
+    }
+
+    private fun enqueuePaymentFrame(frame: AlipayPaymentCaptureFrame) {
+        pendingPaymentCaptureFrame?.bitmap?.recycle()
+        pendingPaymentCaptureFrame = frame
+        if (paymentJob?.isActive == true) return
+        paymentJob = scope.launch {
+            try {
+                while (true) {
+                    val pendingFrame = pendingPaymentCaptureFrame ?: break
+                    pendingPaymentCaptureFrame = null
+                    if (pendingFrame.request.generation != paymentCaptureGeneration) {
+                        pendingFrame.bitmap?.recycle()
+                        continue
+                    }
+                    if (processPaymentFrame(pendingFrame)) {
+                        completePaymentCapture()
+                        break
+                    }
+                    resetPaymentSurface()
+                }
+            } finally {
                 paymentJob = null
             }
         }
     }
 
-    private fun currentPaymentRoot(packageName: String): AccessibilityNodeInfo? {
-        if (!host.monitoringState.enabled || !host.currentPermissionHealth().isHealthy || !host.isScreenReady()) {
-            return null
-        }
-        val root = host.currentRoot ?: return null
-        if (root.packageName?.toString() != packageName || !host.isApplicationWindow(root.windowId)) {
-            return null
-        }
-        val pageText = root.collectVisibleText()
-        return root.takeIf {
-            shouldAttemptAlipayOcrFallback(
-                AlipayOcrFallbackRequest(
-                    packageName = packageName,
-                    pageText = pageText,
-                    sdkInt = Build.VERSION.SDK_INT,
-                    isApplicationWindow = true,
-                    isWindowStateChanged = true,
-                    hasRecentPaymentFlow = hasRecentPaymentFlow(),
-                    accessibilityNeedsOcr = accessibilityNeedsOcr(pageText)
+    private suspend fun processPaymentFrame(frame: AlipayPaymentCaptureFrame): Boolean {
+        val request = frame.request
+        val ocrText = frame.bitmap?.let { screenshot ->
+            try {
+                host.recognizeScreenEvidence(screenshot)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                diagnostics.recordFailure(
+                    "alipay_ocr_failed",
+                    request.traceId,
+                    BillSyncSource.Alipay,
+                    null,
+                    error
                 )
+                null
+            } finally {
+                screenshot.recycle()
+            }
+        }
+        val accessibilityEvidence = request.accessibilityText.toAccessibilityReviewEvidence()
+        val ocrEvidence = ocrText.toOcrReviewEvidence()
+        val evidenceText = mergeReviewEvidenceText(accessibilityEvidence, ocrEvidence)
+        val notificationTrigger = request.notificationTrigger
+            ?: PaymentNotificationCaptureTriggers.awaitPendingFor(request.packageName)
+        if (
+            notificationTrigger != null &&
+            !PaymentNotificationCaptureTriggers.tryClaimFusion(notificationTrigger.captureId)
+        ) {
+            return true
+        }
+        val notificationEvidence = notificationTrigger?.toPaymentTextEvidence()
+        val validationPageText = fusePaymentEvidenceText(
+            source = BillSyncSource.Alipay,
+            accessibilityEvidence = request.accessibilityText,
+            ocrEvidence = ocrText
+        )
+        val processed = processPaymentResult(
+            packageName = request.packageName,
+            pageText = fusePaymentEvidenceText(
+                source = BillSyncSource.Alipay,
+                accessibilityEvidence = request.accessibilityText,
+                ocrEvidence = ocrText,
+                notificationEvidence = notificationEvidence
+            ),
+            validationPageText = validationPageText,
+            rawEvidenceText = mergeReviewEvidenceText(
+                notificationTrigger?.rawNotificationEvidence.orEmpty(),
+                evidenceText
+            ),
+            traceId = request.traceId,
+            allowRecentPaymentContext = request.allowRecentPaymentContext,
+            capturedAtEpochMillis = frame.capturedAtEpochMillis,
+            ocrDiagnosticText = ocrText?.text,
+            windowContext = request.windowContext
+        )
+        if (notificationTrigger != null) {
+            if (processed) {
+                PaymentNotificationCaptureTriggers.complete(notificationTrigger.captureId)
+            } else {
+                PaymentNotificationCaptureTriggers.releaseFusion(notificationTrigger.captureId)
+            }
+        }
+        if (!processed && frame.bitmap == null) {
+            recordPaymentRejection(
+                reason = "screenshot_unavailable",
+                traceId = request.traceId,
+                windowContext = request.windowContext
             )
         }
+        return processed
+    }
+
+    private fun completePaymentCapture() {
+        lastPaymentAttemptAtElapsedMillis = SystemClock.elapsedRealtime()
+        paymentFlowObservedAtElapsedMillis = 0L
+        clearPaymentProbe()
+        resetPaymentSurface()
+        paymentCaptureGeneration += 1L
+        pendingPaymentCaptureRequest = null
+        pendingPaymentCaptureFrame?.bitmap?.recycle()
+        pendingPaymentCaptureFrame = null
     }
 
     private suspend fun processPaymentResult(
         packageName: String,
         pageText: String,
+        validationPageText: String,
+        rawEvidenceText: String,
         traceId: String,
-        allowRecentPaymentContext: Boolean
+        allowRecentPaymentContext: Boolean,
+        capturedAtEpochMillis: Long,
+        ocrDiagnosticText: String?,
+        windowContext: String
     ): Boolean {
         val ocrDecision = decideAlipayOcrCapture(
-            pageText = pageText,
+            pageText = validationPageText,
             allowRecentPaymentContext = allowRecentPaymentContext
         )
         if (!ocrDecision.shouldCapture) {
-            recordPaymentRejection(ocrDecision.rejectionReason?.name ?: "unknown_rejection", traceId)
+            recordPaymentRejection(
+                reason = ocrDecision.rejectionReason?.name ?: "unknown_rejection",
+                traceId = traceId,
+                ocrDiagnosticText = ocrDiagnosticText,
+                windowContext = windowContext
+            )
             return false
         }
+        val acceptedPageText = pageText.withTrustedAlipayPaymentContext(allowRecentPaymentContext)
         val permissionHealth = host.currentPermissionHealth()
         if (!host.monitoringState.enabled || !permissionHealth.isHealthy) {
-            recordPaymentRejection("monitoring_blocked", traceId)
+            recordPaymentRejection("monitoring_blocked", traceId, ocrDiagnosticText, windowContext)
             return false
         }
         val decision = decideContinuousMonitoringCapture(
             state = host.monitoringState,
-            event = ContinuousMonitoringEvent(packageName, pageText),
+            event = ContinuousMonitoringEvent(packageName, acceptedPageText),
             permissionHealth = permissionHealth
         )
         if (!decision.shouldCapture) {
-            recordPaymentRejection(decision.observation.name, traceId)
+            recordPaymentRejection(decision.observation.name, traceId, ocrDiagnosticText, windowContext)
             return false
         }
-        if (!automaticCaptureDebouncer.shouldProcess(packageName, pageText)) {
-            recordPaymentRejection("debounced", traceId)
+        if (!automaticCaptureDebouncer.shouldProcess(packageName, acceptedPageText)) {
+            recordPaymentRejection("debounced", traceId, ocrDiagnosticText, windowContext)
             return false
         }
 
@@ -329,8 +549,10 @@ internal class AlipayOcrCaptureCoordinator(
         val outcome = runCatching {
             processor().processAutomatic(
                 source = source,
-                pageText = pageText,
+                pageText = acceptedPageText,
                 retainRawEvidence = false,
+                rawEvidenceText = rawEvidenceText,
+                capturedAtEpochMillis = capturedAtEpochMillis,
                 traceId = traceId
             )
         }.onSuccess { result ->
@@ -347,19 +569,32 @@ internal class AlipayOcrCaptureCoordinator(
         }.onFailure { error ->
             diagnostics.recordFailure("alipay_ocr_processor_failed", traceId, source, null, error)
         }
-        val processed = outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
-        if (processed) paymentFlowObservedAtElapsedMillis = 0L
-        return processed
+        return outcome.isSuccess && outcome.getOrNull()?.errorMessage == null
     }
 
-    private fun recordPaymentRejection(reason: String, traceId: String? = null) {
+    private fun recordPaymentRejection(
+        reason: String,
+        traceId: String? = null,
+        ocrDiagnosticText: String? = null,
+        windowContext: String? = null
+    ) {
         diagnostics.recordMetadata(
             event = "alipay_ocr_rejected",
             outcome = "rejected",
             reason = reason,
             traceId = traceId ?: newDiagnosticTraceId(),
             source = DiagnosticSource.Alipay,
-            component = DiagnosticComponent.Ocr
+            component = DiagnosticComponent.Ocr,
+            sensitivePayload = DiagnosticSensitivePayload(
+                buildMap {
+                    ocrDiagnosticText?.takeIf(String::isNotBlank)?.let {
+                        put(DiagnosticSensitiveField.OcrText, it)
+                    }
+                    windowContext?.takeIf(String::isNotBlank)?.let {
+                        put(DiagnosticSensitiveField.WindowContext, it)
+                    }
+                }
+            )
         )
     }
 
@@ -493,5 +728,21 @@ internal class AlipayOcrCaptureCoordinator(
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
         const val ALIPAY_PAYMENT_FLOW_WINDOW_MILLIS = 2 * 60_000L
+        const val ALIPAY_RESULT_PROBE_WINDOW_MILLIS = 2_000L
     }
 }
+
+private fun String.toWindowContextPayload(): DiagnosticSensitivePayload =
+    takeIf(String::isNotBlank)
+        ?.let {
+            DiagnosticSensitivePayload(mapOf(DiagnosticSensitiveField.WindowContext to it))
+        }
+        ?: DiagnosticSensitivePayload()
+
+private fun PaymentTextEvidence.toAccessibilityReviewEvidence(): String =
+    reviewEvidenceText(ACCESSIBILITY_EVIDENCE_LABEL, text)
+
+private fun PaymentTextEvidence?.toOcrReviewEvidence(): String = this?.text
+    ?.takeIf(String::isNotBlank)
+    ?.let { reviewEvidenceText(OCR_EVIDENCE_LABEL, it) }
+    .orEmpty()

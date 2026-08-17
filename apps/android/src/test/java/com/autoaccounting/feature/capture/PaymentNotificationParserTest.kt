@@ -76,6 +76,22 @@ class PaymentNotificationParserTest {
     }
 
     @Test
+    fun extractsFundingInstrumentFromNaturalNotificationWording() {
+        val parsed = PaymentNotificationParser().parse(
+            PaymentNotificationEvent(
+                packageName = "com.eg.android.AlipayGphone",
+                title = "交易提醒",
+                text = "你有一笔7.98元的支出，使用花呗支付，请及时还款。",
+                postedAtEpochMillis = NOW
+            )
+        )
+
+        assertNotNull(parsed)
+        assertEquals("花呗", parsed!!.fundingAccountLabel)
+        assertEquals("花呗", parsed.paymentMethod)
+    }
+
+    @Test
     fun ignoresUnrelatedNotificationsAndUnsupportedSources() {
         val parser = PaymentNotificationParser()
 

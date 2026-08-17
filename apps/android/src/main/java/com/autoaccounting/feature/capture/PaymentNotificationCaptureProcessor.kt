@@ -24,7 +24,8 @@ import kotlinx.coroutines.flow.first
 
 data class PaymentNotificationProcessResult(
     val state: ReviewQueueState,
-    val notification: BookkeepingResultNotification?
+    val notification: BookkeepingResultNotification?,
+    val pendingEntry: ReviewQueueEntry? = null
 )
 
 class PaymentNotificationCaptureProcessor(
@@ -92,7 +93,11 @@ class PaymentNotificationCaptureProcessor(
             pendingOutcome.matchLevel,
             pendingOutcome.entryToPersist
         )
-        PaymentNotificationProcessResult(nextState, notification)
+        PaymentNotificationProcessResult(
+            state = nextState,
+            notification = notification,
+            pendingEntry = pendingOutcome.entryToPersist
+        )
     }
 
     private fun recordRejectedDiagnosticIfRejected(

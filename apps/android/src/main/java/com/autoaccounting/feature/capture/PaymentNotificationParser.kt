@@ -66,7 +66,12 @@ class PaymentNotificationParser {
         val counterpartyTitle = extractCounterpartyTitle(rawText)
             ?: FALLBACK_COUNTERPARTY
         val account = rawText.extractLabeledValue(ACCOUNT_LABEL_REGEX)
-        val paymentMethod = rawText.extractLabeledValue(PAYMENT_METHOD_LABEL_REGEX) ?: source.label
+        val paymentMethod = rawText.extractLabeledValue(PAYMENT_METHOD_LABEL_REGEX)
+            ?: rawText.extractUsedPaymentMethod()
+            ?: source.label
+        val fundingAccount = account
+            ?: paymentMethod.takeUnless { it.equals(source.label, ignoreCase = true) }
+            ?: source.defaultFundingAccountLabel
         val note = rawText.extractLabeledValue(NOTE_LABEL_REGEX)
         val merchantOrderNumber = rawText.extractLabeledValue(MERCHANT_ORDER_LABEL_REGEX)
         val orderNumber = rawText.extractLabeledValue(ORDER_LABEL_REGEX)
@@ -77,7 +82,7 @@ class PaymentNotificationParser {
                 merchantTitle = counterpartyTitle,
                 amountMinor = amountMinor,
                 transactionKindLabel = kindLabel,
-                fundingAccountLabel = account ?: source.defaultFundingAccountLabel,
+                fundingAccountLabel = fundingAccount,
                 rawEvidenceText = rawText,
                 parsedFields = buildList {
                     add("来源=${source.label}")
@@ -110,6 +115,12 @@ private fun String.extractLabeledValue(regex: Regex): String? =
         ?.trim()
         ?.takeIf(String::isNotBlank)
 
+private fun String.extractUsedPaymentMethod(): String? = USED_PAYMENT_METHOD_REGEX.find(this)
+    ?.groupValues
+    ?.getOrNull(1)
+    ?.trim()
+    ?.takeIf { it.isNotBlank() && it.length <= 20 }
+
 private const val ALL_DETAIL_LABELS =
     "付款账户|支付账户|付款账号|支付账号|账号|付款方式|支付方式|备注|商品说明|商户订单号|交易单号|交易号|订单号"
 
@@ -122,6 +133,7 @@ private val PAYMENT_AMOUNT_REGEX = Regex("""(?:¥|￥|\d+(?:\.\d{1,2})?\s*元)""
 private val PAYMENT_OUTCOME_REGEX = Regex("成功|完成支付|支付完成|到账|退款|转账|红包|已支付|已付款")
 private val ACCOUNT_LABEL_REGEX = labeledValueRegex("(?:付款账户|支付账户|付款账号|支付账号|账号)")
 private val PAYMENT_METHOD_LABEL_REGEX = labeledValueRegex("(?:付款方式|支付方式)")
+private val USED_PAYMENT_METHOD_REGEX = Regex("使用([^，,。；;\\s]{1,20}?)支付")
 private val NOTE_LABEL_REGEX = labeledValueRegex("(?:备注|商品说明)")
 private val MERCHANT_ORDER_LABEL_REGEX = labeledValueRegex("商户订单号")
 private val ORDER_LABEL_REGEX = labeledValueRegex("(?:交易单号|交易号|(?<!商户)订单号)")

@@ -102,7 +102,7 @@ class PaymentNotificationCaptureProcessorTest {
         assertEquals(CaptureReason.DUPLICATE_MERGE, entry.captureReason)
         assertEquals(ConfidenceState.HIGH, entry.confidence)
         assertEquals("Lunch", entry.suggestedCategoryLabel)
-        assertTrue(entry.evidenceSummary.orEmpty().contains("---"))
+        assertFalse(entry.evidenceSummary.orEmpty().contains("---"))
     }
 
     @Test
@@ -125,6 +125,7 @@ class PaymentNotificationCaptureProcessorTest {
         assertEquals(entry.id, notification!!.key)
         assertEquals(1, notification.count)
         assertEquals("Lunch", notification.category)
+        assertEquals(entry.id, result.pendingEntry?.id)
         assertEquals("Lunch", entry.suggestedCategoryLabel)
     }
 

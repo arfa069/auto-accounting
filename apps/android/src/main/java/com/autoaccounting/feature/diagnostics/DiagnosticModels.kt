@@ -33,6 +33,7 @@ enum class DiagnosticSensitiveField {
     OrderNumber,
     MerchantOrderNumber,
     CaptureEvidence,
+    WindowContext,
     ExceptionDetails
 }
 

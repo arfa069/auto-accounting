@@ -14,8 +14,12 @@ import com.autoaccounting.data.local.AutoAccountingDatabaseProvider
 import com.autoaccounting.data.local.LocalLedgerRepository
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.capture.BookkeepingResultNotifier
+import com.autoaccounting.feature.capture.PaymentNotificationCaptureTriggers
 import com.autoaccounting.feature.capture.SharedPreferencesAlipayTransitContextStore
+import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticLogs
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitiveField
+import com.autoaccounting.feature.diagnostics.DiagnosticSensitivePayload
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
 import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
 import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
@@ -36,6 +40,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+@Suppress("TooManyFunctions")
 class BillSyncAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -110,15 +115,25 @@ class BillSyncAccessibilityService : AccessibilityService() {
             ): WechatWindowEvidence =
                 this@BillSyncAccessibilityService.currentWechatWindowEvidence(windowId, windowIdentity)
 
-            override suspend fun captureScreenBitmap(windowId: Int): Bitmap? =
+            override suspend fun captureScreenBitmap(windowId: Int, traceId: String?): Bitmap? =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    this@BillSyncAccessibilityService.captureScreenBitmapApi30(windowId)
+                    this@BillSyncAccessibilityService.captureScreenBitmapApi30(windowId, traceId)
+                } else {
+                    null
+                }
+
+            override suspend fun captureCurrentDisplayBitmap(traceId: String?): Bitmap? =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    this@BillSyncAccessibilityService.captureCurrentDisplayBitmapApi30(traceId)
                 } else {
                     null
                 }
 
             override suspend fun recognizeScreen(bitmap: Bitmap): String =
                 ocrRecognizer.recognize(bitmap)
+
+            override suspend fun recognizeScreenEvidence(bitmap: Bitmap): PaymentTextEvidence =
+                ocrRecognizer.recognizeEvidence(bitmap)
         }
     }
 
@@ -182,9 +197,29 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        serviceScope.launch {
+            PaymentNotificationCaptureTriggers.events.collect { trigger ->
+                if (
+                    PaymentNotificationCaptureTriggers.pendingFor(trigger.packageName)?.captureId !=
+                    trigger.captureId
+                ) return@collect
+                val currentRoot = rootInActiveWindow
+                    ?.takeIf { it.packageName?.toString() == trigger.packageName }
+                    ?: return@collect
+                when (BillSyncSource.fromPackageName(trigger.packageName)) {
+                    BillSyncSource.Alipay -> alipayOcrCoordinator.handleNotificationTrigger(
+                        trigger = trigger,
+                        activeRoot = currentRoot,
+                        windowContext = notificationWindowContext(currentRoot)
+                    )
+                    BillSyncSource.WeChat -> wechatOcrCoordinator.captureAutomatic(trigger.packageName)
+                    null -> Unit
+                }
+            }
+        }
     }
 
-    @Suppress("CyclomaticComplexMethod", "ReturnCount")
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "ReturnCount")
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
         val captureRoute = captureRouter.captureRoute(packageName, continuousMonitoringState.enabled)
@@ -194,7 +229,6 @@ class BillSyncAccessibilityService : AccessibilityService() {
 
         if (shouldConsiderContinuousMonitoring) {
             if (!isContinuousMonitoringEventRelevant(event.eventType)) return
-            if (continuousCaptureCoordinator.isCapturing) return
             if (
                 !continuousMonitoringEventGate.shouldInspect(
                     packageName = packageName,
@@ -224,7 +258,23 @@ class BillSyncAccessibilityService : AccessibilityService() {
         }
         if (!manualBillSyncAcceptsPackage && !requireNotNull(monitoringPermissionHealth).isHealthy) return
 
-        val activeRoot = rootInActiveWindow ?: event.source
+        val activeWindowRoot = rootInActiveWindow
+        val eventSourceRoot = event.source
+        val activeRoot = activeWindowRoot
+            ?.takeIf { it.packageName?.toString() == packageName }
+            ?: eventSourceRoot?.takeIf { it.packageName?.toString() == packageName }
+        val selectedRootSource = when {
+            activeRoot == null -> "none"
+            activeRoot == activeWindowRoot -> "rootInActiveWindow"
+            activeRoot == eventSourceRoot -> "event.source"
+            else -> "none"
+        }
+        val windowContext = accessibilityWindowContext(
+            event = event,
+            activeWindowRoot = activeWindowRoot,
+            eventSourceRoot = eventSourceRoot,
+            selectedRootSource = selectedRootSource
+        )
         val pageText = activeRoot?.collectVisibleText().orEmpty()
         alipayOcrCoordinator.observePaymentFlow(
             packageName,
@@ -241,7 +291,10 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 pageText = pageText,
                 shouldConsiderContinuousMonitoring = shouldConsiderContinuousMonitoring,
                 activeRoot = activeRoot,
-                isWindowStateChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                eventType = event.eventType,
+                eventWindowId = event.windowId,
+                notificationTrigger = PaymentNotificationCaptureTriggers.pendingFor(packageName),
+                windowContext = windowContext
             )
         ) return
         if (
@@ -258,7 +311,10 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 event = "accessibility_event_rejected",
                 outcome = "rejected",
                 reason = "blank_visible_text",
-                source = packageName.accessibilityDiagnosticSource()
+                source = packageName.accessibilityDiagnosticSource(),
+                sensitivePayload = DiagnosticSensitivePayload(
+                    mapOf(DiagnosticSensitiveField.WindowContext to windowContext)
+                )
             )
             return
         }
@@ -271,7 +327,7 @@ class BillSyncAccessibilityService : AccessibilityService() {
             captureManualBillSync(packageName, pageText)
             return
         }
-        continuousCaptureCoordinator.capture(
+        if (!continuousCaptureCoordinator.isCapturing) continuousCaptureCoordinator.capture(
             packageName = packageName,
             pageText = pageText,
             currentPermissionHealth = requireNotNull(monitoringPermissionHealth)
@@ -318,7 +374,27 @@ class BillSyncAccessibilityService : AccessibilityService() {
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private suspend fun captureScreenBitmapApi30(windowId: Int): Bitmap? =
+    private suspend fun captureScreenBitmapApi30(windowId: Int, traceId: String?): Bitmap? =
+        captureScreenBitmapApi30(traceId, "window:$windowId") { callback ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                takeScreenshotOfWindow(windowId, mainExecutor, callback)
+            } else {
+                takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
+            }
+        }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun captureCurrentDisplayBitmapApi30(traceId: String?): Bitmap? =
+        captureScreenBitmapApi30(traceId, "display") { callback ->
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
+        }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun captureScreenBitmapApi30(
+        traceId: String?,
+        captureTarget: String,
+        request: (TakeScreenshotCallback) -> Unit
+    ): Bitmap? =
         suspendCoroutine { continuation ->
             val callback = object : TakeScreenshotCallback {
                 override fun onSuccess(screenshot: ScreenshotResult) {
@@ -340,14 +416,17 @@ class BillSyncAccessibilityService : AccessibilityService() {
                 }
 
                 override fun onFailure(errorCode: Int) {
+                    diagnosticRecorder.recordMetadata(
+                        event = "screenshot_failed",
+                        outcome = "rejected",
+                        reason = "$captureTarget:errorCode=$errorCode",
+                        traceId = traceId ?: newDiagnosticTraceId(),
+                        component = DiagnosticComponent.Ocr
+                    )
                     continuation.resume(null)
                 }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                takeScreenshotOfWindow(windowId, mainExecutor, callback)
-            } else {
-                takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
-            }
+            request(callback)
         }
 
 
@@ -366,6 +445,58 @@ class BillSyncAccessibilityService : AccessibilityService() {
     private fun isApplicationWindow(windowId: Int): Boolean =
         windows.firstOrNull { window -> window.id == windowId }
             ?.type == AccessibilityWindowInfo.TYPE_APPLICATION
+
+    private fun accessibilityWindowContext(
+        event: AccessibilityEvent,
+        activeWindowRoot: AccessibilityNodeInfo?,
+        eventSourceRoot: AccessibilityNodeInfo?,
+        selectedRootSource: String
+    ): String = buildString {
+        append("eventType=")
+        append(AccessibilityEvent.eventTypeToString(event.eventType))
+        append(" eventClass=")
+        append(event.className ?: "none")
+        append(" eventPackage=")
+        append(event.packageName ?: "none")
+        append(" eventWindowId=")
+        append(event.windowId)
+        append(" activeRootPackage=")
+        append(activeWindowRoot?.packageName ?: "none")
+        append(" activeRootWindowId=")
+        append(activeWindowRoot?.windowId ?: UNDEFINED_ACCESSIBILITY_WINDOW_ID)
+        append(" activeRootWindowType=")
+        append(windowTypeName(activeWindowRoot?.windowId))
+        append(" eventSourcePackage=")
+        append(eventSourceRoot?.packageName ?: "none")
+        append(" eventSourceWindowId=")
+        append(eventSourceRoot?.windowId ?: UNDEFINED_ACCESSIBILITY_WINDOW_ID)
+        append(" eventSourceWindowType=")
+        append(windowTypeName(eventSourceRoot?.windowId))
+        append(" selectedRoot=")
+        append(selectedRootSource)
+    }
+
+    private fun notificationWindowContext(root: AccessibilityNodeInfo): String = buildString {
+        append("eventType=notification_trigger rootPackage=")
+        append(root.packageName ?: "none")
+        append(" rootWindowId=")
+        append(root.windowId)
+        append(" rootWindowType=")
+        append(windowTypeName(root.windowId))
+        append(" selectedRoot=rootInActiveWindow")
+    }
+
+    private fun windowTypeName(windowId: Int?): String {
+        val type = windowId?.let { id -> windows.firstOrNull { it.id == id }?.type }
+        return when (type) {
+            AccessibilityWindowInfo.TYPE_APPLICATION -> "application"
+            AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "input_method"
+            AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+            AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "accessibility_overlay"
+            null -> "unknown"
+            else -> "type_$type"
+        }
+    }
 
     private fun currentContinuousMonitoringPermissionHealth(): ContinuousMonitoringPermissionHealth =
         continuousMonitoringPermissionHealth

@@ -20,7 +20,14 @@ internal interface AccessibilityCaptureHost {
         windowIdentity: WechatWindowIdentity?
     ): WechatWindowEvidence
 
-    suspend fun captureScreenBitmap(windowId: Int): Bitmap?
+    suspend fun captureScreenBitmap(windowId: Int, traceId: String? = null): Bitmap?
+
+    suspend fun captureCurrentDisplayBitmap(traceId: String? = null): Bitmap?
 
     suspend fun recognizeScreen(bitmap: Bitmap): String
+
+    suspend fun recognizeScreenEvidence(bitmap: Bitmap): PaymentTextEvidence = PaymentTextEvidence(
+        text = recognizeScreen(bitmap),
+        imageHeight = bitmap.height
+    )
 }
