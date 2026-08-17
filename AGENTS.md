@@ -19,7 +19,7 @@
 
 在 PowerShell 中使用仓库自带的 Gradle Wrapper：
 
-- `.\gradlew.bat :apps:android:testDebugUnitTest`：运行 Android JVM、Compose、Room 与 Robolectric 测试。
+- `.\gradlew.bat :apps:android:testDebugUnitTest --tests`：运行 Android JVM、Compose、Room 与 Robolectric 相关的单元测试。
 - `.\gradlew.bat :services:backend:test`：运行后端单元测试及 Ktor 集成测试。
 - `.\gradlew.bat coverageReport`：运行三个模块的测试并生成各模块 JaCoCo HTML/XML 覆盖率报告。
 - `.\gradlew.bat detekt`：运行 Kotlin 静态代码规范、复杂度及架构规则检查。
@@ -59,25 +59,22 @@
 
 - 测试框架为 JUnit 4。Android 测试可使用 Robolectric、Compose UI Test 与 Room Testing；后端测试使用 Ktor Test Host 和 H2；
 - 测试文件以 `*Test.kt` 结尾，并覆盖本次改动涉及的成功、失败、空值及持久化场景。数据库迁移改变 schema 时，必须同步提交更新后的 Room schema JSON。
+- 对照验收条件检查界面文本、页面跳转、持久化结果和关键日志，报告实际结果与证据；未经用户明确许可，不修改系统授权、不清除应用数据、不卸载应用，也不执行验收用例之外的真机操作。
 
 ## Android 真机测试（ADB）
 
-### 测试规范
-
-对照验收条件检查界面文本、页面跳转、持久化结果和关键日志，报告实际结果与证据；未经用户明确许可，不修改系统授权、不清除应用数据、不卸载应用，也不执行验收用例之外的真机操作。
-
-### 准备测试：
+### 准备测试
 
 1. 运行 `adb devices -l` 确认目标真机状态为 `device`，记录序列号（连接多台设备时，以下所有命令都必须使用 `adb -s <serial> ...` 指定目标）；
 2. 运行 `adb -s <serial> shell wm size` 记录设备逻辑分辨率；
 3. 运行 `adb -s <serial> shell dumpsys package com.autoaccounting` 确认已安装版本、权限与包状态符合测试前提；
 
-### 测试开始前：
+### 测试开始前
 
 4. 测试开始前，运行 `adb -s <serial> logcat -c` 清空旧日志和运行 `adb -s <serial> shell am force-stop com.autoaccounting` 重置进程；
 5. 运行 `adb -s <serial> shell monkey -p com.autoaccounting -c android.intent.category.LAUNCHER 1` 启动应用。
 
-### 测试过程（按验收用例）：
+### 测试过程（按验收用例）
 
 6. 使用 `adb -s <serial> shell input tap <x> <y>`、`swipe`、`text` 和 `keyevent` 操作界面；
 7. 普通页面的关键状态可运行 `adb -s <serial> shell uiautomator dump /sdcard/window.xml` 与 `adb -s <serial> shell screencap -p /sdcard/screen.png`，再将 XML 和截图拉取到版本库外的本机临时目录作为证据。
