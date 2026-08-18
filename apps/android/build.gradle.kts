@@ -189,11 +189,22 @@ jacoco {
 }
 
 tasks.withType<Test>().configureEach {
-    maxHeapSize = "1g"
+    maxHeapSize = "1536m"
+    // Run tests in parallel
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).takeIf { it > 0 } ?: 1
+    forkEvery = 100 // Restart worker process every 100 tests to prevent memory leaks
+
     extensions.configure<JacocoTaskExtension> {
+        // Only enable JaCoCo when we are actually running a coverage report task
+        val isCoverageRun = project.gradle.startParameter.taskNames.any { it.contains("jacoco", ignoreCase = true) }
+        isEnabled = isCoverageRun
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
     }
+
+    // Robolectric specific optimizations
+    systemProperty("robolectric.looperMode", "PAUSED")
+    systemProperty("robolectric.graphicsMode", "NATIVE") // or "LEGACY" if NATIVE is too slow
 }
 
 tasks.register<JacocoReport>("jacocoDebugTestReport") {

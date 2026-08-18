@@ -5,8 +5,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -103,10 +105,14 @@ class DiagnosticLogsScreenTest {
 
         composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-        composeRule.waitForIdle()
+        
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            composeRule.onAllNodesWithText("测试商户秘密", substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
 
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
-        composeRule.onNodeWithText("测试商户秘密", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("敏感内容：••••••").assertIsDisplayed()
     }
 

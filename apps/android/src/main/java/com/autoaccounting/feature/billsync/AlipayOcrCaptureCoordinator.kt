@@ -57,6 +57,8 @@ internal class AlipayOcrCaptureCoordinator(
     private var transitJob: Job? = null
     private var paymentJob: Job? = null
     private var paymentCaptureJob: Job? = null
+    private var retryJob: Job? = null
+    private var contextJob: Job? = null
     private var pendingPaymentCaptureRequest: AlipayPaymentCaptureRequest? = null
     private var pendingPaymentCaptureFrame: AlipayPaymentCaptureFrame? = null
     private var paymentCaptureGeneration: Long = 0L
@@ -286,6 +288,10 @@ internal class AlipayOcrCaptureCoordinator(
         paymentCaptureJob = null
         paymentJob?.cancel()
         paymentJob = null
+        retryJob?.cancel()
+        retryJob = null
+        contextJob?.cancel()
+        contextJob = null
     }
 
     private fun resetPaymentSurface() {
@@ -414,7 +420,8 @@ internal class AlipayOcrCaptureCoordinator(
                     val traceId = pendingFrame.request.traceId
                     resetPaymentSurface()
                     if (hasActiveResultProbe(windowId)) {
-                        scope.launch {
+                        retryJob?.cancel()
+                        retryJob = scope.launch {
                             delay(RETRY_SETTLE_MILLIS)
                             if (
                                 pendingPaymentCaptureRequest == null &&
@@ -436,6 +443,7 @@ internal class AlipayOcrCaptureCoordinator(
                                     )
                                 )
                             }
+                            retryJob = null
                         }
                     }
                 }
@@ -717,7 +725,8 @@ internal class AlipayOcrCaptureCoordinator(
         reason: String,
         traceId: String = newDiagnosticTraceId()
     ) {
-        scope.launch {
+        contextJob?.cancel()
+        contextJob = scope.launch {
             runCatching { processor().recordAlipayMetroExitContext() }
                 .onSuccess { enrichedExistingNotification ->
                     diagnostics.recordMetadata(
@@ -738,6 +747,7 @@ internal class AlipayOcrCaptureCoordinator(
                         error
                     )
                 }
+            contextJob = null
         }
     }
 

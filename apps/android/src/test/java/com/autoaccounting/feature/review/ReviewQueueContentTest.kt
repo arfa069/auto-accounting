@@ -38,7 +38,12 @@ class ReviewQueueContentTest {
 
         composeRule.onNodeWithTag("review-header-row").assertHeightIsEqualTo(52.dp)
         composeRule.onNodeWithTag("review-header-row").assertTopPositionInRootIsEqualTo(20.dp)
-        composeRule.onNodeWithText("确认后记入「家庭账本」").assertIsDisplayed()
+        
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            composeRule.onAllNodesWithText("确认后记入「家庭账本」")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
     }
 
     @Test

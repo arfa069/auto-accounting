@@ -52,30 +52,35 @@ class AlipayOcrCaptureCoordinatorTest {
             automaticCaptureDebouncer = PaymentScreenCaptureDebouncer()
         )
 
-        assertTrue(
-            coordinator.handleSurface(
-                packageName = BillSyncSource.Alipay.packageName,
-                pageText = "",
-                shouldConsiderContinuousMonitoring = true,
-                activeRoot = null,
-                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-                eventWindowId = 1
+        try {
+            assertTrue(
+                coordinator.handleSurface(
+                    packageName = BillSyncSource.Alipay.packageName,
+                    pageText = "",
+                    shouldConsiderContinuousMonitoring = true,
+                    activeRoot = null,
+                    eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                    eventWindowId = 1
+                )
             )
-        )
-        advanceUntilIdle()
-        assertTrue(
-            coordinator.handleSurface(
-                packageName = BillSyncSource.Alipay.packageName,
-                pageText = "支付成功\n支付信息",
-                shouldConsiderContinuousMonitoring = true,
-                activeRoot = null,
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-                eventWindowId = 2
+            advanceUntilIdle()
+            assertTrue(
+                coordinator.handleSurface(
+                    packageName = BillSyncSource.Alipay.packageName,
+                    pageText = "支付成功\n支付信息",
+                    shouldConsiderContinuousMonitoring = true,
+                    activeRoot = null,
+                    eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                    eventWindowId = 2
+                )
             )
-        )
-        advanceUntilIdle()
+            advanceUntilIdle()
 
-        assertEquals(2, host.displayCaptureCount)
+            assertEquals(2, host.displayCaptureCount)
+        } finally {
+            coordinator.cancel()
+            advanceUntilIdle()
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -121,6 +126,8 @@ class AlipayOcrCaptureCoordinatorTest {
             val entry = database.pendingEntryDao().listPendingEntries().single()
             assertEquals(2_000L, entry.amountMinor)
             assertEquals("便利店", entry.merchantTitle)
+            coordinator.cancel()
+            advanceUntilIdle()
         } finally {
             database.close()
         }
@@ -179,6 +186,8 @@ class AlipayOcrCaptureCoordinatorTest {
             assertTrue(entry.evidenceSummary.orEmpty().contains("[无障碍节点]"))
             assertTrue(entry.evidenceSummary.orEmpty().contains("[ML Kit OCR]"))
             assertFalse(PaymentNotificationCaptureTriggers.tryClaimFallback(trigger.captureId))
+            coordinator.cancel()
+            advanceUntilIdle()
         } finally {
             PaymentNotificationCaptureTriggers.complete(trigger.captureId)
             database.close()
@@ -250,6 +259,8 @@ class AlipayOcrCaptureCoordinatorTest {
             val entry = database.pendingEntryDao().listPendingEntries().single()
             assertEquals(2_000L, entry.amountMinor)
             assertEquals("便利店", entry.merchantTitle)
+            coordinator.cancel()
+            advanceUntilIdle()
         } finally {
             database.close()
         }

@@ -32,6 +32,13 @@ jacoco {
     toolVersion = libs.versions.jacoco.get()
 }
 
+tasks.named<Test>("test") {
+    extensions.configure<JacocoTaskExtension> {
+        val isCoverageRun = project.gradle.startParameter.taskNames.any { it.contains("jacoco", ignoreCase = true) }
+        isEnabled = isCoverageRun
+    }
+}
+
 tasks.named<JacocoReport>("jacocoTestReport") {
     dependsOn(tasks.named("test"))
     reports {

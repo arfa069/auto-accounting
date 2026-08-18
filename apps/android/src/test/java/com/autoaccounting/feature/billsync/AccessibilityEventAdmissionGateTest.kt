@@ -58,7 +58,7 @@ class AccessibilityEventAdmissionGateTest {
         assertTrue(
             gate.shouldInspect(
                 packageName = "com.tencent.mm",
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 windowId = 7
             )
         )
@@ -66,7 +66,7 @@ class AccessibilityEventAdmissionGateTest {
         assertFalse(
             gate.shouldInspect(
                 packageName = "com.tencent.mm",
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 windowId = 7
             )
         )
@@ -74,7 +74,7 @@ class AccessibilityEventAdmissionGateTest {
         assertTrue(
             gate.shouldInspect(
                 packageName = "com.tencent.mm",
-                eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
                 windowId = 7
             )
         )
