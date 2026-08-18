@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
-subprojects {
+allprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")
     detekt {
         buildUponDefaultConfig = true

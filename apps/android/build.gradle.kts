@@ -44,7 +44,7 @@ val appVersionCode = (
 )?.trim()?.let { rawVersionCode ->
     rawVersionCode.toIntOrNull()?.takeIf { it > 0 }
         ?: error("AUTO_ACCOUNTING_VERSION_CODE must be a positive integer.")
-} ?: 1014
+} ?: 1025
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
