@@ -49,7 +49,10 @@ internal class AccessibilityEventAdmissionGate(
             eventType == previousEventType &&
             windowId == previousWindowId &&
             now - previousEventAtElapsedMillis in 0 until duplicateWindowMillis
-        if (isDuplicate) {
+        
+        // Allow content changes to pass if they are not immediate duplicates, 
+        // as they might contain rapidly updating payment status.
+        if (isDuplicate && eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             return false
         }
         previousPackageName = packageName

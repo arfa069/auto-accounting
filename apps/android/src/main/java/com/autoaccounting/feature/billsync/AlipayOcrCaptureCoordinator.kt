@@ -75,11 +75,12 @@ internal class AlipayOcrCaptureCoordinator(
         shouldConsiderContinuousMonitoring: Boolean
     ) {
         if (!shouldConsiderContinuousMonitoring) return
-        if (packageName == BillSyncSource.Alipay.packageName) {
+        val source = BillSyncSource.fromPackageName(packageName)
+        if (source == BillSyncSource.Alipay) {
             if (isAlipayPaymentInitiationPage(pageText)) {
                 paymentFlowObservedAtElapsedMillis = SystemClock.elapsedRealtime()
             }
-        } else {
+        } else if (source == BillSyncSource.WeChat) {
             resetPaymentState()
         }
     }
@@ -409,7 +410,34 @@ internal class AlipayOcrCaptureCoordinator(
                         completePaymentCapture()
                         break
                     }
+                    val windowId = pendingFrame.request.windowId
+                    val traceId = pendingFrame.request.traceId
                     resetPaymentSurface()
+                    if (hasActiveResultProbe(windowId)) {
+                        scope.launch {
+                            delay(RETRY_SETTLE_MILLIS)
+                            if (
+                                pendingPaymentCaptureRequest == null &&
+                                hasActiveResultProbe(windowId) &&
+                                paymentCaptureGeneration == pendingFrame.request.generation
+                            ) {
+                                diagnostics.recordMetadata(
+                                    event = "alipay_ocr_retry_enqueued",
+                                    outcome = "started",
+                                    reason = "probe_active",
+                                    traceId = traceId,
+                                    source = DiagnosticSource.Alipay,
+                                    component = DiagnosticComponent.Ocr
+                                )
+                                enqueuePaymentCapture(
+                                    pendingFrame.request.copy(
+                                        generation = paymentCaptureGeneration,
+                                        traceId = newDiagnosticTraceId()
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             } finally {
                 paymentJob = null
@@ -726,9 +754,10 @@ internal class AlipayOcrCaptureCoordinator(
 
     private companion object {
         const val AUTOMATIC_CAPTURE_SETTLE_MILLIS = 500L
+        const val RETRY_SETTLE_MILLIS = 1_500L
         const val OCR_ATTEMPT_COOLDOWN_MILLIS = 3_000L
         const val ALIPAY_PAYMENT_FLOW_WINDOW_MILLIS = 2 * 60_000L
-        const val ALIPAY_RESULT_PROBE_WINDOW_MILLIS = 2_000L
+        const val ALIPAY_RESULT_PROBE_WINDOW_MILLIS = 10_000L
     }
 }
 

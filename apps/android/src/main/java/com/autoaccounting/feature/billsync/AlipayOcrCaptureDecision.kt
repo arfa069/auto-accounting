@@ -114,6 +114,8 @@ private val ALIPAY_OCR_PAYMENT_INITIATION_KEYWORDS = listOf(
     "确认支付",
     "支付密码",
     "输入密码",
+    "指纹支付",
+    "面容支付",
     "添加转账说明",
     "pay now",
     "confirm payment",
