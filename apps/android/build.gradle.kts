@@ -17,40 +17,40 @@ val localPropertiesText = providers.fileContents(
 val localBuildProperties = Properties().apply {
     localPropertiesText?.reader()?.use(::load)
 }
-val configuredBackendUrl = System.getenv("AUTO_ACCOUNTING_BACKEND_URL")
-    ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_BACKEND_URL")
+val configuredBackendUrl = System.getenv("BKS_BACKEND_URL")
+    ?: localBuildProperties.getProperty("BKS_BACKEND_URL")
 val debugBackendUrl = configuredBackendUrl?.takeIf { it.isNotBlank() }
     ?: "http://10.0.2.2:8080"
 val releaseBackendUrl = configuredBackendUrl
     ?.trim()
     .orEmpty()
 val allowHttpLedgerSync = (
-    System.getenv("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
-        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC")
+    System.getenv("BKS_ALLOW_HTTP_LEDGER_SYNC")
+        ?: localBuildProperties.getProperty("BKS_ALLOW_HTTP_LEDGER_SYNC")
     )?.equals("true", ignoreCase = true) == true
-val wechatAppId = (System.getenv("AUTO_ACCOUNTING_WECHAT_APP_ID")
-    ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_WECHAT_APP_ID"))
+val wechatAppId = (System.getenv("BKS_WECHAT_APP_ID")
+    ?: localBuildProperties.getProperty("BKS_WECHAT_APP_ID"))
     ?.trim()
     .orEmpty()
 val composeCompilerReportsEnabled =
     providers.gradleProperty("composeCompilerReports").orNull == "true"
 val appVersionName = (
-    System.getenv("AUTO_ACCOUNTING_VERSION_NAME")
-        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_VERSION_NAME")
+    System.getenv("BKS_VERSION_NAME")
+        ?: localBuildProperties.getProperty("BKS_VERSION_NAME")
 )?.trim()?.takeIf(String::isNotEmpty) ?: "0.1.0"
 val appVersionCode = (
-    System.getenv("AUTO_ACCOUNTING_VERSION_CODE")
-        ?: localBuildProperties.getProperty("AUTO_ACCOUNTING_VERSION_CODE")
+    System.getenv("BKS_VERSION_CODE")
+        ?: localBuildProperties.getProperty("BKS_VERSION_CODE")
 )?.trim()?.let { rawVersionCode ->
     rawVersionCode.toIntOrNull()?.takeIf { it > 0 }
-        ?: error("AUTO_ACCOUNTING_VERSION_CODE must be a positive integer.")
+        ?: error("BKS_VERSION_CODE must be a positive integer.")
 } ?: 1025
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
-    namespace = "com.autoaccounting"
+    namespace = "com.bks"
     compileSdk = 36
 
     buildFeatures {
@@ -58,7 +58,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.autoaccounting"
+        applicationId = "com.bks"
         minSdk = 29
         targetSdk = 36
         versionCode = appVersionCode
@@ -66,12 +66,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
             "String",
-            "AUTO_ACCOUNTING_WECHAT_APP_ID",
+            "BKS_WECHAT_APP_ID",
             wechatAppId.asBuildConfigString()
         )
         buildConfigField(
             "boolean",
-            "AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC",
+            "BKS_ALLOW_HTTP_LEDGER_SYNC",
             allowHttpLedgerSync.toString()
         )
         manifestPlaceholders["allowHttpLedgerSync"] = allowHttpLedgerSync
@@ -106,7 +106,7 @@ android {
             versionNameSuffix = "-debug"
             buildConfigField(
                 "String",
-                "AUTO_ACCOUNTING_BACKEND_URL",
+                "BKS_BACKEND_URL",
                 debugBackendUrl.asBuildConfigString()
             )
         }
@@ -115,7 +115,7 @@ android {
             isShrinkResources = true
             buildConfigField(
                 "String",
-                "AUTO_ACCOUNTING_BACKEND_URL",
+                "BKS_BACKEND_URL",
                 releaseBackendUrl.asBuildConfigString()
             )
             proguardFiles(
@@ -164,7 +164,7 @@ configurations.configureEach {
 baselineProfile {
     automaticGenerationDuringBuild = false
     filter {
-        exclude("com.autoaccounting.benchmark.**")
+        exclude("com.bks.benchmark.**")
     }
 }
 

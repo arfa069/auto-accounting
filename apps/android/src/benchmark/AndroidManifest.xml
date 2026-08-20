@@ -3,7 +3,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <permission
-        android:name="com.autoaccounting.benchmark.permission.BENCHMARK_DATA"
+        android:name="com.bks.benchmark.permission.BENCHMARK_DATA"
         android:protectionLevel="signature" />
 
     <application
@@ -13,8 +13,8 @@
 
         <provider
             android:name=".benchmark.BenchmarkDataProvider"
-            android:authorities="com.autoaccounting.benchmark.benchmark-data"
+            android:authorities="com.bks.benchmark.benchmark-data"
             android:exported="true"
-            android:permission="com.autoaccounting.benchmark.permission.BENCHMARK_DATA" />
+            android:permission="com.bks.benchmark.permission.BENCHMARK_DATA" />
     </application>
 </manifest>

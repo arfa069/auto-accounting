@@ -4,17 +4,17 @@
 
 本文件适用于 `apps/android/`。通用规则继承仓库根目录 `AGENTS.md`。
 
-- `src/main/java/com/autoaccounting/data/local/`：Room 数据库、Entity、DAO、Converter 与本地 repository。
-- `src/main/java/com/autoaccounting/feature/<feature>/`：按业务功能组织状态、界面、解析器和流程。
+- `src/main/java/com/bks/data/local/`：Room 数据库、Entity、DAO、Converter 与本地 repository。
+- `src/main/java/com/bks/feature/<feature>/`：按业务功能组织状态、界面、解析器和流程。
 - `src/main/res/` 与 `AndroidManifest.xml`：应用资源、权限、Activity 及系统 Service 声明。
 - `src/test/java/`：按生产包路径镜像组织 JVM、Robolectric、Compose 与 Room 测试。
 - `src/androidTest/java/`：运行在真机或模拟器上的 Instrumentation 测试；用于验证真实 Android SQLite 或系统边界。
 
 ## 实现约束
 
-- 保持 `MainActivity` 只保留系统生命周期、外部 Intent 转换与 `setContent` 装配；依赖创建与根组合由 `AutoAccountingApp` 承载，业务逻辑放入对应 feature 或 repository。
+- 保持 `MainActivity` 只保留系统生命周期、外部 Intent 转换与 `setContent` 装配；依赖创建与根组合由 `BksApp` 承载，业务逻辑放入对应 feature 或 repository。
 - UI 状态与持久化状态必须明确区分。涉及账目、待确认队列、设置或账号状态时，验证进程重启后的恢复行为。
-- 修改 Room 表或字段等 schema 时，递增 `SCHEMA_VERSION`，补充连续 Migration，在 `AutoAccountingDatabaseProvider` 注册，并提交新的 `schemas/.../<version>.json`。DAO 或 Converter 行为变化应补充对应持久化测试。禁止使用破坏性迁移掩盖缺失 Migration。
+- 修改 Room 表或字段等 schema 时，递增 `SCHEMA_VERSION`，补充连续 Migration，在 `BksDatabaseProvider` 注册，并提交新的 `schemas/.../<version>.json`。DAO 或 Converter 行为变化应补充对应持久化测试。禁止使用破坏性迁移掩盖缺失 Migration。
 - 修改手动补录无障碍 Service 时，保持 `exported=false`，不扩大权限或采集范围，并覆盖授权、拒绝、空输入与重复事件。
 - Compose 界面沿用现有 Material 3 和 feature 内组件风格；可见行为变化需同步更新相关 UI 测试。
 
@@ -23,7 +23,7 @@
 先运行与改动最相关的单个测试类或 feature package：
 
 ```powershell
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.<feature>.<TestClass>"
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.bks.feature.<feature>.<TestClass>"
 ```
 
 - 每个开发阶段只运行专项测试与必要的 Detekt；
@@ -38,7 +38,7 @@
 运行设备端 Room 测试：
 
 ```powershell
-.\gradlew.bat :apps:android:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.autoaccounting.data.local.AutoAccountingDatabaseInstrumentedTest"
+.\gradlew.bat :apps:android:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.bks.data.local.BksDatabaseInstrumentedTest"
 ```
 
 连接多台设备时先设置当前 PowerShell 进程的 `ANDROID_SERIAL`。如果 Unified Test Platform 依赖暂时无法下载，可先运行 `:apps:android:assembleDebug :apps:android:assembleDebugAndroidTest`，再按根指南要求使用带 `-s <serial>` 的 ADB 安装两个 APK，并通过 `am instrument` 运行同一测试类；不得把网络失败误报成测试通过。

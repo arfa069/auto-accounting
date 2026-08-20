@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.autoaccounting.macrobenchmark"
+    namespace = "com.bks.macrobenchmark"
     compileSdk = 36
 
     defaultConfig {
