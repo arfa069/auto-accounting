@@ -1,4 +1,4 @@
-package com.autoaccounting.api
+package com.bks.api
 
 import java.util.Locale
 

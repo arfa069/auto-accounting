@@ -1,4 +1,4 @@
-package com.autoaccounting.api
+package com.bks.api
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows

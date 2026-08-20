@@ -4,7 +4,7 @@
 
 本文件适用于 `shared/api/`。该模块只维护 Android 客户端与 Ktor 后端共同使用的 Kotlin 契约和 JSON 编解码规则，不放置平台 UI、数据库访问、网络调用或业务流程。
 
-生产代码位于 `src/main/kotlin/com/autoaccounting/api/`。按契约主题拆分文件，避免建立仅用于重新导出类型的包装层。
+生产代码位于 `src/main/kotlin/com/bks/api/`。按契约主题拆分文件，避免建立仅用于重新导出类型的包装层。
 
 ## 契约约束
 
