@@ -93,20 +93,6 @@ internal class BenchmarkApp(private val device: UiDevice) {
         waitForHome()
     }
 
-    fun openAutomaticBookkeeping() {
-        clickText("我的")
-        waitForText("账户管理")
-        clickText("自动记账")
-        waitForText("权限与后台设置")
-    }
-
-    fun returnHomeFromAutomaticBookkeeping() {
-        device.pressBack()
-        waitForText("账户管理")
-        device.pressBack()
-        waitForHome()
-    }
-
     fun openReports() {
         clickText("报表")
         waitForText("分类排行")

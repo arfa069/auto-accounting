@@ -292,8 +292,6 @@ class LocalLedgerRepository private constructor(
             LocalSettingsEntity(
                 aiConsentGranted = false,
                 enhancedContextGranted = false,
-                continuousBillSyncCompleted = false,
-                continuousMonitoringEnabled = false,
                 activeLedgerId = DEFAULT_LEDGER_BOOK_ID
             )
         )

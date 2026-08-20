@@ -2,11 +2,11 @@
 
 ## 1. 用途与边界
 
-诊断日志用于排查自动记账和补录账单链路，完整记录允许范围内的通知、页面/OCR 文字、解析字段、交易采集证据和异常。它独立于账本和待确认证据，也不是 Developer Tools 或云端崩溃上报。
+诊断日志用于排查用户主动发起的微信/支付宝账单补录链路，记录允许范围内的页面/OCR 文字、解析字段、补录证据和异常。它独立于账本和待确认证据，也不是 Developer Tools 或云端崩溃上报。
 
 - Debug 默认开启；Release 默认关闭，用户必须在“我的 → 合规与隐私 → 诊断日志”阅读说明并主动开启。
-- 只有支付相关通知、已判定的支付结果/支付记录页和当前补录会话可保存正文。普通通知、聊天、无关页面和不支持包名只保存拒绝元数据。
-- 截图永不保存或上传；支付结果页的通知、无障碍节点和 OCR 原文可作为对应待确认条目的本地证据，诊断日志中的副本仍只在上述边界内记录。
+- 只有当前补录会话中的受支持支付页面和 OCR 结果可保存正文。聊天、无关页面和不支持包名只保存拒绝元数据。
+- 截图永不保存或上传；无障碍节点和 OCR 原文可作为对应待确认条目的本地证据，诊断日志中的副本仍只在上述边界内记录。
 - 密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 始终在写入前脱敏。账号流程只允许稳定结果码，不记录昵称、头像 URL 或 Provider 正文。
 - 日志不上传后端，也不进入账本备份或 Android 系统备份。
 
@@ -48,7 +48,7 @@
 
 新增或扩展诊断事件时必须同时确认：
 
-1. 事件位于支付相关通知、允许支付页面或当前补录会话边界内；否则 payload 为空。
+1. 事件位于允许支付页面或当前补录会话边界内；否则 payload 为空。
 2. 使用随机 `traceId`，补录链路继续使用现有 `sessionId`，不得把含金额或时间的候选 ID 当作关联 ID。
 3. 拒绝原因和失败原因使用稳定枚举，不从展示文案反推。
 4. 敏感字段只放入 `DiagnosticSensitivePayload`，并经过认证秘密扫描、事件限长和存储加密。
@@ -60,7 +60,6 @@
 
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.diagnostics.*"
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"
 .\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.*"
 .\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.compliance.*"
 ```

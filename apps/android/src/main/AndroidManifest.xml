@@ -4,7 +4,6 @@
         <package android:name="com.eg.android.AlipayGphone" />
     </queries>
 
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -39,15 +38,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/avatar_file_paths" />
         </provider>
-        <service
-            android:name=".feature.capture.PaymentNotificationListenerService"
-            android:exported="false"
-            android:label="@string/notification_listener_label"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
         <service
             android:name=".feature.billsync.BillSyncAccessibilityService"
             android:exported="false"

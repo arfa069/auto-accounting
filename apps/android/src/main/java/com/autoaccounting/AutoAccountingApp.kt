@@ -16,29 +16,16 @@ import com.autoaccounting.feature.account.WechatAuthGateway
 import com.autoaccounting.feature.billsync.BillSyncSource
 import com.autoaccounting.feature.categorization.AiCategorizationGateway
 import com.autoaccounting.feature.categorization.CloudAiSettingsGateway
-import com.autoaccounting.feature.monitoring.BackgroundReliabilityState
 import com.autoaccounting.ui.components.SlidePageTransition
 import com.autoaccounting.ui.rememberAutoAccountingAppState
 import com.autoaccounting.ui.theme.AutoAccountingTheme
 import com.autoaccounting.ui.visual.AppWallpaper
 
 data class AutoAccountingAppBindings(
-    val notificationListenerAccessGranted: Boolean = false,
-    val onOpenNotificationListenerSettings: () -> Unit = {},
     val billSyncAccessibilityAccessGranted: Boolean = false,
     val billSyncAccessibilityServiceConnected: Boolean = true,
     val onOpenBillSyncAccessibilitySettings: () -> Unit = {},
-    val resultNotificationPermissionGranted: Boolean = false,
-    val onRequestResultNotificationPermission: () -> Unit = {},
-    val backgroundReliabilityState: BackgroundReliabilityState = BackgroundReliabilityState(),
-    val onOpenBackgroundRunningSettings: () -> Unit = {},
-    val onOpenAutoStartSettings: () -> Unit = {},
-    val onOpenBatteryOptimizationSettings: () -> Unit = {},
-    val onOpenBatterySaverSettings: () -> Unit = {},
     val onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
-    val permissionStateLoaded: Boolean = false,
-    val reviewNavigationRequest: Long = 0,
-    val pendingEntryNavigationId: String? = null,
     val wechatAuthCallback: WechatAuthCallback? = null,
     val onWechatAuthCallbackConsumed: () -> Unit = {}
 )
@@ -69,7 +56,7 @@ fun AutoAccountingApp(
             coroutineScope = coroutineScope
         )
     }
-    val presentation = rememberAutoAccountingAppPresentation(bindings, runtime)
+    val presentation = rememberAutoAccountingAppPresentation(runtime)
     val routeContext = AutoAccountingRouteContext(
         dependencies = dependencies,
         runtime = runtime,

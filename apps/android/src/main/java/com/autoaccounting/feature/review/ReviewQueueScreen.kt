@@ -45,8 +45,6 @@ fun ReviewQueueScreen(
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
     onOpenBillImport: () -> Unit = {},
-    openPendingEntryId: String? = null,
-    openPendingEntryRequestId: Long = 0,
     onNavigateHome: () -> Unit = {}
 ) {
     var state by remember { mutableStateOf(initialState) }
@@ -63,8 +61,6 @@ fun ReviewQueueScreen(
         aiSettings = aiSettings,
         aiCategorizationGateway = aiCategorizationGateway,
         onOpenBillImport = onOpenBillImport,
-        openPendingEntryId = openPendingEntryId,
-        openPendingEntryRequestId = openPendingEntryRequestId,
         onNavigateHome = onNavigateHome
     )
 }
@@ -84,8 +80,6 @@ fun ReviewQueueScreen(
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
     onOpenBillImport: () -> Unit = {},
-    openPendingEntryId: String? = null,
-    openPendingEntryRequestId: Long = 0,
     onNavigateHome: () -> Unit = {}
 ) {
     var editingEntryId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -95,12 +89,6 @@ fun ReviewQueueScreen(
     var pendingRuleSave by remember { mutableStateOf<PendingCategoryRuleSave?>(null) }
     var showIgnoredList by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(openPendingEntryRequestId, openPendingEntryId, state.pendingEntries) {
-        if (openPendingEntryRequestId > 0 && openPendingEntryId != null) {
-            editingEntryId = state.pendingEntries.firstOrNull { it.id == openPendingEntryId }?.id
-        }
-    }
 
     fun dispatch(action: ReviewQueueAction) {
         onStateChange(reduceReviewQueue(state, action))

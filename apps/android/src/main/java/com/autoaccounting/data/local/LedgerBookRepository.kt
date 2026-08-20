@@ -155,8 +155,6 @@ internal class RoomLedgerBookRepository(
         database.localSettingsDao().getById() ?: LocalSettingsEntity(
             aiConsentGranted = false,
             enhancedContextGranted = false,
-            continuousBillSyncCompleted = false,
-            continuousMonitoringEnabled = false,
             activeLedgerId = activeLedgerId
         )
 }

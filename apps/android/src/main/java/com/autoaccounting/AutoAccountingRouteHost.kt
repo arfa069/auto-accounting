@@ -54,8 +54,7 @@ internal fun AutoAccountingAccountEntry(context: AutoAccountingRouteContext) {
                 }
                 runtime.accountSession = session
                 runtime.accountEntryReturnSession = null
-                appState.selectedTab.value =
-                    if (context.bindings.reviewNavigationRequest > 0) AppTab.Review else null
+                appState.selectedTab.value = null
                 appState.profileDestination.value = null
             },
             onBack = returnSession?.let {
@@ -165,9 +164,6 @@ internal fun AutoAccountingRouteHost(context: AutoAccountingRouteContext) {
                 selectedTab = AppTab.Review
                 profileDestination = null
             },
-            continuousMonitoringState = runtime.continuousMonitoringState,
-            continuousMonitoringPermissionHealth = presentation.continuousMonitoringPermissionHealth,
-            onContinuousMonitoringStateChange = actions::persistContinuousMonitoringState,
             diagnosticRecorder = dependencies.diagnosticLogs
         )
     }

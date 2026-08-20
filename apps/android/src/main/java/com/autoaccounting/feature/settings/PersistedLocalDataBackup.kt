@@ -103,7 +103,5 @@ internal fun defaultBackupSettings(activeLedgerId: String): LocalSettingsEntity 
     LocalSettingsEntity(
         aiConsentGranted = false,
         enhancedContextGranted = false,
-        continuousBillSyncCompleted = false,
-        continuousMonitoringEnabled = false,
         activeLedgerId = activeLedgerId
     )

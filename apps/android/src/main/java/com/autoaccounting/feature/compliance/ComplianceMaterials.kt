@@ -30,12 +30,8 @@ data class ThirdPartyService(
 )
 
 enum class PermissionExplanationId {
-    NotificationListening,
-    ResultNotifications,
     AccessibilityBillSync,
-    ContinuousMonitoring,
-    CloudAi,
-    BackgroundKeepAlive
+    CloudAi
 }
 
 data class PermissionExplanation(
@@ -93,22 +89,16 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             retentionAndDeletion = "设备端保留至本机数据删除或卸载；后端设备记录在账号注销完成后删除"
         ),
         PersonalInformationItem(
-            name = "微信/支付宝支付通知内容",
-            purpose = "生成待确认账目",
-            requiredState = "仅开启通知监听后使用",
-            processingMethod = "在设备上解析为待确认账目"
+            name = "微信/支付宝账单页内容",
+            purpose = "用户主动补录当前或历史账目",
+            requiredState = "仅用户从待确认队列发起手动补录时使用",
+            processingMethod = "读取当前可见账单页面；微信空节点页面可在设备本地瞬时截图 OCR。截图始终立即释放且不保存、不上传；仅当用户主动开启诊断日志时，允许范围内的页面/OCR 文字会在本机加密留存"
         ),
         PersonalInformationItem(
-            name = "微信/支付宝支付结果与账单页内容",
-            purpose = "开启自动记账后识别支付结果，或手动补充历史账目",
-            requiredState = "仅用户开启自动记账或发起手动同步后使用",
-            processingMethod = "优先读取无障碍节点；微信空节点支付结果页可在设备本地瞬时截图 OCR。截图始终立即释放且不保存、不上传；仅当用户主动开启诊断日志时，允许范围内的页面/OCR 文字会在本机加密留存"
-        ),
-        PersonalInformationItem(
-            name = "自动记账敏感诊断日志",
-            purpose = "排查通知、无障碍、OCR、解析、去重、持久化和补录故障",
+            name = "手动补录敏感诊断日志",
+            purpose = "排查手动补录、无障碍、OCR、解析、去重和持久化故障",
             requiredState = "Debug 默认开启；Release 默认关闭，需用户阅读说明并主动开启",
-            processingMethod = "仅设备内 Keystore 加密分段，最多 10 MB，不上传；可关闭、清空或使用至少 8 位口令加密导出。包含支付通知/页面/OCR 文字及交易字段，认证秘密写入前强制脱敏"
+            processingMethod = "仅设备内 Keystore 加密分段，最多 10 MB，不上传；可关闭、清空或使用至少 8 位口令加密导出。仅包含手动补录页面/OCR 文字及交易字段，认证秘密写入前强制脱敏"
         ),
         PersonalInformationItem(
             name = "账本和待确认账目",
@@ -161,7 +151,7 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
         ),
         ThirdPartyService(
             name = "Google ML Kit Chinese Text Recognition（捆绑模型）",
-            purpose = "在微信支付结果页不提供可读无障碍节点时进行本地文字识别",
+            purpose = "在用户主动补录的微信页面不提供可读无障碍节点时进行本地文字识别",
             personalInformationCategory = "瞬时支付结果页像素和识别文本",
             processingMethod = "模型随应用安装并仅在设备本地处理；截图处理后立即释放且不保存、不上传。用户主动开启诊断日志时，允许范围内的 OCR 文字可在设备内加密留存，不发送给 OCR 服务商",
             declarationTokens = setOf("mlkit", "text-recognition")
@@ -169,28 +159,10 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
     ),
     permissionExplanations = listOf(
         PermissionExplanation(
-            id = PermissionExplanationId.NotificationListening,
-            title = "通知监听",
-            purpose = "用于识别微信、支付宝的收付款通知，生成待确认账目。",
-            boundary = "只处理支付相关通知，不读取无关通知内容。"
-        ),
-        PermissionExplanation(
-            id = PermissionExplanationId.ResultNotifications,
-            title = "记账结果通知",
-            purpose = "用于通知自动记账成功或失败结果。",
-            boundary = "未授权不影响本地采集；锁屏默认隐藏金额、商户和交易对方。"
-        ),
-        PermissionExplanation(
             id = PermissionExplanationId.AccessibilityBillSync,
-            title = "自动记账无障碍服务",
-            purpose = "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，也可手动补充历史账目。",
-            boundary = "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。用户主动开启诊断日志时，仅支付页或当前补录会话的 OCR 文字可在本机加密留存。"
-        ),
-        PermissionExplanation(
-            id = PermissionExplanationId.ContinuousMonitoring,
-            title = "自动记账",
-            purpose = "开启后会在支付完成时观察受支持的结果页，必要时在本机瞬时 OCR，并生成待确认记录；可随时关闭。",
-            boundary = "必须由用户明确开启，只处理支付结果和支付记录；截图不留存。OCR 原文仅在用户另行主动开启诊断日志时于本机加密留存。"
+            title = "手动补录无障碍服务",
+            purpose = "用于用户主动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可在本机瞬时 OCR。",
+            boundary = "只在手动补录会话期间读取当前账单页，不读取聊天或普通消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.CloudAi,
@@ -198,29 +170,15 @@ val AUTO_ACCOUNTING_COMPLIANCE = ComplianceMaterials(
             purpose = "开启后会上传必要交易信息用于分类建议，可选择是否提供更多上下文。",
             boundary = "默认关闭，最小字段优先，增强上下文单独选择。"
         ),
-        PermissionExplanation(
-            id = PermissionExplanationId.BackgroundKeepAlive,
-            title = "后台保活",
-            purpose = "建议允许后台运行，避免通知捕获中断；不同手机设置入口可能不同。",
-            boundary = "只用于提升支付捕获稳定性。"
-        )
     ),
     storeReviewNotes = listOf(
         StoreReviewNote(
-            title = "通知监听审核说明",
-            body = "通知监听只用于识别微信、支付宝支付通知，并生成待确认账目。"
-        ),
-        StoreReviewNote(
             title = "无障碍审核说明",
-            body = "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。用户另行主动开启诊断日志后，仅允许页面/会话的 OCR 文字可在设备内加密留存。"
-        ),
-        StoreReviewNote(
-            title = "自动记账审核说明",
-            body = "自动记账由用户明确开启，可随时关闭；所有捕获结果先进入待确认队列。"
+            body = "无障碍服务仅在用户主动发起手动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
         ),
         StoreReviewNote(
             title = "诊断日志审核说明",
-            body = "Release 的诊断日志默认关闭，用户需在合规与隐私页面阅读字段、用途、10 MB 上限、长期保留和导出风险后主动开启。日志不上传，使用 Android Keystore 加密；截图永不保存，聊天/普通通知正文不记录，密码、验证码、Token、Cookie、Authorization、API Key、备份口令和私钥写入前强制脱敏。"
+            body = "Release 的诊断日志默认关闭，用户需在合规与隐私页面阅读字段、用途、10 MB 上限、长期保留和导出风险后主动开启。日志不上传，使用 Android Keystore 加密；截图永不保存，聊天正文不记录，密码、验证码、Token、Cookie、Authorization、API Key、备份口令和私钥写入前强制脱敏。"
         )
     )
 )

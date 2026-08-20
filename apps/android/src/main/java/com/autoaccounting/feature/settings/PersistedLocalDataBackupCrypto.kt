@@ -13,7 +13,7 @@ internal fun encryptPersistedLocalData(
     val plainText = snapshot.toBytes()
     val passphraseChars = passphrase.toCharArray()
     return try {
-        BACKUP_PREFIX_V4 + Base64.getEncoder().encodeToString(
+        BACKUP_PREFIX_V5 + Base64.getEncoder().encodeToString(
             PassphraseAesGcm.encrypt(plainText, passphraseChars)
         )
     } finally {
@@ -27,6 +27,7 @@ internal fun decryptPersistedLocalData(
 ): PersistedLocalDataSnapshot {
     require(passphrase.isNotBlank()) { "Backup passphrase is required" }
     val prefix = when {
+        backupText.startsWith(BACKUP_PREFIX_V5) -> BACKUP_PREFIX_V5
         backupText.startsWith(BACKUP_PREFIX_V4) -> BACKUP_PREFIX_V4
         backupText.startsWith(BACKUP_PREFIX_V3) -> BACKUP_PREFIX_V3
         backupText.startsWith(BACKUP_PREFIX_V2) -> BACKUP_PREFIX_V2
@@ -44,7 +45,8 @@ internal fun decryptPersistedLocalData(
 internal fun isEncryptedLocalDataBackup(backupText: String): Boolean =
     backupText.startsWith(BACKUP_PREFIX_V2) ||
         backupText.startsWith(BACKUP_PREFIX_V3) ||
-        backupText.startsWith(BACKUP_PREFIX_V4)
+        backupText.startsWith(BACKUP_PREFIX_V4) ||
+        backupText.startsWith(BACKUP_PREFIX_V5)
 
 internal const val MIN_BACKUP_PASSPHRASE_LENGTH = 9
 
@@ -54,3 +56,4 @@ internal fun isValidNewBackupPassphrase(passphrase: String): Boolean =
 internal const val BACKUP_PREFIX_V2 = "AUTO_ACCOUNTING_BACKUP_V2:"
 internal const val BACKUP_PREFIX_V3 = "AUTO_ACCOUNTING_BACKUP_V3:"
 internal const val BACKUP_PREFIX_V4 = "AUTO_ACCOUNTING_BACKUP_V4:"
+internal const val BACKUP_PREFIX_V5 = "AUTO_ACCOUNTING_BACKUP_V5:"

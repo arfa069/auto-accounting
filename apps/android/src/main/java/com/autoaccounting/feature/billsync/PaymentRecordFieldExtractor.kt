@@ -1,41 +1,5 @@
 package com.autoaccounting.feature.billsync
 
-import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
-
-internal fun extractMerchantTitle(
-    source: BillSyncSource,
-    windowText: String,
-    lines: List<String>,
-    linesBeforeAmount: List<String>
-): String? {
-    if (hasWechatSentRedPacketSuccessSignature(windowText)) return "红包"
-
-    if (source == BillSyncSource.Alipay) {
-        extractMerchantOrPayee(windowText, lines)?.let { return it }
-    }
-
-    extractMultilineValueAfterLabels(lines, PRODUCT_LABELS)?.let { return it }
-
-    val p2pTitle = extractP2pTitle(windowText)
-    if (p2pTitle != null) return p2pTitle
-
-    val fundingAccountValue = extractFundingAccountLabel(windowText, lines)
-    linesBeforeAmount
-        .asReversed()
-        .firstOrNull {
-            it.isMeaningfulPaymentRecordTitle() && it != fundingAccountValue
-        }
-        ?.let { return it }
-
-    extractMerchantOrPayee(windowText, lines)?.let { return it }
-
-    if (windowText.contains("发出红包") || windowText.contains("红包已发出")) {
-        return "红包"
-    }
-
-    return null
-}
-
 internal fun extractMerchantOrPayee(windowText: String, lines: List<String>): String? {
     merchantInlineRegex.find(windowText)
         ?.groupValues

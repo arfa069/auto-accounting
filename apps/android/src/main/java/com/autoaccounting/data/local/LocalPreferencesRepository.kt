@@ -3,13 +3,11 @@ package com.autoaccounting.data.local
 import androidx.room.withTransaction
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 data class LocalUserPreferences(
-    val aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
-    val continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState()
+    val aiSettings: AiCategorizationSettings = AiCategorizationSettings()
 )
 
 class LocalPreferencesRepository(
@@ -63,18 +61,6 @@ class LocalPreferencesRepository(
         )
     }
 
-    suspend fun updateContinuousMonitoringState(
-        state: ContinuousMonitoringState
-    ) = database.withTransaction {
-        val current = currentSettingsEntity()
-        database.localSettingsDao().upsert(
-            current.copy(
-                continuousBillSyncCompleted = true,
-                continuousMonitoringEnabled = state.enabled
-            )
-        )
-    }
-
     suspend fun clearLocalData() = database.withTransaction {
         database.categorizationRuleDao().deleteAll()
         database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
@@ -82,8 +68,6 @@ class LocalPreferencesRepository(
             currentSettingsEntity().copy(
                 aiConsentGranted = false,
                 enhancedContextGranted = false,
-                continuousBillSyncCompleted = false,
-                continuousMonitoringEnabled = false,
                 defaultFundingAccountSyncId = null
             )
         )
@@ -112,9 +96,7 @@ class LocalPreferencesRepository(
     private suspend fun currentSettingsEntity(): LocalSettingsEntity =
         database.localSettingsDao().getById() ?: LocalSettingsEntity(
             aiConsentGranted = false,
-            enhancedContextGranted = false,
-            continuousBillSyncCompleted = false,
-            continuousMonitoringEnabled = false
+            enhancedContextGranted = false
         )
 }
 
@@ -146,8 +128,5 @@ private fun LocalSettingsEntity.toDomain(): LocalUserPreferences = LocalUserPref
     aiSettings = AiCategorizationSettings(
         aiConsentGranted = aiConsentGranted,
         enhancedContextGranted = aiConsentGranted && enhancedContextGranted
-    ),
-    continuousMonitoringState = ContinuousMonitoringState(
-        enabled = continuousMonitoringEnabled
     )
 )

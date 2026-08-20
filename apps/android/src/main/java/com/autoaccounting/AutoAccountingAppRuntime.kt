@@ -28,8 +28,6 @@ import com.autoaccounting.feature.ledger.LedgerReportUiModel
 import com.autoaccounting.feature.ledger.LedgerUiEntry
 import com.autoaccounting.feature.ledger.buildLedgerReportUiModel
 import com.autoaccounting.feature.ledger.toLedgerUiEntry
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.sync.LedgerSyncScheduler
 import com.autoaccounting.feature.sync.LedgerSyncUiState
@@ -45,7 +43,6 @@ internal class AutoAccountingAppRuntimeState {
     var accountEntryReturnSession by mutableStateOf<AccountSession?>(null)
     var accountDeletionState by mutableStateOf(AccountDeletionUiState())
     var accountRuntimeState by mutableStateOf(AccountRuntimeState(AccountRuntimeStatus.LocalMode))
-    var continuousMonitoringState by mutableStateOf(ContinuousMonitoringState())
     var aiSettings by mutableStateOf(AiCategorizationSettings())
     var aiSettingsSyncInFlight by mutableStateOf(false)
     var cloudAiSettingsLoadedToken by mutableStateOf<String?>(null)
@@ -186,34 +183,11 @@ internal class AutoAccountingAppActions(
         }
     }
 
-    fun persistContinuousMonitoringState(nextState: ContinuousMonitoringState) {
-        val previousState = runtime.continuousMonitoringState
-        runtime.continuousMonitoringState = nextState
-        if (previousState.enabled != nextState.enabled) {
-            dependencies.diagnosticLogs.record(
-                DiagnosticEvent(
-                    metadata = DiagnosticEventMetadata(
-                        level = DiagnosticLevel.Info,
-                        component = DiagnosticComponent.Monitoring,
-                        event = "automatic_bookkeeping_toggle",
-                        source = DiagnosticSource.System,
-                        outcome = if (nextState.enabled) "enabled" else "disabled",
-                        reason = if (nextState.enabled) "user_enabled" else "user_disabled"
-                    )
-                )
-            )
-        }
-        coroutineScope.launch {
-            dependencies.local.preferencesRepository.updateContinuousMonitoringState(nextState)
-        }
-    }
-
     fun clearLocalData() {
         dependencies.account.wechatAvatarCache.clear()
         runtime.reviewState = ReviewQueueState()
         runtime.categorizationRules = emptyList()
         runtime.aiSettings = AiCategorizationSettings()
-        runtime.continuousMonitoringState = ContinuousMonitoringState()
         runtime.ledgerState = LedgerRepositoryState()
         coroutineScope.launch {
             try {
@@ -232,13 +206,11 @@ internal data class AutoAccountingAppPresentation(
     val ledgerEntries: List<LedgerUiEntry>,
     val deletedLedgerEntries: List<LedgerUiEntry>,
     val ledgerBookUiModels: List<LedgerBookUiModel>,
-    val reportUiModel: LedgerReportUiModel,
-    val continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth
+    val reportUiModel: LedgerReportUiModel
 )
 
 @Composable
 internal fun rememberAutoAccountingAppPresentation(
-    bindings: AutoAccountingAppBindings,
     runtime: AutoAccountingAppRuntimeState
 ): AutoAccountingAppPresentation {
     val ledgerEntries = remember(runtime.ledgerState.ledgerEntries) {
@@ -271,15 +243,6 @@ internal fun rememberAutoAccountingAppPresentation(
         ledgerEntries = ledgerEntries,
         deletedLedgerEntries = deletedLedgerEntries,
         ledgerBookUiModels = ledgerBookUiModels,
-        reportUiModel = remember(ledgerEntries) { buildLedgerReportUiModel(ledgerEntries) },
-        continuousMonitoringPermissionHealth = remember(
-            bindings.billSyncAccessibilityAccessGranted,
-            bindings.billSyncAccessibilityServiceConnected
-        ) {
-            ContinuousMonitoringPermissionHealth(
-                billSyncAccessibilityGranted = bindings.billSyncAccessibilityAccessGranted,
-                billSyncAccessibilityServiceConnected = bindings.billSyncAccessibilityServiceConnected
-            )
-        }
+        reportUiModel = remember(ledgerEntries) { buildLedgerReportUiModel(ledgerEntries) }
     )
 }

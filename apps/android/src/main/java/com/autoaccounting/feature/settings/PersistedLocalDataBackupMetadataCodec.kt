@@ -85,29 +85,44 @@ internal fun DataInputStream.readCategorizationRule(): CategorizationRuleEntity 
         updatedAtEpochMillis = readLong()
     )
 
-internal fun DataOutputStream.writeSettings(settings: LocalSettingsEntity) {
+internal fun DataOutputStream.writeSettingsV5(settings: LocalSettingsEntity) {
     writeString(settings.id)
     writeBoolean(settings.aiConsentGranted)
     writeBoolean(settings.enhancedContextGranted)
-    writeBoolean(settings.continuousBillSyncCompleted)
-    writeBoolean(settings.continuousMonitoringEnabled)
     writeString(settings.activeLedgerId)
 }
 
-internal fun DataInputStream.readSettingsV4(): LocalSettingsEntity = LocalSettingsEntity(
+internal fun DataInputStream.readSettingsV4(): LocalSettingsEntity {
+    val id = readString()
+    val aiConsentGranted = readBoolean()
+    val enhancedContextGranted = readBoolean()
+    readBoolean()
+    readBoolean()
+    return LocalSettingsEntity(
+        id = id,
+        aiConsentGranted = aiConsentGranted,
+        enhancedContextGranted = enhancedContextGranted,
+        activeLedgerId = readString()
+    )
+}
+
+internal fun DataInputStream.readSettingsV5(): LocalSettingsEntity = LocalSettingsEntity(
     id = readString(),
     aiConsentGranted = readBoolean(),
     enhancedContextGranted = readBoolean(),
-    continuousBillSyncCompleted = readBoolean(),
-    continuousMonitoringEnabled = readBoolean(),
     activeLedgerId = readString()
 )
 
-internal fun DataInputStream.readSettingsV3(): LocalSettingsEntity = LocalSettingsEntity(
-    id = readString(),
-    aiConsentGranted = readBoolean(),
-    enhancedContextGranted = readBoolean(),
-    continuousBillSyncCompleted = readBoolean(),
-    continuousMonitoringEnabled = readBoolean(),
-    activeLedgerId = DEFAULT_LEDGER_BOOK_ID
-)
+internal fun DataInputStream.readSettingsV3(): LocalSettingsEntity {
+    val id = readString()
+    val aiConsentGranted = readBoolean()
+    val enhancedContextGranted = readBoolean()
+    readBoolean()
+    readBoolean()
+    return LocalSettingsEntity(
+        id = id,
+        aiConsentGranted = aiConsentGranted,
+        enhancedContextGranted = enhancedContextGranted,
+        activeLedgerId = DEFAULT_LEDGER_BOOK_ID
+    )
+}

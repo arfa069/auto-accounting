@@ -8,7 +8,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticEvent
 import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
@@ -17,14 +16,12 @@ import com.autoaccounting.feature.diagnostics.DiagnosticRecorder
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
 import com.autoaccounting.feature.diagnostics.NoOpDiagnosticRecorder
 import com.autoaccounting.feature.diagnostics.newDiagnosticTraceId
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import kotlinx.coroutines.delay
 
 const val MANUAL_BILL_IMPORT_TIMEOUT_MILLIS = 90_000L
 
 @Composable
+@Suppress("LongParameterList")
 fun ManualBillImportHost(
     openRequestId: Long,
     accessibilityAccessGranted: Boolean,
@@ -32,10 +29,6 @@ fun ManualBillImportHost(
     onOpenAccessibilitySettings: () -> Unit = {},
     onLaunchSource: (BillSyncSource) -> Boolean = { false },
     onNavigateToReview: () -> Unit = {},
-    continuousMonitoringState: ContinuousMonitoringState = ContinuousMonitoringState(),
-    continuousMonitoringPermissionHealth: ContinuousMonitoringPermissionHealth =
-        ContinuousMonitoringPermissionHealth(),
-    onContinuousMonitoringStateChange: (ContinuousMonitoringState) -> Unit = {},
     sessionController: BillSyncSessionController = BillSyncSessions.controller,
     waitingTimeoutMillis: Long = MANUAL_BILL_IMPORT_TIMEOUT_MILLIS,
     diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder
@@ -85,7 +78,6 @@ fun ManualBillImportHost(
     ManualBillImportDialog(
         precheckFailure = precheckFailure,
         sessionState = sessionState,
-        continuousMonitoringState = continuousMonitoringState,
         actions = ManualBillImportDialogActions(
             onSourceSelected = { source ->
                 val failure = currentPrecheckFailure()
@@ -112,15 +104,7 @@ fun ManualBillImportHost(
             onRecheck = { precheckFailure = currentPrecheckFailure() }
         ),
         secondaryActions = ManualBillImportDialogSecondaryActions(
-            onClose = { dialogOpen = false },
-            onEnableContinuousMonitoring = {
-                onContinuousMonitoringStateChange(
-                    reduceContinuousMonitoringState(
-                        continuousMonitoringState,
-                        ContinuousMonitoringAction.Enable(continuousMonitoringPermissionHealth)
-                    )
-                )
-            }
+            onClose = { dialogOpen = false }
         )
     )
 }

@@ -39,7 +39,7 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
     abstract fun defaultFundingAccountCacheDao(): DefaultFundingAccountCacheDao
 
     companion object {
-        const val SCHEMA_VERSION = 10
+        const val SCHEMA_VERSION = 11
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -375,6 +375,37 @@ abstract class AutoAccountingDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_ignored_entries_funding_account_id " +
                         "ON ignored_entries(funding_account_id)"
                 )
+            }
+        }
+
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE `local_settings_new` (
+                        `id` TEXT NOT NULL,
+                        `ai_consent_granted` INTEGER NOT NULL,
+                        `enhanced_context_granted` INTEGER NOT NULL,
+                        `active_ledger_id` TEXT NOT NULL DEFAULT 'default-ledger',
+                        `default_funding_account_sync_id` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO local_settings_new (
+                        id, ai_consent_granted, enhanced_context_granted,
+                        active_ledger_id, default_funding_account_sync_id
+                    )
+                    SELECT
+                        id, ai_consent_granted, enhanced_context_granted,
+                        active_ledger_id, default_funding_account_sync_id
+                    FROM local_settings
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE local_settings")
+                db.execSQL("ALTER TABLE local_settings_new RENAME TO local_settings")
             }
         }
     }

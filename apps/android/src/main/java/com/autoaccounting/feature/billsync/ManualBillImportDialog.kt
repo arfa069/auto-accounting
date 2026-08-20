@@ -12,12 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState
 import com.autoaccounting.ui.components.Button
-import com.autoaccounting.ui.components.OutlinedButton
 import com.autoaccounting.ui.components.TextButton
 
 internal enum class ManualBillImportPrecheckFailure(
@@ -44,15 +39,13 @@ internal class ManualBillImportDialogActions(
 )
 
 internal class ManualBillImportDialogSecondaryActions(
-    val onClose: () -> Unit,
-    val onEnableContinuousMonitoring: () -> Unit
+    val onClose: () -> Unit
 )
 
 @Composable
 internal fun ManualBillImportDialog(
     precheckFailure: ManualBillImportPrecheckFailure?,
     sessionState: BillSyncSessionState,
-    continuousMonitoringState: ContinuousMonitoringState,
     actions: ManualBillImportDialogActions,
     secondaryActions: ManualBillImportDialogSecondaryActions
 ) {
@@ -85,7 +78,6 @@ internal fun ManualBillImportDialog(
             ManualBillImportDialogDismissButton(
                 precheckFailure = precheckFailure,
                 sessionState = sessionState,
-                continuousMonitoringState = continuousMonitoringState,
                 actions = actions,
                 secondaryActions = secondaryActions
             )
@@ -139,7 +131,6 @@ private fun ManualBillImportDialogConfirmButton(
 private fun ManualBillImportDialogDismissButton(
     precheckFailure: ManualBillImportPrecheckFailure?,
     sessionState: BillSyncSessionState,
-    continuousMonitoringState: ContinuousMonitoringState,
     actions: ManualBillImportDialogActions,
     secondaryActions: ManualBillImportDialogSecondaryActions
 ) {
@@ -163,13 +154,6 @@ private fun ManualBillImportDialogDismissButton(
         sessionState.phase == BillSyncSessionPhase.Completed -> Column(
             horizontalAlignment = Alignment.End
         ) {
-            if (!continuousMonitoringState.enabled) {
-                OutlinedButton(
-                    onClick = secondaryActions.onEnableContinuousMonitoring
-                ) {
-                    Text("开启自动记账")
-                }
-            }
             TextButton(onClick = secondaryActions.onClose) {
                 Text("关闭")
             }

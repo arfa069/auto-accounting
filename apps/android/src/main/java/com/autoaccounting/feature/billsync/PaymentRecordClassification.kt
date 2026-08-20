@@ -1,8 +1,6 @@
-package com.autoaccounting.feature.billsync
+@file:Suppress("TooManyFunctions", "ComplexCondition")
 
-import com.autoaccounting.feature.monitoring.hasAlipayPaymentResultPageSignature
-import com.autoaccounting.feature.monitoring.hasWechatReceivedRedPacketSuccessSignature
-import com.autoaccounting.feature.monitoring.hasWechatSentRedPacketSuccessSignature
+package com.autoaccounting.feature.billsync
 
 internal fun String.isSupportedPaymentRecordSurface(): Boolean =
     PAYMENT_RECORD_SURFACE_KEYWORDS.any { contains(it) }
@@ -16,6 +14,9 @@ internal fun String.isCompletedPaymentResultSurface(source: BillSyncSource): Boo
             hasWechatReceivedRedPacketSuccessSignature(this) ||
             hasWechatSentRedPacketSuccessSignature(this)
 }
+
+internal fun hasAlipayPaymentResultPageSignature(screenText: String): Boolean =
+    ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS.any(screenText::contains)
 
 internal fun String.hasPaymentInitiationKeyword(): Boolean =
     PAYMENT_INITIATION_KEYWORDS.any { contains(it) }
@@ -76,6 +77,52 @@ private fun String.containsAny(vararg keywords: String): Boolean = keywords.any(
 private val RECEIVED_TRANSFER_REGEX = Regex("收到.+?(转账|红包)")
 private val OUTGOING_TRANSFER_REGEX = Regex("向(?!你).+?转账")
 
+internal fun hasWechatReceivedRedPacketSuccessSignature(screenText: String): Boolean {
+    val senderTitle = WECHAT_RED_PACKET_TITLE_REGEX.find(screenText) ?: return false
+    val amount = WECHAT_RED_PACKET_AMOUNT_REGEX.find(
+        input = screenText,
+        startIndex = senderTitle.range.last + 1
+    ) ?: return false
+    val storedIndex = screenText.indexOf("已存入零钱")
+    val replyIndex = screenText.indexOf("回复表情到聊天")
+    return storedIndex > amount.range.last && replyIndex > storedIndex
+}
+
+internal fun hasWechatSentRedPacketSuccessSignature(screenText: String): Boolean {
+    val senderTitle = WECHAT_RED_PACKET_TITLE_REGEX.find(screenText) ?: return false
+    val waiting = WECHAT_SENT_RED_PACKET_WAITING_REGEX.find(screenText)
+    val refund = WECHAT_SENT_RED_PACKET_REFUND_REGEX.find(screenText)
+    if (
+        waiting != null &&
+        refund != null &&
+        waiting.range.first > senderTitle.range.last &&
+        refund.range.first > waiting.range.last
+    ) {
+        return true
+    }
+
+    val claimed = WECHAT_SENT_RED_PACKET_CLAIMED_REGEX.find(screenText)
+    if (claimed == null || claimed.range.first <= senderTitle.range.last) return false
+    val claimedDetails = screenText.substring(claimed.range.last + 1)
+    return WECHAT_SENT_RED_PACKET_DETAIL_AMOUNT_REGEX.containsMatchIn(claimedDetails) &&
+        WECHAT_SENT_RED_PACKET_DETAIL_TIME_REGEX.containsMatchIn(claimedDetails)
+}
+
+private val WECHAT_RED_PACKET_TITLE_REGEX =
+    Regex("""(?:^|\n)\s*[^\n]{1,64}?的红包\s*(?:\n|$)""")
+private val WECHAT_RED_PACKET_AMOUNT_REGEX =
+    Regex("""(?:[¥￥]\s*)?\d+(?:\.\d{1,2})?\s*元""")
+private val WECHAT_SENT_RED_PACKET_WAITING_REGEX =
+    Regex("""红包金额\s*\d+(?:\.\d{1,2})?\s*元[，,\s]*等待对方领取""")
+private val WECHAT_SENT_RED_PACKET_REFUND_REGEX =
+    Regex("""未领取的红包[，,\s]*将于\s*24\s*小时后发起退款""")
+private val WECHAT_SENT_RED_PACKET_CLAIMED_REGEX =
+    Regex("""\d+\s*个红包共\s*\d+(?:\.\d{1,2})?\s*元""")
+private val WECHAT_SENT_RED_PACKET_DETAIL_AMOUNT_REGEX =
+    Regex("""\d+(?:\.\d{1,2})?\s*元""")
+private val WECHAT_SENT_RED_PACKET_DETAIL_TIME_REGEX =
+    Regex("""(?:^|\n)\s*\d{1,2}:\d{2}\s*(?:\n|$)""")
+
 private val PAYMENT_RECORD_SURFACE_KEYWORDS = listOf(
     "账单",
     "账单详情",
@@ -97,7 +144,24 @@ private val PAYMENT_RECORD_SURFACE_KEYWORDS = listOf(
     "receipt"
 )
 
-private val PAYMENT_COMPLETION_KEYWORDS = listOf(
+private val ALIPAY_PAYMENT_RESULT_CONTEXT_KEYWORDS = listOf(
+    "收款方",
+    "付款方式",
+    "支付方式",
+    "交易方式",
+    "付款渠道",
+    "交易时间",
+    "订单号",
+    "交易单号",
+    "支付信息",
+    "支付凭证",
+    "交易详情",
+    "账单详情",
+    "查看账单",
+    "返回首页"
+)
+
+internal val PAYMENT_COMPLETION_KEYWORDS = listOf(
     "支付成功",
     "完成支付",
     "支付完成",

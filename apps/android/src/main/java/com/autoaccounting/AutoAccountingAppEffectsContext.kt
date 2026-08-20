@@ -22,7 +22,6 @@ import com.autoaccounting.feature.diagnostics.DiagnosticEvent
 import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
 import com.autoaccounting.feature.diagnostics.DiagnosticLevel
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringAction
 import com.autoaccounting.feature.review.ReviewQueueState
 import com.autoaccounting.feature.sync.LedgerSyncOperationResult
 import com.autoaccounting.feature.sync.LedgerSyncScheduler
@@ -49,7 +48,6 @@ internal fun AutoAccountingAppEffects(context: AutoAccountingAppEffectsContext) 
     AutoAccountingSyncLifecycleEffects(context)
     AutoAccountingRestoreEffect(context)
     AutoAccountingVerifyEffect(context)
-    AutoAccountingNavigationEffects(context)
     AutoAccountingLocalPersistenceEffects(context)
     AutoAccountingCloudSettingsEffects(context)
 }
@@ -226,46 +224,6 @@ private fun AutoAccountingVerifyEffect(context: AutoAccountingAppEffectsContext)
 }
 
 @Composable
-private fun AutoAccountingNavigationEffects(context: AutoAccountingAppEffectsContext) {
-    val runtime = context.runtime
-    val bindings = context.bindings
-    val appState = context.appState
-    LaunchedEffect(bindings.reviewNavigationRequest) {
-        if (bindings.reviewNavigationRequest > 0) {
-            appState.selectedTab.value = AppTab.Review
-        }
-    }
-    LaunchedEffect(
-        bindings.permissionStateLoaded,
-        context.presentation.continuousMonitoringPermissionHealth,
-        runtime.continuousMonitoringState.enabled
-    ) {
-        if (!bindings.permissionStateLoaded || !runtime.continuousMonitoringState.enabled) return@LaunchedEffect
-        val refreshedState = com.autoaccounting.feature.monitoring.reduceContinuousMonitoringState(
-            runtime.continuousMonitoringState,
-            ContinuousMonitoringAction.RefreshPermissionHealth(
-                context.presentation.continuousMonitoringPermissionHealth
-            )
-        )
-        if (refreshedState != runtime.continuousMonitoringState) {
-            runtime.continuousMonitoringState = refreshedState
-            context.dependencies.diagnosticLogs.record(
-                DiagnosticEvent(
-                    metadata = DiagnosticEventMetadata(
-                        level = if (refreshedState.blockReason == null) DiagnosticLevel.Info else DiagnosticLevel.Warning,
-                        component = DiagnosticComponent.Monitoring,
-                        event = "automatic_bookkeeping_permission_health",
-                        source = DiagnosticSource.System,
-                        outcome = if (refreshedState.blockReason == null) "healthy" else "blocked",
-                        reason = refreshedState.blockReason?.name ?: "permissions_healthy"
-                    )
-                )
-            )
-        }
-    }
-}
-
-@Composable
 private fun AutoAccountingLocalPersistenceEffects(context: AutoAccountingAppEffectsContext) {
     val dependencies = context.dependencies
     val runtime = context.runtime
@@ -296,7 +254,6 @@ private fun AutoAccountingLocalPersistenceEffects(context: AutoAccountingAppEffe
             if (runtime.accountSession !is AccountSession.SignedIn) {
                 runtime.aiSettings = preferences.aiSettings
             }
-            runtime.continuousMonitoringState = preferences.continuousMonitoringState
         }
     }
 }

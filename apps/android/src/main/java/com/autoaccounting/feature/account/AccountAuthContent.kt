@@ -121,7 +121,7 @@ internal fun AccountFlowPageContent(
 private fun AccountHeader() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "自动记账",
+            text = "本地记账",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold
         )

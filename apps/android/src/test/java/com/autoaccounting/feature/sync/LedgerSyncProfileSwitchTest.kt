@@ -111,8 +111,6 @@ class LedgerSyncProfileSwitchTest {
             LocalSettingsEntity(
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                continuousBillSyncCompleted = true,
-                continuousMonitoringEnabled = true,
                 activeLedgerId = "book-local"
             )
         )
@@ -157,7 +155,6 @@ class LedgerSyncProfileSwitchTest {
         assertEquals("shared-category", ignored?.suggestedCategoryId)
         assertNull(ignored?.fundingAccountId)
         val settings = database.localSettingsDao().getById()
-        assertTrue(settings?.continuousMonitoringEnabled == true)
         assertTrue(settings?.aiConsentGranted == true)
         assertEquals("target-first", settings?.activeLedgerId)
     }

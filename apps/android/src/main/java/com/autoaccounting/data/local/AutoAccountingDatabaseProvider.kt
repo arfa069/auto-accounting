@@ -25,7 +25,8 @@ object AutoAccountingDatabaseProvider {
                     AutoAccountingDatabase.MIGRATION_6_7,
                     AutoAccountingDatabase.MIGRATION_7_8,
                     AutoAccountingDatabase.MIGRATION_8_9,
-                    AutoAccountingDatabase.MIGRATION_9_10
+                    AutoAccountingDatabase.MIGRATION_9_10,
+                    AutoAccountingDatabase.MIGRATION_10_11
                 )
                 .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
                 .build()
@@ -47,8 +48,8 @@ internal val DEFAULT_CATEGORIZATION_RULES_CALLBACK = object : RoomDatabase.Callb
             """
             INSERT OR IGNORE INTO local_settings (
                 id, ai_consent_granted, enhanced_context_granted,
-                continuous_bill_sync_completed, continuous_monitoring_enabled, active_ledger_id
-            ) VALUES (?, 0, 0, 0, 0, ?)
+                active_ledger_id
+            ) VALUES (?, 0, 0, ?)
             """.trimIndent(),
             arrayOf(LOCAL_SETTINGS_ID, DEFAULT_LEDGER_BOOK_ID)
         )

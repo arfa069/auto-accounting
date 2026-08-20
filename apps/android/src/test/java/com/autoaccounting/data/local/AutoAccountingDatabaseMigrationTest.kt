@@ -23,10 +23,11 @@ import org.robolectric.annotation.Config
 class AutoAccountingDatabaseMigrationTest {
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(10, AutoAccountingDatabase.SCHEMA_VERSION)
+        assertEquals(11, AutoAccountingDatabase.SCHEMA_VERSION)
     }
 
     @Test
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     fun migrationFromFiveToCurrentAssignsEntriesAndAddsScopedIndex() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "migration-5-6-${System.nanoTime()}.db"
@@ -64,6 +65,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
             .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 
@@ -162,7 +164,13 @@ class AutoAccountingDatabaseMigrationTest {
         )
         assertEquals(DEFAULT_LEDGER_BOOK_ID, settings?.activeLedgerId)
         assertEquals(true, settings?.aiConsentGranted)
-        assertEquals(true, settings?.continuousBillSyncCompleted)
+        val settingsColumns = mutableSetOf<String>()
+        writableDatabase.query("PRAGMA table_info(`local_settings`)").use { cursor ->
+            val nameColumn = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) settingsColumns += cursor.getString(nameColumn)
+        }
+        assertTrue("continuous_bill_sync_completed" !in settingsColumns)
+        assertTrue("continuous_monitoring_enabled" !in settingsColumns)
         assertTrue("index_ledger_entries_book_deleted_transaction_time" in ledgerEntryIndexes)
         assertTrue("index_ledger_entries_ledger_book_id" !in ledgerEntryIndexes)
         assertTrue(
@@ -250,6 +258,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
             .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 
@@ -386,6 +395,7 @@ class AutoAccountingDatabaseMigrationTest {
             .addMigrations(AutoAccountingDatabase.MIGRATION_7_8)
             .addMigrations(AutoAccountingDatabase.MIGRATION_8_9)
             .addMigrations(AutoAccountingDatabase.MIGRATION_9_10)
+            .addMigrations(AutoAccountingDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 

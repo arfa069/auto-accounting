@@ -210,7 +210,7 @@ internal fun TransactionKind.label(): String = when (this) {
 internal fun EntryOrigin.label(): String = when (this) {
     EntryOrigin.MANUAL -> "手动录入"
     EntryOrigin.NOTIFICATION -> "通知捕获"
-    EntryOrigin.ACCESSIBILITY_AUTO -> "自动记账"
+    EntryOrigin.ACCESSIBILITY_AUTO -> "历史采集"
     EntryOrigin.BILL_SYNC -> "补录账单"
     EntryOrigin.DUPLICATE_MERGE -> "重复合并"
     EntryOrigin.LEGACY_CAPTURE -> "旧版采集（方式未知）"

@@ -61,7 +61,6 @@ data class ReviewQueueEntry(
         }
 }
 
-internal const val NOTIFICATION_EVIDENCE_LABEL = "通知捕获"
 internal const val ACCESSIBILITY_EVIDENCE_LABEL = "无障碍节点"
 internal const val OCR_EVIDENCE_LABEL = "ML Kit OCR"
 

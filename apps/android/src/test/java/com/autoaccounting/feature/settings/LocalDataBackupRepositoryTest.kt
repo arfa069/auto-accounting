@@ -67,13 +67,13 @@ class LocalDataBackupRepositoryTest {
     }
 
     @Test
-    fun versionFourBackupRoundTripRestoresAllLedgersReferencesAndUiState() = runBlocking {
+    fun versionFiveBackupRoundTripRestoresAllLedgersReferencesAndUiState() = runBlocking {
         populateDatabase()
         val expected = readSnapshot()
 
         val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
 
-        assertTrue(backup.startsWith("AUTO_ACCOUNTING_BACKUP_V4:"))
+        assertTrue(backup.startsWith("AUTO_ACCOUNTING_BACKUP_V5:"))
         assertFalse(backup.contains("Coffee Shop"))
 
         LocalLedgerRepository(database).clearLocalData()
@@ -200,7 +200,7 @@ class LocalDataBackupRepositoryTest {
     }
 
     @Test
-    fun duplicateCategoryNamesInVersionFourBackupFailBeforeChangingPersistedData() = runBlocking {
+    fun duplicateCategoryNamesInVersionFiveBackupFailBeforeChangingPersistedData() = runBlocking {
         populateDatabase()
         val original = readSnapshot()
         val existingCategory = original.categories.single()
@@ -209,7 +209,7 @@ class LocalDataBackupRepositoryTest {
         )
         val invalidBackup = encryptPersistedLocalData(invalid, PASSPHRASE)
 
-        assertTrue(invalidBackup.startsWith("AUTO_ACCOUNTING_BACKUP_V4:"))
+        assertTrue(invalidBackup.startsWith("AUTO_ACCOUNTING_BACKUP_V5:"))
 
         val failure = runCatching {
             backupRepository.importEncryptedBackup(invalidBackup, PASSPHRASE)
@@ -277,7 +277,7 @@ class LocalDataBackupRepositoryTest {
         populateDatabase()
         val original = readSnapshot()
         val unsupportedFormat = backupRepository.exportEncryptedBackup(PASSPHRASE)
-            .replaceFirst("AUTO_ACCOUNTING_BACKUP_V4:", "AUTO_ACCOUNTING_BACKUP_V5:")
+            .replaceFirst("AUTO_ACCOUNTING_BACKUP_V5:", "AUTO_ACCOUNTING_BACKUP_V6:")
 
         val failure = runCatching {
             backupRepository.importEncryptedBackup(unsupportedFormat, PASSPHRASE)
@@ -465,8 +465,6 @@ class LocalDataBackupRepositoryTest {
             LocalSettingsEntity(
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                continuousBillSyncCompleted = true,
-                continuousMonitoringEnabled = true,
                 activeLedgerId = SECONDARY_LEDGER_BOOK_ID
             )
         )

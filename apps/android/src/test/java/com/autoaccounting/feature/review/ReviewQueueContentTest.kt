@@ -47,20 +47,6 @@ class ReviewQueueContentTest {
     }
 
     @Test
-    fun pendingNotificationNavigationOpensMatchingEntry() {
-        composeRule.setContent {
-            ReviewQueueScreen(
-                initialState = ReviewQueueState(pendingEntries = listOf(sampleEntry())),
-                openPendingEntryId = "pending-lunch",
-                openPendingEntryRequestId = 1
-            )
-        }
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("编辑待确认账目").assertIsDisplayed()
-    }
-
-    @Test
     fun summaryShowsApprovedCountsAndBillImportAction() {
         var billImportOpened = false
         composeRule.setContent {

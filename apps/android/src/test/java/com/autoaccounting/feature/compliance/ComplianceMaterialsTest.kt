@@ -19,22 +19,14 @@ class ComplianceMaterialsTest {
     fun permissionCopyMatchesProductDecisions() {
         val copies = AUTO_ACCOUNTING_COMPLIANCE.permissionExplanations.associateBy { it.id }
 
-        assertEquals(
-            "用于识别微信、支付宝的收付款通知，生成待确认账目。",
-            copies.getValue(PermissionExplanationId.NotificationListening).purpose
-        )
-        assertEquals(
-            "用于通知自动记账成功或失败结果。",
-            copies.getValue(PermissionExplanationId.ResultNotifications).purpose
-        )
         val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
-        assertEquals("自动记账无障碍服务", accessibilityCopy.title)
+        assertEquals("手动补录无障碍服务", accessibilityCopy.title)
         assertEquals(
-            "用于开启自动记账后观察微信、支付宝支付结果和支付记录；微信空节点结果页可在本机瞬时 OCR，也可手动补充历史账目。",
+            "用于用户主动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可在本机瞬时 OCR。",
             accessibilityCopy.purpose
         )
         assertEquals(
-            "不读取聊天或普通消息，不发送消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。用户主动开启诊断日志时，仅支付页或当前补录会话的 OCR 文字可在本机加密留存。",
+            "只在手动补录会话期间读取当前账单页，不读取聊天或普通消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。",
             accessibilityCopy.boundary
         )
         assertEquals(
@@ -44,7 +36,7 @@ class ComplianceMaterialsTest {
 
         val storeNotes = AUTO_ACCOUNTING_COMPLIANCE.storeReviewNotes.associateBy { it.title }
         assertEquals(
-            "无障碍服务仅在用户开启自动记账后观察微信、支付宝支付结果和支付记录，或用于用户主动补充历史账目；微信空节点支付结果页可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。用户另行主动开启诊断日志后，仅允许页面/会话的 OCR 文字可在设备内加密留存。",
+            "无障碍服务仅在用户主动发起手动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
             storeNotes.getValue("无障碍审核说明").body
         )
         assertTrue(storeNotes.containsKey("诊断日志审核说明"))

@@ -82,7 +82,7 @@ fun buildInternalBetaReadinessReport(): InternalBetaReadinessReport = InternalBe
             id = BetaReadinessItemId.DeviceMatrixTesting,
             title = "设备矩阵测试",
             status = BetaReadinessStatus.NeedsManualValidation,
-            detail = "覆盖 Android 10-15、主流国产 ROM、通知监听和无障碍账单补录。"
+            detail = "覆盖 Android 10-15、主流国产 ROM 和无障碍账单补录。"
         ),
         BetaReadinessItem(
             id = BetaReadinessItemId.PermissionRetentionMeasurement,
@@ -128,9 +128,9 @@ fun buildInternalBetaReadinessReport(): InternalBetaReadinessReport = InternalBe
         "Android 15 target SDK smoke test"
     ),
     knownRisks = listOf(
-        "通知监听和无障碍权限在不同 ROM 上的保活行为需要真机验证。",
+        "无障碍权限在不同 ROM 上的授权与服务连接行为需要真机验证。",
         "AI 分类日志保留策略在公开发布前需要重新复核。",
-        "自动记账无障碍服务属于敏感能力，商店审核材料需要附录屏说明。"
+        "手动补录无障碍服务属于敏感能力，商店审核材料需要附录屏说明。"
     )
 )
 

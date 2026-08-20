@@ -414,8 +414,6 @@ class LocalLedgerManagementRepositoryTest {
             LocalSettingsEntity(
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                continuousBillSyncCompleted = true,
-                continuousMonitoringEnabled = true,
                 activeLedgerId = secondaryLedger.id
             )
         )
@@ -446,8 +444,6 @@ class LocalLedgerManagementRepositoryTest {
             LocalSettingsEntity(
                 aiConsentGranted = false,
                 enhancedContextGranted = false,
-                continuousBillSyncCompleted = false,
-                continuousMonitoringEnabled = false,
                 activeLedgerId = DEFAULT_LEDGER_BOOK_ID
             ),
             database.localSettingsDao().getById()

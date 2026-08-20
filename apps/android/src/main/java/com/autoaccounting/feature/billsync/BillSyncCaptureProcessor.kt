@@ -2,10 +2,6 @@ package com.autoaccounting.feature.billsync
 
 import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
-import com.autoaccounting.feature.capture.AlipayTransitContextStore
-import com.autoaccounting.feature.capture.isGenericAlipayExpenseNotification
-import com.autoaccounting.feature.capture.isWithinAlipayTransitCorrelationWindow
-import com.autoaccounting.feature.capture.withAlipayMetroContext
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticEvent
 import com.autoaccounting.feature.diagnostics.DiagnosticEventMetadata
@@ -30,9 +26,7 @@ class BillSyncCaptureProcessor(
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val captureCoordinator: ReviewQueueCaptureCoordinator =
         ReviewQueueCaptureCoordinator.Shared,
-    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder,
-    private val alipayTransitContextStore: AlipayTransitContextStore =
-        AlipayTransitContextStore.None
+    private val diagnosticRecorder: DiagnosticRecorder = NoOpDiagnosticRecorder
 ) {
     suspend fun process(
         source: BillSyncSource,
@@ -62,86 +56,6 @@ class BillSyncCaptureProcessor(
         isOcr = true
     )
 
-    suspend fun processAutomatic(
-        source: BillSyncSource,
-        pageText: String,
-        retainRawEvidence: Boolean = true,
-        rawEvidenceText: String? = null,
-        capturedAtEpochMillis: Long = clock(),
-        automaticCaptureVerification: AutomaticCaptureVerification =
-            AutomaticCaptureVerification.Standard,
-        traceId: String = newDiagnosticTraceId()
-    ): BillSyncResult = processWithReason(
-        source = source,
-        pageText = pageText,
-        captureReasonLabel = "支付结果自动捕获",
-        retainRawEvidence = retainRawEvidence,
-        rawEvidenceText = rawEvidenceText,
-        capturedAtEpochMillis = capturedAtEpochMillis,
-        automaticCaptureVerification = automaticCaptureVerification,
-        traceId = traceId,
-        isOcr = !retainRawEvidence
-    )
-
-    suspend fun hasRecentWechatNotificationCaptureCandidate(): Boolean {
-        val capturedAtEpochMillis = clock()
-        return reviewQueuePersistence.observeState().first().pendingEntries.any { entry ->
-            entry.sourceLabel == BillSyncSource.WeChat.label &&
-                entry.hasNotificationCaptureEvidence &&
-                entry.wasCapturedWithinWechatNotificationWindow(capturedAtEpochMillis)
-        }
-    }
-
-    internal suspend fun hasUniqueUnlinkedRecentWechatNotification(
-        fingerprint: WechatOcrPaymentFingerprint
-    ): Boolean {
-        if (!fingerprint.isRedPacket) return false
-        val capturedAtEpochMillis = clock()
-        val matches = reviewQueuePersistence.observeState().first().pendingEntries.count { entry ->
-            entry.matchesUnlinkedRecentWechatNotification(
-                fingerprint = fingerprint,
-                capturedAtEpochMillis = capturedAtEpochMillis
-            )
-        }
-        return matches == 1
-    }
-
-    suspend fun recordAlipayMetroExitContext(
-        detectedAtEpochMillis: Long = clock()
-    ): Boolean = captureCoordinator.serialize {
-        reviewQueuePersistence.ensureSystemCategories()
-        val previousState = reviewQueuePersistence.observeState().first()
-        val matchingNotifications = previousState.pendingEntries.filter { entry ->
-            entry.isGenericAlipayExpenseNotification() &&
-                isWithinAlipayTransitCorrelationWindow(
-                    entry.capturedAtEpochMillis,
-                    detectedAtEpochMillis
-                )
-        }
-        if (matchingNotifications.isEmpty()) {
-            alipayTransitContextStore.record(detectedAtEpochMillis)
-            return@serialize false
-        }
-        if (matchingNotifications.size > 1) {
-            alipayTransitContextStore.record(detectedAtEpochMillis)
-            alipayTransitContextStore.consumeForNotification(detectedAtEpochMillis)
-            return@serialize false
-        }
-
-        val rules = preferencesRepository.categorizationRules.first()
-        val enrichedEntry = matchingNotifications.single()
-            .withAlipayMetroContext()
-            .applyCategorizationSuggestion(rules)
-        val nextState = reduceReviewQueue(
-            previousState,
-            ReviewQueueAction.AddPending(enrichedEntry)
-        )
-        reviewQueuePersistence.persistTransition(previousState, nextState)
-        alipayTransitContextStore.record(detectedAtEpochMillis)
-        alipayTransitContextStore.consumeForNotification(detectedAtEpochMillis)
-        true
-    }
-
     private suspend fun processWithReason(
         source: BillSyncSource,
         pageText: String,
@@ -149,8 +63,6 @@ class BillSyncCaptureProcessor(
         retainRawEvidence: Boolean = true,
         rawEvidenceText: String? = null,
         capturedAtEpochMillis: Long = clock(),
-        automaticCaptureVerification: AutomaticCaptureVerification =
-            AutomaticCaptureVerification.Standard,
         traceId: String,
         sessionId: Long? = null,
         isOcr: Boolean = false
@@ -188,7 +100,6 @@ class BillSyncCaptureProcessor(
             captureReasonLabel = captureReasonLabel,
             retainRawEvidence = retainRawEvidence,
             rawEvidenceText = rawEvidenceText,
-            automaticCaptureVerification = automaticCaptureVerification
         )
         if (result.errorMessage != null) {
             diagnosticRecorder.record(
@@ -250,7 +161,6 @@ private fun BillSyncSource.diagnosticSource(): DiagnosticSource = when (this) {
 private fun String.diagnosticReason(): String = when (this) {
     MANUAL_OCR_CAPTURE_REASON -> "manual_ocr_import"
     "补录账单" -> "manual_bill_import"
-    "支付结果自动捕获" -> "automatic_payment_capture"
     else -> "bill_sync_capture"
 }
 

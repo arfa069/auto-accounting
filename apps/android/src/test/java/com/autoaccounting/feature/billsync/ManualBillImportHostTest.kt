@@ -10,8 +10,6 @@ import androidx.compose.ui.test.performClick
 import com.autoaccounting.feature.diagnostics.DiagnosticComponent
 import com.autoaccounting.feature.diagnostics.DiagnosticSource
 import com.autoaccounting.feature.diagnostics.InMemoryDiagnosticRecorder
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringPermissionHealth
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -159,7 +157,6 @@ class ManualBillImportHostTest {
         val controller = BillSyncSessionController()
         var launchedSource: BillSyncSource? = null
         var navigatedToReview = false
-        var monitoringState = ContinuousMonitoringState()
         composeRule.setContent {
             ManualBillImportHost(
                 openRequestId = 1,
@@ -170,12 +167,6 @@ class ManualBillImportHostTest {
                     true
                 },
                 onNavigateToReview = { navigatedToReview = true },
-                continuousMonitoringState = monitoringState,
-                continuousMonitoringPermissionHealth = ContinuousMonitoringPermissionHealth(
-                    billSyncAccessibilityGranted = true,
-                    billSyncAccessibilityServiceConnected = true
-                ),
-                onContinuousMonitoringStateChange = { monitoringState = it },
                 sessionController = controller
             )
         }
@@ -211,8 +202,6 @@ class ManualBillImportHostTest {
 
         composeRule.onNodeWithText("新增 0 条").assertIsDisplayed()
         composeRule.onNodeWithText("去重 2 条").assertIsDisplayed()
-        composeRule.onNodeWithText("开启自动记账").performClick()
-        assertTrue(monitoringState.enabled)
         composeRule.onNodeWithText("查看待确认").performClick()
         assertTrue(navigatedToReview)
     }

@@ -2,6 +2,8 @@
 
 本文档定义 `auto-accounting` Android 客户端与后端在 Phase 2 内测阶段的发布、验证、指标与风险记录方式。
 
+> 历史快照：本文记录旧版后台采集能力的内测证据。通知监听、连续观察、后台保活和独立采集页面已移除；当前手动补录验收以 `docs/PRD.md`、`docs/COMPLIANCE.md` 及 `docs/issues/phase-2/OPTIONAL-VALIDATIONS.md` 为准。
+
 ## 1. 设备矩阵
 
 | 品牌/ROM 家族 | Android 版本 | 重点验证项 | 当前状态 |

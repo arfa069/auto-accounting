@@ -157,7 +157,7 @@ class SmtpEmailProvider internal constructor(
         }
 
         fun writeMessage(email: String, code: String, purpose: String) {
-            val subject = Base64.getEncoder().encodeToString("自动记账验证码".toByteArray(Charsets.UTF_8))
+            val subject = Base64.getEncoder().encodeToString("阿喵记账验证码".toByteArray(Charsets.UTF_8))
             val purposeText = when (purpose) {
                 "REGISTER" -> "注册账号"
                 "RECOVERY" -> "找回密码"

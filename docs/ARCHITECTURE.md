@@ -8,10 +8,8 @@ Room 是设备端离线真实源；用户明确启用后，后端按账号保存
 
 ```mermaid
 flowchart LR
-  WeChat["微信 / 支付宝"] --> Notify["通知监听器"]
-  WeChat --> A11y["无障碍节点 / 受限本地 OCR"]
+  WeChat["用户当前打开的微信 / 支付宝页面"] --> A11y["无障碍节点 / 受限本地 OCR"]
   Import["用户发起的账单导入"] --> A11y
-  Notify --> Capture["捕获流水线"]
   A11y --> Capture
   Capture --> Dedupe["去重匹配"]
   Dedupe --> Pending["待确认队列 (Pending Entries)"]
@@ -43,12 +41,10 @@ flowchart LR
 - `feature:review`: 待确认队列及待确认条目详情。
 - `feature:ledger`: 账本列表、搜索、筛选与条目详情。
 - `feature:reports`: 月度概览、分类占比与分类趋势。
-- `feature:capture-notification`: 通知监听服务集成。
-- `feature:capture-accessibility`: 支付结果自动捕获与手动账单导入。
+- `feature:capture-accessibility`: 手动账单导入的无障碍读取与本机 OCR。
 - `feature:billsync`: 共享的 `ManualBillImportHost`、导入会话状态、来源启动、受支持页面解析及无障碍捕获接管。
 - `feature:categorization`: 本地分类规则及 AI 分类客户端。
 - `feature:account`: 用户名/邮箱/手机号与微信登录注册、公开账号 UUID、账号 Profile、身份绑定/换绑与合并、Session、本地模式及账号注销。
-- `feature:monitoring`: 自动记账状态、紧凑权限与后台稳定性设置、服务健康度及支付页面观察决策。
 - `feature:settings`: 数据与备份及相关设置。
 - `feature:sync`: 账户同步协调器、HTTPS 客户端、Room outbox、远端应用器与 WorkManager 调度。
 - `feature:diagnostics`: 敏感事件契约、密钥脱敏、加密本地分段、诊断 UI、清除及口令导出。
@@ -62,11 +58,10 @@ flowchart LR
   - `FundingAccountRepository`: 跨账本共享资金账户管理。
   - `LocalLedgerRepository`: 实现上述所有领域接口，作为 UI 和 ViewModel 调用的单一门面 (Facade)。
 - **UI 状态与服务协调器**：
-  - `MonitoringStateCoordinator`: 封装 Android Activity 生命周期回调、服务心跳定时器 (`Handler`) 及设置 Intent 启动器。
-  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换、监控协调器接入和 `setContent`。
+  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换和 `setContent`。
   - `AutoAccountingAppBindings` 承载系统权限、设置跳转、外部导航及微信回调，`AutoAccountingAppOverrides` 仅承载测试替身；生产依赖、Session 恢复、同步副作用和本地状态持久化继续由应用根组合层统一装配。
   - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
-  - `BillSyncAccessibilityService` 只保留 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，`ContinuousCaptureCoordinator` 负责持续监控去重和处理，微信/支付宝 OCR 协调器分别拥有冷却、窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
+  - `BillSyncAccessibilityService` 只保留手动补录所需的 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，微信 OCR 协调器负责本次会话的窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
   - OCR 协调器只经 `AccessibilityCaptureHost` 读取当前窗口、屏幕健康度和截图能力；`onDestroy` 统一取消协调器任务，`onInterrupt` 不改变服务连接状态。
 - **第三轮根组合重构（2026-08-02）**：`AutoAccountingApp` 保留为唯一根组合入口，但将职责拆分为可独立核对的边界：
   - `AutoAccountingAppDependencies` 负责 Room、账号、AI、微信、备份和账本同步等生产依赖的记忆化装配；`AutoAccountingAppOverrides` 只向测试注入替身，不改变生产依赖图。
@@ -137,7 +132,7 @@ flowchart LR
 - `categorization_rules`: 商家/标题/来源/交易类型的匹配规则。
 - `funding_accounts`: 跨账本共享的可复用资金账户（来源透出或用户创建）；手动账户的支付来源可为空。
 - `ignored_entries`: 已忽略的待确认条目，保留 30 天可恢复。
-- `local_settings`: 当前账本 ID、AI 同意状态、增强上下文同意状态及连续同步/监控设置。
+- `local_settings`: 当前账本 ID、AI 同意状态、增强上下文同意状态及连续同步设置。
 - `account_sync_state`、`account_sync_metadata`、`account_sync_outbox`、`account_sync_conflicts`: 账号绑定、游标、记录版本、持久化待上传变更及人工冲突；不包含 Token。
 - `backup_metadata`: 备份时间戳与恢复历史记录。
 
@@ -146,7 +141,7 @@ flowchart LR
 - 对于备份以及存储在普通应用私有数据库保障之外的任何原始证据，使用加密手段保护。
 
 账本生命周期约束（Invariants）：
-- 自动捕获的候选对象在进入账本前始终先进入全局待确认队列；用户手动撰写的条目在表单校验通过后可直接写入当前账本。
+- 手动导入的候选对象在进入账本前始终先进入全局待确认队列；用户手动撰写的条目在表单校验通过后可直接写入当前账本。
 - 当前账本 ID 持久化保存。手动创建与确认待确认条目在开始写入前即锁定目标账本 ID，防止并发切换账本导致条目写入错位。
 - 报表、CSV 导出、活动账目查询及最近删除查询均以当前账本为作用域。待确认条目、已忽略条目、分类和去重保持全局作用域。
 - 每个账本条目都有一个指向某个账本的非空外键约束。从单账本 Schema 升级的设备会自动创建固定“默认账本”记录，并将活动与软删除条目均归属于它。
@@ -168,7 +163,7 @@ flowchart LR
 ## 4. 捕获流水线 (Capture Pipeline)
 
 流水线阶段：
-1. 来源事件从通知监听器、自动无障碍捕获或手动账单导入到达。
+1. 来源事件从用户发起的手动账单导入到达。
 2. 解析器 (Parser) 提取候选字段与原始证据。
 3. 规范化器 (Normalizer) 将来源特定文本映射为交易类型、商家/标题、金额、时间、资金账户及来源。
 4. 去重模块 (Deduplication) 与待确认条目及账本条目进行对比。
@@ -183,10 +178,9 @@ flowchart LR
 
 ## 5. 去重匹配 (Deduplication)
 
-高置信度自动合并条件：
+高置信度合并条件：
 - 相同的来源订单号（若存在）。
 - 来源、金额、商家/标题、交易时间及交易类型强匹配。
-- 同一笔交易已知对应的“通知捕获 - 手动导入”对。
 
 低置信度重复候选对象：
 - 金额与时间相近，但商家/标题较弱。
@@ -303,27 +297,19 @@ Session 与传输边界：
 ## 9. 权限架构 (Permission Architecture)
 
 权限中心追踪状态：
-- 通知监听服务状态。
-- 用于自动捕获与手动账单导入的无障碍服务状态。
-- 自动捕获开启状态。
-- 无障碍服务连接心跳。
-- 可检测的电池优化与省电模式状态。
-- 非阻断性后台运行与厂商特定自启动引导（不假定这些状态可以完全可靠读取）。
+- 用于用户主动账单导入的无障碍服务授权状态。
+- 无障碍服务实时连接状态。
 
 重要边界：
 - 微信、支付宝按平台、识别入口和交易类型拆分后的现行判断条件，统一记录在[微信与支付宝交易识别规则](./PAYMENT-RECOGNITION-RULES.md)。
-- 通知监听器仅从微信/支付宝的支付通知中创建待确认条目。
-- 自动无障碍捕获仅在显式开启后运行，并仅观察白名单中的支付结果或支付记录页面；它不需要先进行手动导入或获得通知监听权限。
-- 自动捕获优先读取无障碍节点。空白微信无障碍界面可使用一次性临时截图配合内置本地 OCR：Android 14 及以上仅捕获活动应用窗口，Android 11-13 使用屏幕截图 API。Bitmap 在识别后立即释放，绝不持久化或上传。原始 OCR 文本不进入账本数据库；单独开启的加密诊断存储仅在接受的支付界面或活动手动导入会话中可保留文本。
-- 手动账单导入保持由用户主动发起，不属于常规支付流程。
-- 微信手动补录不读取无障碍账单字段，仅当当前导入会话携带显式 OCR 同意时进入手动 OCR 路径。这覆盖了当前可见的微信历史账单详情页，而不依赖特定的 Activity 类；自动 OCR 保持其较窄的信任 Activity 列表。
+- 手动账单导入始终由用户主动发起，不属于常规支付流程。
+- 无障碍服务只在活动的手动导入会话中读取微信或支付宝当前可见页面。微信补录在本次会话获得 OCR 同意后可使用一次性临时截图；支付宝补录只读取无障碍节点。Android 14 及以上仅捕获活动应用窗口，Android 11-13 使用屏幕截图 API。Bitmap 在识别后立即释放，绝不持久化或上传。
 - 手动微信 OCR 仅接受命中 `当前状态 + 支付成功`、`当前状态 + 对方已收` 或 `退款状态 + 已退款` 任一完整签名，并且只有一个无歧义交易金额的页面。`确认支付`、`立即支付`、`收银台`、`支付密码`、`待支付`、`处理中`、`支付失败` 和 `已取消` 属于硬性否定，优先于正面证据。
 - 接受的历史详情在存在时保留规范化支付方式、商品/收据备注、商品标题、商家/收款方、状态、交易时间、交易订单号及商家订单号。Bitmap 保持临时性；原始 OCR 文本保持在账本之外，且仅在单独开启的加密诊断存储中为活动手动导入会话持久化。
-- 待确认队列与自动记账分发同一个应用级导入请求；两者均不持有独立的会话对话框或持久化路径。
+- 待确认队列使用唯一的应用级手动导入请求；不持有独立的重复持久化路径。
 - 权限授予与在线服务连接是独立的先决条件。缺失条件会阻止来源启动并透出恢复操作。
 - 每次导入仅读取当前受支持的可见页面。它不会进行自动导航、滚动、翻页或承诺完整的历史扫描。
 - 90 秒超时仅会导致处于 `AwaitingBillPage` 状态的同一会话失败；处理中、已取消、已完成及较新的会话不受影响。
-- 在 Android 13 及以上版本，记账结果通知权限在开启自动记账时申请；拒绝授权不得阻止本地捕获或持久化。
 - 应用绝对不得读取聊天内容、发送消息、发起支付或发起转账。
 
 ## 10. 敏感诊断日志 (Sensitive Diagnostic Logging)
@@ -331,11 +317,11 @@ Session 与传输边界：
 约束性决策详见 [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md)；运维与生产者指南见 [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md)。
 
 - `feature/diagnostics` 拥有事件契约、身份凭证脱敏、256 KB 事件上限、5 秒抑制、Android Keystore 加密、`.aadlog` 分段、查询、清除及 `.aadiag` 导出能力。
-- 服务与处理器在通知/无障碍/OCR/解析器/去重/持久化之间传递随机 `traceId`。手动导入额外使用现有的 `sessionId`；候选 ID 绝不复用为 Trace ID，因为它们可能编码了交易数据。
+- 服务与处理器在无障碍/OCR/解析器/去重/持久化之间传递随机 `traceId`。手动导入额外使用现有的 `sessionId`；候选 ID 绝不复用为 Trace ID，因为它们可能编码了交易数据。
 - 生产者尽力发送回调给 `DiagnosticRecorder`。记录器/存储故障仅透出固定元数据错误，绝不导致捕获、去重或持久化失败。
 - 每个 JSON 事件在独立使用随机 AES-GCM IV 加密前均已脱敏并限制大小。文件存放在 `noBackupFilesDir` 下，使用 1 MB 分段，且仅当密文总大小超过 10 MB 时才滚动删除最旧分段。
 - Debug 默认开启。Release 默认关闭并要求知情用户确认。关闭开关保留历史；清除操作会删除所有分段及 Keystore 密钥。
-- 账本 V4 备份与诊断导出共享 PBKDF2-HMAC-SHA256/AES-256-GCM 原语，但保留独立的机制前缀与格式：`AUTO_ACCOUNTING_BACKUP_V4:` 与 `AUTO_ACCOUNTING_DIAGNOSTICS_V1:`。
+- 账本 V5 备份与诊断导出共享 PBKDF2-HMAC-SHA256/AES-256-GCM 原语，但保留独立的机制前缀与格式：`AUTO_ACCOUNTING_BACKUP_V5:` 与 `AUTO_ACCOUNTING_DIAGNOSTICS_V1:`。
 - Logcat 仅接收元数据、稳定原因、计数及相关性 ID。敏感 Payload 及完整异常消息绝不出在 Logcat 中。
 
 ## 11. 构建与验证目标 (Build And Verification Targets)
@@ -352,9 +338,8 @@ Android 端检查：
 - 应用/后端 API Payload 的契约测试。
 
 内测手动检查：
-- 多个国产 ROM 设备上的微信/支付宝通知捕获。
 - 从待确认队列入口发起的具有共享预检、90 秒超时和清晰分步进度的手动账单导入。
-- 自动支付结果捕获开关及结果通知。
+- 微信/支付宝手动补录的页面准入、OCR 与拒绝条件。
 - 诊断日志开关、脱敏生命周期、加密导出/解密、清除语义及支付作用域拒绝。
 - 备份导出与导入。
 - 账号注销冷静期与取消注销流程。

@@ -28,7 +28,6 @@ internal fun AutoAccountingReviewRoute(
 ) {
     val runtime = context.runtime
     val presentation = context.presentation
-    val bindings = context.bindings
     ReviewQueueScreen(
         state = runtime.reviewState,
         targetLedgerName = presentation.activeLedgerName,
@@ -46,8 +45,6 @@ internal fun AutoAccountingReviewRoute(
         aiSettings = presentation.effectiveAiSettings,
         aiCategorizationGateway = context.dependencies.aiCategorizationGateway,
         onOpenBillImport = { runtime.manualBillImportRequestId += 1 },
-        openPendingEntryId = bindings.pendingEntryNavigationId,
-        openPendingEntryRequestId = bindings.reviewNavigationRequest,
         onNavigateHome = onNavigateHome
     )
 }

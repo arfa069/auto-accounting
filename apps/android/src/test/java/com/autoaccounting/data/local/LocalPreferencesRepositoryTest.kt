@@ -7,7 +7,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.autoaccounting.feature.categorization.AiCategorizationSettings
 import com.autoaccounting.feature.categorization.CategorizationRule
 import com.autoaccounting.feature.categorization.applyCategorizationSuggestion
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
 import com.autoaccounting.feature.review.ReviewQueueEntry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -143,11 +142,6 @@ class LocalPreferencesRepositoryTest {
                     enhancedContextGranted = true
                 )
             )
-            repository.updateContinuousMonitoringState(
-                ContinuousMonitoringState(
-                    enabled = true
-                )
-            )
         }
         database.close()
 
@@ -165,7 +159,6 @@ class LocalPreferencesRepositoryTest {
         assertEquals(20, persistedRule.updatedAtEpochMillis)
         assertTrue(persistedPreferences.aiSettings.aiConsentGranted)
         assertTrue(persistedPreferences.aiSettings.enhancedContextGranted)
-        assertTrue(persistedPreferences.continuousMonitoringState.enabled)
 
         reopenedDatabase.close()
         context.deleteDatabase(databaseName)
@@ -263,32 +256,6 @@ class LocalPreferencesRepositoryTest {
             )
             assertFalse(repository.userPreferences.first().aiSettings.aiConsentGranted)
         }
-
-        database.close()
-    }
-
-    @Test
-    fun monitoringPreferenceNoLongerRequiresCompletedBillSync() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.inMemoryDatabaseBuilder(
-            context,
-            AutoAccountingDatabase::class.java
-        ).allowMainThreadQueries().build()
-        val repository = LocalPreferencesRepository(database)
-
-        val preferences = runBlocking {
-            database.localSettingsDao().upsert(
-                LocalSettingsEntity(
-                    aiConsentGranted = false,
-                    enhancedContextGranted = false,
-                    continuousBillSyncCompleted = false,
-                    continuousMonitoringEnabled = true
-                )
-            )
-            repository.userPreferences.first()
-        }
-
-        assertTrue(preferences.continuousMonitoringState.enabled)
 
         database.close()
     }

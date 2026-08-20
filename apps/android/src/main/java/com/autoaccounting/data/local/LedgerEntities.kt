@@ -214,8 +214,6 @@ data class LocalSettingsEntity(
     @PrimaryKey val id: String = LOCAL_SETTINGS_ID,
     @ColumnInfo(name = "ai_consent_granted") val aiConsentGranted: Boolean,
     @ColumnInfo(name = "enhanced_context_granted") val enhancedContextGranted: Boolean,
-    @ColumnInfo(name = "continuous_bill_sync_completed") val continuousBillSyncCompleted: Boolean,
-    @ColumnInfo(name = "continuous_monitoring_enabled") val continuousMonitoringEnabled: Boolean,
     @ColumnInfo(
         name = "active_ledger_id",
         defaultValue = "'default-ledger'"

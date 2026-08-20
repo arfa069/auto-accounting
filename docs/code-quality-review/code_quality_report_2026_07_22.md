@@ -1,6 +1,6 @@
 # Auto Accounting 项目代码质量审查报告
 
-> 历史快照：本报告基于 2026-07-22 的代码状态。2026-07-24 后新增的账户级账本同步改变了“正式账本数据全部留在 Android”的边界；当前数据范围以[架构文档](../ARCHITECTURE.md)和 [ADR 0059](../adr/0059-add-account-scoped-ledger-sync.md)为准。
+> 历史快照：本报告基于 2026-07-22 的代码状态。之后已移除后台自动采集、通知监听和持续观察；2026-07-24 后新增的账户级账本同步也改变了“正式账本数据全部留在 Android”的边界。当前数据范围以[架构文档](../ARCHITECTURE.md)和 [ADR 0059](../adr/0059-add-account-scoped-ledger-sync.md)为准。
 
 本报告对 **Auto Accounting** 项目进行了全面的代码质量、系统架构、测试覆盖率、安全合规性及维护性审查。
 

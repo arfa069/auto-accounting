@@ -20,7 +20,6 @@ import com.autoaccounting.data.local.ConfidenceState
 import com.autoaccounting.data.local.FlowDirection
 import com.autoaccounting.data.local.LedgerEntryInput
 import com.autoaccounting.data.local.LocalLedgerRepository
-import com.autoaccounting.data.local.LocalPreferencesRepository
 import com.autoaccounting.data.local.PaymentSource
 import com.autoaccounting.data.local.PendingEntryEntity
 import com.autoaccounting.data.local.TransactionKind
@@ -28,8 +27,6 @@ import com.autoaccounting.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.autoaccounting.feature.account.FakeAccountRepository
 import com.autoaccounting.feature.account.LocalModeSessionStore
 import com.autoaccounting.feature.ledger.LedgerTestTags
-import com.autoaccounting.feature.monitoring.ContinuousMonitoringState
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -239,17 +236,6 @@ class MainActivityTest {
     }
 
     @Test
-    fun reviewNavigationRequestStillOpensReviewQueue() {
-        composeRule.setContent {
-            AutoAccountingApp(
-                bindings = AutoAccountingAppBindings(reviewNavigationRequest = 1L)
-            )
-        }
-
-        composeRule.onNodeWithText("待确认").assertIsDisplayed()
-    }
-
-    @Test
     fun editedReviewMerchantAndCategoryReachLedger() {
         val repository = LocalLedgerRepository(AutoAccountingDatabaseProvider.get(context))
         val now = System.currentTimeMillis()
@@ -376,21 +362,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun automaticBookkeepingEntryOpensItsDedicatedPage() {
-        composeRule.setContent {
-            AutoAccountingApp()
-        }
-
-        openProfileTab()
-        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
-
-        composeRule.onNodeWithText("自动记账状态")
-            .performScrollTo()
-            .assertIsDisplayed()
-    }
-
-    @Test
-    fun billImportRemainsOnReviewAndIsAbsentFromAutomaticBookkeeping() {
+    fun billImportOpensFromReviewQueue() {
         composeRule.setContent {
             AutoAccountingApp(
                 bindings = AutoAccountingAppBindings(
@@ -406,72 +378,22 @@ class MainActivityTest {
         composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
         composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
         composeRule.onNodeWithText("取消").performClick()
-
-        composeRule.onNodeWithTag("return-home").performClick()
-        openProfileTab()
-        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
-
-        composeRule.onNodeWithTag("manual-bill-import").assertDoesNotExist()
-        composeRule.onNodeWithText("补录账单").assertDoesNotExist()
-        composeRule.onNodeWithTag("manual-bill-import-host").assertDoesNotExist()
     }
 
     @Test
-    fun disconnectedAccessibilityKeepsPersistedAutomaticBookkeepingIntentEnabled() {
-        val preferencesRepository = LocalPreferencesRepository(
-            AutoAccountingDatabaseProvider.get(context)
-        )
-        runBlocking {
-            preferencesRepository.updateContinuousMonitoringState(
-                ContinuousMonitoringState(enabled = true)
-            )
-        }
-
-        try {
-            composeRule.setContent {
-                AutoAccountingApp(
-                    bindings = AutoAccountingAppBindings(
-                        billSyncAccessibilityAccessGranted = true,
-                        billSyncAccessibilityServiceConnected = false,
-                        permissionStateLoaded = true
-                    )
-                )
-            }
-
-            openProfileTab()
-            composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
-
-            composeRule.onNodeWithText("状态：需要处理").assertIsDisplayed()
-            composeRule.onNodeWithText("关闭自动记账").assertIsDisplayed()
-            assertTrue(
-                runBlocking {
-                    preferencesRepository.userPreferences.first()
-                        .continuousMonitoringState.enabled
-                }
-            )
-        } finally {
-            runBlocking {
-                preferencesRepository.updateContinuousMonitoringState(
-                    ContinuousMonitoringState()
-                )
-            }
-        }
-    }
-
-    @Test
-    fun systemBackFromAutomaticBookkeepingReturnsToProfileOverview() {
+    fun automaticBookkeepingEntryOpensInformationalPage() {
         composeRule.setContent {
             AutoAccountingApp()
         }
 
         openProfileTab()
-        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").performClick()
+        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping")
+            .performScrollTo()
+            .performClick()
 
-        composeRule.runOnIdle {
-            composeRule.activity.onBackPressedDispatcher.onBackPressed()
-        }
-
-        composeRule.onNodeWithTag("profile-entry-AutomaticBookkeeping").assertIsDisplayed()
+        composeRule.onNodeWithText("自动记账功能已移除")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test

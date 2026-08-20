@@ -9,32 +9,31 @@ import org.junit.Test
 
 class DedupeEngineTest {
     @Test
-    fun exactNotificationAndBillSyncPairIsHighConfidenceMerge() {
-        val notification = entry(
-            id = "notification-1",
-            captureReason = "通知捕获",
+    fun exactBillImportPairIsHighConfidenceMerge() {
+        val existing = entry(
+            id = "pending-1",
+            captureReason = "补录账单",
             rawEvidence = "微信支付收款凭证 午餐 35.90"
         )
         val billSync = entry(
             id = "bill-1",
-            captureReason = "账单同步",
+            captureReason = "补录账单",
             rawEvidence = "微信账单 午餐 支出 35.90"
         )
 
-        val result = DedupeEngine().addCandidate(listOf(notification), billSync)
+        val result = DedupeEngine().addCandidate(listOf(existing), billSync)
 
         assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
         assertEquals(1, result.pendingEntries.size)
         val merged = result.pendingEntries.single()
-        assertEquals("notification-1", merged.id)
+        assertEquals("pending-1", merged.id)
         assertEquals("重复合并", merged.captureReasonLabel)
         assertEquals(ConfidenceState.HIGH, merged.confidence)
         assertNull(merged.note)
         assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
         assertTrue(merged.rawEvidenceText.contains("微信账单"))
         assertTrue(merged.parsedFields.contains("匹配原因=来源、金额、时间、类型、标题一致"))
-        assertTrue(merged.parsedFields.contains("证据来源=通知捕获"))
-        assertTrue(merged.parsedFields.contains("证据来源=账单同步"))
+        assertTrue(merged.parsedFields.contains("证据来源=补录账单"))
     }
 
     @Test
@@ -76,128 +75,16 @@ class DedupeEngineTest {
 
     @Test
     fun highConfidenceMergePreservesUserNote() {
-        val notification = entry(note = "客户会议")
+        val existing = entry(note = "客户会议")
         val billSync = entry(
             id = "bill-1",
-            captureReason = "账单同步"
+            captureReason = "补录账单"
         )
 
-        val merged = DedupeEngine().addCandidate(listOf(notification), billSync)
+        val merged = DedupeEngine().addCandidate(listOf(existing), billSync)
             .pendingEntries.single()
 
         assertEquals("客户会议", merged.note)
-    }
-
-    @Test
-    fun notificationAndAutomaticCaptureWithinTwoMinutesMerge() {
-        val notification = entry(
-            transactionTimeText = "2026-07-08 12:20",
-            captureReason = "通知捕获"
-        )
-        val automatic = entry(
-            id = "automatic-1",
-            transactionTimeText = "2026-07-08 12:22",
-            captureReason = "支付结果自动捕获"
-        )
-
-        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
-
-        assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
-        assertEquals(1, result.pendingEntries.size)
-    }
-
-    @Test
-    fun genericAutomaticTitleMergesWithNotificationFromSameTransaction() {
-        val notification = entry(
-            title = "午餐",
-            transactionTimeText = "2026-07-08 12:20",
-            captureReason = "通知捕获"
-        )
-        val automatic = entry(
-            id = "automatic-1",
-            title = "微信支付",
-            transactionTimeText = "2026-07-08 12:21",
-            captureReason = "支付结果自动捕获"
-        )
-
-        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
-
-        assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
-        assertEquals(1, result.pendingEntries.size)
-        assertTrue(
-            result.pendingEntries.single().parsedFields.contains(
-                "匹配原因=来源、金额、时间、类型一致且一方标题为通用占位"
-            )
-        )
-    }
-
-    @Test
-    fun mergePrefersSpecificCandidateTitleAndCategoryOverExistingGenericTitle() {
-        val notification = entry(
-            title = "未知来源",
-            transactionTimeText = "2026-07-08 12:20",
-            source = "支付宝",
-            captureReason = "通知捕获"
-        )
-        val automatic = entry(
-            id = "automatic-1",
-            title = "地铁乘车",
-            transactionTimeText = "2026-07-08 12:21",
-            source = "支付宝",
-            captureReason = "支付结果自动捕获"
-        ).copy(category = "交通")
-
-        val merged = DedupeEngine().addCandidate(listOf(notification), automatic)
-            .pendingEntries.single()
-
-        assertEquals("地铁乘车", merged.title)
-        assertEquals("交通", merged.category)
-    }
-
-    @Test
-    fun mergePrefersExplicitPageFundingOverNotificationFallback() {
-        val notification = entry(
-            title = "未知来源",
-            source = "支付宝",
-            captureReason = "通知捕获"
-        ).copy(
-            fundingAccountLabel = "支付宝余额",
-            parsedFields = listOf("paymentMethod=支付宝")
-        )
-        val automatic = entry(
-            id = "automatic-1",
-            title = "中国电信",
-            source = "支付宝",
-            captureReason = "支付结果自动捕获"
-        ).copy(
-            fundingAccountLabel = "花呗",
-            parsedFields = listOf("支付方式=花呗")
-        )
-
-        val merged = DedupeEngine().addCandidate(listOf(notification), automatic)
-            .pendingEntries.single()
-
-        assertEquals("花呗", merged.fundingAccountLabel)
-    }
-
-    @Test
-    fun differentSpecificTitlesStayDuplicateSuspectsAcrossCaptureSources() {
-        val notification = entry(
-            title = "午餐",
-            transactionTimeText = "2026-07-08 12:20",
-            captureReason = "通知捕获"
-        )
-        val automatic = entry(
-            id = "automatic-1",
-            title = "便利店",
-            transactionTimeText = "2026-07-08 12:21",
-            captureReason = "支付结果自动捕获"
-        )
-
-        val result = DedupeEngine().addCandidate(listOf(notification), automatic)
-
-        assertEquals(DedupeMatchLevel.LOW_CONFIDENCE, result.matchLevel)
-        assertEquals(2, result.pendingEntries.size)
     }
 
     @Test
@@ -217,14 +104,15 @@ class DedupeEngineTest {
         assertEquals(ConfidenceState.HIGH, result.pendingEntries.first().confidence)
     }
 
+    @Suppress("LongParameterList")
     private fun entry(
-        id: String = "notification-1",
+        id: String = "pending-1",
         title: String = "午餐",
         amountMinor: Long = 3590,
         transactionTimeText: String = "2026-07-08 12:20",
         source: String = "微信",
         kind: String = "支出",
-        captureReason: String = "通知捕获",
+        captureReason: String = "补录账单",
         rawEvidence: String = "微信支付收款凭证 午餐 35.90",
         note: String? = null
     ): ReviewQueueEntry = ReviewQueueEntry(

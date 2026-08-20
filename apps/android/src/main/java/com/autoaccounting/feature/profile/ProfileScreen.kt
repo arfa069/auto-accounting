@@ -138,7 +138,7 @@ private fun ProfileEntry(
 
 private fun ProfileDestination.summary(session: AccountSession, ledgerSyncEnabled: Boolean): String = when (this) {
     ProfileDestination.AccountManagement -> session.accountSummary()
-    ProfileDestination.AutomaticBookkeeping -> "查看自动记账状态"
+    ProfileDestination.AutomaticBookkeeping -> "查看功能说明"
     ProfileDestination.CategorizationRules -> "管理本地分类规则"
     ProfileDestination.DataAndBackup -> if (ledgerSyncEnabled) "账户同步已启用 · 导入、导出与备份" else "导入、导出与备份"
     ProfileDestination.ComplianceAndPrivacy -> "查看隐私与权限说明"

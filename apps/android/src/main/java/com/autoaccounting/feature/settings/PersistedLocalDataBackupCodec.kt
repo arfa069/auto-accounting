@@ -15,7 +15,7 @@ internal fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
     val output = ByteArrayOutputStream()
     DataOutputStream(output).use { data ->
         data.writeInt(BACKUP_MAGIC)
-        data.writeInt(BACKUP_VERSION_V4)
+        data.writeInt(BACKUP_VERSION_V5)
         data.writeList(categories) { category ->
             writeString(category.id)
             writeString(category.name)
@@ -41,11 +41,12 @@ internal fun PersistedLocalDataSnapshot.toBytes(): ByteArray {
         data.writeList(ignoredEntries, DataOutputStream::writeIgnoredEntry)
         data.writeList(categorizationRules, DataOutputStream::writeCategorizationRule)
         data.writeBoolean(settings != null)
-        settings?.let { data.writeSettings(it) }
+        settings?.let { data.writeSettingsV5(it) }
     }
     return output.toByteArray()
 }
 
+@Suppress("CyclomaticComplexMethod")
 internal fun snapshotFromBytes(bytes: ByteArray): PersistedLocalDataSnapshot =
     DataInputStream(ByteArrayInputStream(bytes)).use { data ->
         require(data.readInt() == BACKUP_MAGIC) { "Invalid backup payload" }
@@ -53,7 +54,8 @@ internal fun snapshotFromBytes(bytes: ByteArray): PersistedLocalDataSnapshot =
         require(
             version == BACKUP_VERSION_V2 ||
                 version == BACKUP_VERSION_V3 ||
-                version == BACKUP_VERSION_V4
+                version == BACKUP_VERSION_V4 ||
+                version == BACKUP_VERSION_V5
         ) {
             "Unsupported backup version"
         }
@@ -88,7 +90,7 @@ internal fun snapshotFromBytes(bytes: ByteArray): PersistedLocalDataSnapshot =
                 )
             }
         }
-        val ledgerBooks = if (version == BACKUP_VERSION_V4) {
+        val ledgerBooks = if (version == BACKUP_VERSION_V4 || version == BACKUP_VERSION_V5) {
             data.readList {
                 LedgerBookEntity(
                     id = readString(),
@@ -110,6 +112,7 @@ internal fun snapshotFromBytes(bytes: ByteArray): PersistedLocalDataSnapshot =
         val settingsPresent = data.readBoolean()
         val settings = when {
             !settingsPresent -> defaultBackupSettings(ledgerBooks.first().id)
+            version == BACKUP_VERSION_V5 -> data.readSettingsV5()
             version == BACKUP_VERSION_V4 -> data.readSettingsV4()
             else -> data.readSettingsV3()
         }
@@ -131,5 +134,6 @@ internal const val BACKUP_MAGIC = 0x41414343
 internal const val BACKUP_VERSION_V2 = 2
 internal const val BACKUP_VERSION_V3 = 3
 internal const val BACKUP_VERSION_V4 = 4
+internal const val BACKUP_VERSION_V5 = 5
 internal const val MAX_BACKUP_RECORDS = 1_000_000
 internal const val MAX_BACKUP_STRING_BYTES = 16 * 1024 * 1024

@@ -55,6 +55,19 @@ private fun AutoAccountingProfileOverviewRoute(
 }
 
 @Composable
+private fun AutoAccountingAutomaticBookkeepingRoute(
+    context: AutoAccountingRouteContext,
+    innerPadding: PaddingValues
+) {
+    AutomaticBookkeepingScreen(
+        onBack = { context.appState.profileDestination.value = null },
+        modifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
+    )
+}
+
+@Composable
 private fun AutoAccountingAccountManagementRoute(
     context: AutoAccountingRouteContext,
     session: AccountSession,
@@ -106,35 +119,6 @@ private fun AutoAccountingAccountManagementRoute(
             )
         },
         onBack = { appState.profileDestination.value = null },
-        modifier = Modifier
-            .padding(innerPadding)
-            .consumeWindowInsets(innerPadding)
-    )
-}
-
-@Composable
-private fun AutoAccountingAutomaticBookkeepingRoute(
-    context: AutoAccountingRouteContext,
-    innerPadding: PaddingValues
-) {
-    val bindings = context.bindings
-    val runtime = context.runtime
-    AutomaticBookkeepingScreen(
-        notificationListenerAccessGranted = bindings.notificationListenerAccessGranted,
-        onOpenNotificationListenerSettings = bindings.onOpenNotificationListenerSettings,
-        billSyncAccessibilityAccessGranted = bindings.billSyncAccessibilityAccessGranted,
-        onOpenBillSyncAccessibilitySettings = bindings.onOpenBillSyncAccessibilitySettings,
-        resultNotificationPermissionGranted = bindings.resultNotificationPermissionGranted,
-        onRequestResultNotificationPermission = bindings.onRequestResultNotificationPermission,
-        backgroundReliabilityState = bindings.backgroundReliabilityState,
-        onOpenBackgroundRunningSettings = bindings.onOpenBackgroundRunningSettings,
-        onOpenAutoStartSettings = bindings.onOpenAutoStartSettings,
-        onOpenBatteryOptimizationSettings = bindings.onOpenBatteryOptimizationSettings,
-        onOpenBatterySaverSettings = bindings.onOpenBatterySaverSettings,
-        continuousMonitoringState = runtime.continuousMonitoringState,
-        continuousMonitoringPermissionHealth = context.presentation.continuousMonitoringPermissionHealth,
-        onContinuousMonitoringStateChange = context.actions::persistContinuousMonitoringState,
-        onBack = { context.appState.profileDestination.value = null },
         modifier = Modifier
             .padding(innerPadding)
             .consumeWindowInsets(innerPadding)

@@ -2,9 +2,9 @@
 
 ## 1. Product Goal
 
-Build an Android automatic bookkeeping app for domestic Android app stores. The app captures WeChat and Alipay payment activity, turns captured transactions into pending entries, helps users review and confirm them, and keeps local-first named ledger books with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
+Build an Android bookkeeping app for domestic Android app stores. The app supports direct manual entries and user-started WeChat/Alipay bill import, turns imported transactions into pending entries, helps users review and confirm them, and keeps local-first named ledger books with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
 
-The first delivery target is a feature-complete internal beta, not a small MVP. It must be usable enough to measure capture accuracy, deduplication accuracy, review efficiency, and permission retention.
+The first delivery target is a feature-complete internal beta, not a small MVP. It must be usable enough to measure import accuracy, deduplication accuracy, review efficiency, and manual-import completion.
 
 ## 2. Target Platform
 
@@ -16,10 +16,8 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 ## 3. Core Decisions
 
-- Observe WeChat and Alipay through notification listening and opt-in accessibility reading of payment-result and payment-record pages.
-- Automatic capture is the primary flow after explicit opt-in; user-started bill import (`补录账单`) remains a limited backfill and fallback path.
-- Selecting a source starts one source-scoped manual-import session. WeChat manual import uses local OCR only; Alipay manual import reads accessibility node text and does not take screenshots. The current fallback does not broaden automatic OCR. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
-- All automatically captured transactions first become pending entries.
+- Users explicitly start one source-scoped bill-import session from the Review Queue. WeChat manual import uses local OCR only; Alipay manual import reads accessibility node text and does not take screenshots. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
+- All imported transactions first become pending entries.
 - Ledger books are local-first in Room and can be explicitly bound to the signed-in account for automatic multi-device synchronization.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
 - Signing out preserves the on-device ledger and pauses sync. Switching to a different account requires confirmation and atomically replaces only the formal synchronized scope after the previous account outbox is empty.
@@ -34,11 +32,11 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 Primary user:
 - Android user who pays mainly through WeChat and Alipay.
-- Wants automatic bookkeeping but still wants control before entries enter the ledger.
-- Is willing to grant sensitive permissions if the app clearly explains why.
+- Wants to record payments with control before imported entries enter the ledger.
+- Is willing to grant the narrowly scoped accessibility permission needed for a user-started import if the app clearly explains why.
 
 Core jobs:
-- Capture payment activity automatically or through manual bill import.
+- Import a currently visible payment page or create a manual ledger entry.
 - Review pending entries quickly.
 - Correct amount, time, transaction kind, category, funding account, merchant/title, and note.
 - Build categorization rules from repeated corrections.
@@ -52,17 +50,13 @@ Core jobs:
 ### 5.1 Capture
 
 Sources:
-- WeChat notifications.
-- Alipay notifications.
-- WeChat payment-result and payment-record pages after automatic capture is enabled.
-- Alipay payment-result and payment-record pages after automatic capture is enabled.
 - User-started accessibility bill import from the currently visible WeChat or Alipay bill surface.
 
 Capture output:
 - Pending entries only.
-- Capture reason: notification capture, manual bill import, duplicate merge, or related reason.
+- Capture reason: manual bill import, duplicate merge, or related legacy-compatible reason.
 - Manual bill import reads only the currently visible supported page. It does not auto-scroll, paginate, or promise a complete history scan.
-- The Review Queue entry opens one app-level import flow; Automatic Bookkeeping contains only automatic-capture state and settings.
+- The Review Queue entry opens one app-level import flow; there is no standing capture mode or background capture setting.
 - The flow checks accessibility grant and live service connection separately before source selection or app launch.
 - After source launch, the user has 90 seconds to enter and remain on a bill, transaction-detail, or payment-result page. Timeout affects only the matching session while it is still waiting.
 - The accessibility processor and `ReviewQueuePersistence` are the only manual-import write path; UI observes the Room Flow and never creates pending entries a second time.
@@ -138,11 +132,11 @@ Ledger management:
 - Funding-account names are trimmed and must be non-empty. The same normalized name cannot repeat within the same payment source, while equal names under different payment sources remain valid.
 - Editing a funding account preserves its identity and creation time and does not rewrite the payment source stored on historical entries.
 - A funding account can be deleted only when no active or recently deleted ledger entry, pending entry, or ignored entry references it. A blocked deletion identifies the reference counts by record type.
-- Automatic confirmation preserves an existing funding-account ID when present; otherwise it may match an existing account by exact normalized name and payment source, but never creates an account automatically.
+- Confirmation preserves an existing funding-account ID when present; otherwise it may match an existing account by exact normalized name and payment source, but never creates an account implicitly.
 - Creating, selecting, or managing a funding account does not introduce account balances or reconciliation.
 - The form can select existing categories or the uncategorized category; creating, editing, or deleting categories is outside this ledger CRUD scope.
 - Manual creation, ledger-entry editing, and pending-entry editing expose outflow and inflow only; neutral remains a persisted reporting value for existing data.
-- Users can edit transaction kind, amount, transaction time, merchant, category, funding account, note, and payment source on both manual and automatically captured ledger entries. The shared merchant field is labeled `商户（可选）` and supports two visible lines.
+- Users can edit transaction kind, amount, transaction time, merchant, category, funding account, note, and payment source on both manual and imported ledger entries. The shared merchant field is labeled `商户（可选）` and supports two visible lines.
 - Amounts are stored as positive minor-unit values; flow direction independently determines whether an entry is an inflow, outflow, or neutral for reports.
 - Amount input must be greater than zero, use at most two decimal places, and fit safely in the stored minor-unit integer; users do not enter a sign.
 - Transaction time cannot be later than the current device time; future planned transactions are outside the ledger CRUD scope.
@@ -268,33 +262,7 @@ Backend limits:
 - Verification code validity: 5 minutes.
 - Same code can be tried 3 times; then it is invalidated.
 
-### 5.8 Automatic Bookkeeping
-
-The Automatic Bookkeeping page shows, in order:
-- Automatic-bookkeeping state and its enable or disable action.
-- Notification listening.
-- Automatic-bookkeeping accessibility service.
-- Non-blocking background-running, auto-start, battery-optimization, and battery-saver guidance.
-- Continuous-monitoring health summary.
-
-The Automatic Bookkeeping overview status is:
-- Ready when automatic bookkeeping is enabled, notification listening and accessibility are available, and continuous monitoring is healthy.
-- Needs attention when automatic bookkeeping is enabled but a required permission or service is unavailable; it names the specific cause.
-- Off when the user has disabled automatic bookkeeping, regardless of retained permissions.
-
-On Android 13 or later, bookkeeping-result notification permission is requested when the user enables automatic bookkeeping; denial does not block capture or persistence and therefore does not make the overview status need attention. Manual bill import remains user-started and is not a standing permission.
-
-The permission and background-settings section shows compact rows with a title, one-sentence purpose, short status, and settings action. Background-running and auto-start state cannot be read reliably across manufacturers, so they remain “please check” guidance and never block automatic bookkeeping.
-
-Compact copy:
-- Notification listening: "用于识别微信、支付宝支付通知".
-- Automatic-bookkeeping accessibility service: "用于识别支付结果页和支付记录".
-- Background running: "避免系统关闭后台导致自动记账失效".
-- Auto-start: "允许手机重启后恢复自动记账服务", followed by a short manufacturer-specific path where available.
-- Ignore battery optimization: "避免系统休眠导致自动记账中断".
-- Disable battery saver: "避免省电策略限制后台自动记账".
-
-### 5.9 Backup And Export
+### 5.8 Backup And Export
 
 - CSV export covers the current ledger book only, and its file name includes the ledger-book name.
 - Encrypted backup export/import covers all ledger books, their entry ownership, shared local data, and the current ledger-book selection.
@@ -303,10 +271,10 @@ Compact copy:
 - Importing older supported backups creates the fixed default ledger book and assigns all imported ledger entries to it.
 - Clearing local data recreates one empty default ledger book and selects it so the app always has a valid current ledger book.
 
-### 5.10 Sensitive Diagnostic Logs
+### 5.9 Sensitive Diagnostic Logs
 
 - “合规与隐私”在 Debug 和 Release 都提供独立的“诊断日志”入口。Debug 默认开启；Release 默认关闭，并在首次开启前说明记录字段、排障用途、10 MB 上限、长期保留、设备内加密、关闭/清空方式和导出风险。
-- 允许记录支付相关通知、已判定支付结果/支付记录页、当前补录会话的页面/OCR 文字、解析字段、采集证据和完整异常。普通通知、聊天、无关页面和不支持包名只记录拒绝元数据，不保存可见正文。
+- 允许记录当前补录会话的页面/OCR 文字、解析字段、采集证据和完整异常。聊天、无关页面和不支持包名只记录拒绝元数据，不保存可见正文。
 - 截图永不保存。密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 等认证秘密或身份标识始终在写入前脱敏；账号流程不写入昵称、头像 URL 或 Provider 正文。
 - 日志仅在设备内加密保存，不上传、不进入账本备份或系统备份。每条事件最多 256 KB，每段最多 1 MB，总密文最多 10 MB；超过上限才轮转最旧分段。
 - 列表默认只显示元数据并加载最新 1000 条；敏感内容经二次确认后仅在本次页面会话显示，离页或进入后台立即重新遮罩，显示期间窗口启用 `FLAG_SECURE`。
@@ -323,7 +291,7 @@ Main navigation:
 
 Onboarding:
 - Progressive onboarding.
-- Users are introduced to account setup, payment notification access, result notifications, automatic capture, manual history backfill, and cloud AI only when relevant.
+- Users are introduced to account setup, manual bill import, and cloud AI only when relevant.
 
 Login first screen:
 - Cat companion.
@@ -339,13 +307,12 @@ Profile top:
 
 Profile overview:
 - Shows only a one-line status summary and navigation affordance for each entry. It contains no switches, system-permission buttons, backup passphrase inputs, or other detailed controls.
-- Lists entries in this order: Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, Compliance and Privacy.
+- Lists entries in this order: Account Management, Categorization Rules, Data and Backup, Compliance and Privacy.
 - Each entry opens a full in-app secondary page with a title and back action. Destination and secondary pages hide bottom navigation; back from a Profile secondary page returns to the Profile overview, and back from the Profile overview returns Home.
 
 Profile entries:
 - Account Management: local-mode sign-in/register entry; or, when signed in, masked phone number, validating/verified/offline/deletion-pending connection state, server deletion deadline, sign out without deleting local ledger books, and a separately protected account-deletion area. Do not add registered-device UI until its real data and actions are available.
 - Account flow back hierarchy: Recovery returns to Login; Login, Registration, Local Mode Explanation, and Compliance Materials return to the account landing page; an account landing page opened from Account Management returns to Account Management. System back and visible back actions must be equivalent.
-- Automatic Bookkeeping: state, permissions, and continuous-monitoring health as defined in section 5.8.
 - Categorization Rules: local rule management plus the separately explained cloud-AI consent and enhanced-context settings.
 - Data and Backup: normal actions for current-ledger CSV export and all-ledger encrypted-backup export/import, followed by a visually isolated destructive Local Data Deletion area that retains its backup reminder and typed confirmation.
 - Compliance and Privacy: entry points for the privacy policy, personal-information collection list, third-party-service list, permission explanations, and the separate Diagnostic Logs control. Each document opens separately and is available in local mode; Diagnostic Logs is visible in both builds and follows section 5.10.
@@ -398,8 +365,8 @@ Core metrics:
 
 Supporting metrics:
 - Review queue completion rate.
-- Manual bill-import completion and failure reasons.
-- Automatic payment-result capture success, failure, and dedupe outcomes.
+- Manual bill-import completion, parsing accuracy, and failure reasons.
+- Manual-import duplicate detection and merge outcomes.
 - Swipe confirm/ignore undo rate.
 - AI categorization opt-in rate.
 - AI suggestion acceptance rate.

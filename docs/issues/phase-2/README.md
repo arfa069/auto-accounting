@@ -2,6 +2,8 @@
 
 本文档作为 Phase 2 的核心追踪索引，记录各 Issue 的状态、关系及解决记录。
 
+> 历史快照：Phase 2 期间的通知监听、连续观察和独立自动采集页面已从当前产品移除。相关 Issue 保留用于追溯决策与验证记录，不是当前实现的验收清单；当前能力以根目录 `README.md` 及 `docs/PRD.md`、`ARCHITECTURE.md`、`UI-DESIGN.md`、`COMPLIANCE.md` 为准。
+
 ## 来源规划
 
 - 计划文档：[Phase 2 Slices](../../PHASE-2-SLICES.md)
@@ -16,9 +18,9 @@
 | [003](./003-persist-ledger-reports-and-local-data-deletion.md) | 持久化账本、报表及本机数据删除 | 已完成 | 001 | 审核待确认条目、查看账本与报表、删除本机数据 |
 | [004](./004-persist-categorization-rules-and-ai-consent-settings.md) | 持久化分类规则与 AI 同意/设置 | 已完成 | 001 | 构建分类规则、管理 AI 分类授权同意 |
 | [005](./005-encrypted-backup-restores-persisted-app-data.md) | 实现加密备份恢复真实持久化应用数据 | 已完成 | 002, 003, 004 | 导出 CSV、创建加密备份、恢复应用数据 |
-| [006](./006-notification-listener-permission-and-capture-path.md) | 接通真实通知监听权限与捕获路径 | 已完成 | 001 | 捕获微信/支付宝支付通知、管理权限 |
+| [006](./006-notification-listener-permission-and-capture-path.md) | 接通真实通知监听权限与捕获路径 | 历史快照（已移除） | 001 | 旧版通知采集链路 |
 | [007](./007-user-started-bill-sync-permission-and-service-path.md) | 接通用户发起的账单同步权限与服务路径 | 已完成 | 001 | 手动同步微信/支付宝账单、审核捕获的待确认条目 |
-| [008](./008-continuous-monitoring-service-boundary-and-guardrails.md) | 接通连续监控服务边界与安全护栏 | 已完成 | 006, 007 | 开启连续监控、随时关闭监控 |
+| [008](./008-continuous-monitoring-service-boundary-and-guardrails.md) | 接通连续监控服务边界与安全护栏 | 历史快照（已移除） | 006, 007 | 旧版持续观察链路 |
 | [009](./009-backend-auth-sms-and-registered-devices.md) | 持久化后端认证、短信及已注册设备 | 已完成 | 001 | 注册、登录、找回账号、注册设备 |
 | [010](./010-backend-cloud-configuration-and-ai-proxy-state.md) | 持久化后端云端配置与 AI 代理状态 | 已完成 | 009 | 管理云端 AI 同意、安全请求 AI 分类 |
 | [011](./011-account-deletion-and-scheduled-cloud-cleanup.md) | 持久化账号注销与定时云端清理 | 已完成 | 009, 010 | 申请账号注销、冷静期内取消注销、删除云端账号数据 |
@@ -26,10 +28,10 @@
 | [013](./013-correct-tester-facing-android-copy-encoding.md) | 修正面向测试人员的 Android 端文案编码乱码 | 已完成 | 001 | 内测可读性、合规透明度、账号与权限易理解度 |
 | [014](./014-execute-internal-beta-device-matrix-and-capture-findings.md) | 执行内测设备矩阵并记录测试结论 | 进行中 | 012, 013 | 内测验证、设备矩阵证据、发布 Go/No-Go 决策 |
 | [015](./015-persist-local-mode-session-across-restarts.md) | 跨应用重启持久化本地模式会话 | 已完成 | 014 | 纯本地模式引导、重启恢复能力 |
-| [016](./016-cover-in-app-payment-message-capture-paths.md) | 覆盖应用内支付消息捕获路径 | 已完成 | 006, 008 | 自动捕获包含受支持支付结果的账单页面 |
+| [016](./016-cover-in-app-payment-message-capture-paths.md) | 覆盖应用内支付消息捕获路径 | 历史快照（已移除） | 006, 008 | 旧版应用内支付页面采集 |
 | [017](./017-support-ledger-entry-crud-and-recovery.md) | 支持账本条目 CRUD 与恢复能力 | 已完成 | 003, 005 | 手动账本条目增删改查、软删除与恢复 |
 | [018](./018-rebuild-profile-overview-and-account-management.md) | 重构 Profile 概览与账号管理 | 已完成 | 009, 015 | 个人中心整体框架与账号管理二级页 |
-| [019](./019-move-automatic-bookkeeping-into-its-own-page.md) | 移动自动记账至独立二级页 | 已完成 | 006, 008 | 自动记账控制与权限中心 |
+| [019](./019-move-automatic-bookkeeping-into-its-own-page.md) | 移动自动记账至独立二级页 | 历史快照（已移除） | 006, 008 | 旧版独立采集页面 |
 | [020](./020-separate-categorization-rules-and-ai-consent.md) | 独立分类规则与 AI 同意控制 | 已完成 | 004, 010 | 分类规则与 AI 同意管理 |
 | [021](./021-protect-data-and-backup-restore.md) | 受保护的数据与备份恢复 | 已完成 | 003, 005 | CSV 导出、加密备份与本机数据删除危险区 |
 | [022](./022-separate-compliance-privacy-and-developer-tools.md) | 拆分合规与隐私与开发者工具 | 已完成 | 001, 013 | 合规与隐私二级页及独立开发者工具 |

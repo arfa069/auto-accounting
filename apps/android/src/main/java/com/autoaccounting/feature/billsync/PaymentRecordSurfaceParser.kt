@@ -14,12 +14,6 @@ internal fun parsePaymentRecordSurface(
     if (pageText.hasPaymentInitiationKeyword()) return emptyList()
 
     val isCompletedPaymentResult = pageText.isCompletedPaymentResultSurface(source)
-    if (source == BillSyncSource.Alipay &&
-        isCompletedPaymentResult &&
-        !hasUnambiguousTransactionAmount(pageText)
-    ) {
-        return emptyList()
-    }
 
     val amountMatches = collectAmountMatches(lines)
     val selectedMatches = selectAmountMatches(source, pageText, lines, amountMatches)
@@ -43,6 +37,7 @@ internal fun parsePaymentRecordSurface(
 private fun collectAmountMatches(lines: List<String>): List<Pair<Int, MatchResult>> = buildList {
     lines.forEachIndexed { amountLineIndex, line ->
         if (line.isNonTransactionAmountLine()) return@forEachIndexed
+        if (isPromotionalAmountLine(lines, amountLineIndex)) return@forEachIndexed
         explicitPaymentAmountRegex.findAll(line).forEach { match ->
             if (match.isNonTransactionAmountMatch(line)) return@forEach
             add(amountLineIndex to match)
@@ -94,6 +89,7 @@ private data class PaymentRecordWindowContext(
     val source: BillSyncSource,
     val windowLines: List<String>,
     val linesBeforeAmount: List<String>,
+    val linesAfterAmount: List<String>,
     val windowText: String,
     val amountText: String,
     val isCompletedPaymentResult: Boolean
@@ -116,7 +112,8 @@ private data class PaymentRecordWindowContext(
             source = source,
             windowText = windowText,
             lines = windowLines,
-            linesBeforeAmount = linesBeforeAmount
+            linesBeforeAmount = linesBeforeAmount,
+            linesAfterAmount = linesAfterAmount.takeIf { isCompletedPaymentResult }.orEmpty()
         )
         val merchantTitle = extractedMerchantTitle
             ?: source.genericPaymentTitle.takeIf { isCompletedPaymentResult }
@@ -186,6 +183,7 @@ private data class PaymentRecordWindowContext(
                 source = source,
                 windowLines = windowLines,
                 linesBeforeAmount = windowLines.take(amountLineIndex - start),
+                linesAfterAmount = windowLines.drop(amountLineIndex - start + 1),
                 windowText = windowLines.joinToString("\n"),
                 amountText = amountText,
                 isCompletedPaymentResult = isCompletedPaymentResult
@@ -199,10 +197,15 @@ private data class ResolvedTransactionTime(
     val fromFallback: Boolean
 )
 
-internal fun hasUnambiguousTransactionAmount(pageText: String): Boolean {
-    val amounts = pageText.normalizedLines()
-        .flatMap { line ->
-            if (line.isNonTransactionAmountLine()) {
+internal fun hasUnambiguousTransactionAmount(pageText: String): Boolean =
+    extractUnambiguousTransactionAmountMinor(pageText) != null
+
+internal fun extractUnambiguousTransactionAmountMinor(pageText: String): Long? {
+    val lines = pageText.normalizedLines()
+    val amounts = lines
+        .mapIndexed { index, line -> index to line }
+        .flatMap { (index, line) ->
+            if (line.isNonTransactionAmountLine() || isPromotionalAmountLine(lines, index)) {
                 emptyList()
             } else {
                 explicitPaymentAmountRegex.findAll(line)
@@ -217,11 +220,12 @@ internal fun hasUnambiguousTransactionAmount(pageText: String): Boolean {
                     .toList()
             }
         }
-    if (amounts.map { (amountMinor, _) -> amountMinor }.distinct().size == 1) return true
+    val distinctAmounts = amounts.map { (amountMinor, _) -> amountMinor }.distinct()
+    if (distinctAmounts.size == 1) return distinctAmounts.single()
     return amounts.filter { (_, isPreferred) -> isPreferred }
         .map { (amountMinor, _) -> amountMinor }
         .distinct()
-        .size == 1
+        .singleOrNull()
 }
 
 private const val RECORD_WINDOW_BEFORE_LINES = 8
@@ -242,7 +246,7 @@ private val NON_TRANSACTION_AMOUNT_KEYWORDS = listOf(
     "手续费"
 )
 
-private val TRANSACTION_AMOUNT_OVERRIDE_KEYWORDS = listOf(
+internal val TRANSACTION_AMOUNT_OVERRIDE_KEYWORDS = listOf(
     "交易金额",
     "付款金额",
     "收款金额",
