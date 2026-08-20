@@ -13,17 +13,17 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.autoaccounting.backend.ApplicationKt")
+    mainClass.set("com.bks.backend.ApplicationKt")
 }
 
-version = providers.environmentVariable("AUTO_ACCOUNTING_VERSION_NAME")
+version = providers.environmentVariable("BKS_VERSION_NAME")
     .orElse("0.1.0")
     .get()
 
 tasks.named<Tar>("distTar") {
     compression = Compression.GZIP
     archiveExtension.set("tar.gz")
-    archiveBaseName.set("auto-accounting-backend")
+    archiveBaseName.set("bks-backend")
     isPreserveFileTimestamps = false
     isReproducibleFileOrder = true
 }

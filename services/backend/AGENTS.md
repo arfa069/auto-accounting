@@ -22,7 +22,7 @@
 运行单个测试类：
 
 ```powershell
-.\gradlew.bat :services:backend:test --tests "com.autoaccounting.backend.<package>.<TestClass>"
+.\gradlew.bat :services:backend:test --tests "com.bks.backend.<package>.<TestClass>"
 ```
 
 - 同一轮连续改动期间，只运行与当前阶段改动直接相关的测试类或 package，不重复运行 Backend 全量测试；
