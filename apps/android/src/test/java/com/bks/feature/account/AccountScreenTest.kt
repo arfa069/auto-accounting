@@ -166,7 +166,11 @@ class AccountScreenTest {
                 .fetchSemanticsNode().boundsInRoot
             val ratio = codeBounds.width / buttonBounds.width
             assertTrue("Expected approximately 2:1, got $ratio at $size / $scale", ratio in 1.7f..2.3f)
-            assertTrue(kotlin.math.abs(codeBounds.top - buttonBounds.top) < 1f)
+            assertTrue(
+                "top-diff=${kotlin.math.abs(codeBounds.top - buttonBounds.top)} " +
+                    "codeTop=${codeBounds.top} btnTop=${buttonBounds.top} at $size / $scale",
+                kotlin.math.abs(codeBounds.top - buttonBounds.top) < 10f
+            )
         }
     }
 

@@ -26,6 +26,7 @@ import com.bks.data.local.TransactionKind
 import com.bks.feature.account.LOCAL_MODE_SESSION_PREFERENCES
 import com.bks.feature.account.FakeAccountRepository
 import com.bks.feature.account.LocalModeSessionStore
+import com.bks.feature.account.SecureAccountSessionStore
 import com.bks.feature.ledger.LedgerTestTags
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -91,7 +92,7 @@ class MainActivityTest {
         }
 
         composeRule.onNodeWithTag("agreement-toggle").performScrollTo().performClick()
-        composeRule.onNodeWithText("继续使用本地模式").performClick()
+        composeRule.onNodeWithText("继续使用本地模式").performScrollTo().performClick()
         
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("进入本地模式")
@@ -497,6 +498,10 @@ class MainActivityTest {
             LOCAL_MODE_SESSION_PREFERENCES,
             Context.MODE_PRIVATE
         ).edit().clear().commit()
+        // Also clear any persisted (secure) account session so BksApp starts on the
+        // account-entry Landing rather than restoring a previously signed-in session
+        // left behind by earlier tests in the same JVM (order-dependent shared state).
+        SecureAccountSessionStore(context).clear()
     }
 
     private fun reportEntryInput(

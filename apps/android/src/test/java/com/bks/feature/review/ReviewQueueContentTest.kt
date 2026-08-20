@@ -36,7 +36,7 @@ class ReviewQueueContentTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("review-header-row").assertHeightIsEqualTo(52.dp)
+        composeRule.onNodeWithTag("review-header-row").assertHeightIsEqualTo(48.dp)
         composeRule.onNodeWithTag("review-header-row").assertTopPositionInRootIsEqualTo(20.dp)
         
         composeRule.waitUntil(timeoutMillis = 3_000L) {

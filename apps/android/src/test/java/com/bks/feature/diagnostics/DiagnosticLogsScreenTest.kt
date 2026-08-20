@@ -52,13 +52,13 @@ class DiagnosticLogsScreenTest {
         composeRule.onNodeWithText("测试商户秘密").assertDoesNotExist()
 
         eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
-        composeRule.onNodeWithText("显示敏感内容").performClick()
+        composeRule.onNodeWithText("显示敏感内容").performScrollTo().performClick()
         composeRule.onNodeWithText("显示").performClick()
 
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
         composeRule.onNodeWithText("Merchant: 测试商户秘密").assertIsDisplayed()
         eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
-        composeRule.onNodeWithText("遮罩内容").performClick()
+        composeRule.onNodeWithText("遮罩内容").performScrollTo().performClick()
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
         composeRule.onNodeWithText("测试商户秘密", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("敏感内容：••••••").assertIsDisplayed()
@@ -98,7 +98,7 @@ class DiagnosticLogsScreenTest {
         }
         val eventList = composeRule.onNodeWithTag("diagnostic-event-list")
         eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
-        composeRule.onNodeWithText("显示敏感内容").performClick()
+        composeRule.onNodeWithText("显示敏感内容").performScrollTo().performClick()
         composeRule.onNodeWithText("显示").performClick()
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
         composeRule.onNodeWithText("Merchant: 测试商户秘密").assertIsDisplayed()
