@@ -22,11 +22,11 @@
 
 ## 目标文件或模块
 
-- `shared/api/src/main/kotlin/com/autoaccounting/api/AccountContracts.kt`
-- `services/backend/src/main/kotlin/com/autoaccounting/backend/account`
-- `services/backend/src/main/kotlin/com/autoaccounting/backend/AccountDeletionJob.kt`
-- `apps/android/src/main/java/com/autoaccounting/feature/account`
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
+- `shared/api/src/main/kotlin/com/bks/api/AccountContracts.kt`
+- `services/backend/src/main/kotlin/com/bks/backend/account`
+- `services/backend/src/main/kotlin/com/bks/backend/AccountDeletionJob.kt`
+- `apps/android/src/main/java/com/bks/feature/account`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
 - `docs/adr/0056-secure-and-persist-real-account-sessions.md`
 
 ## 验收标准
@@ -42,8 +42,8 @@
 ## 验收测试
 
 - `./gradlew.bat --no-daemon :shared:api:test`
-- `./gradlew.bat --no-daemon :services:backend:test --tests "com.autoaccounting.backend.account.*" --tests "com.autoaccounting.backend.config.*" --tests "com.autoaccounting.backend.ai.*"`
-- `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.account.*" --tests "com.autoaccounting.feature.profile.ProfileScreenTest"`
+- `./gradlew.bat --no-daemon :services:backend:test --tests "com.bks.backend.account.*" --tests "com.bks.backend.config.*" --tests "com.bks.backend.ai.*"`
+- `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.account.*" --tests "com.bks.feature.profile.ProfileScreenTest"`
 - `./gradlew.bat --no-daemon :services:backend:test`
 - `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - `./gradlew.bat --no-daemon build`

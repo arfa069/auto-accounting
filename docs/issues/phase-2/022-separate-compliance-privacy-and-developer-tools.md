@@ -18,10 +18,10 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/compliance`
-- `apps/android/src/main/java/com/autoaccounting/feature/beta`
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature`
+- `apps/android/src/main/java/com/bks/feature/compliance`
+- `apps/android/src/main/java/com/bks/feature/beta`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
+- `apps/android/src/test/java/com/bks/feature`
 
 ## 验收标准
 
@@ -33,7 +33,7 @@
 
 ## 验收测试
 
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.compliance.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.compliance.*"`
 - [x] `./gradlew.bat --no-daemon :apps:android:assembleDebug :apps:android:assembleRelease`
 
 ## 手工验证

@@ -97,8 +97,8 @@
 
 ## 5. 实现依据
 
-- 无障碍入口：[BillSyncAccessibilityService.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncAccessibilityService.kt)
-- 手动导入宿主与会话：[ManualBillImportHost.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/ManualBillImportHost.kt)、`BillSyncSession.kt`
-- 页面字段与类型解析：[BillPageParser.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt)、`PaymentRecordClassification.kt`
-- 微信 OCR 识别与放行：[PaymentScreenOcrRecognizer.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/PaymentScreenOcrRecognizer.kt)、`ManualWechatOcrPolicy.kt`
-- 解析结果过滤与待确认写入：[BillSyncPipeline.kt](../apps/android/src/main/java/com/autoaccounting/feature/billsync/BillSyncPipeline.kt)、`BillSyncCaptureProcessor.kt`
+- 无障碍入口：[BillSyncAccessibilityService.kt](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncAccessibilityService.kt)
+- 手动导入宿主与会话：[ManualBillImportHost.kt](../apps/android/src/main/java/com/bks/feature/billsync/ManualBillImportHost.kt)、`BillSyncSession.kt`
+- 页面字段与类型解析：[BillPageParser.kt](../apps/android/src/main/java/com/bks/feature/billsync/BillPageParser.kt)、`PaymentRecordClassification.kt`
+- 微信 OCR 识别与放行：[PaymentScreenOcrRecognizer.kt](../apps/android/src/main/java/com/bks/feature/billsync/PaymentScreenOcrRecognizer.kt)、`ManualWechatOcrPolicy.kt`
+- 解析结果过滤与待确认写入：[BillSyncPipeline.kt](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncPipeline.kt)、`BillSyncCaptureProcessor.kt`

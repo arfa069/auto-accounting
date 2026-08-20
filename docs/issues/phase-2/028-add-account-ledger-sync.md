@@ -63,7 +63,7 @@
 
 - 2026-07-24：共享契约、Backend v7 与同步 Service、Android Room v8/同步核心/UI 已实现。
 - 2026-07-25：补齐并通过业务唯一键墓碑防复活、同批规范 ID、账号合并引用重映射、最终注销清理、Room 迁移回填、账户切换队列引用、增量最高 revision、备份导入 outbox 和唯一 WorkManager 回归测试。
-- 2026-07-25：`shared/api` 40 项、Backend 158 项和 Android 487 项测试均为 0 失败；Backend 其中 3 项 PostgreSQL 环境门控测试因未配置 `AUTO_ACCOUNTING_POSTGRES_TEST_URL` 跳过，已包含新增的非空 v6→v7 用例。
+- 2026-07-25：`shared/api` 40 项、Backend 158 项和 Android 487 项测试均为 0 失败；Backend 其中 3 项 PostgreSQL 环境门控测试因未配置 `BKS_POSTGRES_TEST_URL` 跳过，已包含新增的非空 v6→v7 用例。
 - 2026-07-25：`coverageReport detekt build` 成功，Debug/Release 重新构建成功，Backend `SecretScannerTest`、`git diff --check` 和文档待办扫描通过。
 - 2026-07-25：`android-release.apk` 经 `apksigner verify --verbose` 验证通过，使用 APK Signature Scheme v2，签名者数量为 1。
 - 2026-07-26：签名 Release 真机完成 `admin069` → 新建空测试账号 → `admin069` 的切换验收；新账号仅生成空默认账本且未出现原账号账目，切回后原账号 56 条有效账目、2 个账本和 49 个分类均恢复，两个账号云端记录保持隔离。

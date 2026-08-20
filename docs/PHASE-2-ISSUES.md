@@ -265,9 +265,9 @@
 - 不翻译仅限后端的测试 Fixtures，除非它们透出在 Android 面向测试人员的 UI 中。
 
 ### 目标文件/模块
-- `apps/android/src/main/java/com/autoaccounting`
+- `apps/android/src/main/java/com/bks`
 - `apps/android/src/main/res`
-- `apps/android/src/test/java/com/autoaccounting`
+- `apps/android/src/test/java/com/bks`
 
 ### 验收标准
 - [ ] 面向用户的 Android 文案在主应用流程中渲染为符合预期的中文文本。

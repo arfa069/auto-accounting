@@ -42,13 +42,13 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/data/local`
-- `apps/android/src/main/java/com/autoaccounting/feature/ledger`
-- `apps/android/src/main/java/com/autoaccounting/feature/review`
-- `apps/android/src/main/java/com/autoaccounting/feature/settings`
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
-- `apps/android/schemas/com.autoaccounting.data.local.AutoAccountingDatabase`
-- `apps/android/src/test/java/com/autoaccounting`
+- `apps/android/src/main/java/com/bks/data/local`
+- `apps/android/src/main/java/com/bks/feature/ledger`
+- `apps/android/src/main/java/com/bks/feature/review`
+- `apps/android/src/main/java/com/bks/feature/settings`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
+- `apps/android/schemas/com.bks.data.local.BksDatabase`
+- `apps/android/src/test/java/com/bks`
 
 ## 验收标准
 
@@ -78,11 +78,11 @@
 
 ## 验收测试
 
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.data.local.LocalLedgerRepositoryTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.review.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.MainActivityTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.data.local.LocalLedgerRepositoryTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.settings.LocalDataBackupRepositoryTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.review.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.MainActivityTest"`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `.\gradlew.bat --no-daemon :apps:android:assembleDebug :apps:android:assembleRelease`
 - [x] 对已签名 Release APK 执行 `apksigner verify --verbose`，并运行 `git diff --check`。

@@ -25,13 +25,13 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/billsync/WechatOcrCaptureDecision.kt`
+- `apps/android/src/main/java/com/bks/feature/billsync/WechatOcrCaptureDecision.kt`
   - 用“签名列表中任一组全部命中”替代当前单一 `MANUAL_OCR_REQUIRED_KEYWORDS.all(...)`。
-- `apps/android/src/main/java/com/autoaccounting/feature/billsync/BillPageParser.kt`
+- `apps/android/src/main/java/com/bks/feature/billsync/BillPageParser.kt`
   - 补充完成状态、转账方向及退款字段标签解析。
-- `apps/android/src/test/java/com/autoaccounting/feature/billsync/PaymentScreenOcrFallbackTest.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature/billsync/BillPageParserTest.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature/billsync/BillSyncCaptureProcessorTest.kt`
+- `apps/android/src/test/java/com/bks/feature/billsync/PaymentScreenOcrFallbackTest.kt`
+- `apps/android/src/test/java/com/bks/feature/billsync/BillPageParserTest.kt`
+- `apps/android/src/test/java/com/bks/feature/billsync/BillSyncCaptureProcessorTest.kt`
 - 行为落地后同步更新 `feature/billsync/AGENTS.md`、`docs/PRD.md`、`docs/ARCHITECTURE.md`、`docs/UI-DESIGN.md`、`docs/COMPLIANCE.md` 和 `docs/research/auto-bookkeeping-flow.md`。
 
 建议的最小判断形态：
@@ -65,7 +65,7 @@ if (
 ## 验收测试
 
 ```powershell
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.PaymentScreenOcrFallbackTest" --tests "com.autoaccounting.feature.billsync.BillPageParserTest" --tests "com.autoaccounting.feature.billsync.BillSyncCaptureProcessorTest"
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.bks.feature.billsync.PaymentScreenOcrFallbackTest" --tests "com.bks.feature.billsync.BillPageParserTest" --tests "com.bks.feature.billsync.BillSyncCaptureProcessorTest"
 .\gradlew.bat :apps:android:testDebugUnitTest
 .\gradlew.bat :apps:android:assembleRelease
 ```

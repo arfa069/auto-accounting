@@ -49,39 +49,39 @@ HTTP 传输时不具备链路加密，因此该环境不得当作生产 HTTPS �
 ./bootstrap.sh --provision
 ```
 
-若检测到 `auto_accounting` 角色或数据库已经存在，provision 必须停止。
+若检测到 `bks` 角色或数据库已经存在，provision 必须停止。
 不得通过删除、覆盖或改名绕过检查；应先单独盘点现有数据。
 公开仓库在 provision 完成后自动启用 Release watcher；私有仓库需再运行
-`~/.local/lib/auto-accounting-deploy/configure-github-token.sh`。
+`~/.local/lib/bks-deploy/configure-github-token.sh`。
 
-部署使用独立的 `auto-accounting-nginx` runit 服务和
-`~/.config/auto-accounting/nginx.conf`，不会修改或重载 Termux 的主
+部署使用独立的 `bks-nginx` runit 服务和
+`~/.config/bks/nginx.conf`，不会修改或重载 Termux 的主
 `$PREFIX/etc/nginx/nginx.conf`，也不会接管已有 Nginx 服务。
 
 配置 Termux:Boot 时还需安装并打开该应用一次，并在 Android 系统中允许
 Termux 后台运行。boot 脚本只启动 services、PostgreSQL 和本项目的独立
 Nginx，不执行发布。
 若设备已有其他项目，安装 boot 脚本前必须先复核其 PostgreSQL 启动方式；
-未获批准时可暂不复制 `start-auto-accounting-boot.sh`。
+未获批准时可暂不复制 `start-bks-boot.sh`。
 
 ## 运维与回滚
 
 查看状态：
 
 ```sh
-~/.local/lib/auto-accounting-deploy/status.sh
+~/.local/lib/bks-deploy/status.sh
 ```
 
 仅回滚后端程序：
 
 ```sh
-~/.local/lib/auto-accounting-deploy/rollback.sh v0.1.0
+~/.local/lib/bks-deploy/rollback.sh v0.1.0
 ```
 
 每次部署和程序回滚前都会创建 PostgreSQL custom-format 备份。自动回滚只切换
 程序符号链接，不恢复数据库；任何数据库恢复都必须先停止服务并另行确认。
 手动回滚会停止 Release watcher，完成验收后需显式运行
-`sv up auto-accounting-release-watcher` 才会恢复自动更新。
+`sv up bks-release-watcher` 才会恢复自动更新。
 
 ## 故障排查
 

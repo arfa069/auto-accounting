@@ -49,15 +49,15 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/data/local`
-- `apps/android/src/main/java/com/autoaccounting/feature/ledger`
-- `apps/android/src/main/java/com/autoaccounting/feature/review`
-- `apps/android/src/main/java/com/autoaccounting/feature/settings/PersistedLocalDataBackup.kt`
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
-- `apps/android/schemas/com.autoaccounting.data.local.AutoAccountingDatabase`
-- `apps/android/src/test/java/com/autoaccounting/data/local`
-- `apps/android/src/test/java/com/autoaccounting/feature/ledger`
-- `apps/android/src/test/java/com/autoaccounting/feature/settings/LocalDataBackupRepositoryTest.kt`
+- `apps/android/src/main/java/com/bks/data/local`
+- `apps/android/src/main/java/com/bks/feature/ledger`
+- `apps/android/src/main/java/com/bks/feature/review`
+- `apps/android/src/main/java/com/bks/feature/settings/PersistedLocalDataBackup.kt`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
+- `apps/android/schemas/com.bks.data.local.BksDatabase`
+- `apps/android/src/test/java/com/bks/data/local`
+- `apps/android/src/test/java/com/bks/feature/ledger`
+- `apps/android/src/test/java/com/bks/feature/settings/LocalDataBackupRepositoryTest.kt`
 
 ## 实施顺序
 
@@ -100,9 +100,9 @@
 
 ## 验收测试
 
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.data.local.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.data.local.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.settings.LocalDataBackupRepositoryTest"`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `.\gradlew.bat --no-daemon :apps:android:assembleDebug`
 

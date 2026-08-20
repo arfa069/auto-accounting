@@ -15,8 +15,8 @@
 ## P0：启用真实短信能力
 
 - [ ] 选择并接入真实短信服务商，通过后端环境变量配置 Provider 及相应凭据（不得写入代码、文档或版本库）：
-  - 阿里云短信认证服务（推荐个人开发者）：配置 `AUTO_ACCOUNTING_SMS_PROVIDER=aliyun_pnvs`（或 `aliyun`），并配置 `AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_ID`、`AUTO_ACCOUNTING_SMS_ALIYUN_ACCESS_KEY_SECRET`、`AUTO_ACCOUNTING_SMS_SIGN_NAME`（预置签名名称）和 `AUTO_ACCOUNTING_SMS_TEMPLATE_CODE`（预置模板 Code）。
-  - Webhook 短信网关：配置 `AUTO_ACCOUNTING_SMS_PROVIDER=webhook`、`AUTO_ACCOUNTING_SMS_WEBHOOK_URL` 和 `AUTO_ACCOUNTING_SMS_API_KEY`。
+  - 阿里云短信认证服务（推荐个人开发者）：配置 `BKS_SMS_PROVIDER=aliyun_pnvs`（或 `aliyun`），并配置 `BKS_SMS_ALIYUN_ACCESS_KEY_ID`、`BKS_SMS_ALIYUN_ACCESS_KEY_SECRET`、`BKS_SMS_SIGN_NAME`（预置签名名称）和 `BKS_SMS_TEMPLATE_CODE`（预置模板 Code）。
+  - Webhook 短信网关：配置 `BKS_SMS_PROVIDER=webhook`、`BKS_SMS_WEBHOOK_URL` 和 `BKS_SMS_API_KEY`。
 - [ ] 使用签名 Release 真机验证手机号注册、找回密码、绑定手机号及其他短信二次验证流程。
 - [ ] 验证验证码 5 分钟有效、最多错误 3 次、用途隔离、不可重放、发送限流及 Provider 故障提示。
 - [ ] 检查日志、诊断导出、截图和服务端错误均不泄露手机号原文、验证码或短信凭据。
@@ -26,7 +26,7 @@
 ## P0：启用真实微信能力
 
 - [ ] 申请并通过微信开放平台 Android 移动应用及微信登录能力审核。
-- [ ] 登记 Release 包名 `com.autoaccounting` 和实际发布证书签名。
+- [ ] 登记 Release 包名 `com.bks` 和实际发布证书签名。
 - [ ] Android 本地构建配置写入可公开 AppID，后端私有环境写入 AppID/AppSecret；凭据不得进入 APK、日志或版本库。
 - [ ] 使用签名 Release 真机验证微信新账号注册、退出后登录、绑定、合并、解绑和重新绑定。
 - [ ] 验证微信未安装、用户取消、拒绝授权、正常授权、冷启动回跳及 `onNewIntent` 回跳。

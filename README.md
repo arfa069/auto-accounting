@@ -1,4 +1,4 @@
-# Auto Accounting
+# bks
 
 面向 Android 的记账 App，支持手动录入，以及用户主动发起的微信/支付宝账单补录；补录结果先进入待确认队列，再由用户确认到账本。
 
@@ -13,7 +13,7 @@
 
 当前工作区使用 Android SDK: `C:\Users\Arfa\AppData\Local\Android\Sdk`。
 
-后端环境变量模板位于 `services/backend/.env.example`。Android 的 `AUTO_ACCOUNTING_BACKEND_URL` 可放在被 Git 忽略的根目录 `local.properties` 或进程环境变量中；Debug 未配置时使用 `http://10.0.2.2:8080`，Release 未配置时保持账号网络不可用。局域网 HTTP 只用于受控测试账号，生产环境必须使用 HTTPS。
+后端环境变量模板位于 `services/backend/.env.example`。Android 的 `BKS_BACKEND_URL` 可放在被 Git 忽略的根目录 `local.properties` 或进程环境变量中；Debug 未配置时使用 `http://10.0.2.2:8080`，Release 未配置时保持账号网络不可用。局域网 HTTP 只用于受控测试账号，生产环境必须使用 HTTPS。
 
 ```powershell
 .\gradlew.bat :apps:android:testDebugUnitTest

@@ -16,9 +16,9 @@
 
 ## 目标文件/模块
 
-- `apps/android/src/main/java/com/autoaccounting`
+- `apps/android/src/main/java/com/bks`
 - `apps/android/src/main/res`
-- `apps/android/src/test/java/com/autoaccounting`
+- `apps/android/src/test/java/com/bks`
 
 ## 验收标准
 

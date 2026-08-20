@@ -42,12 +42,12 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/ledger/LedgerModels.kt`
-- `apps/android/src/main/java/com/autoaccounting/feature/ledger/ReportsScreen.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature/ledger/LedgerReportQueriesTest.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature/ledger/LedgerReportsScreenTest.kt`
-- `apps/android/src/test/java/com/autoaccounting/feature/ledger/LedgerModelsTest.kt`
-- `apps/android/src/test/java/com/autoaccounting/MainActivityTest.kt`
+- `apps/android/src/main/java/com/bks/feature/ledger/LedgerModels.kt`
+- `apps/android/src/main/java/com/bks/feature/ledger/ReportsScreen.kt`
+- `apps/android/src/test/java/com/bks/feature/ledger/LedgerReportQueriesTest.kt`
+- `apps/android/src/test/java/com/bks/feature/ledger/LedgerReportsScreenTest.kt`
+- `apps/android/src/test/java/com/bks/feature/ledger/LedgerModelsTest.kt`
+- `apps/android/src/test/java/com/bks/MainActivityTest.kt`
 - `docs/PRD.md`
 - `docs/UI-DESIGN.md`
 
@@ -70,11 +70,11 @@
 
 ## 验收测试
 
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.LedgerReportQueriesTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.LedgerReportsScreenTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.LedgerModelsTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.MainActivityTest"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.ledger.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.LedgerReportQueriesTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.LedgerReportsScreenTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.LedgerModelsTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.MainActivityTest"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.ledger.*"`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `.\gradlew.bat --no-daemon :apps:android:assembleDebug :apps:android:assembleRelease`
 - [x] `apksigner verify --verbose apps/android/build/outputs/apk/release/android-release.apk`
@@ -98,10 +98,10 @@
 
 ## 验证记录
 
-- `2026-07-16`：完成 `LedgerReportQueriesTest`、`LedgerModelsTest`、`LedgerReportsScreenTest`、`MainActivityTest` 和 `com.autoaccounting.feature.ledger.*` 专项回归。
+- `2026-07-16`：完成 `LedgerReportQueriesTest`、`LedgerModelsTest`、`LedgerReportsScreenTest`、`MainActivityTest` 和 `com.bks.feature.ledger.*` 专项回归。
 - `2026-07-16`：Android 全量 `testDebugUnitTest` 最终通过，共 326 项；首次全量运行遇到既有无障碍服务健康测试的偶发时序失败，该测试单独复跑通过，随后全量干净通过。
 - `2026-07-16`：Debug 与 Release APK 构建成功；Release 通过 APK Signature Scheme v2 校验，签名者数量为 1。
-- `2026-07-16`：在 Xiaomi `24117RK2CC` 的独立 `com.autoaccounting.debug` 包中注入脱敏合成数据并完成视觉验收。环形图、前四类加“其他”、只读排行、`2026-04..2026-10` 七行收支、未来空月补零及 `2026-07` 高亮均正确；验收后已执行 `pm clear com.autoaccounting.debug`，正式版 `com.autoaccounting` 未改动。
+- `2026-07-16`：在 Xiaomi `24117RK2CC` 的独立 `com.bks.debug` 包中注入脱敏合成数据并完成视觉验收。环形图、前四类加“其他”、只读排行、`2026-04..2026-10` 七行收支、未来空月补零及 `2026-07` 高亮均正确；验收后已执行 `pm clear com.bks.debug`，正式版 `com.bks` 未改动。
 - `2026-07-16`：`git diff --check` 退出码为 0；仅出现工作区既有 CRLF→LF 行尾提示，无空白错误。
 
 ## 依赖

@@ -24,9 +24,9 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
-- `apps/android/src/main/java/com/autoaccounting/feature/account`
-- `apps/android/src/test/java/com/autoaccounting/feature/account`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
+- `apps/android/src/main/java/com/bks/feature/account`
+- `apps/android/src/test/java/com/bks/feature/account`
 
 ## 验收标准
 
@@ -39,8 +39,8 @@
 
 ## 验收测试
 
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.profile.ProfileScreenTest"`
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.account.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.profile.ProfileScreenTest"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.account.*"`
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `./gradlew.bat --no-daemon :apps:android:assembleDebug`
 

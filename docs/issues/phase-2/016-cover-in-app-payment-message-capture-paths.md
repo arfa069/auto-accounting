@@ -102,18 +102,18 @@ Issue 16 继续遵守现有 PRD 约束：所有自动捕获交易必须先进入
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/billsync`
-- `apps/android/src/main/java/com/autoaccounting/feature/monitoring`
-- `apps/android/src/main/java/com/autoaccounting/feature/capture`
-- `apps/android/src/main/java/com/autoaccounting/feature/categorization`
-- `apps/android/src/main/java/com/autoaccounting/feature/review`
-- `apps/android/src/main/java/com/autoaccounting/data/local`
+- `apps/android/src/main/java/com/bks/feature/billsync`
+- `apps/android/src/main/java/com/bks/feature/monitoring`
+- `apps/android/src/main/java/com/bks/feature/capture`
+- `apps/android/src/main/java/com/bks/feature/categorization`
+- `apps/android/src/main/java/com/bks/feature/review`
+- `apps/android/src/main/java/com/bks/data/local`
 - `apps/android/src/main/AndroidManifest.xml`
 - `apps/android/schemas`
-- `apps/android/src/test/java/com/autoaccounting/data/local`
-- `apps/android/src/test/java/com/autoaccounting/feature/billsync`
-- `apps/android/src/test/java/com/autoaccounting/feature/monitoring`
-- `apps/android/src/test/java/com/autoaccounting/feature/review`
+- `apps/android/src/test/java/com/bks/data/local`
+- `apps/android/src/test/java/com/bks/feature/billsync`
+- `apps/android/src/test/java/com/bks/feature/monitoring`
+- `apps/android/src/test/java/com/bks/feature/review`
 - `docs/PRD.md`
 - `docs/ARCHITECTURE.md`
 - `docs/COMPLIANCE.md`
@@ -138,10 +138,10 @@ Issue 16 继续遵守现有 PRD 约束：所有自动捕获交易必须先进入
 
 ## 验收测试
 
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
-- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.review.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.billsync.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.monitoring.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.capture.*"`
+- [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.review.*"`
 - [x] `.\gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 - [x] `.\gradlew.bat --no-daemon :apps:android:assembleRelease`
 

@@ -18,9 +18,9 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/categorization`
-- `apps/android/src/main/java/com/autoaccounting/data/local`
-- `apps/android/src/test/java/com/autoaccounting/feature/categorization`
+- `apps/android/src/main/java/com/bks/feature/categorization`
+- `apps/android/src/main/java/com/bks/data/local`
+- `apps/android/src/test/java/com/bks/feature/categorization`
 
 ## 验收标准
 
@@ -31,7 +31,7 @@
 
 ## 验收测试
 
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.categorization.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.categorization.*"`
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证

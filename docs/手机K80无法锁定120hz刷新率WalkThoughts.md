@@ -15,7 +15,7 @@
 > 在使用了 `HardwareLayerBox` 后，应用在底层的实际渲染耗时已远低于 8ms。然而用户依然觉得“卡顿”。通过一系列验证，我们锁定了真正的元凶：**小米系统底层的 Joyose 电量管家 (com.xiaomi.joyose)**。
 > 
 > 1. **白名单机制**：MIUI/HyperOS 在底层维护了一个 120Hz 的白名单。只有被小米官方认可的知名应用（如微信 `com.tencent.mm`、淘宝 `com.taobao.taobao`、原神 `com.miHoYo.Yuanshen`）才允许在 OpenGL 模式下跑满 120Hz。
-> 2. **未知应用锁帧**：由于我们的项目包名是 `com.autoaccounting`，不在系统白名单内。MIUI 会将其视为耗电应用，强行在系统底层将其物理刷新率锁死在 60Hz。代码中配置的 `preferredDisplayModeId` 或 `SurfaceControl.setFrameRate` 对其完全无效。
+> 2. **未知应用锁帧**：由于我们的项目包名是 `com.bks`，不在系统白名单内。MIUI 会将其视为耗电应用，强行在系统底层将其物理刷新率锁死在 60Hz。代码中配置的 `preferredDisplayModeId` 或 `SurfaceControl.setFrameRate` 对其完全无效。
 > 3. **Vulkan 破局**：当用户强制使用 Vulkan (`skiavk`) 时，Vulkan 极高的图形管线层级意外绕过了 Joyose 的拦截策略（或者被系统误认为游戏引擎），从而解锁了真正的 120Hz。这解释了为什么只有 Vulkan 下才“流畅”。
 
 ## 论证实验（伪装测试）
@@ -25,7 +25,7 @@
 - **结果**：原本“卡顿”的 OpenGL 模式瞬间变得完美丝滑，真正跑满了 120Hz。这铁一般地证明了性能瓶颈完全是小米 Joyose 针对未知包名强锁 60Hz 造成的。
 
 ## 最终代码状态
-1. 实验结束后，`build.gradle.kts` 已恢复为真实的包名 `com.autoaccounting`。
+1. 实验结束后，`build.gradle.kts` 已恢复为真实的包名 `com.bks`。
 2. 我们保留了性能最好的 **`HardwareLayerBox`** 组件作为 `SlidePageTransition` 的基石。这套代码是针对 Android 底层图形驱动最 Robust 的方案。
 3. `MainActivity.kt` 仍保留了请求高刷的 Window flag，以备未来其他非定制厂商系统的适配。
 

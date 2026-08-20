@@ -58,16 +58,16 @@ flowchart LR
   - `FundingAccountRepository`: 跨账本共享资金账户管理。
   - `LocalLedgerRepository`: 实现上述所有领域接口，作为 UI 和 ViewModel 调用的单一门面 (Facade)。
 - **UI 状态与服务协调器**：
-  - `AutoAccountingAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换和 `setContent`。
-  - `AutoAccountingAppBindings` 承载系统权限、设置跳转、外部导航及微信回调，`AutoAccountingAppOverrides` 仅承载测试替身；生产依赖、Session 恢复、同步副作用和本地状态持久化继续由应用根组合层统一装配。
+  - `BksAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换和 `setContent`。
+  - `BksAppBindings` 承载系统权限、设置跳转、外部导航及微信回调，`BksAppOverrides` 仅承载测试替身；生产依赖、Session 恢复、同步副作用和本地状态持久化继续由应用根组合层统一装配。
   - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
   - `BillSyncAccessibilityService` 只保留手动补录所需的 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，微信 OCR 协调器负责本次会话的窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
   - OCR 协调器只经 `AccessibilityCaptureHost` 读取当前窗口、屏幕健康度和截图能力；`onDestroy` 统一取消协调器任务，`onInterrupt` 不改变服务连接状态。
-- **第三轮根组合重构（2026-08-02）**：`AutoAccountingApp` 保留为唯一根组合入口，但将职责拆分为可独立核对的边界：
-  - `AutoAccountingAppDependencies` 负责 Room、账号、AI、微信、备份和账本同步等生产依赖的记忆化装配；`AutoAccountingAppOverrides` 只向测试注入替身，不改变生产依赖图。
-  - `AutoAccountingAppRuntime` 集中账号 Session、账本/同步状态、动作和展示模型；`AutoAccountingAppEffectsContext` 及其副作用函数集中恢复、校验、导航、持久化和同步生命周期，避免路由组件直接拥有后台任务。
-  - `AutoAccountingRouteContext` 作为路由共享上下文，`AutoAccountingRouteHost` 负责账号入口、已登录应用壳、手动录入和主 Tab 分发；账本/待确认/报表与 Profile 子页分别由 `AutoAccountingLedgerRoutes`、`AutoAccountingProfileRoutes` 编排。
-  - `AutoAccountingLedgerSyncAccountSwitchDialog` 必须在 `AutoAccountingTheme` 组合结束后调用。这样账本同步发现账号与本地 Profile 不一致时，AlertDialog 继续使用重构前的主题作用域，不会因结构拆分意外继承应用自定义颜色、字体或组件主题。
+- **第三轮根组合重构（2026-08-02）**：`BksApp` 保留为唯一根组合入口，但将职责拆分为可独立核对的边界：
+  - `BksAppDependencies` 负责 Room、账号、AI、微信、备份和账本同步等生产依赖的记忆化装配；`BksAppOverrides` 只向测试注入替身，不改变生产依赖图。
+  - `BksAppRuntime` 集中账号 Session、账本/同步状态、动作和展示模型；`BksAppEffectsContext` 及其副作用函数集中恢复、校验、导航、持久化和同步生命周期，避免路由组件直接拥有后台任务。
+  - `BksRouteContext` 作为路由共享上下文，`BksRouteHost` 负责账号入口、已登录应用壳、手动录入和主 Tab 分发；账本/待确认/报表与 Profile 子页分别由 `BksLedgerRoutes`、`BksProfileRoutes` 编排。
+  - `BksLedgerSyncAccountSwitchDialog` 必须在 `BksTheme` 组合结束后调用。这样账本同步发现账号与本地 Profile 不一致时，AlertDialog 继续使用重构前的主题作用域，不会因结构拆分意外继承应用自定义颜色、字体或组件主题。
 - **第四轮 Ledger + Review UI 职责拆分（2026-08-02）**：保持产品交互、Room/同步、OCR、后端契约和数据语义不变，将核心页面拆成可独立核对的渲染与编排边界：
   - Ledger 表单字段与配置位于 `LedgerEntryFormFields.kt`、`LedgerEntryFormConfig.kt`；最近删除、账本管理和资金账户管理分别位于独立 Screen 文件，`LedgerScreen` 只负责路由和 action holder 装配。
   - Review 列表、忽略项弹窗和编辑器工具分别位于 `ReviewQueueListContent.kt`、`ReviewIgnoredEntriesDialog.kt`、`ReviewEditorTools.kt`；`ReviewQueueScreen` 与 `ReviewQueueEditor` 保留页面状态和事件编排。
@@ -199,9 +199,9 @@ flowchart LR
 - 仅在用户选择开启后才提供增强 AI 上下文。
 
 后端行为：
-- Android 应用仅通过 `BuildConfig.AUTO_ACCOUNTING_BACKEND_URL` 调用本项目的 `POST /ai/categorize`，Bearer Token 不得转发给第三方 Provider。
+- Android 应用仅通过 `BuildConfig.BKS_BACKEND_URL` 调用本项目的 `POST /ai/categorize`，Bearer Token 不得转发给第三方 Provider。
 - 路由先验证 Session、云写入状态、已保存的 AI 同意及独立的增强上下文同意；注销冷静期账号在读取 payload 前即被阻断。
-- 运行时环境工厂通过 `AUTO_ACCOUNTING_AI_PROTOCOL=openai-responses|openai-chat-completions|anthropic-messages` 选择协议。三种协议共用 `AUTO_ACCOUNTING_AI_ENDPOINT`、`AUTO_ACCOUNTING_AI_API_KEY`、`AUTO_ACCOUNTING_AI_MODEL`、认证方式和超时配置；Endpoint 必须包含完整请求路径。旧的厂商专属环境变量不再读取。空值、`rule`、未知协议或配置错误均失败关闭。`RuleBasedAiProvider` 仅可由测试代码直接注入，不得通过环境配置选择。所有外部请求仅允许 HTTPS，HTTP 仅限 localhost 测试。
+- 运行时环境工厂通过 `BKS_AI_PROTOCOL=openai-responses|openai-chat-completions|anthropic-messages` 选择协议。三种协议共用 `BKS_AI_ENDPOINT`、`BKS_AI_API_KEY`、`BKS_AI_MODEL`、认证方式和超时配置；Endpoint 必须包含完整请求路径。旧的厂商专属环境变量不再读取。空值、`rule`、未知协议或配置错误均失败关闭。`RuleBasedAiProvider` 仅可由测试代码直接注入，不得通过环境配置选择。所有外部请求仅允许 HTTPS，HTTP 仅限 localhost 测试。
 - 认证方式限定为 `bearer`、`x-api-key` 或 `api-key`。结构化输出支持协议允许的 `json-schema`、`json-object` 或 `prompt-only`；Chat Completions 还可显式启用或关闭推理模式。服务端始终再次校验响应长度、字段集合、置信度枚举及分类候选白名单。
 - 只有完整验证成功的建议才写入最小化 AI 日志；Provider 缺失、超时、限流、HTTP/解析失败及白名单失败均不写成功日志。
 - AI 日志仅保存账号关联、最小请求字段、建议及时间；使用增强上下文时，Provider explanation 也不持久化，改存固定脱敏说明。备注和原始证据不落库，也不进入普通日志、错误响应或 Provider 异常文本。
@@ -259,10 +259,10 @@ PostgreSQL 数据表：
 
 Session 与传输边界：
 - Android 应用在构建时获取后端 URL。Debug 默认使用 `http://10.0.2.2:8080`；Debug 与 Release 均可使用显式配置的 HTTP 或 HTTPS URL，Release 未配置 URL 时保持账号网络不可用。HTTP 仅用于受控测试网络和专用测试账号，因为账号凭据、验证码与 Session Token 不具备传输加密。
-- 账本同步、AI 分类及云端 AI 设置同步默认拒绝 HTTP；仅当本地忽略配置 `AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC=true` 且目标为回环或 RFC1918 地址时允许受控测试。账本同步界面持续显示明文风险；生产网络调用必须使用 HTTPS。
+- 账本同步、AI 分类及云端 AI 设置同步默认拒绝 HTTP；仅当本地忽略配置 `BKS_ALLOW_HTTP_LEDGER_SYNC=true` 且目标为回环或 RFC1918 地址时允许受控测试。账本同步界面持续显示明文风险；生产网络调用必须使用 HTTPS。
 - Android 网络请求在 IO 调度器上使用 `HttpURLConnection`，连接超时 10 秒，读取超时 15 秒。注册、登录、验证码、退出登录及注销操作不会自动重试。
 - 受保护路由仅通过 `Authorization: Bearer` 解析身份；客户端提交的标识或表单 Token 绝不用于选取受保护账号。
-- 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `AUTO_ACCOUNTING_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
+- 验证码哈希包含标识类型、规范化值、用途和验证码，并以 `BKS_AUTH_PEPPER` 为密钥使用 HMAC-SHA-256 存储；随机 Session Token 仅以 SHA-256 哈希值存储。密码与验证码比较采用恒定时间字节比较。
 - Android 在专用偏好设置中使用 Android Keystore AES-GCM 保存 Session v5：业务 Token、公开账号 UUID、主标识、全部登录标识、微信绑定状态、注销状态、昵称和头像值；继续读取旧 v1-v4 Session，并在下一次保存时升级。密文排除在 Room、账本备份、诊断和日志之外。随机持久化的安装 UUID 取代硬件标识符。
 - 启动时在后台校验前先恢复加密凭据。网络/配置故障保留离线未校验 Session 和本地账本访问权；仅当显式收到无效 Session 时才清除密文并返回持久化本地模式。
 - 微信 OpenSDK 仅使用可公开 AppID。AppSecret、微信 access/refresh token、OpenID、UnionID 和 Provider 原始响应不进入 APK、Android Session、日志或诊断导出；授权 code 只发送自有后端并立即从回调 Intent 移除。

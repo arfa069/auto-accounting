@@ -18,9 +18,9 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/feature/settings`
-- `apps/android/src/main/java/com/autoaccounting/data/local`
-- `apps/android/src/test/java/com/autoaccounting/feature/settings`
+- `apps/android/src/main/java/com/bks/feature/settings`
+- `apps/android/src/main/java/com/bks/data/local`
+- `apps/android/src/test/java/com/bks/feature/settings`
 
 ## 验收标准
 
@@ -31,7 +31,7 @@
 
 ## 验收测试
 
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.settings.LocalDataBackupRepositoryTest"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.settings.LocalDataBackupRepositoryTest"`
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证

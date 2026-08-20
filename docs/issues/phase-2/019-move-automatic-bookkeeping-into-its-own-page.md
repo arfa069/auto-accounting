@@ -18,11 +18,11 @@
 
 ## 目标文件或模块
 
-- `apps/android/src/main/java/com/autoaccounting/MainActivity.kt`
-- `apps/android/src/main/java/com/autoaccounting/feature/capture`
-- `apps/android/src/main/java/com/autoaccounting/feature/billsync`
-- `apps/android/src/main/java/com/autoaccounting/feature/monitoring`
-- `apps/android/src/test/java/com/autoaccounting/feature`
+- `apps/android/src/main/java/com/bks/MainActivity.kt`
+- `apps/android/src/main/java/com/bks/feature/capture`
+- `apps/android/src/main/java/com/bks/feature/billsync`
+- `apps/android/src/main/java/com/bks/feature/monitoring`
+- `apps/android/src/test/java/com/bks/feature`
 
 ## 验收标准
 
@@ -34,8 +34,8 @@
 
 ## 验收测试
 
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*"`
-- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.monitoring.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.capture.*"`
+- [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.monitoring.*"`
 - [x] `./gradlew.bat --no-daemon :apps:android:testDebugUnitTest`
 
 ## 手工验证
@@ -52,7 +52,7 @@
 ## 验证记录
 
 - 2026-07-12：新增独立“自动记账”页和状态摘要；初版按通知监听、无障碍、结果通知、持续监控健康状态与手动账单同步入口呈现。健康状态同时检查无障碍授权和服务连接心跳，连接心跳超时会显示为需要处理；关闭自动记账会同时停止通知监听处理；手动同步继续复用既有会话、无障碍服务、去重和待确认入队链路。当前页面结构已由后续 `2026-07-13` 紧凑清单替代。
-- 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.capture.*" --tests "com.autoaccounting.feature.monitoring.*" --tests "com.autoaccounting.feature.billsync.BillSyncSessionTest" --tests "com.autoaccounting.feature.categorization.CategorizationRulesScreenTest" --tests "com.autoaccounting.MainActivityTest"` 通过。
+- 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest --tests "com.bks.feature.capture.*" --tests "com.bks.feature.monitoring.*" --tests "com.bks.feature.billsync.BillSyncSessionTest" --tests "com.bks.feature.categorization.CategorizationRulesScreenTest" --tests "com.bks.MainActivityTest"` 通过。
 - 2026-07-12：`./gradlew.bat --no-daemon :apps:android:testDebugUnitTest :apps:android:assembleDebug` 通过。
 - `2026-07-13`：在 Xiaomi `24117RK2CC`（Android 16，`192.168.1.6:40793`）的已签名 Release 包完成非破坏性检查：二级页依次显示自动记账状态、通知监听、自动记账无障碍权限；向下滚动确认持续监控和健康状态、手动账单同步，系统返回回到“我的”总览。未变更权限、开关或服务状态，未发起手动账单同步，也未进入微信钱包历史等敏感页面。
 - `2026-07-13`：自动记账页改为紧凑权限清单，新增后台运行、自启动、电池优化和省电模式引导；结果通知不再单列，Android 13 及以上在开启自动记账时按需申请，拒绝仍不阻断采集。入口真机结果合并记录于下一条。

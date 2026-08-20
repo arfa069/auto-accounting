@@ -59,9 +59,9 @@
 最窄验证命令：
 
 ```powershell
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.diagnostics.*"
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.billsync.*"
-.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.autoaccounting.feature.compliance.*"
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.bks.feature.diagnostics.*"
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.bks.feature.billsync.*"
+.\gradlew.bat :apps:android:testDebugUnitTest --tests "com.bks.feature.compliance.*"
 ```
 
 跨链路变更还需运行完整 Android 单测和 Debug/Release 构建。签名材料齐全时，对 Release APK 继续执行 `apksigner verify --verbose`。未经明确要求，不自动安装或操作真机。
