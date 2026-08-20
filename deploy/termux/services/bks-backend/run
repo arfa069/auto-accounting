@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/sh
+
+exec 2>&1
+export BKS_ENV_FILE="$HOME/.config/bks/backend.env"
+backend="$HOME/.local/share/bks/current/bin/backend"
+while [ ! -x "$backend" ]; do
+    sleep 5
+done
+exec "$backend"

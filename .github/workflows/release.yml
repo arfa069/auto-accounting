@@ -21,9 +21,9 @@ jobs:
     permissions:
       contents: write
     env:
-      AUTO_ACCOUNTING_BACKEND_URL: ${{ vars.INTERNAL_BACKEND_URL || 'http://192.168.1.13:8080' }}
-      AUTO_ACCOUNTING_ALLOW_HTTP_LEDGER_SYNC: ${{ vars.INTERNAL_ALLOW_HTTP_LEDGER_SYNC || 'true' }}
-      AUTO_ACCOUNTING_WECHAT_APP_ID: ${{ vars.AUTO_ACCOUNTING_WECHAT_APP_ID }}
+      BKS_BACKEND_URL: ${{ vars.INTERNAL_BACKEND_URL || 'http://192.168.1.13:8080' }}
+      BKS_ALLOW_HTTP_LEDGER_SYNC: ${{ vars.INTERNAL_ALLOW_HTTP_LEDGER_SYNC || 'true' }}
+      BKS_WECHAT_APP_ID: ${{ vars.BKS_WECHAT_APP_ID }}
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
@@ -85,8 +85,8 @@ jobs:
 
       - name: Build release assets
         env:
-          AUTO_ACCOUNTING_VERSION_NAME: ${{ steps.version.outputs.version }}
-          AUTO_ACCOUNTING_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          BKS_VERSION_NAME: ${{ steps.version.outputs.version }}
+          BKS_VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: >-
           ./gradlew
           :services:backend:distTar
@@ -102,10 +102,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          backend_source="services/backend/build/distributions/auto-accounting-backend-${RELEASE_VERSION}.tar.gz"
+          backend_source="services/backend/build/distributions/bks-backend-${RELEASE_VERSION}.tar.gz"
           apk_source="apps/android/build/outputs/apk/release/android-release.apk"
-          backend_asset="auto-accounting-backend-${RELEASE_TAG}.tar.gz"
-          apk_asset="auto-accounting-${RELEASE_TAG}.apk"
+          backend_asset="bks-backend-${RELEASE_TAG}.tar.gz"
+          apk_asset="bks-${RELEASE_TAG}.apk"
           test -f "$backend_source"
           test -f "$apk_source"
 
@@ -128,7 +128,7 @@ jobs:
             --arg commit "$GITHUB_SHA" \
             --arg backendAsset "$backend_asset" \
             --arg androidAsset "$apk_asset" \
-            --arg backendUrl "$AUTO_ACCOUNTING_BACKEND_URL" \
+            --arg backendUrl "$BKS_BACKEND_URL" \
             --argjson versionCode "$RELEASE_VERSION_CODE" \
             '{
               tag: $tag,

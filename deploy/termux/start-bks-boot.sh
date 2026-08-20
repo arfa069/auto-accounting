@@ -2,13 +2,13 @@
 
 set -u
 
-state_root="${AUTO_ACCOUNTING_STATE_ROOT:-$HOME/.local/state/auto-accounting}"
+state_root="${BKS_STATE_ROOT:-$HOME/.local/state/bks}"
 mkdir -p "$state_root"
 chmod 700 "$state_root"
 umask 077
 exec >> "$state_root/boot.log" 2>&1
 
-printf 'auto-accounting boot start: %s\n' "$(date)"
+printf 'bks boot start: %s\n' "$(date)"
 termux-wake-lock || true
 
 database_ready() {
@@ -37,9 +37,9 @@ fi
 . "$PREFIX/etc/profile.d/start-services.sh"
 
 for service_name in \
-    auto-accounting-nginx \
-    auto-accounting-backend \
-    auto-accounting-release-watcher; do
+    bks-nginx \
+    bks-backend \
+    bks-release-watcher; do
     service_path="$PREFIX/var/service/$service_name"
     if [ ! -d "$service_path" ]; then
         printf 'Missing service directory: %s\n' "$service_path" >&2
@@ -56,4 +56,4 @@ for service_name in \
     done
 done
 
-printf 'auto-accounting boot complete: %s\n' "$(date)"
+printf 'bks boot complete: %s\n' "$(date)"

@@ -1,9 +1,0 @@
-#!/data/data/com.termux/files/usr/bin/sh
-
-exec 2>&1
-export AUTO_ACCOUNTING_ENV_FILE="$HOME/.config/auto-accounting/backend.env"
-backend="$HOME/.local/share/auto-accounting/current/bin/backend"
-while [ ! -x "$backend" ]; do
-    sleep 5
-done
-exec "$backend"

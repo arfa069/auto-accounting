@@ -15,12 +15,12 @@ require_command sort
 require_command sv
 require_command tar
 
-mkdir -p "$AA_RELEASES_ROOT" "$AA_STATE_ROOT" "$AA_BACKUPS_ROOT"
-lock_directory="$AA_STATE_ROOT/deploy.lock"
+mkdir -p "$BKS_RELEASES_ROOT" "$BKS_STATE_ROOT" "$BKS_BACKUPS_ROOT"
+lock_directory="$BKS_STATE_ROOT/deploy.lock"
 if ! mkdir "$lock_directory" 2>/dev/null; then
     die "Another deployment is already running."
 fi
-temporary_directory="$(mktemp -d "$AA_STATE_ROOT/deploy.XXXXXX")"
+temporary_directory="$(mktemp -d "$BKS_STATE_ROOT/deploy.XXXXXX")"
 switched=false
 previous_target=""
 
@@ -31,10 +31,10 @@ cleanup() {
         set +e
         if [[ -n "$previous_target" && -d "$previous_target" ]]; then
             atomic_current_link "$previous_target"
-            ensure_service_runsv "$AA_SERVICE_NAME" >/dev/null 2>&1 || true
-            sv restart "$AA_SERVICE_NAME" >/dev/null
+            ensure_service_runsv "$BKS_SERVICE_NAME" >/dev/null 2>&1 || true
+            sv restart "$BKS_SERVICE_NAME" >/dev/null
         else
-            sv down "$AA_SERVICE_NAME" >/dev/null
+            sv down "$BKS_SERVICE_NAME" >/dev/null
         fi
         set -e
     fi
@@ -45,7 +45,7 @@ cleanup() {
 trap cleanup EXIT
 
 github_api \
-    "https://api.github.com/repos/$AA_REPOSITORY/releases?per_page=20" \
+    "https://api.github.com/repos/$BKS_REPOSITORY/releases?per_page=20" \
     --output "$temporary_directory/releases.json"
 release_json="$(
     jq -c '
@@ -63,8 +63,8 @@ release_json="$(
 release_tag="$(jq -r '.tag_name' <<< "$release_json")"
 validate_release_tag "$release_tag"
 
-if [[ -f "$AA_DEPLOYED_VERSION" ]]; then
-    deployed_tag="$(tr -d '\r\n' < "$AA_DEPLOYED_VERSION")"
+if [[ -f "$BKS_DEPLOYED_VERSION" ]]; then
+    deployed_tag="$(tr -d '\r\n' < "$BKS_DEPLOYED_VERSION")"
     validate_release_tag "$deployed_tag"
     if [[ "$deployed_tag" == "$release_tag" ]]; then
         log "$release_tag is already deployed."
@@ -76,7 +76,7 @@ if [[ -f "$AA_DEPLOYED_VERSION" ]]; then
     fi
 fi
 
-backend_asset="auto-accounting-backend-${release_tag}.tar.gz"
+backend_asset="bks-backend-${release_tag}.tar.gz"
 for asset_name in "$backend_asset" release-manifest.json checksums.sha256; do
     asset_url="$(
         jq -r --arg name "$asset_name" \
@@ -126,17 +126,17 @@ top_level_count="$(
 [[ "$top_level_count" == "1" ]] || die "Release archive must contain one top-level directory."
 
 load_database_config
-backup_path="$AA_BACKUPS_ROOT/$(date -u '+%Y%m%dT%H%M%SZ')-${release_tag}.dump"
+backup_path="$BKS_BACKUPS_ROOT/$(date -u '+%Y%m%dT%H%M%SZ')-${release_tag}.dump"
 log "Creating PostgreSQL backup for $release_tag."
-PGPASSWORD="$AA_DATABASE_PASSWORD" pg_dump \
+PGPASSWORD="$BKS_DATABASE_PASSWORD" pg_dump \
     --no-password \
-    --username="$AA_DATABASE_USER" \
-    --dbname="${AA_DATABASE_URL#jdbc:}" \
+    --username="$BKS_DATABASE_USER" \
+    --dbname="${BKS_DATABASE_URL#jdbc:}" \
     --format=custom \
     --file="$backup_path"
 chmod 600 "$backup_path"
 
-release_directory="$AA_RELEASES_ROOT/$release_tag"
+release_directory="$BKS_RELEASES_ROOT/$release_tag"
 if [[ -e "$release_directory" ]]; then
     safe_remove_release "$release_directory"
 fi
@@ -147,21 +147,21 @@ tar -xzf "$temporary_directory/$backend_asset" \
 cp "$temporary_directory/release-manifest.json" "$release_directory/release-manifest.json"
 chmod -R a-w "$release_directory"
 
-previous_target="$(readlink -f "$AA_CURRENT_LINK" 2>/dev/null || true)"
+previous_target="$(readlink -f "$BKS_CURRENT_LINK" 2>/dev/null || true)"
 atomic_current_link "$release_directory"
 switched=true
-ensure_service_runsv "$AA_SERVICE_NAME" ||
-    die "Runit supervision for $AA_SERVICE_NAME could not be restored."
-sv restart "$AA_SERVICE_NAME"
+ensure_service_runsv "$BKS_SERVICE_NAME" ||
+    die "Runit supervision for $BKS_SERVICE_NAME could not be restored."
+sv restart "$BKS_SERVICE_NAME"
 application_health_check || die "Application health checks did not pass within 60 seconds."
 
-printf '%s\n' "$release_tag" > "$AA_DEPLOYED_VERSION"
-chmod 600 "$AA_DEPLOYED_VERSION"
+printf '%s\n' "$release_tag" > "$BKS_DEPLOYED_VERSION"
+chmod 600 "$BKS_DEPLOYED_VERSION"
 switched=false
 log "Deployment of $release_tag succeeded."
 
 mapfile -t old_releases < <(
-    find "$AA_RELEASES_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'v*' \
+    find "$BKS_RELEASES_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'v*' \
         -printf '%T@ %p\n' |
         sort -nr |
         sed -n '6,$s/^[^ ]* //p'
@@ -170,13 +170,13 @@ for old_release in "${old_releases[@]}"; do
     safe_remove_release "$old_release"
 done
 mapfile -t old_backups < <(
-    find "$AA_BACKUPS_ROOT" -mindepth 1 -maxdepth 1 -type f -name '*.dump' \
+    find "$BKS_BACKUPS_ROOT" -mindepth 1 -maxdepth 1 -type f -name '*.dump' \
         -printf '%T@ %p\n' |
         sort -nr |
         sed -n '8,$s/^[^ ]* //p'
 )
 for old_backup in "${old_backups[@]}"; do
-    [[ "$old_backup" == "$AA_BACKUPS_ROOT"/*.dump ]] ||
+    [[ "$old_backup" == "$BKS_BACKUPS_ROOT"/*.dump ]] ||
         die "Refusing unsafe backup removal."
     rm -f -- "$old_backup"
 done

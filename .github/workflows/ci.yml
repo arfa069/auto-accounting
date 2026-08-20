@@ -42,20 +42,20 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: auto_accounting_ci
-          POSTGRES_USER: auto_accounting_ci
+          POSTGRES_DB: bks_ci
+          POSTGRES_USER: bks_ci
           POSTGRES_PASSWORD: ci-only-password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U auto_accounting_ci -d auto_accounting_ci"
+          --health-cmd "pg_isready -U bks_ci -d bks_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      AUTO_ACCOUNTING_POSTGRES_TEST_URL: jdbc:postgresql://127.0.0.1:5432/auto_accounting_ci
-      AUTO_ACCOUNTING_POSTGRES_TEST_USER: auto_accounting_ci
-      AUTO_ACCOUNTING_POSTGRES_TEST_PASSWORD: ci-only-password
+      BKS_POSTGRES_TEST_URL: jdbc:postgresql://127.0.0.1:5432/bks_ci
+      BKS_POSTGRES_TEST_USER: bks_ci
+      BKS_POSTGRES_TEST_PASSWORD: ci-only-password
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

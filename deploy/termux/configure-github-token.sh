@@ -11,9 +11,9 @@ read -r -s -p "Fine-grained GitHub token (Contents: read): " github_token
 printf '\n'
 [[ ${#github_token} -ge 20 && "$github_token" =~ ^[A-Za-z0-9_]+$ ]] ||
     die "GitHub token has an unexpected format."
-mkdir -p "$AA_CONFIG_ROOT"
+mkdir -p "$BKS_CONFIG_ROOT"
 umask 077
-temporary_config="$AA_CONFIG_ROOT/github.curl.conf.tmp"
+temporary_config="$BKS_CONFIG_ROOT/github.curl.conf.tmp"
 cleanup() {
     rm -f -- "$temporary_config"
 }
@@ -26,9 +26,9 @@ unset github_token
 curl --config "$temporary_config" \
     --fail --silent --show-error --location \
     --header "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/$AA_REPOSITORY" >/dev/null
-mv "$temporary_config" "$AA_GITHUB_CURL_CONFIG"
-chmod 600 "$AA_GITHUB_CURL_CONFIG"
+    "https://api.github.com/repos/$BKS_REPOSITORY" >/dev/null
+mv "$temporary_config" "$BKS_GITHUB_CURL_CONFIG"
+chmod 600 "$BKS_GITHUB_CURL_CONFIG"
 log "GitHub release access verified."
-rm -f "$PREFIX/var/service/auto-accounting-release-watcher/down"
-sv up auto-accounting-release-watcher
+rm -f "$PREFIX/var/service/bks-release-watcher/down"
+sv up bks-release-watcher

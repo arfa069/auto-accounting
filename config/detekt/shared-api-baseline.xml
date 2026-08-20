@@ -8,6 +8,6 @@
     <ID>TooManyFunctions:AccountContracts.kt$AccountApiJsonContracts</ID>
     <ID>TooManyFunctions:CloudAiContracts.kt$ApiJsonContracts</ID>
     <ID>TooManyFunctions:LedgerSyncContracts.kt$LedgerSyncJsonContracts</ID>
-    <ID>TooManyFunctions:LedgerSyncContracts.kt$com.autoaccounting.api.LedgerSyncContracts.kt</ID>
+    <ID>TooManyFunctions:LedgerSyncContracts.kt$com.bks.api.LedgerSyncContracts.kt</ID>
   </CurrentIssues>
 </SmellBaseline>

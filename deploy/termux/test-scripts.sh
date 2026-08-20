@@ -13,17 +13,17 @@ cleanup() {
     rm -rf -- "$test_root"
 }
 trap cleanup EXIT
-export AUTO_ACCOUNTING_CONFIG_ROOT="$test_root/config"
-export AUTO_ACCOUNTING_DATA_ROOT="$test_root/data"
-export AUTO_ACCOUNTING_STATE_ROOT="$test_root/state"
+export BKS_CONFIG_ROOT="$test_root/config"
+export BKS_DATA_ROOT="$test_root/data"
+export BKS_STATE_ROOT="$test_root/state"
 # shellcheck source=deploy/termux/lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-mkdir -p "$AA_CONFIG_ROOT" "$AA_RELEASES_ROOT/v0.1.0" "$AA_STATE_ROOT"
+mkdir -p "$BKS_CONFIG_ROOT" "$BKS_RELEASES_ROOT/v0.1.0" "$BKS_STATE_ROOT"
 printf '%s\n' \
-    'AUTO_ACCOUNTING_DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/test' \
-    'AUTO_ACCOUNTING_DATABASE_USER=test-user' \
-    'export AUTO_ACCOUNTING_DATABASE_PASSWORD="test password"' > "$AA_BACKEND_ENV"
+    'BKS_DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/test' \
+    'BKS_DATABASE_USER=test-user' \
+    'export BKS_DATABASE_PASSWORD="test password"' > "$BKS_BACKEND_ENV"
 
 validate_release_tag v0.1.0
 if (validate_release_tag invalid-tag >/dev/null 2>&1); then
@@ -39,15 +39,15 @@ if is_newer_release v0.1.9 v0.2.0; then
     printf 'An older release was treated as newer.\n' >&2
     exit 1
 fi
-[[ "$(env_value AUTO_ACCOUNTING_DATABASE_USER "$AA_BACKEND_ENV")" == "test-user" ]]
-[[ "$(env_value AUTO_ACCOUNTING_DATABASE_PASSWORD "$AA_BACKEND_ENV")" == "test password" ]]
-atomic_current_link "$AA_RELEASES_ROOT/v0.1.0"
+[[ "$(env_value BKS_DATABASE_USER "$BKS_BACKEND_ENV")" == "test-user" ]]
+[[ "$(env_value BKS_DATABASE_PASSWORD "$BKS_BACKEND_ENV")" == "test password" ]]
+atomic_current_link "$BKS_RELEASES_ROOT/v0.1.0"
 case "$(uname -s)" in
-    MINGW*|MSYS*) [[ -e "$AA_CURRENT_LINK" ]] ;;
-    *) [[ "$(readlink -f "$AA_CURRENT_LINK")" == "$AA_RELEASES_ROOT/v0.1.0" ]] ;;
+    MINGW*|MSYS*) [[ -e "$BKS_CURRENT_LINK" ]] ;;
+    *) [[ "$(readlink -f "$BKS_CURRENT_LINK")" == "$BKS_RELEASES_ROOT/v0.1.0" ]] ;;
 esac
 
-readonly_stale_release="$AA_RELEASES_ROOT/v0.1.1"
+readonly_stale_release="$BKS_RELEASES_ROOT/v0.1.1"
 mkdir -p "$readonly_stale_release/lib"
 printf 'stale release\n' > "$readonly_stale_release/lib/marker"
 chmod -R a-w "$readonly_stale_release"
@@ -60,11 +60,11 @@ fi
 case "$(uname -s)" in
     MINGW*|MSYS*) ;;
     *)
-        if (safe_remove_release "$AA_RELEASES_ROOT/v0.1.0" >/dev/null 2>&1); then
+        if (safe_remove_release "$BKS_RELEASES_ROOT/v0.1.0" >/dev/null 2>&1); then
             printf 'The current release was removed.\n' >&2
             exit 1
         fi
-        [[ -d "$AA_RELEASES_ROOT/v0.1.0" ]]
+        [[ -d "$BKS_RELEASES_ROOT/v0.1.0" ]]
         ;;
 esac
 
@@ -85,29 +85,29 @@ if grep -Fxq -- "--config" "$fake_curl_args"; then
     printf 'Anonymous GitHub request unexpectedly required a curl config.\n' >&2
     exit 1
 fi
-printf '%s\n' 'header = "Authorization: Bearer test-token"' > "$AA_GITHUB_CURL_CONFIG"
+printf '%s\n' 'header = "Authorization: Bearer test-token"' > "$BKS_GITHUB_CURL_CONFIG"
 github_asset "https://api.github.com/repos/example/releases/assets/1" >/dev/null
 grep -Fxq -- "--config" "$fake_curl_args"
-grep -Fxq -- "$AA_GITHUB_CURL_CONFIG" "$fake_curl_args"
+grep -Fxq -- "$BKS_GITHUB_CURL_CONFIG" "$fake_curl_args"
 
 deploy_fixture="$test_root/deploy-fixture"
 mkdir -p "$deploy_fixture/archive/backend-v9.9.9/bin"
 printf '#!/usr/bin/env sh\nexit 0\n' \
     > "$deploy_fixture/archive/backend-v9.9.9/bin/backend"
 chmod +x "$deploy_fixture/archive/backend-v9.9.9/bin/backend"
-tar -czf "$deploy_fixture/auto-accounting-backend-v9.9.9.tar.gz" \
+tar -czf "$deploy_fixture/bks-backend-v9.9.9.tar.gz" \
     -C "$deploy_fixture/archive" backend-v9.9.9
 cat > "$deploy_fixture/release-manifest.json" <<'EOF'
 {
   "tag": "v9.9.9",
   "commit": "0123456789abcdef0123456789abcdef01234567",
-  "backendAsset": "auto-accounting-backend-v9.9.9.tar.gz",
+  "backendAsset": "bks-backend-v9.9.9.tar.gz",
   "javaMajor": 17,
   "internalHttpPrerelease": true
 }
 EOF
 backend_checksum="$(
-    sha256sum "$deploy_fixture/auto-accounting-backend-v9.9.9.tar.gz" |
+    sha256sum "$deploy_fixture/bks-backend-v9.9.9.tar.gz" |
         awk '{ print $1 }'
 )"
 manifest_checksum="$(
@@ -115,11 +115,11 @@ manifest_checksum="$(
         awk '{ print $1 }'
 )"
 printf '%s  %s\n%s  %s\n' \
-    "$backend_checksum" auto-accounting-backend-v9.9.9.tar.gz \
+    "$backend_checksum" bks-backend-v9.9.9.tar.gz \
     "$manifest_checksum" release-manifest.json \
     > "$deploy_fixture/checksums-valid.sha256"
 printf '%064d  %s\n%s  %s\n' \
-    0 auto-accounting-backend-v9.9.9.tar.gz \
+    0 bks-backend-v9.9.9.tar.gz \
     "$manifest_checksum" release-manifest.json \
     > "$deploy_fixture/checksums-invalid.sha256"
 cat > "$deploy_fixture/releases.json" <<'EOF'
@@ -131,7 +131,7 @@ cat > "$deploy_fixture/releases.json" <<'EOF'
     "published_at": "2099-01-01T00:00:00Z",
     "assets": [
       {
-        "name": "auto-accounting-backend-v9.9.9.tar.gz",
+        "name": "bks-backend-v9.9.9.tar.gz",
         "url": "https://example.invalid/backend"
       },
       {
@@ -217,7 +217,7 @@ EOF
 chmod +x "$fake_bin/curl" "$fake_bin/pg_dump" "$fake_bin/psql" "$fake_bin/sv"
 
 export FAKE_RELEASES_JSON="$deploy_fixture/releases.json"
-export FAKE_BACKEND_ASSET="$deploy_fixture/auto-accounting-backend-v9.9.9.tar.gz"
+export FAKE_BACKEND_ASSET="$deploy_fixture/bks-backend-v9.9.9.tar.gz"
 export FAKE_MANIFEST_ASSET="$deploy_fixture/release-manifest.json"
 export PATH="$fake_bin:$original_path"
 
@@ -225,17 +225,17 @@ write_test_environment() {
     local root="$1"
     mkdir -p "$root/config"
     printf '%s\n' \
-        'AUTO_ACCOUNTING_DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/test' \
-        'AUTO_ACCOUNTING_DATABASE_USER=test-user' \
-        'AUTO_ACCOUNTING_DATABASE_PASSWORD=test-password' \
+        'BKS_DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/test' \
+        'BKS_DATABASE_USER=test-user' \
+        'BKS_DATABASE_PASSWORD=test-password' \
         > "$root/config/backend.env"
 }
 
 invalid_checksum_root="$test_root/invalid-checksum"
 write_test_environment "$invalid_checksum_root"
-export AUTO_ACCOUNTING_CONFIG_ROOT="$invalid_checksum_root/config"
-export AUTO_ACCOUNTING_DATA_ROOT="$invalid_checksum_root/data"
-export AUTO_ACCOUNTING_STATE_ROOT="$invalid_checksum_root/state"
+export BKS_CONFIG_ROOT="$invalid_checksum_root/config"
+export BKS_DATA_ROOT="$invalid_checksum_root/data"
+export BKS_STATE_ROOT="$invalid_checksum_root/state"
 export FAKE_CHECKSUM_ASSET="$deploy_fixture/checksums-invalid.sha256"
 if bash "$SCRIPT_DIR/deploy-release.sh" \
     > "$invalid_checksum_root/output.log" 2>&1; then
@@ -263,10 +263,10 @@ case "$(uname -s)" in
         ln -s "$failed_health_root/data/releases/v0.1.0" \
             "$failed_health_root/data/current"
         printf 'v0.1.0\n' > "$failed_health_root/state/deployed-version"
-        export AUTO_ACCOUNTING_CONFIG_ROOT="$failed_health_root/config"
-        export AUTO_ACCOUNTING_DATA_ROOT="$failed_health_root/data"
-        export AUTO_ACCOUNTING_STATE_ROOT="$failed_health_root/state"
-        export AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS=1
+        export BKS_CONFIG_ROOT="$failed_health_root/config"
+        export BKS_DATA_ROOT="$failed_health_root/data"
+        export BKS_STATE_ROOT="$failed_health_root/state"
+        export BKS_HEALTH_TIMEOUT_SECONDS=1
         export FAKE_CHECKSUM_ASSET="$deploy_fixture/checksums-valid.sha256"
         export FAKE_SV_EVENTS="$failed_health_root/sv-events"
         if bash "$SCRIPT_DIR/deploy-release.sh" \
@@ -289,8 +289,8 @@ case "$(uname -s)" in
         find "$failed_health_root/state/backups" \
             -type f -name '*.dump' -print -quit |
             grep -q .
-        if [[ "$(sed -n 1p "$FAKE_SV_EVENTS")" != "status auto-accounting-backend" ]] ||
-            [[ "$(sed -n 2p "$FAKE_SV_EVENTS")" != "restart auto-accounting-backend" ]]; then
+        if [[ "$(sed -n 1p "$FAKE_SV_EVENTS")" != "status bks-backend" ]] ||
+            [[ "$(sed -n 2p "$FAKE_SV_EVENTS")" != "restart bks-backend" ]]; then
             printf 'Deployment did not verify then restart the backend after switching releases.\n' >&2
             exit 1
         fi
@@ -305,9 +305,9 @@ mkdir -p \
     "$boot_test_root/prefix/etc/profile.d" \
     "$boot_test_root/prefix/var/lib/postgresql"
 for service_name in \
-    auto-accounting-nginx \
-    auto-accounting-backend \
-    auto-accounting-release-watcher; do
+    bks-nginx \
+    bks-backend \
+    bks-release-watcher; do
     mkdir -p "$boot_test_root/prefix/var/service/$service_name"
 done
 cat > "$boot_test_root/bin/termux-wake-lock" <<'EOF'
@@ -340,13 +340,13 @@ HOME="$boot_test_root/home" \
     BOOT_TEST_EVENTS="$boot_test_root/events" \
     BOOT_TEST_DB_READY="$boot_test_root/database-ready" \
     PATH="$boot_test_root/bin:$original_path" \
-    sh "$SCRIPT_DIR/start-auto-accounting-boot.sh"
+    sh "$SCRIPT_DIR/start-bks-boot.sh"
 grep -Fxq 'wake-lock' "$boot_test_root/events"
 grep -Fxq 'start-services' "$boot_test_root/events"
 for service_name in \
-    auto-accounting-nginx \
-    auto-accounting-backend \
-    auto-accounting-release-watcher; do
+    bks-nginx \
+    bks-backend \
+    bks-release-watcher; do
     grep -Fxq \
         "sv up $boot_test_root/prefix/var/service/$service_name" \
         "$boot_test_root/events"
@@ -366,7 +366,7 @@ HOME="$boot_test_root/home" \
     BOOT_TEST_EVENTS="$boot_test_root/events-database-start" \
     BOOT_TEST_DB_READY="$boot_test_root/database-ready" \
     PATH="$boot_test_root/bin:$original_path" \
-    sh "$SCRIPT_DIR/start-auto-accounting-boot.sh"
+    sh "$SCRIPT_DIR/start-bks-boot.sh"
 grep -Fxq 'pg_ctl start' "$boot_test_root/events-database-start"
 if grep -q 'sv .*postgres' "$boot_test_root/events-database-start"; then
     printf 'Boot script enabled PostgreSQL through runit.\n' >&2

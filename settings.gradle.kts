@@ -17,7 +17,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "auto-accounting"
+rootProject.name = "bks"
 
 include(":apps:android")
 include(":benchmarks:macrobenchmark")

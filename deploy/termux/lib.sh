@@ -2,21 +2,21 @@
 
 set -Eeuo pipefail
 
-AA_CONFIG_ROOT="${AUTO_ACCOUNTING_CONFIG_ROOT:-$HOME/.config/auto-accounting}"
-AA_DATA_ROOT="${AUTO_ACCOUNTING_DATA_ROOT:-$HOME/.local/share/auto-accounting}"
-AA_STATE_ROOT="${AUTO_ACCOUNTING_STATE_ROOT:-$HOME/.local/state/auto-accounting}"
-AA_RELEASES_ROOT="$AA_DATA_ROOT/releases"
-AA_CURRENT_LINK="$AA_DATA_ROOT/current"
-AA_BACKEND_ENV="$AA_CONFIG_ROOT/backend.env"
-AA_GITHUB_CURL_CONFIG="$AA_CONFIG_ROOT/github.curl.conf"
+BKS_CONFIG_ROOT="${BKS_CONFIG_ROOT:-$HOME/.config/bks}"
+BKS_DATA_ROOT="${BKS_DATA_ROOT:-$HOME/.local/share/bks}"
+BKS_STATE_ROOT="${BKS_STATE_ROOT:-$HOME/.local/state/bks}"
+BKS_RELEASES_ROOT="$BKS_DATA_ROOT/releases"
+BKS_CURRENT_LINK="$BKS_DATA_ROOT/current"
+BKS_BACKEND_ENV="$BKS_CONFIG_ROOT/backend.env"
+BKS_GITHUB_CURL_CONFIG="$BKS_CONFIG_ROOT/github.curl.conf"
 # Consumed by scripts that source this shared library.
 # shellcheck disable=SC2034
-AA_DEPLOYED_VERSION="$AA_STATE_ROOT/deployed-version"
+BKS_DEPLOYED_VERSION="$BKS_STATE_ROOT/deployed-version"
 # shellcheck disable=SC2034
-AA_BACKUPS_ROOT="$AA_STATE_ROOT/backups"
-AA_SERVICE_NAME="auto-accounting-backend"
+BKS_BACKUPS_ROOT="$BKS_STATE_ROOT/backups"
+BKS_SERVICE_NAME="bks-backend"
 # shellcheck disable=SC2034
-AA_REPOSITORY="${AUTO_ACCOUNTING_GITHUB_REPOSITORY:-arfa069/auto-accounting}"
+BKS_REPOSITORY="${BKS_GITHUB_REPOSITORY:-arfa069/bks}"
 if [[ -n "${PREFIX:-}" ]]; then
     export SVDIR="${SVDIR:-$PREFIX/var/service}"
 fi
@@ -99,21 +99,21 @@ env_value() {
 }
 
 load_database_config() {
-    AA_DATABASE_URL="$(env_value AUTO_ACCOUNTING_DATABASE_URL "$AA_BACKEND_ENV")" ||
-        die "AUTO_ACCOUNTING_DATABASE_URL is missing."
-    AA_DATABASE_USER="$(env_value AUTO_ACCOUNTING_DATABASE_USER "$AA_BACKEND_ENV")" ||
-        die "AUTO_ACCOUNTING_DATABASE_USER is missing."
-    AA_DATABASE_PASSWORD="$(env_value AUTO_ACCOUNTING_DATABASE_PASSWORD "$AA_BACKEND_ENV")" ||
-        die "AUTO_ACCOUNTING_DATABASE_PASSWORD is missing."
-    [[ "$AA_DATABASE_URL" == jdbc:postgresql://* ]] ||
-        die "AUTO_ACCOUNTING_DATABASE_URL must use PostgreSQL."
-    export AA_DATABASE_URL AA_DATABASE_USER AA_DATABASE_PASSWORD
+    BKS_DATABASE_URL="$(env_value BKS_DATABASE_URL "$BKS_BACKEND_ENV")" ||
+        die "BKS_DATABASE_URL is missing."
+    BKS_DATABASE_USER="$(env_value BKS_DATABASE_USER "$BKS_BACKEND_ENV")" ||
+        die "BKS_DATABASE_USER is missing."
+    BKS_DATABASE_PASSWORD="$(env_value BKS_DATABASE_PASSWORD "$BKS_BACKEND_ENV")" ||
+        die "BKS_DATABASE_PASSWORD is missing."
+    [[ "$BKS_DATABASE_URL" == jdbc:postgresql://* ]] ||
+        die "BKS_DATABASE_URL must use PostgreSQL."
+    export BKS_DATABASE_URL BKS_DATABASE_USER BKS_DATABASE_PASSWORD
 }
 
 github_api() {
     local config_args=()
-    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
-        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    if [[ -f "$BKS_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$BKS_GITHUB_CURL_CONFIG")
     fi
     curl "${config_args[@]}" \
         --fail --silent --show-error --location \
@@ -124,8 +124,8 @@ github_api() {
 
 github_asset() {
     local config_args=()
-    if [[ -f "$AA_GITHUB_CURL_CONFIG" ]]; then
-        config_args=(--config "$AA_GITHUB_CURL_CONFIG")
+    if [[ -f "$BKS_GITHUB_CURL_CONFIG" ]]; then
+        config_args=(--config "$BKS_GITHUB_CURL_CONFIG")
     fi
     curl "${config_args[@]}" \
         --fail --silent --show-error --location \
@@ -136,17 +136,17 @@ github_asset() {
 
 atomic_current_link() {
     local target="$1"
-    local next_link="$AA_DATA_ROOT/.current.next"
-    [[ "$target" == "$AA_RELEASES_ROOT"/v* ]] || die "Refusing unsafe release target."
+    local next_link="$BKS_DATA_ROOT/.current.next"
+    [[ "$target" == "$BKS_RELEASES_ROOT"/v* ]] || die "Refusing unsafe release target."
     rm -f -- "$next_link"
     ln -s "$target" "$next_link"
-    mv -fT "$next_link" "$AA_CURRENT_LINK"
+    mv -fT "$next_link" "$BKS_CURRENT_LINK"
 }
 
 safe_remove_release() {
     local target="$1"
-    [[ "$target" == "$AA_RELEASES_ROOT"/v* ]] || die "Refusing unsafe release removal."
-    [[ "$target" != "$(readlink -f "$AA_CURRENT_LINK" 2>/dev/null || true)" ]] ||
+    [[ "$target" == "$BKS_RELEASES_ROOT"/v* ]] || die "Refusing unsafe release removal."
+    [[ "$target" != "$(readlink -f "$BKS_CURRENT_LINK" 2>/dev/null || true)" ]] ||
         die "Refusing to remove the current release."
     if [[ -d "$target" && ! -L "$target" ]]; then
         chmod -R u+w -- "$target"
@@ -156,21 +156,21 @@ safe_remove_release() {
 
 database_check() {
     load_database_config
-    PGPASSWORD="$AA_DATABASE_PASSWORD" psql \
+    PGPASSWORD="$BKS_DATABASE_PASSWORD" psql \
         --no-password \
-        --username="$AA_DATABASE_USER" \
-        --dbname="${AA_DATABASE_URL#jdbc:}" \
+        --username="$BKS_DATABASE_USER" \
+        --dbname="${BKS_DATABASE_URL#jdbc:}" \
         --tuples-only --no-align \
         --command="SELECT 1" | grep -qx "1"
 }
 
 application_health_check() {
-    local timeout_seconds="${AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS:-60}"
+    local timeout_seconds="${BKS_HEALTH_TIMEOUT_SECONDS:-60}"
     [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] ||
-        die "AUTO_ACCOUNTING_HEALTH_TIMEOUT_SECONDS must be a positive integer."
+        die "BKS_HEALTH_TIMEOUT_SECONDS must be a positive integer."
     local deadline=$((SECONDS + timeout_seconds))
     while (( SECONDS < deadline )); do
-        if sv status "$AA_SERVICE_NAME" 2>/dev/null | grep -q "^run:" &&
+        if sv status "$BKS_SERVICE_NAME" 2>/dev/null | grep -q "^run:" &&
             database_check &&
             [[ "$(curl --fail --silent --show-error http://127.0.0.1:18080/health 2>/dev/null)" == '{"status":"ok"}' ]] &&
             [[ "$(curl --fail --silent --show-error http://127.0.0.1:8080/health 2>/dev/null)" == '{"status":"ok"}' ]]; then
