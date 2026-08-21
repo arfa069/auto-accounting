@@ -1,7 +1,6 @@
 package com.bks.feature.billsync
 
 import com.bks.data.local.ConfidenceState
-import com.bks.feature.review.ReviewQueueEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -34,18 +33,15 @@ class BillSyncPipelineTest {
     }
 
     @Test
-    fun duplicateCandidateMergesThroughExistingPipeline() {
+    fun repeatedCandidateCreatesANewPendingEntry() {
         val first = sync("支付成功\n¥35.90\n商户：社区便利店\n交易时间 2026-08-21 09:12")
             .createdEntries.single()
         val second = pipeline.sync(
             pageText = "支付成功\n¥35.90\n商户：社区便利店\n交易时间 2026-08-21 09:12",
-            existingPendingEntries = listOf(first),
-            capturedAtEpochMillis = NOW
-        )
+            capturedAtEpochMillis = NOW + 31_000
+        ).createdEntries.single()
 
-        assertTrue(second.createdEntries.isEmpty())
-        assertEquals(1, second.mergedEntries.size)
-        assertEquals(1, second.duplicateSkippedCount)
+        assertTrue(first.id != second.id)
     }
 
     @Test
@@ -58,7 +54,6 @@ class BillSyncPipelineTest {
 
     private fun sync(pageText: String): BillSyncResult = pipeline.sync(
         pageText = pageText,
-        existingPendingEntries = emptyList<ReviewQueueEntry>(),
         capturedAtEpochMillis = NOW
     )
 

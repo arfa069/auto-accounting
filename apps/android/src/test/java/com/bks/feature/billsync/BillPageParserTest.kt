@@ -32,10 +32,14 @@ class BillPageParserTest {
     }
 
     @Test
+    fun usesFirstAmountWhenPageShowsDifferentAmounts() {
+        assertEquals(880L, parse("支付成功\n¥8.80\n¥9.90\n订单 1").single().amountMinor)
+    }
+
+    @Test
     fun rejectsMissingOrAmbiguousRequiredEvidence() {
         listOf(
             "支付成功\n订单 1",
-            "支付成功\n¥8.80\n¥9.90\n订单 1",
             "交易成功\n¥8.80\n订单 1",
             "支付成功\n¥8.80",
             "支付成功\n收款成功\n¥8.80\n订单 1"

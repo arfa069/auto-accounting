@@ -189,11 +189,6 @@ class ReviewQueuePersistenceTest {
         assertEquals("pending-lunch", ledgerEntry.originPendingEntryId)
         assertEquals("food", ledgerEntry.categoryId)
         assertEquals(fundingAccount.id, ledgerEntry.fundingAccountId)
-        assertEquals(
-            fundingAccount.id,
-            persistence.ledgerEntriesForDedupe().single().fundingAccountId
-        )
-
         val undone = reduceReviewQueue(confirmed, ReviewQueueAction.UndoLastAction)
         persistence.persistTransition(confirmed, undone)
 
@@ -300,9 +295,8 @@ class ReviewQueuePersistenceTest {
             nowEpochMillis = NOW,
             todayStartEpochMillis = NOW - 1
         )
-        val next = reduceReviewQueue(
-            previous,
-            ReviewQueueAction.AddPending(
+        val next = previous.copy(
+            pendingEntries = listOf(
                 ReviewQueueEntry(
                     id = "pending-custom-category",
                     title = "Coffee Shop",

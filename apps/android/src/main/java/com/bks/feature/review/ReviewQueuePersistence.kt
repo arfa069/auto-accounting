@@ -11,8 +11,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val DEDUPE_WINDOW_MILLIS = 10 * 60_000L
-
 class ReviewQueuePersistence(
     private val repository: LocalLedgerRepository,
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
@@ -37,15 +35,6 @@ class ReviewQueuePersistence(
             )
         }
     }
-
-    suspend fun ledgerEntriesForDedupe(): List<ReviewQueueEntry> =
-        repository.listLedgerEntries().map { it.toReviewEntryForDedupe(zoneId) }
-
-    suspend fun ledgerEntriesForDedupe(transactionEpochMillis: Long): List<ReviewQueueEntry> =
-        repository.listLedgerEntriesBetween(
-            startEpochMillis = transactionEpochMillis - DEDUPE_WINDOW_MILLIS,
-            endEpochMillis = transactionEpochMillis + DEDUPE_WINDOW_MILLIS
-        ).map { it.toReviewEntryForDedupe(zoneId) }
 
     suspend fun ensureSystemCategories() {
         repository.seedSystemCategories()

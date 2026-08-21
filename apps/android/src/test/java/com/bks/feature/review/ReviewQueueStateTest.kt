@@ -240,53 +240,6 @@ class ReviewQueueStateTest {
     }
 
     @Test
-    fun addPendingAutoMergesHighConfidenceDuplicateEvidence() {
-        val state = ReviewQueueState(pendingEntries = listOf(sampleEntry()))
-        val billSyncDuplicate = sampleEntry(
-            id = "bill-lunch",
-            confidence = ConfidenceState.HIGH
-        ).copy(
-            captureReasonLabel = "账单同步",
-            rawEvidenceText = "微信账单 午餐 支出 35.90",
-            parsedFields = listOf("来源=微信", "商户=午餐", "金额=35.90", "类型=支出")
-        )
-
-        val next = reduceReviewQueue(state, ReviewQueueAction.AddPending(billSyncDuplicate))
-
-        assertEquals(1, next.pendingEntries.size)
-        val merged = next.pendingEntries.single()
-        assertEquals("pending-lunch", merged.id)
-        assertEquals("重复合并", merged.captureReasonLabel)
-        assertEquals(ConfidenceState.HIGH, merged.confidence)
-        assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
-        assertTrue(merged.rawEvidenceText.contains("微信账单"))
-    }
-
-    @Test
-    fun addPendingNoOpsForSameEntryAndReplacesChangedEntry() {
-        val entry = sampleEntry()
-        val state = ReviewQueueState(pendingEntries = listOf(entry))
-
-        assertSame(
-            state,
-            reduceReviewQueue(state, ReviewQueueAction.AddPending(entry))
-        )
-
-        val withUndo = reduceReviewQueue(
-            ReviewQueueState(
-                pendingEntries = listOf(entry, sampleEntry(id = "pending-other"))
-            ),
-            ReviewQueueAction.Ignore("pending-other")
-        )
-        val replacement = entry.copy(title = "工作餐")
-
-        val next = reduceReviewQueue(withUndo, ReviewQueueAction.AddPending(replacement))
-
-        assertEquals(listOf(replacement), next.pendingEntries)
-        assertNull(next.lastAction)
-    }
-
-    @Test
     fun missingActionTargetsLeaveStateUntouched() {
         val state = ReviewQueueState(
             pendingEntries = listOf(sampleEntry()),

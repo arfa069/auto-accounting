@@ -8,9 +8,7 @@ import java.util.Locale
 
 data class BillSyncResult(
     val recognized: Boolean,
-    val createdEntries: List<ReviewQueueEntry>,
-    val mergedEntries: List<ReviewQueueEntry> = emptyList(),
-    val duplicateSkippedCount: Int = 0
+    val createdEntries: List<ReviewQueueEntry>
 )
 
 class BillSyncPipeline(
@@ -19,9 +17,6 @@ class BillSyncPipeline(
 ) {
     fun sync(
         pageText: String,
-        existingPendingEntries: List<ReviewQueueEntry>,
-        existingLedgerEntries: List<ReviewQueueEntry> = emptyList(),
-        existingIgnoredEntries: List<ReviewQueueEntry> = emptyList(),
         capturedAtEpochMillis: Long
     ): BillSyncResult {
         val parsedEntries = parser.parse(pageText, captureTimeFormatter(capturedAtEpochMillis))
@@ -29,25 +24,15 @@ class BillSyncPipeline(
             return BillSyncResult(recognized = false, createdEntries = emptyList())
         }
 
-        val deduplication = BillSyncDeduplication(
-            existingPendingEntries = existingPendingEntries,
-            existingLedgerEntries = existingLedgerEntries,
-            existingIgnoredEntries = existingIgnoredEntries
-        )
-        parsedEntries.map { it.toPendingEntry(capturedAtEpochMillis) }
-            .forEach(deduplication::addCandidate)
-        val result = deduplication.result()
         return BillSyncResult(
             recognized = true,
-            createdEntries = result.createdEntries,
-            mergedEntries = result.mergedEntries,
-            duplicateSkippedCount = result.duplicateSkippedCount
+            createdEntries = parsedEntries.map { it.toPendingEntry(capturedAtEpochMillis) }
         )
     }
 
     private fun ParsedBillEntry.toPendingEntry(capturedAtEpochMillis: Long): ReviewQueueEntry =
         ReviewQueueEntry(
-            id = stableId(),
+            id = stableId(capturedAtEpochMillis),
             title = merchantTitle,
             amountMinor = amountMinor,
             transactionTimeText = transactionTimeText,
@@ -64,8 +49,8 @@ class BillSyncPipeline(
             parsedFields = parsedFields
         )
 
-    private fun ParsedBillEntry.stableId(): String =
-        "bill-${transactionTimeText}-${amountMinor}-${transactionKindLabel}-${merchantTitle}".hashCode()
+    private fun ParsedBillEntry.stableId(capturedAtEpochMillis: Long): String =
+        "bill-$capturedAtEpochMillis-$transactionTimeText-$amountMinor-$transactionKindLabel-$merchantTitle".hashCode()
             .let { "bill-$it" }
 }
 

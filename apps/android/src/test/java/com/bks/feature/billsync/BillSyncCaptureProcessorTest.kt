@@ -82,6 +82,24 @@ class BillSyncCaptureProcessorTest {
         assertEquals(pending.id, ledger.originPendingEntryId)
     }
 
+    @Test
+    fun repeatedCapturePersistsSeparatePendingEntries() = runBlocking {
+        var now = NOW
+        val repeatedProcessor = BillSyncCaptureProcessor(
+            pipeline = BillSyncPipeline(captureTimeFormatter = { "2026-08-21 10:00" }),
+            reviewQueuePersistence = persistence,
+            preferencesRepository = LocalPreferencesRepository(database),
+            clock = { now }
+        )
+        val page = "支付成功\n¥4.99\n交易方式\n花呗"
+
+        repeatedProcessor.process(page)
+        now += 31_000
+        repeatedProcessor.process(page)
+
+        assertEquals(2, database.pendingEntryDao().listPendingEntries().size)
+    }
+
     private companion object {
         const val NOW = 1_755_741_600_000L
     }

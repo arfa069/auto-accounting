@@ -5,7 +5,6 @@ import com.bks.data.local.ConfidenceState
 import com.bks.data.local.DefaultCategories
 import com.bks.data.local.IgnoreReason
 import com.bks.data.local.IgnoredEntryEntity
-import com.bks.data.local.LedgerEntryEntity
 import com.bks.data.local.PaymentSource
 import com.bks.data.local.PendingEntryEntity
 import com.bks.data.local.TransactionKind
@@ -36,22 +35,6 @@ internal fun PendingEntryEntity.toReviewEntry(zoneId: ZoneId): ReviewQueueEntry 
     rawEvidenceText = evidenceSummary.orEmpty(),
     parsedFields = parsedFieldsText.decodeParsedFields()
 )
-
-internal fun LedgerEntryEntity.toReviewEntryForDedupe(zoneId: ZoneId): ReviewQueueEntry =
-    ReviewQueueEntry(
-        id = id,
-        title = merchantTitle,
-        amountMinor = amountMinor,
-        transactionTimeText = formatReviewDateTime(transactionTimeEpochMillis, zoneId),
-        fundingAccountId = fundingAccountId,
-        sourceLabel = (paymentSource ?: originalCaptureSource)?.toLabel() ?: "未指定",
-        kindLabel = transactionKind.toLabel(),
-        captureReasonLabel = "已入账",
-        confidence = ConfidenceState.HIGH,
-        capturedAtEpochMillis = confirmedAtEpochMillis,
-        captureTimeText = formatReviewDateTime(confirmedAtEpochMillis, zoneId),
-        originPendingId = originPendingEntryId
-    )
 
 internal fun IgnoredEntryEntity.toReviewIgnoredEntry(zoneId: ZoneId): ReviewQueueIgnoredEntry =
     ReviewQueueIgnoredEntry(

@@ -1,7 +1,6 @@
 package com.bks.feature.review
 
 import com.bks.data.local.ConfidenceState
-import com.bks.feature.dedupe.DedupeEngine
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -134,7 +133,6 @@ data class ReviewQueueIgnoredEntry(
 }
 
 sealed interface ReviewQueueAction {
-    data class AddPending(val entry: ReviewQueueEntry) : ReviewQueueAction
     data class Confirm(val entryId: String) : ReviewQueueAction
     data class Ignore(val entryId: String) : ReviewQueueAction
     data object UndoLastAction : ReviewQueueAction
@@ -180,7 +178,6 @@ fun reduceReviewQueue(
     state: ReviewQueueState,
     action: ReviewQueueAction
 ): ReviewQueueState = when (action) {
-    is ReviewQueueAction.AddPending -> ReviewQueueTransitions.addPendingEntry(state, action.entry)
     is ReviewQueueAction.Confirm -> ReviewQueueTransitions.confirmPendingEntry(state, action.entryId)
     is ReviewQueueAction.Ignore -> ReviewQueueTransitions.ignorePendingEntry(state, action.entryId)
     ReviewQueueAction.UndoLastAction -> ReviewQueueTransitions.undoReviewQueueAction(state)
@@ -191,31 +188,6 @@ fun reduceReviewQueue(
 }
 
 private object ReviewQueueTransitions {
-    fun addPendingEntry(
-        state: ReviewQueueState,
-        entry: ReviewQueueEntry
-    ): ReviewQueueState {
-        val existingEntry = state.pendingEntries.firstOrNull { it.id == entry.id }
-        if (existingEntry != null) {
-            return if (existingEntry == entry) {
-                state
-            } else {
-                state.copy(
-                    pendingEntries = state.pendingEntries.map {
-                        if (it.id == entry.id) entry else it
-                    },
-                    lastAction = null
-                )
-            }
-        }
-
-        val dedupeResult = DedupeEngine().addCandidate(state.pendingEntries, entry)
-        return state.copy(
-            pendingEntries = dedupeResult.pendingEntries,
-            lastAction = null
-        )
-    }
-
     fun confirmPendingEntry(
         state: ReviewQueueState,
         entryId: String

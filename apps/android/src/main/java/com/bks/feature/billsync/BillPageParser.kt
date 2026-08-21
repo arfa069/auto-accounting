@@ -20,12 +20,12 @@ class BillPageParser {
         if (COMPLETED_STATUS.none(normalizedText::contains)) return emptyList()
 
         val direction = inferDirection(normalizedText) ?: return emptyList()
-        val amounts = AMOUNT_REGEX.findAll(normalizedText)
+        val amount = AMOUNT_REGEX.findAll(normalizedText)
             .mapNotNull { match -> match.groupValues.drop(1).firstOrNull(String::isNotBlank) }
             .mapNotNull(::parseAmountMinor)
-            .distinct()
-            .toList()
-        if (amounts.size != 1 || CONTEXT_LABELS.none(normalizedText::contains)) return emptyList()
+            .firstOrNull()
+            ?: return emptyList()
+        if (CONTEXT_LABELS.none(normalizedText::contains)) return emptyList()
 
         val merchant = extractMerchant(lines)
         val title = merchant ?: FALLBACK_MERCHANT_TITLE
@@ -39,13 +39,13 @@ class BillPageParser {
         return listOf(
             ParsedBillEntry(
                 merchantTitle = title,
-                amountMinor = amounts.single(),
+                amountMinor = amount,
                 transactionKindLabel = kind,
                 transactionTimeText = transactionTime,
                 parsedFields = listOf(
                     "来源=$GENERIC_PAYMENT_SOURCE_LABEL",
                     "商户=$title",
-                    "金额=${amountMinorToText(amounts.single())}",
+                    "金额=${amountMinorToText(amount)}",
                     "类型=$kind"
                 ),
                 merchantTitleFromFallback = merchant == null
