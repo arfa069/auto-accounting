@@ -186,6 +186,7 @@ internal fun formatLedgerEpoch(epochMillis: Long): String =
 internal fun PaymentSource?.labelOrNone(): String = when (this) {
     PaymentSource.WECHAT -> "微信"
     PaymentSource.ALIPAY -> "支付宝"
+    PaymentSource.OTHER -> "其他应用"
     null -> "未指定"
 }
 

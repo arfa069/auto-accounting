@@ -1,6 +1,6 @@
 # 自动记账项目文档索引 (bks Docs)
 
-> 当前产品基线已移除后台自动采集、通知监听和持续观察能力，仅保留手动录入与用户主动发起的账单补录。下方研究、ADR、Phase 2 计划和审计材料可能保留当时的旧能力描述，均按历史快照阅读，不代表当前实现。
+> 当前产品基线已移除微信/支付宝专用解析、通知监听、手动补录和 OCR，改为基于 Assists 的通用活动窗口识别。下方旧 ADR、Phase 2 Issue、研究和审计材料可能保留当时的能力描述，均按历史快照阅读，不代表当前实现。
 
 从这里开始阅读：
 
@@ -20,8 +20,9 @@
 - [诊断日志操作手册](./DIAGNOSTIC-LOGS.md)
 - [Android 性能审计与 Trace 分析](./performance-audit/)
 - [领域语言与术语表](../CONTEXT.md)
-- [微信与支付宝交易识别规则](./PAYMENT-RECOGNITION-RULES.md)
+- [通用交易识别规则](./PAYMENT-RECOGNITION-RULES.md)
 - [自动记账流程研究（2026-07-13 至 2026-07-17 历史快照）](./research/auto-bookkeeping-flow.md)
 - [架构决策记录 (ADR)](./adr/)
+- [ADR 0063：使用 Assists 通用识别取代平台专用采集](./adr/0063-replace-platform-capture-with-assists-generic-recognition.md)
 
 ADR 记录了文档对齐研讨过程中的关键技术与产品决策路径。PRD 及相关支撑文档描述了当前产品的基线；Phase 2 基线审计、切片规划、Issue 规划、研究和性能审计作为历史快照保留，当前实现以代码和现行 PRD/架构/UI/合规文档为准，跨 Issue 的外部阻断项汇总在根目录 `todos.md`。

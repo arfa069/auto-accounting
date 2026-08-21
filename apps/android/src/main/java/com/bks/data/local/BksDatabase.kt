@@ -39,7 +39,7 @@ abstract class BksDatabase : RoomDatabase() {
     abstract fun defaultFundingAccountCacheDao(): DefaultFundingAccountCacheDao
 
     companion object {
-        const val SCHEMA_VERSION = 11
+        const val SCHEMA_VERSION = 12
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -406,6 +406,15 @@ abstract class BksDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE local_settings")
                 db.execSQL("ALTER TABLE local_settings_new RENAME TO local_settings")
+            }
+        }
+
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE local_settings ADD COLUMN " +
+                        "automatic_bookkeeping_enabled INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
     }

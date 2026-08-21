@@ -218,7 +218,9 @@ data class LocalSettingsEntity(
         name = "active_ledger_id",
         defaultValue = "'default-ledger'"
     ) val activeLedgerId: String = DEFAULT_LEDGER_BOOK_ID,
-    @ColumnInfo(name = "default_funding_account_sync_id") val defaultFundingAccountSyncId: String? = null
+    @ColumnInfo(name = "default_funding_account_sync_id") val defaultFundingAccountSyncId: String? = null,
+    @ColumnInfo(name = "automatic_bookkeeping_enabled", defaultValue = "0")
+    val automaticBookkeepingEnabled: Boolean = false
 )
 
 @Entity(tableName = "default_funding_account_cache")

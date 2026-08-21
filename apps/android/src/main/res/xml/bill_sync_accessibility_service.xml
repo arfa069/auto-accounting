@@ -2,8 +2,6 @@
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFlags="flagIncludeNotImportantViews|flagReportViewIds|flagRetrieveInteractiveWindows"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:canTakeScreenshot="true"
     android:canRetrieveWindowContent="true"
     android:description="@string/bill_sync_accessibility_description"
-    android:packageNames="com.tencent.mm,com.eg.android.AlipayGphone"
     android:notificationTimeout="100" />

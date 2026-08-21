@@ -10,10 +10,12 @@ import com.bks.feature.diagnostics.DiagnosticSensitiveField
 import com.bks.feature.diagnostics.DiagnosticSensitivePayload
 import com.bks.feature.diagnostics.DiagnosticSource
 import com.bks.feature.diagnostics.toDiagnosticExceptionDetails
+import com.ven.assists.AssistsCore
 
 class BksApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        AssistsCore.init(this)
         installDiagnosticCrashHandler()
     }
 

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">阿喵记账</string>
-    <string name="bill_sync_accessibility_label">手动补录账单</string>
-    <string name="bill_sync_accessibility_description">仅在你主动补录时读取当前可见的微信或支付宝账单页面；不读取聊天或普通消息，不发起付款、转账或退款</string>
+    <string name="bill_sync_accessibility_label">自动记账</string>
+    <string name="bill_sync_accessibility_description">开启自动记账后，仅在本机读取其他应用当前活动窗口中可见、非输入框的文字，用于生成待确认交易；不会截图、操作其他应用、保存或上传原始页面文字</string>
 </resources>

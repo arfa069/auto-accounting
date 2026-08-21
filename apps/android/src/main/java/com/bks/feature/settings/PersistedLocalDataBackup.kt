@@ -41,8 +41,9 @@ class LocalDataBackupRepository(
                 ledgerEntries = database.ledgerEntryDao().listAllLedgerEntries(),
                 ignoredEntries = database.ignoredEntryDao().listAll(),
                 categorizationRules = database.categorizationRuleDao().listRules(),
-                settings = database.localSettingsDao().getById()
-                    ?: defaultBackupSettings(ledgerBooks.first().id),
+                settings = (database.localSettingsDao().getById()
+                    ?: defaultBackupSettings(ledgerBooks.first().id))
+                    .copy(automaticBookkeepingEnabled = false),
                 ledgerBooks = ledgerBooks
             )
         }
@@ -72,7 +73,9 @@ class LocalDataBackupRepository(
                 database.ledgerEntryDao().upsertAll(snapshot.ledgerEntries)
                 database.ignoredEntryDao().upsertAll(snapshot.ignoredEntries)
                 database.categorizationRuleDao().upsertAll(snapshot.categorizationRules)
-                database.localSettingsDao().upsert(requireNotNull(snapshot.settings))
+                database.localSettingsDao().upsert(
+                    requireNotNull(snapshot.settings).copy(automaticBookkeepingEnabled = false)
+                )
                 LocalSyncMutationRecorder(database, System::currentTimeMillis).reconcileAll()
             }
         }

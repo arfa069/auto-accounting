@@ -208,14 +208,14 @@ class AndroidDiagnosticLogRepositoryTest {
         metadata = DiagnosticEventMetadata(
             timestampEpochMillis = 1_000L,
             level = DiagnosticLevel.Info,
-            component = DiagnosticComponent.AccessibilityService,
-            event = "accessibility_event",
+            component = DiagnosticComponent.Application,
+            event = "application_event",
             traceId = "trace-$reason",
-            source = DiagnosticSource.WeChat,
+            source = DiagnosticSource.System,
             reason = reason
         ),
         sensitivePayload = DiagnosticSensitivePayload(
-            mapOf(DiagnosticSensitiveField.PageText to "payment page")
+            mapOf(DiagnosticSensitiveField.ExceptionDetails to "application context")
         )
     )
 }

@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">阿喵记账 Debug</string>
-    <string name="bill_sync_accessibility_label">手动补录账单 Debug</string>
+    <string name="bill_sync_accessibility_label">自动记账 Debug</string>
 </resources>

@@ -41,12 +41,4 @@ class BillSyncStateCoordinator(
         }
     }
 
-    fun launchBillSyncSource(source: BillSyncSource): Boolean {
-        val launchIntent = activity.packageManager.getLaunchIntentForPackage(source.packageName)
-            ?: return false
-        return runCatching {
-            activity.startActivity(launchIntent)
-            true
-        }.getOrDefault(false)
-    }
 }

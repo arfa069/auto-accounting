@@ -273,6 +273,7 @@ private fun LedgerUiEntry.isActiveCashFlow(): Boolean =
 private fun PaymentSource.toLabel(): String = when (this) {
     PaymentSource.WECHAT -> "微信"
     PaymentSource.ALIPAY -> "支付宝"
+    PaymentSource.OTHER -> "其他应用"
 }
 
 private fun TransactionKind.toLabel(): String = when (this) {

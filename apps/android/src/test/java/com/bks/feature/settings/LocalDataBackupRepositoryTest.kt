@@ -69,12 +69,18 @@ class LocalDataBackupRepositoryTest {
     @Test
     fun versionFiveBackupRoundTripRestoresAllLedgersReferencesAndUiState() = runBlocking {
         populateDatabase()
-        val expected = readSnapshot()
+        val expected = readSnapshot().let { snapshot ->
+            snapshot.copy(settings = requireNotNull(snapshot.settings).copy(automaticBookkeepingEnabled = false))
+        }
 
         val backup = backupRepository.exportEncryptedBackup(PASSPHRASE)
 
         assertTrue(backup.startsWith("AUTO_ACCOUNTING_BACKUP_V5:"))
         assertFalse(backup.contains("Coffee Shop"))
+        assertFalse(
+            requireNotNull(decryptPersistedLocalData(backup, PASSPHRASE).settings)
+                .automaticBookkeepingEnabled
+        )
 
         LocalLedgerRepository(database).clearLocalData()
         LocalPreferencesRepository(database).clearLocalData()
@@ -465,7 +471,8 @@ class LocalDataBackupRepositoryTest {
             LocalSettingsEntity(
                 aiConsentGranted = true,
                 enhancedContextGranted = true,
-                activeLedgerId = SECONDARY_LEDGER_BOOK_ID
+                activeLedgerId = SECONDARY_LEDGER_BOOK_ID,
+                automaticBookkeepingEnabled = true
             )
         )
     }

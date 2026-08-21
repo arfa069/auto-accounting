@@ -1,304 +1,140 @@
 package com.bks.feature.billsync
 
-import android.accessibilityservice.AccessibilityService
-import android.app.KeyguardManager
-import android.graphics.Bitmap
-import android.os.Build
-import android.os.PowerManager
-import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
-import androidx.annotation.RequiresApi
 import com.bks.data.local.BksDatabaseProvider
 import com.bks.data.local.LocalLedgerRepository
 import com.bks.data.local.LocalPreferencesRepository
-import com.bks.feature.diagnostics.DiagnosticComponent
-import com.bks.feature.diagnostics.DiagnosticLogs
-import com.bks.feature.diagnostics.DiagnosticSensitiveField
-import com.bks.feature.diagnostics.DiagnosticSensitivePayload
-import com.bks.feature.diagnostics.DiagnosticSource
-import com.bks.feature.diagnostics.newDiagnosticTraceId
 import com.bks.feature.review.ReviewQueuePersistence
+import com.ven.assists.AssistsCore
+import com.ven.assists.service.AssistsService
+import com.ven.assists.service.AssistsServiceListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
-class BillSyncAccessibilityService : AccessibilityService() {
+class BillSyncAccessibilityService : AssistsService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-
     private val database by lazy { BksDatabaseProvider.get(this) }
     private val preferencesRepository by lazy { LocalPreferencesRepository(database) }
     private val processor by lazy {
         BillSyncCaptureProcessor(
             pipeline = BillSyncPipeline(),
             reviewQueuePersistence = ReviewQueuePersistence(LocalLedgerRepository(database)),
-            preferencesRepository = preferencesRepository,
-            diagnosticRecorder = diagnostics
+            preferencesRepository = preferencesRepository
         )
     }
-    private val diagnostics by lazy { DiagnosticLogs.get(this) }
-    private val diagnosticRecorder by lazy { BillSyncDiagnosticRecorder(diagnostics) }
-    private val ocrRecognizerDelegate = lazy { PaymentScreenOcrRecognizer() }
-    private val ocrRecognizer by ocrRecognizerDelegate
-    private val powerManager by lazy { getSystemService(PowerManager::class.java) }
-    private val keyguardManager by lazy { getSystemService(KeyguardManager::class.java) }
-    private val captureHost by lazy {
-        object : AccessibilityCaptureHost {
-            override val currentRoot: AccessibilityNodeInfo?
-                get() = rootInActiveWindow
-
-            override fun isScreenReady(): Boolean =
-                isScreenReadyForWechatOcr(powerManager.isInteractive, keyguardManager.isKeyguardLocked)
-
-            override fun currentWechatWindowEvidence(
-                windowId: Int,
-                windowIdentity: WechatWindowIdentity?
-            ): WechatWindowEvidence =
-                this@BillSyncAccessibilityService.currentWechatWindowEvidence(windowId, windowIdentity)
-
-            override suspend fun captureScreenBitmap(windowId: Int, traceId: String?): Bitmap? =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    this@BillSyncAccessibilityService.captureScreenBitmapApi30(windowId, traceId)
-                } else {
-                    null
-                }
-
-            override suspend fun recognizeScreen(bitmap: Bitmap): String =
-                ocrRecognizer.recognize(bitmap)
+    private val recentCaptures = mutableMapOf<String, RecentCapture>()
+    private var pendingCapture: Job? = null
+    private val listener = object : AssistsServiceListener {
+        override fun onAccessibilityEvent(event: AccessibilityEvent) {
+            scheduleCapture(event)
         }
-    }
-    private val wechatOcrCoordinator by lazy {
-        WechatOcrCaptureCoordinator(
-            scope = serviceScope,
-            host = captureHost,
-            processor = { processor },
-            diagnostics = diagnosticRecorder
-        )
-    }
-    private val captureRouter by lazy {
-        AccessibilityCaptureRouter(onManualWechatOcr = wechatOcrCoordinator::captureManual)
+
+        override fun onUnbind() {
+            BillSyncServiceHealth.markServiceConnected(this@BillSyncAccessibilityService, false)
+        }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        AssistsService.listeners.remove(listener)
+        AssistsService.listeners.add(listener)
         BillSyncServiceHealth.markServiceConnected(this, true)
-        diagnosticRecorder.recordMetadata("service_connected", "connected", "service_connected")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val packageName = event?.packageName?.toString() ?: return
-        if (captureRouter.captureRoute(packageName) != AccessibilityCaptureRoute.ManualBillSync) return
-
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            packageName == BillSyncSource.WeChat.packageName
-        ) {
-            val activityClassName = event.className?.toString() ?: return
-            wechatOcrCoordinator.updateActiveWindowIdentity(
-                WechatWindowIdentity(event.windowId, activityClassName)
-            )
+    private fun scheduleCapture(event: AccessibilityEvent) {
+        if (!isAutomaticCaptureEvent(event.eventType)) return
+        val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank) ?: return
+        if (!shouldCapturePackage(eventPackage, packageName)) return
+        val eventWindowId = event.windowId
+        pendingCapture?.cancel()
+        pendingCapture = serviceScope.launch {
+            delay(CAPTURE_SETTLE_MILLIS)
+            if (!preferencesRepository.userPreferences.first().automaticBookkeepingEnabled) return@launch
+            val root = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
+                .firstOrNull { it.packageName?.toString() == eventPackage }
+                ?: return@launch
+            if (eventWindowId >= 0 && root.windowId != eventWindowId) return@launch
+            val pageText = root.collectReadableText()
+            if (pageText.isBlank()) return@launch
+            val now = System.currentTimeMillis()
+            val fingerprint = pageText.hashCode()
+            if (shouldDebounceCapture(recentCaptures[eventPackage], fingerprint, now)) return@launch
+            val result = withContext(Dispatchers.IO) { processor.process(pageText) }
+            if (result.recognized) recentCaptures[eventPackage] = RecentCapture(fingerprint, now)
         }
-
-        val activeWindowRoot = rootInActiveWindow
-        val eventSourceRoot = event.source
-        val activeRoot = activeWindowRoot
-            ?.takeIf { it.packageName?.toString() == packageName }
-            ?: eventSourceRoot?.takeIf { it.packageName?.toString() == packageName }
-        val pageText = activeRoot?.collectVisibleText().orEmpty()
-        val windowEvidence = activeRoot
-            ?.takeIf { packageName == BillSyncSource.WeChat.packageName }
-            ?.let { root ->
-                wechatOcrCoordinator.windowIdentityFor(root.windowId)?.let { identity ->
-                    currentWechatWindowEvidence(root.windowId, identity)
-                } ?: currentWechatWindowEvidence(root.windowId, null)
-            }
-
-        if (
-            captureRouter.handleWechatCaptureRoute(
-                packageName = packageName,
-                pageText = pageText,
-                windowEvidence = windowEvidence
-            )
-        ) return
-
-        if (pageText.isBlank()) {
-            diagnosticRecorder.recordMetadata(
-                event = "manual_page_rejected",
-                outcome = "rejected",
-                reason = "blank_visible_text",
-                source = packageName.accessibilityDiagnosticSource(),
-                sensitivePayload = DiagnosticSensitivePayload(
-                    mapOf(
-                        DiagnosticSensitiveField.WindowContext to accessibilityWindowContext(
-                            event = event,
-                            activeWindowRoot = activeWindowRoot,
-                            eventSourceRoot = eventSourceRoot,
-                            selectedRootSource = if (activeRoot == activeWindowRoot) {
-                                "rootInActiveWindow"
-                            } else if (activeRoot == eventSourceRoot) {
-                                "event.source"
-                            } else {
-                                "none"
-                            }
-                        )
-                    )
-                )
-            )
-            return
-        }
-
-        captureManualBillSync(packageName, pageText)
-    }
-
-    private fun captureManualBillSync(
-        packageName: String,
-        pageText: String
-    ) {
-        val source = BillSyncSource.fromPackageName(packageName) ?: return
-        val traceId = newDiagnosticTraceId()
-        val sessionId = BillSyncSessions.controller.state.value.sessionId
-        serviceScope.launch {
-            val observation = withContext(Dispatchers.Default) {
-                observeBillSyncPage(source, pageText)
-            }
-            if (observation == BillSyncPageObservation.Ignored) {
-                diagnosticRecorder.recordMetadata(
-                    event = "manual_page_rejected",
-                    outcome = "rejected",
-                    reason = "unrelated_page",
-                    source = source.accessibilityDiagnosticSource()
-                )
-                return@launch
-            }
-            runCatching {
-                BillSyncSessions.controller.submitBillPage(
-                    packageName = packageName,
-                    pageText = pageText,
-                    process = { billSource, text ->
-                        withContext(Dispatchers.IO) {
-                            processor.process(
-                                source = billSource,
-                                pageText = text,
-                                traceId = traceId,
-                                sessionId = sessionId
-                            )
-                        }
-                    }
-                )
-            }.onFailure { error ->
-                BillSyncSessions.controller.fail(error.message ?: "补录失败")
-                diagnosticRecorder.recordFailure("manual_capture_failed", traceId, source, sessionId, error)
-            }
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.R)
-    private suspend fun captureScreenBitmapApi30(windowId: Int, traceId: String?): Bitmap? =
-        suspendCoroutine { continuation ->
-            val callback = object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    val hardwareBuffer = screenshot.hardwareBuffer
-                    val softwareBitmap = try {
-                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(
-                            hardwareBuffer,
-                            screenshot.colorSpace
-                        )
-                        try {
-                            hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
-                        } finally {
-                            hardwareBitmap?.recycle()
-                        }
-                    } finally {
-                        hardwareBuffer.close()
-                    }
-                    continuation.resume(softwareBitmap)
-                }
-
-                override fun onFailure(errorCode: Int) {
-                    diagnosticRecorder.recordMetadata(
-                        event = "screenshot_failed",
-                        outcome = "rejected",
-                        reason = "window:errorCode=$errorCode",
-                        traceId = traceId ?: newDiagnosticTraceId(),
-                        component = DiagnosticComponent.Ocr
-                    )
-                    continuation.resume(null)
-                }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                takeScreenshotOfWindow(windowId, mainExecutor, callback)
-            } else {
-                takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
-            }
-        }
-
-    private fun currentWechatWindowEvidence(
-        windowId: Int,
-        windowIdentity: WechatWindowIdentity?
-    ): WechatWindowEvidence = WechatWindowEvidence(
-        activityClassName = windowIdentity?.activityClassName,
-        isApplicationWindow = windows
-            .firstOrNull { window -> window.id == windowId }
-            ?.type == AccessibilityWindowInfo.TYPE_APPLICATION
-    )
-
-    private fun accessibilityWindowContext(
-        event: AccessibilityEvent,
-        activeWindowRoot: AccessibilityNodeInfo?,
-        eventSourceRoot: AccessibilityNodeInfo?,
-        selectedRootSource: String
-    ): String = buildString {
-        append("eventType=")
-        append(AccessibilityEvent.eventTypeToString(event.eventType))
-        append(" eventClass=")
-        append(event.className ?: "none")
-        append(" eventPackage=")
-        append(event.packageName ?: "none")
-        append(" eventWindowId=")
-        append(event.windowId)
-        append(" activeRootPackage=")
-        append(activeWindowRoot?.packageName ?: "none")
-        append(" activeRootWindowId=")
-        append(activeWindowRoot?.windowId ?: UNKNOWN_WINDOW_ID)
-        append(" eventSourcePackage=")
-        append(eventSourceRoot?.packageName ?: "none")
-        append(" eventSourceWindowId=")
-        append(eventSourceRoot?.windowId ?: UNKNOWN_WINDOW_ID)
-        append(" selectedRoot=")
-        append(selectedRootSource)
     }
 
     override fun onInterrupt() {
-        diagnosticRecorder.recordMetadata("service_interrupted", "failed", "accessibility_interrupted")
-        BillSyncSessions.controller.fail("无障碍服务已中断")
+        super.onInterrupt()
     }
 
     override fun onDestroy() {
-        diagnosticRecorder.recordMetadata("service_destroyed", "stopped", "service_destroyed")
-        BillSyncServiceHealth.markServiceConnected(this, false)
-        wechatOcrCoordinator.cancel()
+        AssistsService.listeners.remove(listener)
+        pendingCapture?.cancel()
         serviceScope.cancel()
-        if (ocrRecognizerDelegate.isInitialized()) ocrRecognizer.close()
+        BillSyncServiceHealth.markServiceConnected(this, false)
         super.onDestroy()
     }
+}
 
-    private companion object {
-        const val UNKNOWN_WINDOW_ID = -1
+internal data class RecentCapture(val fingerprint: Int, val capturedAtMillis: Long)
+
+internal fun isAutomaticCaptureEvent(eventType: Int): Boolean = eventType in AUTOMATIC_CAPTURE_EVENT_TYPES
+
+internal fun shouldCapturePackage(eventPackage: String, ownPackage: String): Boolean =
+    eventPackage.isNotBlank() && eventPackage != ownPackage
+
+internal fun shouldDebounceCapture(
+    previous: RecentCapture?,
+    fingerprint: Int,
+    nowMillis: Long
+): Boolean = previous?.fingerprint == fingerprint &&
+    nowMillis - previous.capturedAtMillis < CAPTURE_DEBOUNCE_MILLIS
+
+@Suppress("CyclomaticComplexMethod")
+internal fun AccessibilityNodeInfo.collectReadableText(): String {
+    val lines = linkedSetOf<String>()
+    var visitedNodes = 0
+    var collectedCharacters = 0
+
+    fun add(value: CharSequence?) {
+        val line = value?.toString()?.trim()?.takeIf(String::isNotBlank) ?: return
+        if (line in lines) return
+        val addedCharacters = line.length + if (lines.isEmpty()) 0 else 1
+        if (collectedCharacters + addedCharacters > MAX_CAPTURE_CHARACTERS) return
+        lines += line
+        collectedCharacters += addedCharacters
     }
+
+    fun visit(node: AccessibilityNodeInfo, depth: Int) {
+        if (visitedNodes >= MAX_CAPTURE_NODES || depth > MAX_CAPTURE_DEPTH) return
+        if (!node.isVisibleToUser || node.isPassword || node.isEditable) return
+        visitedNodes += 1
+        add(node.text)
+        add(node.contentDescription)
+        if (depth == MAX_CAPTURE_DEPTH || collectedCharacters >= MAX_CAPTURE_CHARACTERS) return
+        repeat(node.childCount) { index -> node.getChild(index)?.let { visit(it, depth + 1) } }
+    }
+
+    visit(this, 0)
+    return lines.joinToString("\n")
 }
 
-internal fun String.accessibilityDiagnosticSource(): DiagnosticSource = when (this) {
-    BillSyncSource.WeChat.packageName -> DiagnosticSource.WeChat
-    BillSyncSource.Alipay.packageName -> DiagnosticSource.Alipay
-    else -> DiagnosticSource.Unknown
-}
-
-internal fun BillSyncSource.accessibilityDiagnosticSource(): DiagnosticSource = when (this) {
-    BillSyncSource.WeChat -> DiagnosticSource.WeChat
-    BillSyncSource.Alipay -> DiagnosticSource.Alipay
-}
+private val AUTOMATIC_CAPTURE_EVENT_TYPES = setOf(
+    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+    AccessibilityEvent.TYPE_WINDOWS_CHANGED
+)
+internal const val CAPTURE_SETTLE_MILLIS = 500L
+internal const val CAPTURE_DEBOUNCE_MILLIS = 30_000L
+internal const val MAX_CAPTURE_NODES = 512
+internal const val MAX_CAPTURE_DEPTH = 24
+internal const val MAX_CAPTURE_CHARACTERS = 16 * 1024

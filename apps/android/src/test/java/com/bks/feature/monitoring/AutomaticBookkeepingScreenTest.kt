@@ -1,9 +1,8 @@
 package com.bks.feature.monitoring
 
-import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,18 +20,55 @@ class AutomaticBookkeepingScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun pageIsReachableButContainsNoAutomaticControls() {
-        var backPressed = false
+    fun enabledWithoutPermissionKeepsIntentAndOffersSettings() {
+        var disabled = false
+        var settingsOpened = false
         composeRule.setContent {
-            AutomaticBookkeepingScreen(onBack = { backPressed = true })
+            AutomaticBookkeepingScreen(
+                enabled = true,
+                accessibilityAccessGranted = false,
+                onEnabledChange = { disabled = !it },
+                onOpenAccessibilitySettings = { settingsOpened = true }
+            )
         }
 
-        composeRule.onNodeWithTag("automatic-bookkeeping-page").assertIsDisplayed()
-        composeRule.onNodeWithText("自动记账").assertIsDisplayed()
-        composeRule.onNodeWithText("自动记账功能已移除").assertIsDisplayed()
-        composeRule.onAllNodesWithText("开启自动记账").assertCountEquals(0)
-        composeRule.onNodeWithText("返回").performClick()
+        composeRule.onNodeWithText("等待无障碍授权").assertIsDisplayed()
+        composeRule.onNodeWithText("打开无障碍设置").performClick()
+        composeRule.onNodeWithTag("automatic-bookkeeping-toggle").performClick()
 
-        assertTrue(backPressed)
+        assertTrue(settingsOpened)
+        assertTrue(disabled)
+    }
+
+    @Test
+    fun connectedStateShowsListeningAndPrivacyBoundary() {
+        composeRule.setContent {
+            AutomaticBookkeepingScreen(
+                enabled = true,
+                accessibilityAccessGranted = true,
+                accessibilityServiceConnected = true
+            )
+        }
+
+        composeRule.onNodeWithText("正在监听").assertIsDisplayed()
+        composeRule.onNodeWithText("不会截图、不会操作其他应用、不会保存或上传原始页面文字。")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun disabledAndDisconnectedStatesRemainDistinct() {
+        val enabled = mutableStateOf(false)
+        composeRule.setContent {
+            AutomaticBookkeepingScreen(
+                enabled = enabled.value,
+                accessibilityAccessGranted = true,
+                accessibilityServiceConnected = false
+            )
+        }
+        composeRule.onNodeWithText("已关闭").assertIsDisplayed()
+        composeRule.onNodeWithText("管理无障碍授权").assertIsDisplayed()
+
+        composeRule.runOnIdle { enabled.value = true }
+        composeRule.onNodeWithText("等待服务连接").assertIsDisplayed()
     }
 }

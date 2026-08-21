@@ -268,6 +268,7 @@ class ReviewQueueEditorTest {
         sourceScope = when (source) {
             PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
             PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+            PaymentSource.OTHER -> FundingAccountSourceScope.USER
         },
         paymentSource = source,
         label = label,

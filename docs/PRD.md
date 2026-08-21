@@ -2,9 +2,9 @@
 
 ## 1. Product Goal
 
-Build an Android bookkeeping app for domestic Android app stores. The app supports direct manual entries and user-started WeChat/Alipay bill import, turns imported transactions into pending entries, helps users review and confirm them, and keeps local-first named ledger books with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
+Build an Android bookkeeping app for domestic Android app stores. The app supports direct manual entries and opt-in generic transaction recognition from the active window, turns recognized transactions into pending entries, helps users review and confirm them, and keeps local-first named ledger books with reports, backup, account, AI categorization, and compliance materials ready for internal beta.
 
-The first delivery target is a feature-complete internal beta, not a small MVP. It must be usable enough to measure import accuracy, deduplication accuracy, review efficiency, and manual-import completion.
+The first delivery target is a feature-complete internal beta, not a small MVP. It must be usable enough to measure recognition accuracy, deduplication accuracy, and review efficiency.
 
 ## 2. Target Platform
 
@@ -16,7 +16,8 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 
 ## 3. Core Decisions
 
-- Users explicitly start one source-scoped bill-import session from the Review Queue. WeChat manual import uses local OCR only; Alipay manual import reads accessibility node text and does not take screenshots. Screenshots are never persisted or uploaded; raw OCR text stays outside the ledger and may enter only the separately enabled encrypted diagnostic store within an accepted payment surface or active manual-import session.
+- Generic automatic bookkeeping is opt-in and defaults off. It uses `assists-base` to passively read visible, non-password, non-editable text from the current third-party active window; it never screenshots or operates another app.
+- Raw page text is transient memory only: misses, unrelated pages, and accepted raw text are not persisted, logged, backed up, synchronized, or uploaded.
 - All imported transactions first become pending entries.
 - Ledger books are local-first in Room and can be explicitly bound to the signed-in account for automatic multi-device synchronization.
 - One persisted current ledger book receives manual entries and confirmed pending entries. Categories and funding accounts remain shared across all local ledger books.
@@ -26,17 +27,17 @@ The first delivery target is a feature-complete internal beta, not a small MVP. 
 - AI categorization uploads minimal fields by default; users may opt into enhanced context.
 - AI categorization logs are retained during internal beta and must be revisited before public store submission.
 - Transaction, bill, merchant, amount, category, and funding-account data are treated as sensitive personal information.
-- Sensitive diagnostic logs are a separate user-controlled, on-device troubleshooting capability: Debug defaults on, Release defaults off with informed opt-in, screenshots are excluded, authentication secrets are always redacted, and no diagnostic data is uploaded.
+- Diagnostic logs are a separate user-controlled, on-device troubleshooting capability: Debug defaults on, Release defaults off with informed opt-in, automatic-bookkeeping page text is excluded, authentication secrets are always redacted, and no diagnostic data is uploaded.
 
 ## 4. Users And Jobs
 
 Primary user:
-- Android user who pays mainly through WeChat and Alipay.
-- Wants to record payments with control before imported entries enter the ledger.
-- Is willing to grant the narrowly scoped accessibility permission needed for a user-started import if the app clearly explains why.
+- Android user who wants broad payment-app coverage without platform-specific rules.
+- Wants to review recognized payments before they enter the ledger.
+- Is willing to grant a narrowly scoped accessibility permission after the app clearly explains the local-only boundary.
 
 Core jobs:
-- Import a currently visible payment page or create a manual ledger entry.
+- Let the app recognize a completed transaction from the current activity window, or create a manual ledger entry.
 - Review pending entries quickly.
 - Correct amount, time, transaction kind, category, funding account, merchant/title, and note.
 - Build categorization rules from repeated corrections.
@@ -49,24 +50,16 @@ Core jobs:
 
 ### 5.1 Capture
 
-Sources:
-- User-started accessibility bill import from the currently visible WeChat or Alipay bill surface.
+Source and runtime:
+- One persisted automatic-bookkeeping switch defaults off and represents user intent only. Missing permission or a disconnected service changes runtime status without switching the intent off.
+- The Assists accessibility service listens only for window state, window content, and window-set changes. It waits 500 ms for stability, rechecks package/window identity, excludes BKS itself, and debounces the same package/fingerprint for 30 seconds.
+- Traversal is limited to 512 nodes, 24 levels, and 16 KiB of visible, non-password, non-editable text. The service does not click, scroll, launch apps, take screenshots, or use OCR.
 
-Capture output:
-- Pending entries only.
-- Capture reason: manual bill import, duplicate merge, or related legacy-compatible reason.
-- Manual bill import reads only the currently visible supported page. It does not auto-scroll, paginate, or promise a complete history scan.
-- The Review Queue entry opens one app-level import flow; there is no standing capture mode or background capture setting.
-- The flow checks accessibility grant and live service connection separately before source selection or app launch.
-- After source launch, the user has 90 seconds to enter and remain on a bill, transaction-detail, or payment-result page. Timeout affects only the matching session while it is still waiting.
-- The accessibility processor and `ReviewQueuePersistence` are the only manual-import write path; UI observes the Room Flow and never creates pending entries a second time.
-- Manual WeChat import uses OCR only and creates a candidate when one complete signature is recognized—`当前状态 + 支付成功`, `当前状态 + 对方已收`, or `退款状态 + 已退款`—and one unambiguous amount is present. Any of `确认支付`, `立即支付`, `收银台`, `支付密码`, `待支付`, `处理中`, `支付失败`, or `已取消` rejects the page.
-- When present, normalized output includes payment method, product/receipt note, product title, merchant/payee, status, transaction time, transaction order id, and merchant order id.
-- Confidence state: high confidence, needs review, duplicate suspect.
-
-Transaction kinds:
-- Cover all transaction kinds exposed by WeChat and Alipay bill pages where practical.
-- Examples include expense, income, refund, transfer, red packet, repayment, investment movement, fees, and source-specific events.
+Admission and output:
+- A page must contain an explicit completed state, one unique amount, one unconflicted inflow/outflow direction, and at least one transaction-context field.
+- Payment initiation, password entry, pending, processing, failure, cancellation, amount conflicts, and direction conflicts are rejected.
+- Accepted candidates use source `OTHER`, capture reason `ACCESSIBILITY_AUTO`, confidence `NEEDS_REVIEW`, and no automatic funding account. A missing merchant falls back to “其他应用支付”.
+- Candidates pass through existing categorization, deduplication, and `ReviewQueuePersistence`; they enter pending only and require user confirmation before ledger insertion.
 
 ### 5.2 Review Queue
 
@@ -74,7 +67,6 @@ Homepage:
 - The review queue is the first tab and primary workflow.
 - The header shows the target ledger-book name and an ignored-records action.
 - One summary card shows pending total, duplicate suspect count, and today's pending count.
-- A separate full-width `补录账单` card opens the shared manual-import flow.
 - All pending entries appear in a single "待确认记录" list.
 - Sorting: duplicate suspect and low-confidence entries first, then capture time descending.
 
@@ -96,7 +88,7 @@ Actions:
 
 Detail page:
 - Editable fields: amount, time, transaction kind, category, funding account, merchant/title, note.
-- Evidence section is collapsed by default and can show raw text, source, capture time, and parsed fields.
+- Evidence section is collapsed by default and can show source, capture time, and normalized parsed fields. New automatic candidates never contain raw page text.
 - The page identifies the current ledger book that will receive the entry; confirmation captures that ledger-book ID before the asynchronous write starts.
 - Bottom fixed action bar: confirm into ledger, ignore.
 
@@ -274,8 +266,8 @@ Backend limits:
 ### 5.9 Sensitive Diagnostic Logs
 
 - “合规与隐私”在 Debug 和 Release 都提供独立的“诊断日志”入口。Debug 默认开启；Release 默认关闭，并在首次开启前说明记录字段、排障用途、10 MB 上限、长期保留、设备内加密、关闭/清空方式和导出风险。
-- 允许记录当前补录会话的页面/OCR 文字、解析字段、采集证据和完整异常。聊天、无关页面和不支持包名只记录拒绝元数据，不保存可见正文。
-- 截图永不保存。密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 等认证秘密或身份标识始终在写入前脱敏；账号流程不写入昵称、头像 URL 或 Provider 正文。
+- 自动记账读取的页面文字、未命中内容和无关页面信息不得写入诊断日志。当前生产事件仅记录应用故障和完整异常。
+- 密码、验证码、Token、Cookie、Authorization、API Key、备份口令、签名私钥、微信 code/票据、OpenID 和 UnionID 等认证秘密或身份标识始终在写入前脱敏；账号流程不写入昵称、头像 URL 或 Provider 正文。
 - 日志仅在设备内加密保存，不上传、不进入账本备份或系统备份。每条事件最多 256 KB，每段最多 1 MB，总密文最多 10 MB；超过上限才轮转最旧分段。
 - 列表默认只显示元数据并加载最新 1000 条；敏感内容经二次确认后仅在本次页面会话显示，离页或进入后台立即重新遮罩，显示期间窗口启用 `FLAG_SECURE`。
 - 关闭只停止新记录并保留历史。清空需二次确认并删除密文和设备密钥；本机数据删除还清除 Release 开启偏好，但已导出到 Downloads 的文件由用户自行管理。
@@ -291,7 +283,7 @@ Main navigation:
 
 Onboarding:
 - Progressive onboarding.
-- Users are introduced to account setup, manual bill import, and cloud AI only when relevant.
+- Users are introduced to account setup, automatic bookkeeping, and cloud AI only when relevant.
 
 Login first screen:
 - Cat companion.
@@ -307,7 +299,7 @@ Profile top:
 
 Profile overview:
 - Shows only a one-line status summary and navigation affordance for each entry. It contains no switches, system-permission buttons, backup passphrase inputs, or other detailed controls.
-- Lists entries in this order: Account Management, Categorization Rules, Data and Backup, Compliance and Privacy.
+- Lists entries for Account Management, Automatic Bookkeeping, Categorization Rules, Data and Backup, and Compliance and Privacy.
 - Each entry opens a full in-app secondary page with a title and back action. Destination and secondary pages hide bottom navigation; back from a Profile secondary page returns to the Profile overview, and back from the Profile overview returns Home.
 
 Profile entries:
@@ -365,8 +357,8 @@ Core metrics:
 
 Supporting metrics:
 - Review queue completion rate.
-- Manual bill-import completion, parsing accuracy, and failure reasons.
-- Manual-import duplicate detection and merge outcomes.
+- Generic recognition acceptance/rejection accuracy and failure reasons.
+- Automatic-candidate duplicate detection and merge outcomes.
 - Swipe confirm/ignore undo rate.
 - AI categorization opt-in rate.
 - AI suggestion acceptance rate.

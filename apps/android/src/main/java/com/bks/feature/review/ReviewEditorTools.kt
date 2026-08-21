@@ -278,6 +278,7 @@ internal fun TransactionKind.toReviewLabel(): String = when (this) {
 internal fun String.toReviewPaymentSource(): PaymentSource? = when (trim()) {
     "微信" -> PaymentSource.WECHAT
     "支付宝" -> PaymentSource.ALIPAY
+    "其他应用" -> PaymentSource.OTHER
     else -> null
 }
 

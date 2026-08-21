@@ -142,6 +142,7 @@ class LocalPreferencesRepositoryTest {
                     enhancedContextGranted = true
                 )
             )
+            repository.setAutomaticBookkeepingEnabled(true)
         }
         database.close()
 
@@ -159,6 +160,7 @@ class LocalPreferencesRepositoryTest {
         assertEquals(20, persistedRule.updatedAtEpochMillis)
         assertTrue(persistedPreferences.aiSettings.aiConsentGranted)
         assertTrue(persistedPreferences.aiSettings.enhancedContextGranted)
+        assertTrue(persistedPreferences.automaticBookkeepingEnabled)
 
         reopenedDatabase.close()
         context.deleteDatabase(databaseName)
@@ -247,6 +249,7 @@ class LocalPreferencesRepositoryTest {
         runBlocking {
             repository.replaceCategorizationRules(listOf(sampleRule()))
             repository.updateAiSettings(AiCategorizationSettings(aiConsentGranted = true))
+            repository.setAutomaticBookkeepingEnabled(true)
 
             repository.clearLocalData()
 
@@ -255,6 +258,7 @@ class LocalPreferencesRepositoryTest {
                 repository.categorizationRules.first().map { it.id }.toSet()
             )
             assertFalse(repository.userPreferences.first().aiSettings.aiConsentGranted)
+            assertFalse(repository.userPreferences.first().automaticBookkeepingEnabled)
         }
 
         database.close()

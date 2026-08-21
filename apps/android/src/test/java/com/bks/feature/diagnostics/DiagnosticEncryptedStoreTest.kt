@@ -33,7 +33,7 @@ class DiagnosticEncryptedStoreTest {
         val restored = store.readAll()
 
         assertEquals(1, restored.size)
-        assertEquals("first valid event", restored.single().sensitivePayload.fields[DiagnosticSensitiveField.OcrText])
+        assertEquals("first valid event", restored.single().sensitivePayload.fields[DiagnosticSensitiveField.ExceptionDetails])
     }
 
     @Test
@@ -47,7 +47,7 @@ class DiagnosticEncryptedStoreTest {
         val latest = store.readLatest(1)
 
         assertEquals(1, latest.size)
-        assertEquals("event-2", latest.single().sensitivePayload.fields[DiagnosticSensitiveField.OcrText])
+        assertEquals("event-2", latest.single().sensitivePayload.fields[DiagnosticSensitiveField.ExceptionDetails])
         assertEquals(1, cipher.decryptCalls.get())
     }
 
@@ -65,7 +65,7 @@ class DiagnosticEncryptedStoreTest {
         assertEquals(
             listOf("encrypted with replacement key"),
             store.readAll().mapNotNull {
-                it.sensitivePayload.fields[DiagnosticSensitiveField.OcrText]
+                it.sensitivePayload.fields[DiagnosticSensitiveField.ExceptionDetails]
             }
         )
     }
@@ -85,7 +85,7 @@ class DiagnosticEncryptedStoreTest {
 
         assertTrue(store.encryptedBytes() <= 1_500)
         assertFalse(store.readAll().any {
-            it.sensitivePayload.fields[DiagnosticSensitiveField.OcrText]?.startsWith("event-0-") == true
+            it.sensitivePayload.fields[DiagnosticSensitiveField.ExceptionDetails]?.startsWith("event-0-") == true
         })
     }
 
@@ -93,14 +93,14 @@ class DiagnosticEncryptedStoreTest {
         metadata = DiagnosticEventMetadata(
             timestampEpochMillis = 123L,
             level = DiagnosticLevel.Info,
-            component = DiagnosticComponent.Ocr,
-            event = "ocr_output",
+            component = DiagnosticComponent.Application,
+            event = "application_event",
             traceId = "trace-123",
-            source = DiagnosticSource.WeChat,
+            source = DiagnosticSource.System,
             reason = "accepted"
         ),
         sensitivePayload = DiagnosticSensitivePayload(
-            mapOf(DiagnosticSensitiveField.OcrText to text)
+            mapOf(DiagnosticSensitiveField.ExceptionDetails to text)
         )
     )
 }

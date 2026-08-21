@@ -44,7 +44,6 @@ internal fun BksReviewRoute(
         accountSession = runtime.accountSession,
         aiSettings = presentation.effectiveAiSettings,
         aiCategorizationGateway = context.dependencies.aiCategorizationGateway,
-        onOpenBillImport = { runtime.manualBillImportRequestId += 1 },
         onNavigateHome = onNavigateHome
     )
 }

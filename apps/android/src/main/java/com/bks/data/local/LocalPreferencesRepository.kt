@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 data class LocalUserPreferences(
-    val aiSettings: AiCategorizationSettings = AiCategorizationSettings()
+    val aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
+    val automaticBookkeepingEnabled: Boolean = false
 )
 
 class LocalPreferencesRepository(
@@ -61,6 +62,12 @@ class LocalPreferencesRepository(
         )
     }
 
+    suspend fun setAutomaticBookkeepingEnabled(enabled: Boolean) = database.withTransaction {
+        database.localSettingsDao().upsert(
+            currentSettingsEntity().copy(automaticBookkeepingEnabled = enabled)
+        )
+    }
+
     suspend fun clearLocalData() = database.withTransaction {
         database.categorizationRuleDao().deleteAll()
         database.categorizationRuleDao().insertIgnore(DefaultCategorizationRules.rules)
@@ -68,7 +75,8 @@ class LocalPreferencesRepository(
             currentSettingsEntity().copy(
                 aiConsentGranted = false,
                 enhancedContextGranted = false,
-                defaultFundingAccountSyncId = null
+                defaultFundingAccountSyncId = null,
+                automaticBookkeepingEnabled = false
             )
         )
         database.defaultFundingAccountCacheDao().deleteAll()
@@ -128,5 +136,6 @@ private fun LocalSettingsEntity.toDomain(): LocalUserPreferences = LocalUserPref
     aiSettings = AiCategorizationSettings(
         aiConsentGranted = aiConsentGranted,
         enhancedContextGranted = aiConsentGranted && enhancedContextGranted
-    )
+    ),
+    automaticBookkeepingEnabled = automaticBookkeepingEnabled
 )

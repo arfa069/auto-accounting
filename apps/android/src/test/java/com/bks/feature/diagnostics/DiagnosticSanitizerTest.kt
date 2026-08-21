@@ -1,22 +1,19 @@
 package com.bks.feature.diagnostics
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticSanitizerTest {
     @Test
-    fun authenticationSecretsAreRedactedButTransactionIdentifiersRemain() {
+    fun authenticationSecretsAreRedactedButOrdinaryContextRemains() {
         val event = diagnosticEvent(
             mapOf(
-                DiagnosticSensitiveField.NotificationText to
-                    "支付成功 token=secret-token Authorization: Basic basic-secret\n" +
-                        "Cookie: sid=hidden; auth=second-cookie-secret",
-                DiagnosticSensitiveField.PaymentAccount to "招商银行(1234)",
-                DiagnosticSensitiveField.OrderNumber to "ORDER-20260717",
                 DiagnosticSensitiveField.ExceptionDetails to
-                    "IllegalStateException: API Key=top-secret\n" +
+                    "支付成功 token=secret-token Authorization: Basic basic-secret\n" +
+                        "Cookie: sid=hidden; auth=second-cookie-secret\n" +
+                        "ordinary-context ORDER-20260717\n" +
+                        "IllegalStateException: API Key=top-secret\n" +
                         "passphrase=correct horse battery staple; next=value\n" +
                         "备份口令：中文秘密 仍是口令；验证码：123456\n" +
                         "-----BEGIN ENCRYPTED PRIVATE KEY-----\nprivate-key-secret\n" +
@@ -39,8 +36,7 @@ class DiagnosticSanitizerTest {
         assertFalse(all.contains("private-key-secret"))
         assertFalse(sanitized.metadata.reason.orEmpty().contains("metadata-secret"))
         assertTrue(all.contains("[REDACTED]"))
-        assertEquals("招商银行(1234)", sanitized.sensitivePayload.fields[DiagnosticSensitiveField.PaymentAccount])
-        assertEquals("ORDER-20260717", sanitized.sensitivePayload.fields[DiagnosticSensitiveField.OrderNumber])
+        assertTrue(all.contains("ordinary-context ORDER-20260717"))
     }
 
     @Test
@@ -74,12 +70,12 @@ class DiagnosticSanitizerTest {
     @Test
     fun oversizedEventTruncatesLargestFieldsAndMarksThem() {
         val event = diagnosticEvent(
-            mapOf(DiagnosticSensitiveField.OcrText to "商户与订单".repeat(60_000))
+            mapOf(DiagnosticSensitiveField.ExceptionDetails to "异常上下文".repeat(60_000))
         )
 
         val sanitized = sanitizeDiagnosticEvent(event)
 
-        assertTrue(DiagnosticSensitiveField.OcrText in sanitized.truncatedFields)
+        assertTrue(DiagnosticSensitiveField.ExceptionDetails in sanitized.truncatedFields)
         assertTrue(DiagnosticEventCodec.encode(sanitized).toByteArray().size <= 256 * 1024)
     }
 
@@ -109,7 +105,7 @@ class DiagnosticSanitizerTest {
     private fun diagnosticEvent(fields: Map<DiagnosticSensitiveField, String>) = DiagnosticEvent(
         metadata = DiagnosticEventMetadata(
             level = DiagnosticLevel.Error,
-            component = DiagnosticComponent.Ocr,
+            component = DiagnosticComponent.Application,
             event = "test_event",
             traceId = "trace-test",
             reason = "test"

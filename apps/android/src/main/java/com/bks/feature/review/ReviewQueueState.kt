@@ -61,12 +61,6 @@ data class ReviewQueueEntry(
         }
 }
 
-internal const val ACCESSIBILITY_EVIDENCE_LABEL = "无障碍节点"
-internal const val OCR_EVIDENCE_LABEL = "ML Kit OCR"
-
-internal fun reviewEvidenceText(label: String, text: String): String =
-    text.trim().takeIf(String::isNotBlank)?.let { "[$label]\n$it" }.orEmpty()
-
 internal fun mergeReviewEvidenceText(vararg evidenceTexts: String): String {
     val sections = linkedMapOf<String, String>()
     evidenceTexts.filter(String::isNotBlank).forEach { evidence ->
@@ -98,7 +92,7 @@ internal fun parseReviewEvidenceText(evidenceText: String): List<Pair<String, St
 }
 
 private val REVIEW_EVIDENCE_HEADER_REGEX = Regex(
-    pattern = "(?m)^\\[(原始文本|通知捕获|无障碍节点|ML Kit OCR)]\\s*$"
+    pattern = "(?m)^\\[([^]\\r\\n]+)]\\s*$"
 )
 
 data class ReviewQueueConfirmedEntry(
@@ -346,75 +340,6 @@ fun parseReviewAmountMinor(text: String): Long? = runCatching {
         .movePointRight(2)
         .longValueExact()
 }.getOrNull()
-
-fun sampleReviewQueueEntries(): List<ReviewQueueEntry> = listOf(
-    ReviewQueueEntry(
-        id = "pending-duplicate",
-        title = "相似订单待核对",
-        amountMinor = 12800,
-        transactionTimeText = "2026-07-08 09:34",
-        category = "购物",
-        fundingAccountLabel = "支付宝余额",
-        sourceLabel = "支付宝",
-        kindLabel = "支出",
-        captureReasonLabel = "补录账单",
-        confidence = ConfidenceState.DUPLICATE_SUSPECT,
-        capturedAtEpochMillis = SAMPLE_NOW_EPOCH_MILLIS - 5 * 60_000,
-        captureTimeText = "2026-07-08 09:36",
-        note = null,
-        rawEvidenceText = "支付宝账单 同步记录 相似订单待核对 128.00",
-        parsedFields = listOf("来源=支付宝", "金额=128.00", "类型=支出")
-    ),
-    ReviewQueueEntry(
-        id = "pending-lunch",
-        title = "午餐",
-        amountMinor = 3590,
-        transactionTimeText = "2026-07-08 12:20",
-        category = "餐饮",
-        fundingAccountLabel = "微信零钱",
-        sourceLabel = "微信",
-        kindLabel = "支出",
-        captureReasonLabel = "通知捕获",
-        confidence = ConfidenceState.NEEDS_REVIEW,
-        capturedAtEpochMillis = SAMPLE_NOW_EPOCH_MILLIS - 2 * 60_000,
-        captureTimeText = "2026-07-08 12:21",
-        note = null,
-        rawEvidenceText = "微信支付收款凭证 午餐 35.90",
-        parsedFields = listOf("商户=午餐", "金额=35.90", "类型=支出")
-    ),
-    ReviewQueueEntry(
-        id = "pending-ride",
-        title = "地铁出行",
-        amountMinor = 600,
-        transactionTimeText = "2026-07-08 08:10",
-        category = "交通",
-        fundingAccountLabel = "支付宝余额",
-        sourceLabel = "支付宝",
-        kindLabel = "支出",
-        captureReasonLabel = "通知捕获",
-        confidence = ConfidenceState.HIGH,
-        capturedAtEpochMillis = SAMPLE_NOW_EPOCH_MILLIS - 40 * 60_000,
-        captureTimeText = "2026-07-08 08:11",
-        note = "通勤"
-    ),
-    ReviewQueueEntry(
-        id = "pending-refund",
-        title = "退款到账",
-        amountMinor = 2590,
-        transactionTimeText = "2026-07-07 21:10",
-        category = "退款",
-        fundingAccountLabel = "微信零钱",
-        sourceLabel = "微信",
-        kindLabel = "退款",
-        captureReasonLabel = "补录账单",
-        confidence = ConfidenceState.HIGH,
-        capturedAtEpochMillis = SAMPLE_TODAY_START_EPOCH_MILLIS - 15 * 60_000,
-        captureTimeText = "2026-07-07 21:12",
-        note = null,
-        rawEvidenceText = "微信账单 退款到账 25.90",
-        parsedFields = listOf("来源=微信", "金额=25.90", "类型=退款")
-    )
-)
 
 const val IGNORED_RETENTION_MILLIS: Long = 30L * 24L * 60L * 60L * 1000L
 const val SAMPLE_NOW_EPOCH_MILLIS: Long = 1_783_468_800_000L

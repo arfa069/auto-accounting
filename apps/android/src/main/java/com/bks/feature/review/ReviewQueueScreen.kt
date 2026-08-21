@@ -44,7 +44,6 @@ fun ReviewQueueScreen(
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
-    onOpenBillImport: () -> Unit = {},
     onNavigateHome: () -> Unit = {}
 ) {
     var state by remember { mutableStateOf(initialState) }
@@ -60,7 +59,6 @@ fun ReviewQueueScreen(
         accountSession = accountSession,
         aiSettings = aiSettings,
         aiCategorizationGateway = aiCategorizationGateway,
-        onOpenBillImport = onOpenBillImport,
         onNavigateHome = onNavigateHome
     )
 }
@@ -79,7 +77,6 @@ fun ReviewQueueScreen(
     accountSession: AccountSession? = null,
     aiSettings: AiCategorizationSettings = AiCategorizationSettings(),
     aiCategorizationGateway: AiCategorizationGateway? = null,
-    onOpenBillImport: () -> Unit = {},
     onNavigateHome: () -> Unit = {}
 ) {
     var editingEntryId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -137,7 +134,6 @@ fun ReviewQueueScreen(
                     onAction = ::dispatch,
                     onEdit = { editingEntryId = it.id },
                     onShowIgnoredList = { showIgnoredList = true },
-                    onOpenBillImport = onOpenBillImport,
                     onNavigateHome = onNavigateHome
                 ),
                 modifier = Modifier.padding(innerPadding)

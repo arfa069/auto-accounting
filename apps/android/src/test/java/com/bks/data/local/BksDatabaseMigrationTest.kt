@@ -23,7 +23,67 @@ import org.robolectric.annotation.Config
 class BksDatabaseMigrationTest {
     @Test
     fun schemaVersionIsCurrent() {
-        assertEquals(11, BksDatabase.SCHEMA_VERSION)
+        assertEquals(12, BksDatabase.SCHEMA_VERSION)
+    }
+
+    @Test
+    fun migrationFromElevenAddsAutomaticBookkeepingDisabledByDefault() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "migration-11-12-${System.nanoTime()}.db"
+        context.deleteDatabase(databaseName)
+        val current = Room.databaseBuilder(context, BksDatabase::class.java, databaseName)
+            .allowMainThreadQueries()
+            .build()
+        runBlocking {
+            current.localSettingsDao().upsert(
+                LocalSettingsEntity(
+                    aiConsentGranted = true,
+                    enhancedContextGranted = false,
+                    automaticBookkeepingEnabled = true
+                )
+            )
+        }
+        current.close()
+
+        context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null).use { versionEleven ->
+            versionEleven.execSQL("ALTER TABLE local_settings RENAME TO local_settings_v12")
+            versionEleven.execSQL(
+                """
+                CREATE TABLE local_settings (
+                    id TEXT NOT NULL,
+                    ai_consent_granted INTEGER NOT NULL,
+                    enhanced_context_granted INTEGER NOT NULL,
+                    active_ledger_id TEXT NOT NULL DEFAULT 'default-ledger',
+                    default_funding_account_sync_id TEXT,
+                    PRIMARY KEY(id)
+                )
+                """.trimIndent()
+            )
+            versionEleven.execSQL(
+                """
+                INSERT INTO local_settings (
+                    id, ai_consent_granted, enhanced_context_granted,
+                    active_ledger_id, default_funding_account_sync_id
+                )
+                SELECT id, ai_consent_granted, enhanced_context_granted,
+                    active_ledger_id, default_funding_account_sync_id
+                FROM local_settings_v12
+                """.trimIndent()
+            )
+            versionEleven.execSQL("DROP TABLE local_settings_v12")
+            versionEleven.execSQL("PRAGMA user_version = 11")
+        }
+
+        val migrated = Room.databaseBuilder(context, BksDatabase::class.java, databaseName)
+            .addMigrations(BksDatabase.MIGRATION_11_12)
+            .allowMainThreadQueries()
+            .build()
+        val settings = runBlocking { migrated.localSettingsDao().getById() }
+
+        assertEquals(true, settings?.aiConsentGranted)
+        assertEquals(false, settings?.automaticBookkeepingEnabled)
+        migrated.close()
+        context.deleteDatabase(databaseName)
     }
 
     @Test
@@ -66,6 +126,7 @@ class BksDatabaseMigrationTest {
             .addMigrations(BksDatabase.MIGRATION_8_9)
             .addMigrations(BksDatabase.MIGRATION_9_10)
             .addMigrations(BksDatabase.MIGRATION_10_11)
+            .addMigrations(BksDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 
@@ -164,6 +225,7 @@ class BksDatabaseMigrationTest {
         )
         assertEquals(DEFAULT_LEDGER_BOOK_ID, settings?.activeLedgerId)
         assertEquals(true, settings?.aiConsentGranted)
+        assertEquals(false, settings?.automaticBookkeepingEnabled)
         val settingsColumns = mutableSetOf<String>()
         writableDatabase.query("PRAGMA table_info(`local_settings`)").use { cursor ->
             val nameColumn = cursor.getColumnIndexOrThrow("name")
@@ -259,6 +321,7 @@ class BksDatabaseMigrationTest {
             .addMigrations(BksDatabase.MIGRATION_8_9)
             .addMigrations(BksDatabase.MIGRATION_9_10)
             .addMigrations(BksDatabase.MIGRATION_10_11)
+            .addMigrations(BksDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 
@@ -396,6 +459,7 @@ class BksDatabaseMigrationTest {
             .addMigrations(BksDatabase.MIGRATION_8_9)
             .addMigrations(BksDatabase.MIGRATION_9_10)
             .addMigrations(BksDatabase.MIGRATION_10_11)
+            .addMigrations(BksDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 

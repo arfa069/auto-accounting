@@ -2,7 +2,8 @@ package com.bks.data.local
 
 enum class PaymentSource {
     WECHAT,
-    ALIPAY
+    ALIPAY,
+    OTHER
 }
 
 enum class FundingAccountSourceScope {
@@ -61,6 +62,7 @@ enum class IgnoreReason {
 fun PaymentSource.toFundingAccountSourceScope(): FundingAccountSourceScope = when (this) {
     PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
     PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+    PaymentSource.OTHER -> FundingAccountSourceScope.USER
 }
 
 fun CaptureReason.toEntryOrigin(): EntryOrigin = when (this) {

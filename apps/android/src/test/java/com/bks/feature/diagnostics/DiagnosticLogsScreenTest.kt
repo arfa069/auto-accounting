@@ -47,7 +47,7 @@ class DiagnosticLogsScreenTest {
 
         val eventList = composeRule.onNodeWithTag("diagnostic-event-list")
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
-        composeRule.onNodeWithText("payment_notification_parsed", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("application_failure", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("敏感内容：••••••").assertIsDisplayed()
         composeRule.onNodeWithText("测试商户秘密").assertDoesNotExist()
 
@@ -56,11 +56,11 @@ class DiagnosticLogsScreenTest {
         composeRule.onNodeWithText("显示").performClick()
 
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
-        composeRule.onNodeWithText("Merchant: 测试商户秘密").assertIsDisplayed()
+        composeRule.onNodeWithText("ExceptionDetails: 测试异常秘密").assertIsDisplayed()
         eventList.performScrollToIndex(ACTIONS_ITEM_INDEX)
         composeRule.onNodeWithText("遮罩内容").performScrollTo().performClick()
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
-        composeRule.onNodeWithText("测试商户秘密", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("测试异常秘密", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("敏感内容：••••••").assertIsDisplayed()
     }
 
@@ -101,13 +101,13 @@ class DiagnosticLogsScreenTest {
         composeRule.onNodeWithText("显示敏感内容").performScrollTo().performClick()
         composeRule.onNodeWithText("显示").performClick()
         eventList.performScrollToIndex(EVENT_ITEM_INDEX)
-        composeRule.onNodeWithText("Merchant: 测试商户秘密").assertIsDisplayed()
+        composeRule.onNodeWithText("ExceptionDetails: 测试异常秘密").assertIsDisplayed()
 
         composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         
         composeRule.waitUntil(timeoutMillis = 3_000L) {
-            composeRule.onAllNodesWithText("测试商户秘密", substring = true)
+            composeRule.onAllNodesWithText("测试异常秘密", substring = true)
                 .fetchSemanticsNodes()
                 .isEmpty()
         }
@@ -134,7 +134,7 @@ class DiagnosticLogsScreenTest {
             .performTextInput("parsed")
         composeRule.onNodeWithText("Info").performScrollTo().performClick()
         composeRule.onNodeWithTag("diagnostic-event-list").performScrollToIndex(COMPONENT_FILTER_INDEX)
-        composeRule.onNodeWithText("NotificationParser").performScrollTo().performClick()
+        composeRule.onNodeWithText("Application").performScrollTo().performClick()
 
         restorationTester.emulateSavedInstanceStateRestore()
 
@@ -143,8 +143,8 @@ class DiagnosticLogsScreenTest {
             .assertTextContains("parsed")
         composeRule.onNodeWithText("Info").performScrollTo().assertIsSelected()
         composeRule.onNodeWithTag("diagnostic-event-list").performScrollToIndex(COMPONENT_FILTER_INDEX)
-        composeRule.onNodeWithText("NotificationParser").performScrollTo().assertIsSelected()
-        composeRule.onNodeWithText("payment_notification_parsed", substring = true)
+        composeRule.onNodeWithText("Application").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithText("application_failure", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
     }
@@ -238,15 +238,15 @@ private class FakeDiagnosticRepository(initialEnabled: Boolean) : DiagnosticLogR
                 metadata = DiagnosticEventMetadata(
                     timestampEpochMillis = 1L,
                     level = DiagnosticLevel.Info,
-                    component = DiagnosticComponent.NotificationParser,
-                    event = "payment_notification_parsed",
+                    component = DiagnosticComponent.Application,
+                    event = "application_failure",
                     traceId = "trace-ui",
-                    source = DiagnosticSource.Alipay,
+                    source = DiagnosticSource.System,
                     outcome = "success",
                     reason = "parsed"
                 ),
                 sensitivePayload = DiagnosticSensitivePayload(
-                    mapOf(DiagnosticSensitiveField.Merchant to "测试商户秘密")
+                    mapOf(DiagnosticSensitiveField.ExceptionDetails to "测试异常秘密")
                 )
             )
         )

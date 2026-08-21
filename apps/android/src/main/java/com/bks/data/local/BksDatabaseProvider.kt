@@ -26,7 +26,8 @@ object BksDatabaseProvider {
                     BksDatabase.MIGRATION_7_8,
                     BksDatabase.MIGRATION_8_9,
                     BksDatabase.MIGRATION_9_10,
-                    BksDatabase.MIGRATION_10_11
+                    BksDatabase.MIGRATION_10_11,
+                    BksDatabase.MIGRATION_11_12
                 )
                 .addCallback(DEFAULT_CATEGORIZATION_RULES_CALLBACK)
                 .build()
@@ -48,8 +49,8 @@ internal val DEFAULT_CATEGORIZATION_RULES_CALLBACK = object : RoomDatabase.Callb
             """
             INSERT OR IGNORE INTO local_settings (
                 id, ai_consent_granted, enhanced_context_granted,
-                active_ledger_id
-            ) VALUES (?, 0, 0, ?)
+                active_ledger_id, automatic_bookkeeping_enabled
+            ) VALUES (?, 0, 0, ?, 0)
             """.trimIndent(),
             arrayOf(LOCAL_SETTINGS_ID, DEFAULT_LEDGER_BOOK_ID)
         )

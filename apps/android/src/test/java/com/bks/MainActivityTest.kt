@@ -363,26 +363,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun billImportOpensFromReviewQueue() {
-        composeRule.setContent {
-            BksApp(
-                bindings = BksAppBindings(
-                    billSyncAccessibilityAccessGranted = true,
-                    billSyncAccessibilityServiceConnected = true,
-                    onLaunchBillSyncSource = { true }
-                )
-            )
-        }
-
-        composeRule.onNodeWithTag("app-tab-Review", useUnmergedTree = true).performClick()
-        composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.onNodeWithTag("manual-bill-import-host").assertIsDisplayed()
-        composeRule.onNodeWithText("选择账单来源").assertIsDisplayed()
-        composeRule.onNodeWithText("取消").performClick()
-    }
-
-    @Test
-    fun automaticBookkeepingEntryOpensInformationalPage() {
+    fun automaticBookkeepingEntryOpensControlsPage() {
         composeRule.setContent {
             BksApp()
         }
@@ -392,7 +373,7 @@ class MainActivityTest {
             .performScrollTo()
             .performClick()
 
-        composeRule.onNodeWithText("自动记账功能已移除")
+        composeRule.onNodeWithText("自动识别")
             .performScrollTo()
             .assertIsDisplayed()
     }

@@ -20,13 +20,13 @@ class ComplianceMaterialsTest {
         val copies = BKS_COMPLIANCE.permissionExplanations.associateBy { it.id }
 
         val accessibilityCopy = copies.getValue(PermissionExplanationId.AccessibilityBillSync)
-        assertEquals("手动补录无障碍服务", accessibilityCopy.title)
+        assertEquals("自动记账无障碍服务", accessibilityCopy.title)
         assertEquals(
-            "用于用户主动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可在本机瞬时 OCR。",
+            "用于用户开启自动记账后，在设备本地识别其他应用当前活动窗口中的已完成交易。",
             accessibilityCopy.purpose
         )
         assertEquals(
-            "只在手动补录会话期间读取当前账单页，不读取聊天或普通消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。",
+            "只读取可见、非密码、非输入框文字；不截图、不点击、不滚动、不启动其他应用，不保存或上传原始页面文字。识别结果只进入待确认。",
             accessibilityCopy.boundary
         )
         assertEquals(
@@ -36,13 +36,15 @@ class ComplianceMaterialsTest {
 
         val storeNotes = BKS_COMPLIANCE.storeReviewNotes.associateBy { it.title }
         assertEquals(
-            "无障碍服务仅在用户主动发起手动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。",
+            "无障碍服务仅在用户主动开启自动记账后运行，读取其他应用当前活动窗口中可见、非密码、非输入框的文字，并只为明确完成的交易生成待确认项；不截图、不操作其他应用、不保存或上传原始页面文字。",
             storeNotes.getValue("无障碍审核说明").body
         )
         assertTrue(storeNotes.containsKey("诊断日志审核说明"))
         assertTrue(
             BKS_COMPLIANCE.thirdPartyServices.any { service ->
-                service.name.contains("ML Kit") && service.processingMethod.contains("不保存、不上传")
+                service.name.contains("Assists") &&
+                    service.processingMethod.contains("不保存、不上传") &&
+                    "assists-base" in service.declarationTokens
             }
         )
         assertTrue(
@@ -76,7 +78,10 @@ class ComplianceMaterialsTest {
     @Test
     fun complianceScannerFlagsUnlistedRiskySdkNames() {
         val findings = findUnlistedSdkOrNetworkServices(
-            buildTexts = listOf("""implementation("com.umeng.umsdk:analytics:1.0.0")"""),
+            buildTexts = listOf(
+                """implementation("com.umeng.umsdk:analytics:1.0.0")""",
+                """exclude(group = "com.google.mlkit", module = "text-recognition-chinese")"""
+            ),
             manifestText = "<manifest />",
             declaredServices = BKS_COMPLIANCE.thirdPartyServices
         )

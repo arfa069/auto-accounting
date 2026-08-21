@@ -52,7 +52,7 @@
 - 包名使用 `com.bks` 下的全小写名称；
 - 每个文件应聚焦一个主要职责；
 - 数据持久层使用领域细分接口（`LedgerBookRepository`、`LedgerEntryRepository`、`FundingAccountRepository`）解耦操作，并通过 `LocalLedgerRepository` Facade 对外透出；
-- Activity 回调与手动补录无障碍服务状态由 `BillSyncStateCoordinator` 托管，组合导航状态由 `BksAppState` (State Holder) 管理；
+- Activity 回调与自动记账无障碍服务状态由 `BillSyncStateCoordinator` 托管，组合导航状态由 `BksAppState` (State Holder) 管理；
 - 优先沿用现有 feature、repository 与 service 组织方式，不为简单问题引入新抽象。ADR 使用下一个四位编号，例如 `docs/adr/0063-describe-decision.md`。
 
 ## 测试规范
@@ -78,7 +78,7 @@
 
 6. 使用 `adb -s <serial> shell input tap <x> <y>`、`swipe`、`text` 和 `keyevent` 操作界面；
 7. 普通页面的关键状态可运行 `adb -s <serial> shell uiautomator dump /sdcard/window.xml` 与 `adb -s <serial> shell screencap -p /sdcard/screen.png`，再将 XML 和截图拉取到版本库外的本机临时目录作为证据。
-8. 涉及权限、后台服务或手动补录时，分别使用 `adb -s <serial> shell dumpsys accessibility`、`dumpsys package com.bks` 和相关系统服务的 `dumpsys` 输出核对真实状态；Xiaomi/MIUI 上验证无障碍服务时禁止使用 `uiautomator dump`，避免测试工具临时重建服务并制造错误状态，此时只使用普通截图和 `dumpsys`。复现后用 `adb -s <serial> logcat -d` 获取日志，并在展示或保存前过滤无关内容、脱敏敏感数据。
+8. 涉及权限或自动记账无障碍服务时，分别使用 `adb -s <serial> shell dumpsys accessibility`、`dumpsys package com.bks` 和相关系统服务的 `dumpsys` 输出核对真实状态；Xiaomi/MIUI 上验证无障碍服务时禁止使用 `uiautomator dump`，避免测试工具临时重建服务并制造错误状态，此时只使用普通截图和 `dumpsys`。复现后用 `adb -s <serial> logcat -d` 获取日志，并在展示或保存前过滤无关内容、脱敏敏感数据。
 
 ## 提交与 Pull Request
 

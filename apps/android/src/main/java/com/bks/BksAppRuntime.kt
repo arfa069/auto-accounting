@@ -2,7 +2,6 @@ package com.bks
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,7 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 internal class BksAppRuntimeState {
-    var manualBillImportRequestId by mutableLongStateOf(0L)
+    var automaticBookkeepingEnabled by mutableStateOf(false)
     var accountSession by mutableStateOf<AccountSession?>(null)
     var isRestoringAccountSession by mutableStateOf(true)
     var accountEntryReturnSession by mutableStateOf<AccountSession?>(null)
@@ -147,6 +146,13 @@ internal class BksAppActions(
         runtime.categorizationRules = nextRules
         coroutineScope.launch {
             dependencies.local.preferencesRepository.replaceCategorizationRules(nextRules)
+        }
+    }
+
+    fun setAutomaticBookkeepingEnabled(enabled: Boolean) {
+        runtime.automaticBookkeepingEnabled = enabled
+        coroutineScope.launch {
+            dependencies.local.preferencesRepository.setAutomaticBookkeepingEnabled(enabled)
         }
     }
 

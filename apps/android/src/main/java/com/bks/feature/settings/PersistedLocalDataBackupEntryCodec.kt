@@ -161,4 +161,5 @@ internal fun DataInputStream.readLedgerEntryV2(): LedgerEntryEntity {
 internal fun PaymentSource.toScope(): FundingAccountSourceScope = when (this) {
     PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
     PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+    PaymentSource.OTHER -> FundingAccountSourceScope.USER
 }

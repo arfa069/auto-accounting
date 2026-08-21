@@ -1,5 +1,7 @@
 # Android 项目系统性能审计报告
 
+> 历史说明：本报告记录 2026-07-19 至 2026-07-22 的当时实现。通知捕获、微信/支付宝专用无障碍、截图与 OCR 相关描述已由 [ADR 0063](../adr/0063-replace-platform-capture-with-assists-generic-recognition.md) 取代，不代表当前运行时。
+
 审计日期：2026-07-19 至 2026-07-22
 仓库：`C:\Users\Arfa\Documents\bks`
 Android 模块：`apps/android`

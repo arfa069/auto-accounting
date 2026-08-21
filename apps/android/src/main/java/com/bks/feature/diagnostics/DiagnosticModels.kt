@@ -6,34 +6,13 @@ import kotlinx.coroutines.flow.StateFlow
 enum class DiagnosticLevel { Debug, Info, Warning, Error }
 
 enum class DiagnosticComponent {
-    Monitoring,
-    NotificationService,
-    NotificationParser,
-    NotificationProcessor,
-    AccessibilityService,
-    Ocr,
-    BillSyncParser,
-    BillSyncProcessor,
-    ManualImport,
     Persistence,
     Application
 }
 
-enum class DiagnosticSource { WeChat, Alipay, System, Unknown }
+enum class DiagnosticSource { System, Unknown }
 
 enum class DiagnosticSensitiveField {
-    NotificationText,
-    PageText,
-    OcrText,
-    Amount,
-    Merchant,
-    Note,
-    PaymentAccount,
-    PaymentMethod,
-    OrderNumber,
-    MerchantOrderNumber,
-    CaptureEvidence,
-    WindowContext,
     ExceptionDetails
 }
 

@@ -126,7 +126,7 @@ private fun AccountHeader() {
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "先把微信、支付宝交易放进待确认队列，确认后再进入本地账本。",
+            text = "自动识别的交易先进入待确认队列，确认后再进入本地账本。",
             style = MaterialTheme.typography.bodyLarge
         )
     }

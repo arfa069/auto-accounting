@@ -2,7 +2,7 @@
 
 ## 状态
 
-已通过 (Accepted)
+已被 [ADR 0063](./0063-replace-platform-capture-with-assists-generic-recognition.md) 取代；以下内容仅保留为历史记录。
 
 ## 上下文
 

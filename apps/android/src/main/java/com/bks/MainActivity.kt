@@ -22,7 +22,6 @@ class MainActivity : ComponentActivity() {
                     billSyncAccessibilityAccessGranted = coordinator.billSyncAccessibilityAccessGranted.value,
                     billSyncAccessibilityServiceConnected = coordinator.billSyncAccessibilityServiceConnected.value,
                     onOpenBillSyncAccessibilitySettings = coordinator::openBillSyncAccessibilitySettings,
-                    onLaunchBillSyncSource = coordinator::launchBillSyncSource,
                     wechatAuthCallback = pendingWechatAuthCallback.value,
                     onWechatAuthCallbackConsumed = { pendingWechatAuthCallback.value = null }
                 )

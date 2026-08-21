@@ -3,97 +3,66 @@ package com.bks.feature.billsync
 import com.bks.data.local.ConfidenceState
 import com.bks.feature.review.ReviewQueueEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BillSyncPipelineTest {
-    @Test
-    fun manualBillPageCreatesPendingEntry() {
-        val result = BillSyncPipeline(
-            captureTimeFormatter = { "2026-07-08 12:30" }
-        ).sync(
-            source = BillSyncSource.WeChat,
-            pageText = "2026-07-08 12:20 午餐 支出 ¥35.90 微信零钱",
-            existingPendingEntries = emptyList(),
-            capturedAtEpochMillis = NOW
-        )
-
-        assertEquals(1, result.createdEntries.size)
-        assertEquals("午餐", result.createdEntries.single().title)
-        assertEquals("补录账单", result.createdEntries.single().captureReasonLabel)
-        assertEquals(ConfidenceState.HIGH, result.createdEntries.single().confidence)
-    }
+    private val pipeline = BillSyncPipeline(captureTimeFormatter = { "2026-08-21 10:00" })
 
     @Test
-    fun manualPaymentRecordUsesSafeFallbackTitleAndKeepsResultPending() {
-        val result = BillSyncPipeline().sync(
-            source = BillSyncSource.Alipay,
-            pageText = "支付信息\n支付成功\n交易时间 2026-07-10 09:12\n金额 ¥20.00",
-            existingPendingEntries = emptyList(),
-            capturedAtEpochMillis = NOW
-        )
-
-        assertEquals(1, result.createdEntries.size)
-        assertEquals("支付宝支付", result.createdEntries.single().title)
-        assertEquals(2_000L, result.createdEntries.single().amountMinor)
-    }
-
-    @Test
-    fun manualWechatOcrDoesNotPersistRawEvidenceAndFlagsFallbackTitle() {
-        val result = BillSyncPipeline().sync(
-            source = BillSyncSource.WeChat,
-            pageText = "当前状态\n支付成功\n¥10.40",
-            existingPendingEntries = emptyList(),
-            capturedAtEpochMillis = NOW,
-            captureReasonLabel = MANUAL_OCR_CAPTURE_REASON,
-            retainRawEvidence = false
-        )
-
+    fun genericCaptureCreatesReviewOnlyCandidateWithoutRawTextOrAccount() {
+        val result = sync("支付成功\n¥35.90\n商户：社区便利店\n交易时间 2026-08-21 09:12")
         val entry = result.createdEntries.single()
-        assertEquals("微信支付", entry.title)
+
+        assertTrue(result.recognized)
+        assertEquals(GENERIC_PAYMENT_SOURCE_LABEL, entry.sourceLabel)
+        assertEquals(ACCESSIBILITY_AUTO_CAPTURE_REASON_LABEL, entry.captureReasonLabel)
         assertEquals(ConfidenceState.NEEDS_REVIEW, entry.confidence)
+        assertEquals("", entry.fundingAccountLabel)
+        assertNull(entry.fundingAccountId)
         assertEquals("", entry.rawEvidenceText)
+    }
+
+    @Test
+    fun fallbackMerchantRemainsPendingWithReviewNote() {
+        val entry = sync("收款成功\n¥12.00\n交易单号 123").createdEntries.single()
+
+        assertEquals(FALLBACK_MERCHANT_TITLE, entry.title)
         assertTrue(entry.note != null)
     }
 
     @Test
-    fun duplicateManualBillMergesIntoExistingPendingEntry() {
-        val existing = ReviewQueueEntry(
-            id = "pending-1",
-            title = "午餐",
-            amountMinor = 3_590,
-            transactionTimeText = "2026-07-08 12:20",
-            sourceLabel = "微信",
-            kindLabel = "支出",
-            captureReasonLabel = "补录账单"
-        )
-
-        val result = BillSyncPipeline().sync(
-            source = BillSyncSource.WeChat,
-            pageText = "2026-07-08 12:20 午餐 支出 ¥35.90 微信零钱",
-            existingPendingEntries = listOf(existing),
+    fun duplicateCandidateMergesThroughExistingPipeline() {
+        val first = sync("支付成功\n¥35.90\n商户：社区便利店\n交易时间 2026-08-21 09:12")
+            .createdEntries.single()
+        val second = pipeline.sync(
+            pageText = "支付成功\n¥35.90\n商户：社区便利店\n交易时间 2026-08-21 09:12",
+            existingPendingEntries = listOf(first),
             capturedAtEpochMillis = NOW
         )
 
-        assertTrue(result.createdEntries.isEmpty())
-        assertEquals(1, result.mergedEntries.size)
-        assertEquals(1, result.duplicateSkippedCount)
+        assertTrue(second.createdEntries.isEmpty())
+        assertEquals(1, second.mergedEntries.size)
+        assertEquals(1, second.duplicateSkippedCount)
     }
 
     @Test
-    fun unsupportedPageFailsWithoutCreatingEntries() {
-        val result = BillSyncPipeline().sync(
-            source = BillSyncSource.Alipay,
-            pageText = "not a bill page",
-            existingPendingEntries = emptyList(),
-            capturedAtEpochMillis = NOW
-        )
+    fun unrelatedPageCreatesNothing() {
+        val result = sync("聊天内容\n¥35.90")
 
-        assertTrue(result.errorMessage != null)
+        assertFalse(result.recognized)
         assertTrue(result.createdEntries.isEmpty())
     }
 
+    private fun sync(pageText: String): BillSyncResult = pipeline.sync(
+        pageText = pageText,
+        existingPendingEntries = emptyList<ReviewQueueEntry>(),
+        capturedAtEpochMillis = NOW
+    )
+
     private companion object {
-        const val NOW = 1_783_468_800_000L
+        const val NOW = 1_755_741_600_000L
     }
 }

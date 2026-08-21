@@ -13,12 +13,12 @@ class ReviewQueueStateTest {
     fun evidenceMergeKeepsLegacyAndNamedSourcesSeparate() {
         val merged = mergeReviewEvidenceText(
             "旧版原始文本",
-            reviewEvidenceText(ACCESSIBILITY_EVIDENCE_LABEL, "支付成功 中国电信"),
-            reviewEvidenceText(OCR_EVIDENCE_LABEL, "支付成功 中国电信 ¥2.98")
+            "[来源 A]\n支付成功 中国电信",
+            "[来源 B]\n支付成功 中国电信 ¥2.98"
         )
 
         assertEquals(
-            listOf("原始文本", "无障碍节点", "ML Kit OCR"),
+            listOf("原始文本", "来源 A", "来源 B"),
             parseReviewEvidenceText(merged).map { it.first }
         )
         assertTrue(merged.contains("旧版原始文本"))

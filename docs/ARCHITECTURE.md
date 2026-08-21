@@ -8,8 +8,8 @@ Room 是设备端离线真实源；用户明确启用后，后端按账号保存
 
 ```mermaid
 flowchart LR
-  WeChat["用户当前打开的微信 / 支付宝页面"] --> A11y["无障碍节点 / 受限本地 OCR"]
-  Import["用户发起的账单导入"] --> A11y
+  Apps["第三方应用当前活动窗口"] --> A11y["Assists 可见节点文字"]
+  Toggle["用户开启自动记账"] --> A11y
   A11y --> Capture
   Capture --> Dedupe["去重匹配"]
   Dedupe --> Pending["待确认队列 (Pending Entries)"]
@@ -41,8 +41,7 @@ flowchart LR
 - `feature:review`: 待确认队列及待确认条目详情。
 - `feature:ledger`: 账本列表、搜索、筛选与条目详情。
 - `feature:reports`: 月度概览、分类占比与分类趋势。
-- `feature:capture-accessibility`: 手动账单导入的无障碍读取与本机 OCR。
-- `feature:billsync`: 共享的 `ManualBillImportHost`、导入会话状态、来源启动、受支持页面解析及无障碍捕获接管。
+- `feature:billsync`: Assists 无障碍事件接入、受限节点遍历、通用页面解析、去重及待确认交接。
 - `feature:categorization`: 本地分类规则及 AI 分类客户端。
 - `feature:account`: 用户名/邮箱/手机号与微信登录注册、公开账号 UUID、账号 Profile、身份绑定/换绑与合并、Session、本地模式及账号注销。
 - `feature:settings`: 数据与备份及相关设置。
@@ -61,8 +60,7 @@ flowchart LR
   - `BksAppState`: 统一管理顶层 Tab、个人中心子页面、手动录入入口、列表滚动状态及 `SnackbarHostState`；`MainActivity` 只保留系统生命周期、外部 Intent 转换和 `setContent`。
   - `BksAppBindings` 承载系统权限、设置跳转、外部导航及微信回调，`BksAppOverrides` 仅承载测试替身；生产依赖、Session 恢复、同步副作用和本地状态持久化继续由应用根组合层统一装配。
   - 审核编辑器、账本列表、账本表单模型和账号管理对话框分别位于独立文件，Screen 入口只负责页面状态与事件编排。
-  - `BillSyncAccessibilityService` 只保留手动补录所需的 Service 生命周期、事件入口、系统窗口访问和截图实现。`AccessibilityCaptureRouter` 负责准入与路线选择，微信 OCR 协调器负责本次会话的窗口复核、协程任务与取消语义，`BillSyncDiagnosticRecorder` 统一诊断事件。
-  - OCR 协调器只经 `AccessibilityCaptureHost` 读取当前窗口、屏幕健康度和截图能力；`onDestroy` 统一取消协调器任务，`onInterrupt` 不改变服务连接状态。
+  - `BillSyncAccessibilityService` 继承 `AssistsService`，只保留 Service 生命周期、事件过滤、500 ms 稳定等待、活动窗口复核、节点文本边界和 30 秒防抖；`onDestroy` 取消任务并注销 Listener。
 - **第三轮根组合重构（2026-08-02）**：`BksApp` 保留为唯一根组合入口，但将职责拆分为可独立核对的边界：
   - `BksAppDependencies` 负责 Room、账号、AI、微信、备份和账本同步等生产依赖的记忆化装配；`BksAppOverrides` 只向测试注入替身，不改变生产依赖图。
   - `BksAppRuntime` 集中账号 Session、账本/同步状态、动作和展示模型；`BksAppEffectsContext` 及其副作用函数集中恢复、校验、导航、持久化和同步生命周期，避免路由组件直接拥有后台任务。
@@ -82,10 +80,7 @@ flowchart LR
   - `SmtpEmailProviderConfig` 与 `AliyunPnvsSmsConfig` 承载 SMTP/阿里云 PNVS 的不可变配置；`SmtpEmailProvider`、`AliyunPnvsSmsProvider` 保留原 public 构造器作为兼容转发入口，环境变量名称、短信 Provider 选择值、凭据回退顺序、TLS/超时和失败映射均不变。
   - `AiCategorizationService` 只负责请求编排、Provider 调用和成功日志写入；`AiCategorizationValidation.kt` 负责请求与增强上下文授权校验，`AiCategorizationResponseValidation.kt` 负责响应白名单、脱敏解释和异常映射。取消异常继续向上传播，未知运行时异常稳定映射为 `PROVIDER_ERROR`，任何失败都不写成功日志或泄露 Provider 文本。
   - 本轮未新增路由、共享 API、环境变量、数据库表或用户流程。Backend 全量测试 213 项（3 项环境门控跳过）和 backend Detekt 通过；baseline 现仅保留 `AccountRoutesTest` 的 `LargeClass` 历史项。Android 全量、`coverageReport`、根构建和真机验收未因本轮 backend-only 改动重复执行。
-- **第七轮 BillPageParser 页面解析职责拆分（2026-08-02）**：保持微信/支付宝页面识别规则、关键词优先级、金额选择、交易方向、时间与商户回退及待确认语义不变，只拆分 Android billsync 内部职责：
-  - `BillPageParser` 保留公共解析入口、规范化、结构化单行解析、金额转换和结果去重；`PaymentRecordClassification` 集中页面准入、完成态/付款发起判断和交易类型分类。
-  - `PaymentRecordSurfaceParser` 负责支付记录金额候选、窗口、时间回退和结果构造；`PaymentRecordFieldExtractor` 负责商户、商品、资金账户、状态及订单字段，时间、P2P 标题和订单号辅助提取器分别位于独立文件。
-  - 本轮未新增路由、共享 API、环境变量、数据库表、UI 或 OCR/无障碍行为；移除 3 条对应 Detekt baseline 项。Android 全量 556 项、Android Detekt、Debug 构建及 `coverageReport detekt build` 均通过，未执行真机操作。
+- **通用页面识别（2026-08-21）**：`BillPageParser` 是唯一解析入口，要求完成态、唯一金额、无冲突方向和交易上下文；平台专用分类器、字段提取器、OCR 与手动会话已删除。
 - **第八轮 分类规则页面职责拆分（2026-08-03）**：保持规则匹配语义、规则持久化、AI 同意状态与可见 UI 行为不变，只拆分 `CategorizationRulesScreen` 的页面职责：
   - 规则列表、规则编辑对话框和 AI 设置区段分别位于 `CategorizationRuleListContent.kt`、`CategorizationRuleDialog.kt`、`CategorizationAiSettingsSection.kt`，`CategorizationAiUiState.kt` 承载 AI 设置状态；`CategorizationRulesScreen` 保留页面状态与装配。
   - 本轮未新增共享 API、数据库表或后端路由，Detekt baseline 无变化。
@@ -163,17 +158,17 @@ flowchart LR
 ## 4. 捕获流水线 (Capture Pipeline)
 
 流水线阶段：
-1. 来源事件从用户发起的手动账单导入到达。
-2. 解析器 (Parser) 提取候选字段与原始证据。
-3. 规范化器 (Normalizer) 将来源特定文本映射为交易类型、商家/标题、金额、时间、资金账户及来源。
-4. 去重模块 (Deduplication) 与待确认条目及账本条目进行对比。
-5. 分类模块 (Categorization) 先应用本地规则，随后可选用 AI 分类。
-6. 创建待确认条目或执行合并。
-7. 刷新待确认队列。
+1. `AssistsService.listeners` 接收窗口状态、内容或窗口集合变化事件。
+2. 500 ms 后通过 `AssistsCore.getAccessibilityRootNodes(ActiveWindow)` 复核包名与窗口，并受限采集可读节点文字。
+3. `BillPageParser` 在内存中执行通用完成态、金额、方向和上下文准入。
+4. `BillSyncPipeline` 生成 `OTHER` / `ACCESSIBILITY_AUTO` / `NEEDS_REVIEW` 候选并执行既有去重。
+5. 本地分类规则应用后，`ReviewQueuePersistence` 创建或合并待确认条目。
+6. 用户确认后才由 Repository 写入当前账本。
 
 核心规则：
 - 捕获流水线**绝不直接写入**已确认的账本条目。
-- 手动导入 UI 本身绝不直接写入或合并待确认条目。`BillSyncCaptureProcessor` 通过 `ReviewQueuePersistence` 进行持久化，应用 UI 从 Room Flow 实时刷新。
+- `BillSyncCaptureProcessor` 通过 `ReviewQueuePersistence` 进行持久化，应用 UI 从 Room Flow 实时刷新。
+- 原始页面文字、未命中内容和无关页面信息不进入 Room、诊断日志、备份、同步或上传链路。
 - 初始本地规则作为可编辑的 Room 记录预置；数据库迁移与首次安装回调不得覆盖用户后续的修改。
 
 ## 5. 去重匹配 (Deduplication)
@@ -296,29 +291,21 @@ Session 与传输边界：
 
 ## 9. 权限架构 (Permission Architecture)
 
-权限中心追踪状态：
-- 用于用户主动账单导入的无障碍服务授权状态。
-- 无障碍服务实时连接状态。
+自动记账页面分别追踪用户意图开关、无障碍授权状态和服务实时连接状态。权限或连接断开不反写用户开关。
 
 重要边界：
-- 微信、支付宝按平台、识别入口和交易类型拆分后的现行判断条件，统一记录在[微信与支付宝交易识别规则](./PAYMENT-RECOGNITION-RULES.md)。
-- 手动账单导入始终由用户主动发起，不属于常规支付流程。
-- 无障碍服务只在活动的手动导入会话中读取微信或支付宝当前可见页面。微信补录在本次会话获得 OCR 同意后可使用一次性临时截图；支付宝补录只读取无障碍节点。Android 14 及以上仅捕获活动应用窗口，Android 11-13 使用屏幕截图 API。Bitmap 在识别后立即释放，绝不持久化或上传。
-- 手动微信 OCR 仅接受命中 `当前状态 + 支付成功`、`当前状态 + 对方已收` 或 `退款状态 + 已退款` 任一完整签名，并且只有一个无歧义交易金额的页面。`确认支付`、`立即支付`、`收银台`、`支付密码`、`待支付`、`处理中`、`支付失败` 和 `已取消` 属于硬性否定，优先于正面证据。
-- 接受的历史详情在存在时保留规范化支付方式、商品/收据备注、商品标题、商家/收款方、状态、交易时间、交易订单号及商家订单号。Bitmap 保持临时性；原始 OCR 文本保持在账本之外，且仅在单独开启的加密诊断存储中为活动手动导入会话持久化。
-- 待确认队列使用唯一的应用级手动导入请求；不持有独立的重复持久化路径。
-- 权限授予与在线服务连接是独立的先决条件。缺失条件会阻止来源启动并透出恢复操作。
-- 每次导入仅读取当前受支持的可见页面。它不会进行自动导航、滚动、翻页或承诺完整的历史扫描。
-- 90 秒超时仅会导致处于 `AwaitingBillPage` 状态的同一会话失败；处理中、已取消、已完成及较新的会话不受影响。
-- 应用绝对不得读取聊天内容、发送消息、发起支付或发起转账。
+- 现行判断条件统一记录在[通用交易识别规则](./PAYMENT-RECOGNITION-RULES.md)。
+- Service 排除 BKS 自身，只读取可见、非密码、非可编辑文字，限制 512 节点、24 层和 16 KiB。
+- Service 不截图、不执行 OCR、不点击、不滚动、不启动应用，也不按微信/支付宝包名建立白名单或路由。
+- 付款发起、密码输入、待支付、处理中、失败、取消以及金额/方向冲突优先拒绝。
+- Manifest 保持 `exported=false`，无 `packageNames` 和 `canTakeScreenshot`；微信包查询仅供微信登录。
 
 ## 10. 敏感诊断日志 (Sensitive Diagnostic Logging)
 
-约束性决策详见 [ADR 0055](./adr/0055-store-opt-in-sensitive-diagnostics-on-device.md)；运维与生产者指南见 [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md)。
+通用自动记账的诊断边界详见 [ADR 0063](./adr/0063-replace-platform-capture-with-assists-generic-recognition.md)；运维指南见 [DIAGNOSTIC-LOGS.md](./DIAGNOSTIC-LOGS.md)。
 
 - `feature/diagnostics` 拥有事件契约、身份凭证脱敏、256 KB 事件上限、5 秒抑制、Android Keystore 加密、`.aadlog` 分段、查询、清除及 `.aadiag` 导出能力。
-- 服务与处理器在无障碍/OCR/解析器/去重/持久化之间传递随机 `traceId`。手动导入额外使用现有的 `sessionId`；候选 ID 绝不复用为 Trace ID，因为它们可能编码了交易数据。
-- 生产者尽力发送回调给 `DiagnosticRecorder`。记录器/存储故障仅透出固定元数据错误，绝不导致捕获、去重或持久化失败。
+- 自动记账链路不向 `DiagnosticRecorder` 写入页面内容、拒绝内容或交易字段；当前生产者仅记录应用异常。
 - 每个 JSON 事件在独立使用随机 AES-GCM IV 加密前均已脱敏并限制大小。文件存放在 `noBackupFilesDir` 下，使用 1 MB 分段，且仅当密文总大小超过 10 MB 时才滚动删除最旧分段。
 - Debug 默认开启。Release 默认关闭并要求知情用户确认。关闭开关保留历史；清除操作会删除所有分段及 Keystore 密钥。
 - 账本 V5 备份与诊断导出共享 PBKDF2-HMAC-SHA256/AES-256-GCM 原语，但保留独立的机制前缀与格式：`AUTO_ACCOUNTING_BACKUP_V5:` 与 `AUTO_ACCOUNTING_DIAGNOSTICS_V1:`。
@@ -338,9 +325,9 @@ Android 端检查：
 - 应用/后端 API Payload 的契约测试。
 
 内测手动检查：
-- 从待确认队列入口发起的具有共享预检、90 秒超时和清晰分步进度的手动账单导入。
-- 微信/支付宝手动补录的页面准入、OCR 与拒绝条件。
-- 诊断日志开关、脱敏生命周期、加密导出/解密、清除语义及支付作用域拒绝。
+- 自动记账四种页面状态、授权入口和开关/权限分离。
+- 通用页面准入、拒绝条件、待确认持久化与原始文字不落盘。
+- 诊断日志开关、脱敏生命周期、加密导出/解密和清除语义。
 - 备份导出与导入。
 - 账号注销冷静期与取消注销流程。
 - Session 持久化失败、离线重启、显式无效 Session、当前 Session 退出登录失败、Bearer 防冒充及哈希凭据迁移。

@@ -60,6 +60,11 @@ private fun BksAutomaticBookkeepingRoute(
     innerPadding: PaddingValues
 ) {
     AutomaticBookkeepingScreen(
+        enabled = context.runtime.automaticBookkeepingEnabled,
+        accessibilityAccessGranted = context.bindings.billSyncAccessibilityAccessGranted,
+        accessibilityServiceConnected = context.bindings.billSyncAccessibilityServiceConnected,
+        onEnabledChange = context.actions::setAutomaticBookkeepingEnabled,
+        onOpenAccessibilitySettings = context.bindings.onOpenBillSyncAccessibilitySettings,
         onBack = { context.appState.profileDestination.value = null },
         modifier = Modifier
             .padding(innerPadding)

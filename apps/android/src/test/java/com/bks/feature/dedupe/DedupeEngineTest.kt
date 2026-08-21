@@ -9,19 +9,17 @@ import org.junit.Test
 
 class DedupeEngineTest {
     @Test
-    fun exactBillImportPairIsHighConfidenceMerge() {
+    fun exactAutomaticPairIsHighConfidenceMerge() {
         val existing = entry(
             id = "pending-1",
-            captureReason = "补录账单",
-            rawEvidence = "微信支付收款凭证 午餐 35.90"
+            captureReason = "支付结果自动捕获"
         )
-        val billSync = entry(
+        val automatic = entry(
             id = "bill-1",
-            captureReason = "补录账单",
-            rawEvidence = "微信账单 午餐 支出 35.90"
+            captureReason = "支付结果自动捕获"
         )
 
-        val result = DedupeEngine().addCandidate(listOf(existing), billSync)
+        val result = DedupeEngine().addCandidate(listOf(existing), automatic)
 
         assertEquals(DedupeMatchLevel.HIGH_CONFIDENCE, result.matchLevel)
         assertEquals(1, result.pendingEntries.size)
@@ -30,10 +28,9 @@ class DedupeEngineTest {
         assertEquals("重复合并", merged.captureReasonLabel)
         assertEquals(ConfidenceState.HIGH, merged.confidence)
         assertNull(merged.note)
-        assertTrue(merged.rawEvidenceText.contains("微信支付收款凭证"))
-        assertTrue(merged.rawEvidenceText.contains("微信账单"))
+        assertTrue(merged.rawEvidenceText.isEmpty())
         assertTrue(merged.parsedFields.contains("匹配原因=来源、金额、时间、类型、标题一致"))
-        assertTrue(merged.parsedFields.contains("证据来源=补录账单"))
+        assertTrue(merged.parsedFields.contains("证据来源=支付结果自动捕获"))
     }
 
     @Test
@@ -42,7 +39,7 @@ class DedupeEngineTest {
         val candidate = entry(
             id = "bill-1",
             title = "商户订单",
-            captureReason = "账单同步"
+            captureReason = "支付结果自动捕获"
         )
 
         val result = DedupeEngine().addCandidate(listOf(existing), candidate)
@@ -52,7 +49,7 @@ class DedupeEngineTest {
         val suspect = result.pendingEntries.first()
         assertEquals("bill-1", suspect.id)
         assertEquals(ConfidenceState.DUPLICATE_SUSPECT, suspect.confidence)
-        assertEquals("账单同步", suspect.captureReasonLabel)
+        assertEquals("支付结果自动捕获", suspect.captureReasonLabel)
         assertNull(suspect.note)
         assertTrue(suspect.parsedFields.contains("疑似重复=午餐"))
     }
@@ -63,7 +60,7 @@ class DedupeEngineTest {
         val candidate = entry(
             id = "bill-1",
             title = "商户订单",
-            captureReason = "账单同步",
+            captureReason = "支付结果自动捕获",
             note = "客户会议"
         )
 
@@ -76,12 +73,12 @@ class DedupeEngineTest {
     @Test
     fun highConfidenceMergePreservesUserNote() {
         val existing = entry(note = "客户会议")
-        val billSync = entry(
+        val automatic = entry(
             id = "bill-1",
-            captureReason = "补录账单"
+            captureReason = "支付结果自动捕获"
         )
 
-        val merged = DedupeEngine().addCandidate(listOf(existing), billSync)
+        val merged = DedupeEngine().addCandidate(listOf(existing), automatic)
             .pendingEntries.single()
 
         assertEquals("客户会议", merged.note)
@@ -94,7 +91,7 @@ class DedupeEngineTest {
             id = "bill-1",
             amountMinor = 8800,
             transactionTimeText = "2026-07-08 18:50",
-            captureReason = "账单同步"
+            captureReason = "支付结果自动捕获"
         )
 
         val result = DedupeEngine().addCandidate(listOf(existing), candidate)
@@ -110,10 +107,10 @@ class DedupeEngineTest {
         title: String = "午餐",
         amountMinor: Long = 3590,
         transactionTimeText: String = "2026-07-08 12:20",
-        source: String = "微信",
+        source: String = "其他应用",
         kind: String = "支出",
-        captureReason: String = "补录账单",
-        rawEvidence: String = "微信支付收款凭证 午餐 35.90",
+        captureReason: String = "支付结果自动捕获",
+        rawEvidence: String = "",
         note: String? = null
     ): ReviewQueueEntry = ReviewQueueEntry(
         id = id,
@@ -121,7 +118,7 @@ class DedupeEngineTest {
         amountMinor = amountMinor,
         transactionTimeText = transactionTimeText,
         category = "餐饮",
-        fundingAccountLabel = "微信零钱",
+        fundingAccountLabel = "",
         sourceLabel = source,
         kindLabel = kind,
         captureReasonLabel = captureReason,

@@ -264,7 +264,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.mlkit.text.recognition.chinese)
+    implementation("io.github.ven-coder:assists-base:3.5.5") {
+        exclude(group = "com.google.mlkit", module = "text-recognition-chinese")
+    }
     implementation(libs.wechat.sdk.android)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

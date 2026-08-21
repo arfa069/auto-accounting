@@ -13,7 +13,6 @@ import com.bks.feature.account.AccountCredentials
 import com.bks.feature.account.AccountRepository
 import com.bks.feature.account.WechatAuthCallback
 import com.bks.feature.account.WechatAuthGateway
-import com.bks.feature.billsync.BillSyncSource
 import com.bks.feature.categorization.AiCategorizationGateway
 import com.bks.feature.categorization.CloudAiSettingsGateway
 import com.bks.ui.components.SlidePageTransition
@@ -25,7 +24,6 @@ data class BksAppBindings(
     val billSyncAccessibilityAccessGranted: Boolean = false,
     val billSyncAccessibilityServiceConnected: Boolean = true,
     val onOpenBillSyncAccessibilitySettings: () -> Unit = {},
-    val onLaunchBillSyncSource: (BillSyncSource) -> Boolean = { false },
     val wechatAuthCallback: WechatAuthCallback? = null,
     val onWechatAuthCallbackConsumed: () -> Unit = {}
 )

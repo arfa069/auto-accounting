@@ -89,16 +89,16 @@ val BKS_COMPLIANCE = ComplianceMaterials(
             retentionAndDeletion = "设备端保留至本机数据删除或卸载；后端设备记录在账号注销完成后删除"
         ),
         PersonalInformationItem(
-            name = "微信/支付宝账单页内容",
-            purpose = "用户主动补录当前或历史账目",
-            requiredState = "仅用户从待确认队列发起手动补录时使用",
-            processingMethod = "读取当前可见账单页面；微信空节点页面可在设备本地瞬时截图 OCR。截图始终立即释放且不保存、不上传；仅当用户主动开启诊断日志时，允许范围内的页面/OCR 文字会在本机加密留存"
+            name = "其他应用当前活动窗口的可见文字",
+            purpose = "在用户开启自动记账后识别已完成交易并生成待确认条目",
+            requiredState = "自动记账可选，默认关闭；需要用户授予无障碍服务权限",
+            processingMethod = "仅在设备内短暂读取可见、非密码、非输入框文字；不截图、不操作其他应用，未命中内容和原始页面文字不保存、不写入诊断日志、不上传"
         ),
         PersonalInformationItem(
-            name = "手动补录敏感诊断日志",
-            purpose = "排查手动补录、无障碍、OCR、解析、去重和持久化故障",
+            name = "应用故障诊断日志",
+            purpose = "排查应用异常和本地持久化故障",
             requiredState = "Debug 默认开启；Release 默认关闭，需用户阅读说明并主动开启",
-            processingMethod = "仅设备内 Keystore 加密分段，最多 10 MB，不上传；可关闭、清空或使用至少 8 位口令加密导出。仅包含手动补录页面/OCR 文字及交易字段，认证秘密写入前强制脱敏"
+            processingMethod = "仅设备内 Keystore 加密分段，最多 10 MB，不上传；可关闭、清空或使用至少 8 位口令加密导出。自动记账页面文字不进入诊断日志，认证秘密写入前强制脱敏"
         ),
         PersonalInformationItem(
             name = "账本和待确认账目",
@@ -150,19 +150,19 @@ val BKS_COMPLIANCE = ComplianceMaterials(
             declarationTokens = setOf("okhttp")
         ),
         ThirdPartyService(
-            name = "Google ML Kit Chinese Text Recognition（捆绑模型）",
-            purpose = "在用户主动补录的微信页面不提供可读无障碍节点时进行本地文字识别",
-            personalInformationCategory = "瞬时支付结果页像素和识别文本",
-            processingMethod = "模型随应用安装并仅在设备本地处理；截图处理后立即释放且不保存、不上传。用户主动开启诊断日志时，允许范围内的 OCR 文字可在设备内加密留存，不发送给 OCR 服务商",
-            declarationTokens = setOf("mlkit", "text-recognition")
+            name = "Assists 开源无障碍组件",
+            purpose = "接入 Android 无障碍服务并读取当前活动窗口节点",
+            personalInformationCategory = "其他应用当前活动窗口中可见、非密码、非输入框的文字",
+            processingMethod = "仅在应用进程内使用 assists-base；不使用截图、OCR、自动点击、滚动或应用启动能力，原始页面文字不保存、不上传",
+            declarationTokens = setOf("assists-base")
         )
     ),
     permissionExplanations = listOf(
         PermissionExplanation(
             id = PermissionExplanationId.AccessibilityBillSync,
-            title = "手动补录无障碍服务",
-            purpose = "用于用户主动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可在本机瞬时 OCR。",
-            boundary = "只在手动补录会话期间读取当前账单页，不读取聊天或普通消息，不发起付款、转账或退款；OCR 图片始终不保存、不上传。"
+            title = "自动记账无障碍服务",
+            purpose = "用于用户开启自动记账后，在设备本地识别其他应用当前活动窗口中的已完成交易。",
+            boundary = "只读取可见、非密码、非输入框文字；不截图、不点击、不滚动、不启动其他应用，不保存或上传原始页面文字。识别结果只进入待确认。"
         ),
         PermissionExplanation(
             id = PermissionExplanationId.CloudAi,
@@ -174,11 +174,11 @@ val BKS_COMPLIANCE = ComplianceMaterials(
     storeReviewNotes = listOf(
         StoreReviewNote(
             title = "无障碍审核说明",
-            body = "无障碍服务仅在用户主动发起手动补录时读取当前可见的微信、支付宝账单页面；微信空节点页面可使用设备本地瞬时截图 OCR，图片始终立即释放且不保存、不上传；不读取聊天或普通消息，不发送消息，不发起付款、转账或退款。"
+            body = "无障碍服务仅在用户主动开启自动记账后运行，读取其他应用当前活动窗口中可见、非密码、非输入框的文字，并只为明确完成的交易生成待确认项；不截图、不操作其他应用、不保存或上传原始页面文字。"
         ),
         StoreReviewNote(
             title = "诊断日志审核说明",
-            body = "Release 的诊断日志默认关闭，用户需在合规与隐私页面阅读字段、用途、10 MB 上限、长期保留和导出风险后主动开启。日志不上传，使用 Android Keystore 加密；截图永不保存，聊天正文不记录，密码、验证码、Token、Cookie、Authorization、API Key、备份口令和私钥写入前强制脱敏。"
+            body = "Release 的诊断日志默认关闭，用户需在合规与隐私页面阅读字段、用途、10 MB 上限、长期保留和导出风险后主动开启。日志不上传，使用 Android Keystore 加密；自动记账页面文字不记录，密码、验证码、Token、Cookie、Authorization、API Key、备份口令和私钥写入前强制脱敏。"
         )
     )
 )
@@ -193,7 +193,12 @@ fun findUnlistedSdkOrNetworkServices(
     declaredServices: List<ThirdPartyService>
 ): List<ComplianceFinding> {
     val declaredTokens = declaredServices.flatMap { it.declarationTokens }.map { it.lowercase() }.toSet()
-    val scannedText = (buildTexts + manifestText).joinToString("\n").lowercase()
+    val scannedText = (buildTexts + manifestText)
+        .joinToString("\n")
+        .lineSequence()
+        .filterNot { "exclude(" in it }
+        .joinToString("\n")
+        .lowercase()
     val riskyTokens = listOf(
         "umeng",
         "firebase",

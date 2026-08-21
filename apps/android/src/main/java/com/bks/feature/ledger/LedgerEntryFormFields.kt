@@ -243,7 +243,7 @@ internal fun ManualAccountCard(
                     label = "支付来源",
                     selection = ManualSelection(
                         selected = state.paymentSource,
-                        options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY),
+                        options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY, PaymentSource.OTHER),
                         itemLabel = { it.labelOrNone() },
                         testTag = "manual-entry-payment-source"
                     ),

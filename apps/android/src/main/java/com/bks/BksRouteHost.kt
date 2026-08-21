@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.bks.feature.account.AccountSession
 import com.bks.feature.account.AccountScreen
-import com.bks.feature.billsync.ManualBillImportHost
 import com.bks.feature.home.HomeScreen
 import com.bks.feature.ledger.ManualLedgerEntryScreen
 import com.bks.feature.profile.ProfileDestination
@@ -154,18 +153,6 @@ internal fun BksRouteHost(context: BksRouteContext) {
                 }
             }
         }
-        ManualBillImportHost(
-            openRequestId = runtime.manualBillImportRequestId,
-            accessibilityAccessGranted = bindings.billSyncAccessibilityAccessGranted,
-            accessibilityServiceConnected = bindings.billSyncAccessibilityServiceConnected,
-            onOpenAccessibilitySettings = bindings.onOpenBillSyncAccessibilitySettings,
-            onLaunchSource = bindings.onLaunchBillSyncSource,
-            onNavigateToReview = {
-                selectedTab = AppTab.Review
-                profileDestination = null
-            },
-            diagnosticRecorder = dependencies.diagnosticLogs
-        )
     }
 }
 

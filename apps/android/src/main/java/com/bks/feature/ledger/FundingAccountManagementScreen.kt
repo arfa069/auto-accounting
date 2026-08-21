@@ -316,6 +316,7 @@ private suspend fun handleFundingAccountDeleteResult(
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun FundingAccountCard(
     account: FundingAccountEntity,
     isDefault: Boolean,
@@ -362,6 +363,7 @@ private fun FundingAccountCard(
                             when (account.paymentSource) {
                                 PaymentSource.WECHAT -> "微"
                                 PaymentSource.ALIPAY -> "支"
+                                PaymentSource.OTHER -> "其"
                                 null -> "账"
                             },
                             fontWeight = FontWeight.Bold,
@@ -496,7 +498,7 @@ private fun FundingAccountEditorDialog(
                 SelectionMenu(
                     label = "支付来源",
                     selected = paymentSource,
-                    options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY),
+                    options = listOf(null, PaymentSource.WECHAT, PaymentSource.ALIPAY, PaymentSource.OTHER),
                     itemLabel = { it.labelOrNone() },
                     onSelected = {
                         paymentSource = it

@@ -47,8 +47,7 @@ class ReviewQueueContentTest {
     }
 
     @Test
-    fun summaryShowsApprovedCountsAndBillImportAction() {
-        var billImportOpened = false
+    fun summaryShowsApprovedCountsWithoutBillImportAction() {
         composeRule.setContent {
             ReviewQueueScreen(
                 initialState = ReviewQueueState(
@@ -57,8 +56,7 @@ class ReviewQueueContentTest {
                         sampleEntry(id = "quick", confidence = ConfidenceState.HIGH)
                     ),
                     todayStartEpochMillis = NOW - 1
-                ),
-                onOpenBillImport = { billImportOpened = true }
+                )
             )
         }
         composeRule.waitForIdle()
@@ -67,10 +65,7 @@ class ReviewQueueContentTest {
         composeRule.onNodeWithText("疑似重复 1").assertIsDisplayed()
         composeRule.onNodeWithText("今日待确认 2").assertIsDisplayed()
         composeRule.onAllNodesWithText("已确认 0").assertCountEquals(0)
-        composeRule.onNodeWithText("补录账单").performClick()
-        composeRule.waitForIdle()
-
-        assertTrue(billImportOpened)
+        composeRule.onAllNodesWithText("补录账单").assertCountEquals(0)
         composeRule.onAllNodesWithText("选择账单来源").assertCountEquals(0)
     }
 
@@ -104,16 +99,16 @@ class ReviewQueueContentTest {
     }
 
     @Test
-    fun emptyQueueKeepsSummaryAndBillImportEntry() {
+    fun emptyQueueKeepsSummaryAndEmptyState() {
         composeRule.setContent {
             ReviewQueueScreen(initialState = ReviewQueueState())
         }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("0 条待确认").assertIsDisplayed()
-        composeRule.onNodeWithText("补录账单").assertIsDisplayed()
+        composeRule.onAllNodesWithText("补录账单").assertCountEquals(0)
         composeRule.onNodeWithText("待确认记录").assertIsDisplayed()
-        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(4)
+        composeRule.onNodeWithTag("review-queue-list").performScrollToIndex(3)
         composeRule.waitForIdle()
         composeRule.onNodeWithText("暂无待确认记录").assertIsDisplayed()
         composeRule.onAllNodesWithText("需细看").assertCountEquals(0)
@@ -168,7 +163,7 @@ class ReviewQueueContentTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText("无障碍节点").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("支付成功 午餐").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("ML Kit OCR").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("来源 B").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("支付成功 午餐 ¥35.90").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("商户=午餐")
             .performScrollTo()
@@ -209,7 +204,7 @@ class ReviewQueueContentTest {
             [无障碍节点]
             支付成功 午餐
 
-            [ML Kit OCR]
+            [来源 B]
             支付成功 午餐 ¥35.90
         """.trimIndent(),
         parsedFields = listOf("商户=午餐", "金额=35.90")

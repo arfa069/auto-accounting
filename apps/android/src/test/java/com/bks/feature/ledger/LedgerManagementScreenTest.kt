@@ -405,6 +405,7 @@ class LedgerManagementScreenTest {
         sourceScope = when (source) {
             PaymentSource.WECHAT -> FundingAccountSourceScope.WECHAT
             PaymentSource.ALIPAY -> FundingAccountSourceScope.ALIPAY
+            PaymentSource.OTHER -> FundingAccountSourceScope.USER
             null -> FundingAccountSourceScope.USER
         },
         paymentSource = source,
