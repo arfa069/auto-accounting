@@ -50,6 +50,8 @@ class BillSyncAccessibilityServiceHealthTest {
         assertFalse(shouldCapturePackage("com.bks", "com.bks"))
         assertFalse(shouldCapturePackage("", "com.bks"))
         assertTrue(shouldCapturePackage("com.example.pay", "com.bks"))
+        assertTrue(shouldScheduleCapture(false))
+        assertFalse(shouldScheduleCapture(true))
 
         val previous = RecentCapture(fingerprint = 42, capturedAtMillis = 1_000)
         assertTrue(shouldDebounceCapture(previous, fingerprint = 42, nowMillis = 1_500))
@@ -70,11 +72,14 @@ class BillSyncAccessibilityServiceHealthTest {
         shadowOf(root).addChild(node("safe"))
         shadowOf(root).addChild(node("password").apply { isPassword = true })
         shadowOf(root).addChild(node("editable").apply { isEditable = true })
-        shadowOf(root).addChild(node("hidden").apply { isVisibleToUser = false })
+        val hiddenContainer = node("hidden").apply { isVisibleToUser = false }
+        shadowOf(hiddenContainer).addChild(node("visible descendant"))
+        shadowOf(root).addChild(hiddenContainer)
+        shadowOf(root).addChild(node().apply { stateDescription = "semantic state" })
 
         val text = root.collectReadableText()
 
-        assertEquals("root\nsafe", text)
+        assertEquals("root\nsafe\nsemantic state\nvisible descendant", text)
 
         val wideRoot = node("root")
         repeat(MAX_CAPTURE_NODES) { shadowOf(wideRoot).addChild(node("child-$it")) }
@@ -95,6 +100,13 @@ class BillSyncAccessibilityServiceHealthTest {
         val textRoot = node()
         repeat(40) { shadowOf(textRoot).addChild(node("$it-" + "x".repeat(1_000))) }
         assertTrue(textRoot.collectReadableText().length <= MAX_CAPTURE_CHARACTERS)
+
+        val breadthFirstRoot = node()
+        val denseFirstBranch = node()
+        repeat(MAX_CAPTURE_NODES) { shadowOf(denseFirstBranch).addChild(node("decoy-$it")) }
+        shadowOf(breadthFirstRoot).addChild(denseFirstBranch)
+        shadowOf(breadthFirstRoot).addChild(node().apply { contentDescription = "支付成功￥4.99" })
+        assertTrue(breadthFirstRoot.collectReadableText().contains("支付成功￥4.99"))
     }
 
     @Suppress("DEPRECATION")

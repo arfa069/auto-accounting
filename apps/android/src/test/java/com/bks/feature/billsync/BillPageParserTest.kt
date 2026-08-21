@@ -28,7 +28,12 @@ class BillPageParserTest {
 
     @Test
     fun repeatedSameAmountIsNotAmbiguous() {
-        assertEquals(1, parse("付款成功\n金额 ¥8.80\n实付 ¥8.80\n订单 123").size)
+        assertEquals(
+            1,
+            parse(
+                "支付成功￥4.99\n支付成功\n4.99\n中国电信\n￥4.99\n交易方式\n花呗\n完成"
+            ).size
+        )
     }
 
     @Test

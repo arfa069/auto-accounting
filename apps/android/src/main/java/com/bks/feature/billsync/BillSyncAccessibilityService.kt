@@ -1,5 +1,6 @@
 package com.bks.feature.billsync
 
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.bks.data.local.BksDatabaseProvider
@@ -51,25 +52,43 @@ class BillSyncAccessibilityService : AssistsService() {
 
     private fun scheduleCapture(event: AccessibilityEvent) {
         if (!isAutomaticCaptureEvent(event.eventType)) return
-        val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank) ?: return
-        if (!shouldCapturePackage(eventPackage, packageName)) return
+        val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank)
         val eventWindowId = event.windowId
-        pendingCapture?.cancel()
+        if (!shouldScheduleCapture(pendingCapture?.isActive == true)) return
         pendingCapture = serviceScope.launch {
-            delay(CAPTURE_SETTLE_MILLIS)
-            if (!preferencesRepository.userPreferences.first().automaticBookkeepingEnabled) return@launch
-            val root = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
-                .firstOrNull { it.packageName?.toString() == eventPackage }
-                ?: return@launch
-            if (eventWindowId >= 0 && root.windowId != eventWindowId) return@launch
-            val pageText = root.collectReadableText()
-            if (pageText.isBlank()) return@launch
-            val now = System.currentTimeMillis()
-            val fingerprint = pageText.hashCode()
-            if (shouldDebounceCapture(recentCaptures[eventPackage], fingerprint, now)) return@launch
-            val result = withContext(Dispatchers.IO) { processor.process(pageText) }
-            if (result.recognized) recentCaptures[eventPackage] = RecentCapture(fingerprint, now)
+            captureAfterSettle(eventPackage, eventWindowId)
         }
+    }
+
+    private suspend fun captureAfterSettle(triggerPackage: String?, triggerWindowId: Int) {
+        delay(CAPTURE_SETTLE_MILLIS)
+        val enabled = preferencesRepository.userPreferences.first().automaticBookkeepingEnabled
+        if (!enabled) return
+
+        val activeRoots = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
+        val activeRoot = activeRoots.firstOrNull()
+        val allRoots = if (activeRoot == null) {
+            AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.AllWindows)
+        } else {
+            emptyList()
+        }
+        val root = activeRoot
+            ?: allRoots.firstOrNull { it.windowId == triggerWindowId }
+            ?: triggerPackage?.let { expected ->
+                allRoots.firstOrNull { it.packageName?.toString() == expected }
+            }
+            ?: return
+        val activePackage = root.packageName?.toString()?.takeIf(String::isNotBlank)
+            ?: return
+        if (!shouldCapturePackage(activePackage, packageName)) return
+
+        val pageText = root.collectReadableText()
+        if (pageText.isBlank()) return
+        val now = System.currentTimeMillis()
+        val fingerprint = pageText.hashCode()
+        if (shouldDebounceCapture(recentCaptures[activePackage], fingerprint, now)) return
+        val result = withContext(Dispatchers.IO) { processor.process(pageText) }
+        if (result.recognized) recentCaptures[activePackage] = RecentCapture(fingerprint, now)
     }
 
     override fun onInterrupt() {
@@ -91,6 +110,8 @@ internal fun isAutomaticCaptureEvent(eventType: Int): Boolean = eventType in AUT
 
 internal fun shouldCapturePackage(eventPackage: String, ownPackage: String): Boolean =
     eventPackage.isNotBlank() && eventPackage != ownPackage
+
+internal fun shouldScheduleCapture(pendingIsActive: Boolean): Boolean = !pendingIsActive
 
 internal fun shouldDebounceCapture(
     previous: RecentCapture?,
@@ -114,17 +135,27 @@ internal fun AccessibilityNodeInfo.collectReadableText(): String {
         collectedCharacters += addedCharacters
     }
 
-    fun visit(node: AccessibilityNodeInfo, depth: Int) {
-        if (visitedNodes >= MAX_CAPTURE_NODES || depth > MAX_CAPTURE_DEPTH) return
-        if (!node.isVisibleToUser || node.isPassword || node.isEditable) return
+    val pendingNodes = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+    pendingNodes.add(this to 0)
+    while (pendingNodes.isNotEmpty() && visitedNodes < MAX_CAPTURE_NODES) {
+        val (node, depth) = pendingNodes.removeFirst()
         visitedNodes += 1
-        add(node.text)
-        add(node.contentDescription)
-        if (depth == MAX_CAPTURE_DEPTH || collectedCharacters >= MAX_CAPTURE_CHARACTERS) return
-        repeat(node.childCount) { index -> node.getChild(index)?.let { visit(it, depth + 1) } }
+        if (node.isPassword || node.isEditable) continue
+        if (node.isVisibleToUser) {
+            add(node.text)
+            add(node.contentDescription)
+            add(node.hintText)
+            add(node.paneTitle)
+            add(node.tooltipText)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(node.stateDescription)
+        }
+        if (depth == MAX_CAPTURE_DEPTH || collectedCharacters >= MAX_CAPTURE_CHARACTERS) continue
+        for (index in 0 until node.childCount) {
+            if (visitedNodes + pendingNodes.size >= MAX_CAPTURE_NODES) break
+            node.getChild(index)?.let { pendingNodes.add(it to depth + 1) }
+        }
     }
 
-    visit(this, 0)
     return lines.joinToString("\n")
 }
 

@@ -132,6 +132,6 @@ private val REJECTED_STATUS = listOf(
 )
 private val CONTEXT_LABELS = listOf(
     "商户", "收款方", "付款方", "交易对象", "对方", "商品", "订单", "交易单号", "付款方式",
-    "支付方式", "交易时间", "创建时间", "账单"
+    "支付方式", "交易时间", "创建时间", "账单", "交易方式"
 )
 private val MERCHANT_LABELS = listOf("商户", "收款方", "付款方", "交易对象", "对方", "商品")
