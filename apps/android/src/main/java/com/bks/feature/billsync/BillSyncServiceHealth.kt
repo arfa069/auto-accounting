@@ -34,9 +34,7 @@ object BillSyncServiceHealth {
         preferences(context).unregisterOnSharedPreferenceChangeListener(listener)
     }
 
-    private fun preferences(context: Context): SharedPreferences = context.applicationContext
-        .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-
+    private fun preferences(context: Context): SharedPreferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private const val PREFERENCES_NAME = "bill_sync_service_health"
     private const val SERVICE_CONNECTED_KEY = "service_connected"
 }
