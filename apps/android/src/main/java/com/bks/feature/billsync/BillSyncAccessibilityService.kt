@@ -1,8 +1,10 @@
 package com.bks.feature.billsync
 
 import android.os.Build
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.bks.BuildConfig
 import com.bks.data.local.BksDatabaseProvider
 import com.bks.data.local.LocalLedgerRepository
 import com.bks.data.local.LocalPreferencesRepository
@@ -10,6 +12,7 @@ import com.bks.feature.review.ReviewQueuePersistence
 import com.ven.assists.AssistsCore
 import com.ven.assists.service.AssistsService
 import com.ven.assists.service.AssistsServiceListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,43 +54,84 @@ class BillSyncAccessibilityService : AssistsService() {
     }
 
     private fun scheduleCapture(event: AccessibilityEvent) {
-        if (!isAutomaticCaptureEvent(event.eventType)) return
+        captureDebug { "event type=${event.eventType} package=${event.packageName} window=${event.windowId}" }
+        if (!isAutomaticCaptureEvent(event.eventType)) {
+            captureDebug { "ignored reason=event_type" }
+            return
+        }
         val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank)
         val eventWindowId = event.windowId
-        if (!shouldScheduleCapture(pendingCapture?.isActive == true)) return
+        if (!shouldScheduleCapture(pendingCapture?.isActive == true)) {
+            captureDebug { "ignored reason=capture_pending triggerPackage=$eventPackage" }
+            return
+        }
+        captureDebug { "scheduled triggerPackage=$eventPackage window=$eventWindowId delayMs=$CAPTURE_SETTLE_MILLIS" }
         pendingCapture = serviceScope.launch {
-            captureAfterSettle(eventPackage, eventWindowId)
+            try {
+                captureAfterSettle(eventPackage, eventWindowId)
+            } catch (error: CancellationException) {
+                captureDebug { "cancelled triggerPackage=$eventPackage window=$eventWindowId" }
+                throw error
+            } catch (error: Throwable) {
+                captureError("failed triggerPackage=$eventPackage window=$eventWindowId", error)
+            }
         }
     }
 
     private suspend fun captureAfterSettle(triggerPackage: String?, triggerWindowId: Int) {
         delay(CAPTURE_SETTLE_MILLIS)
         val enabled = preferencesRepository.userPreferences.first().automaticBookkeepingEnabled
+        captureDebug { "settled triggerPackage=$triggerPackage window=$triggerWindowId enabled=$enabled" }
         if (!enabled) return
 
         val activeRoots = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
         val activeRoot = activeRoots.firstOrNull()
-        val allRoots = if (activeRoot == null) {
+        val allRoots = if (activeRoot == null || isCaptureDebugEnabled()) {
             AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.AllWindows)
         } else {
             emptyList()
+        }
+        captureDebug {
+            "roots active=${activeRoots.rootSummary()} all=${allRoots.rootSummary()} " +
+                "triggerPackage=$triggerPackage triggerWindow=$triggerWindowId"
         }
         val root = activeRoot
             ?: allRoots.firstOrNull { it.windowId == triggerWindowId }
             ?: triggerPackage?.let { expected ->
                 allRoots.firstOrNull { it.packageName?.toString() == expected }
             }
-            ?: return
+        if (root == null) {
+            captureDebug { "ignored reason=root_not_found triggerPackage=$triggerPackage" }
+            return
+        }
         val activePackage = root.packageName?.toString()?.takeIf(String::isNotBlank)
-            ?: return
-        if (!shouldCapturePackage(activePackage, packageName)) return
+        if (activePackage == null) {
+            captureDebug { "ignored reason=active_package_missing window=${root.windowId}" }
+            return
+        }
+        if (!shouldCapturePackage(activePackage, packageName)) {
+            captureDebug { "ignored reason=own_package package=$activePackage" }
+            return
+        }
 
         val pageText = root.collectReadableText()
-        if (pageText.isBlank()) return
-        val now = System.currentTimeMillis()
         val fingerprint = pageText.hashCode()
-        if (shouldDebounceCapture(recentCaptures[activePackage], fingerprint, now)) return
+        captureDebug {
+            "collected package=$activePackage window=${root.windowId} lines=${pageText.lineSequence().count()} " +
+                "chars=${pageText.length} fingerprint=$fingerprint"
+        }
+        captureDebugPageText(pageText)
+        if (pageText.isBlank()) {
+            captureDebug { "ignored reason=blank_page" }
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (shouldDebounceCapture(recentCaptures[activePackage], fingerprint, now)) {
+            captureDebug { "ignored reason=debounced fingerprint=$fingerprint" }
+            return
+        }
         val result = withContext(Dispatchers.IO) { processor.process(pageText) }
+        captureDebug { "processed recognized=${result.recognized} created=${result.createdEntries.size}" }
         if (result.recognized) recentCaptures[activePackage] = RecentCapture(fingerprint, now)
     }
 
@@ -169,3 +213,30 @@ internal const val CAPTURE_DEBOUNCE_MILLIS = 30_000L
 internal const val MAX_CAPTURE_NODES = 512
 internal const val MAX_CAPTURE_DEPTH = 24
 internal const val MAX_CAPTURE_CHARACTERS = 16 * 1024
+
+private const val CAPTURE_DEBUG_TAG = "BillSyncCapture"
+private const val CAPTURE_DEBUG_CHUNK_SIZE = 3_000
+
+private fun isCaptureDebugEnabled(): Boolean =
+    BuildConfig.DEBUG && Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)
+
+private inline fun captureDebug(message: () -> String) {
+    if (isCaptureDebugEnabled()) Log.d(CAPTURE_DEBUG_TAG, message())
+}
+
+private fun captureDebugPageText(pageText: String) {
+    if (!isCaptureDebugEnabled()) return
+    val chunks = pageText.ifEmpty { "<blank>" }.chunked(CAPTURE_DEBUG_CHUNK_SIZE)
+    chunks.forEachIndexed { index, chunk ->
+        Log.d(CAPTURE_DEBUG_TAG, "page ${index + 1}/${chunks.size}:\n$chunk")
+    }
+}
+
+private fun captureError(message: String, error: Throwable) {
+    if (BuildConfig.DEBUG) Log.e(CAPTURE_DEBUG_TAG, message, error)
+}
+
+private fun List<AccessibilityNodeInfo>.rootSummary(): String =
+    joinToString(prefix = "[", postfix = "]") { root ->
+        "${root.packageName}/${root.windowId}/${root.className}"
+    }
