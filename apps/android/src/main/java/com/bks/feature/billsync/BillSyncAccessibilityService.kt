@@ -2,10 +2,8 @@ package com.bks.feature.billsync
 
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import com.bks.BuildConfig
 import com.bks.data.local.BksDatabaseProvider
 import com.bks.data.local.LocalLedgerRepository
 import com.bks.data.local.LocalPreferencesRepository
@@ -54,14 +52,14 @@ class BillSyncAccessibilityService : AssistsService() {
         try {
             captureCurrentWindow(event)
         } catch (error: Throwable) {
-            captureFailed(event.packageName?.toString(), event.windowId, error)
+            BillSyncCaptureLog.failed(event.packageName?.toString(), event.windowId, error)
         }
     }
 
     private fun captureCurrentWindow(event: AccessibilityEvent) {
-        captureEvent(event)
+        BillSyncCaptureLog.event(event)
         val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank)
-        captureStarted(eventPackage, event.windowId, automaticBookkeepingEnabled)
+        BillSyncCaptureLog.capture(eventPackage, event.windowId, automaticBookkeepingEnabled)
         if (!automaticBookkeepingEnabled || eventPackage == packageName) return
 
         val allRoots = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.AllWindows)
@@ -72,27 +70,27 @@ class BillSyncAccessibilityService : AssistsService() {
             emptyList()
         }
         val root = eventRoot ?: activeRoots.firstOrNull()
-        captureRoots(allRoots, activeRoots, root, eventPackage, event.windowId)
+        BillSyncCaptureLog.roots(allRoots, activeRoots, root, eventPackage, event.windowId)
         if (root == null) {
-            captureIgnored("root_missing")
+            BillSyncCaptureLog.ignored("root_missing")
             return
         }
         val activePackage = root.packageName?.toString().orEmpty()
         if (activePackage == packageName) {
-            captureIgnored("own_package", "package=$activePackage")
+            BillSyncCaptureLog.ignored("own_package", "package=$activePackage")
             return
         }
 
         val pageText = root.collectReadableText()
-        captureCollected(activePackage, root.windowId, pageText)
+        BillSyncCaptureLog.collected(activePackage, root.windowId, pageText)
         val recognized = processor.recognize(pageText)
         if (!recognized.recognized) {
             acceptedWindows.release(activePackage, root.windowId)
-            captureProcessed(recognized = false, createdEntries = 0)
+            BillSyncCaptureLog.processed(recognized = false, createdEntries = 0)
             return
         }
         if (!acceptedWindows.acceptIfNew(activePackage, root.windowId)) {
-            captureIgnored(
+            BillSyncCaptureLog.ignored(
                 "already_captured_window",
                 "package=$activePackage window=${root.windowId}"
             )
@@ -101,12 +99,12 @@ class BillSyncAccessibilityService : AssistsService() {
         serviceScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) { processor.persist(recognized) }
-                captureProcessed(recognized = true, createdEntries = result.createdEntries.size)
+                BillSyncCaptureLog.processed(recognized = true, createdEntries = result.createdEntries.size)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
                 acceptedWindows.release(activePackage, root.windowId)
-                captureFailed(activePackage, root.windowId, error)
+                BillSyncCaptureLog.failed(activePackage, root.windowId, error)
             }
         }
     }
@@ -185,67 +183,3 @@ internal fun AccessibilityNodeInfo.collectReadableText(): String {
 internal const val MAX_CAPTURE_NODES = 512
 internal const val MAX_CAPTURE_DEPTH = 24
 internal const val MAX_CAPTURE_CHARACTERS = 16 * 1024
-
-private fun captureEvent(event: AccessibilityEvent) = captureDebug {
-    "event type=${event.eventType} package=${event.packageName} window=${event.windowId}"
-}
-
-private fun captureStarted(packageName: String?, windowId: Int, enabled: Boolean) = captureDebug {
-    "capture triggerPackage=$packageName window=$windowId enabled=$enabled"
-}
-
-private fun captureRoots(
-    allRoots: List<AccessibilityNodeInfo>,
-    activeRoots: List<AccessibilityNodeInfo>,
-    selectedRoot: AccessibilityNodeInfo?,
-    triggerPackage: String?,
-    triggerWindowId: Int
-) = captureDebug {
-    "roots all=${allRoots.rootSummary()} active=${activeRoots.rootSummary()} " +
-        "selected=${selectedRoot?.let { "${it.packageName}/${it.windowId}" }} " +
-        "triggerPackage=$triggerPackage triggerWindow=$triggerWindowId"
-}
-
-private fun captureIgnored(reason: String, details: String? = null) = captureDebug {
-    "ignored reason=$reason${details?.let { " $it" }.orEmpty()}"
-}
-
-private fun captureCollected(packageName: String, windowId: Int, pageText: String) {
-    captureDebug {
-        "collected package=$packageName window=$windowId lines=${pageText.lineSequence().count()} " +
-            "chars=${pageText.length}"
-    }
-    captureDebugPageText(pageText)
-}
-
-private fun captureProcessed(recognized: Boolean, createdEntries: Int) = captureDebug {
-    "processed recognized=$recognized created=$createdEntries"
-}
-
-private inline fun captureDebug(message: () -> String) {
-    if (BuildConfig.DEBUG && Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)) {
-        Log.d(CAPTURE_DEBUG_TAG, message())
-    }
-}
-
-private fun captureDebugPageText(pageText: String) {
-    if (!BuildConfig.DEBUG || !Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)) return
-    val chunks = pageText.ifEmpty { "<blank>" }.chunked(CAPTURE_DEBUG_CHUNK_SIZE)
-    chunks.forEachIndexed { index, chunk ->
-        Log.d(CAPTURE_DEBUG_TAG, "page ${index + 1}/${chunks.size}:\n$chunk")
-    }
-}
-
-private fun captureFailed(packageName: String?, windowId: Int, error: Throwable) {
-    if (BuildConfig.DEBUG) {
-        Log.e(CAPTURE_DEBUG_TAG, "failed package=$packageName window=$windowId", error)
-    }
-}
-
-private fun List<AccessibilityNodeInfo>.rootSummary(): String =
-    joinToString(prefix = "[", postfix = "]") { root ->
-        "${root.packageName}/${root.windowId}/${root.className}"
-    }
-
-private const val CAPTURE_DEBUG_TAG = "BillSyncCapture"
-private const val CAPTURE_DEBUG_CHUNK_SIZE = 3_000
