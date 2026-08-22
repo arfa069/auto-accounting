@@ -1,12 +1,13 @@
 package com.bks.feature.billsync
 
 import android.content.Context
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ApplicationProvider
-import com.ven.assists.service.AssistsService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,36 +35,44 @@ class BillSyncAccessibilityServiceHealthTest {
         service.onInterrupt()
 
         assertTrue(BillSyncServiceHealth.isServiceConnected(context))
-        assertTrue(AssistsService.listeners.any { it === serviceListener(service) })
+        assertEquals(
+            BillSyncAccessibilityService::class.java,
+            BillSyncAccessibilityService::class.java
+                .getMethod("onAccessibilityEvent", AccessibilityEvent::class.java)
+                .declaringClass
+        )
+
+        service.onUnbind(Intent())
+        assertFalse(BillSyncServiceHealth.isServiceConnected(context))
 
         controller.destroy()
         assertFalse(BillSyncServiceHealth.isServiceConnected(context))
-        assertFalse(AssistsService.listeners.any { it === serviceListener(service) })
     }
 
     @Test
-    fun capturePolicyFiltersEventsAndDebouncesSameSnapshot() {
-        assertTrue(isAutomaticCaptureEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED))
-        assertTrue(isAutomaticCaptureEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED))
-        assertTrue(isAutomaticCaptureEvent(AccessibilityEvent.TYPE_WINDOWS_CHANGED))
-        assertFalse(isAutomaticCaptureEvent(AccessibilityEvent.TYPE_VIEW_CLICKED))
-        assertFalse(shouldCapturePackage("com.bks", "com.bks"))
-        assertFalse(shouldCapturePackage("", "com.bks"))
-        assertTrue(shouldCapturePackage("com.example.pay", "com.bks"))
-        assertTrue(shouldScheduleCapture(false))
-        assertFalse(shouldScheduleCapture(true))
+    fun eventRootSelectionDoesNotFallBackToTheUnrelatedActiveWindow() {
+        val unrelatedActiveRoot = node(packageName = "com.miui.home")
+        val paymentRoot = node(packageName = "com.example.pay")
 
-        val previous = RecentCapture(fingerprint = 42, capturedAtMillis = 1_000)
-        assertTrue(shouldDebounceCapture(previous, fingerprint = 42, nowMillis = 1_500))
-        assertFalse(
-            shouldDebounceCapture(
-                previous,
-                fingerprint = 42,
-                nowMillis = 1_000 + CAPTURE_DEBOUNCE_MILLIS
-            )
+        val selected = selectEventRoot(
+            roots = listOf(unrelatedActiveRoot, paymentRoot),
+            eventPackage = "com.example.pay",
+            eventWindowId = -1
         )
-        assertFalse(shouldDebounceCapture(previous, fingerprint = 7, nowMillis = 1_500))
-        assertEquals(500L, CAPTURE_SETTLE_MILLIS)
+
+        assertSame(paymentRoot, selected)
+    }
+
+    @Test
+    fun acceptedWindowIsReleasedWhenThePageIsNoLongerRecognized() {
+        val memory = AcceptedWindowMemory()
+
+        assertTrue(memory.acceptIfNew("com.example.pay", windowId = 7))
+        assertFalse(memory.acceptIfNew("com.example.pay", windowId = 7))
+
+        memory.release("com.example.pay", windowId = 7)
+
+        assertTrue(memory.acceptIfNew("com.example.pay", windowId = 7))
     }
 
     @Test
@@ -110,14 +119,12 @@ class BillSyncAccessibilityServiceHealthTest {
     }
 
     @Suppress("DEPRECATION")
-    private fun node(text: String = ""): AccessibilityNodeInfo = AccessibilityNodeInfo.obtain().apply {
+    private fun node(
+        text: String = "",
+        packageName: String? = null
+    ): AccessibilityNodeInfo = AccessibilityNodeInfo.obtain().apply {
         isVisibleToUser = true
         this.text = text
+        this.packageName = packageName
     }
-
-    private fun serviceListener(service: BillSyncAccessibilityService): Any = requireNotNull(
-        BillSyncAccessibilityService::class.java.getDeclaredField("listener")
-            .apply { isAccessible = true }
-            .get(service)
-    )
 }

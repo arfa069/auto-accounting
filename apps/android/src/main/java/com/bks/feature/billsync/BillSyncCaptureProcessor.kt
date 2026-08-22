@@ -13,23 +13,28 @@ class BillSyncCaptureProcessor(
     private val clock: () -> Long = System::currentTimeMillis,
     private val captureCoordinator: ReviewQueueCaptureCoordinator = ReviewQueueCaptureCoordinator.Shared
 ) {
-    suspend fun process(pageText: String): BillSyncResult = captureCoordinator.serialize {
-        reviewQueuePersistence.ensureSystemCategories()
-        val previousState = reviewQueuePersistence.observeState().first()
-        val result = pipeline.sync(
-            pageText = pageText,
-            capturedAtEpochMillis = clock()
-        )
-        if (!result.recognized) return@serialize result
+    suspend fun process(pageText: String): BillSyncResult = persist(recognize(pageText))
 
-        val rules = preferencesRepository.categorizationRules.first()
-        val createdEntries = result.createdEntries.map { it.applyCategorizationSuggestion(rules) }
-        if (createdEntries.isNotEmpty()) {
-            val nextState = previousState.copy(
-                pendingEntries = createdEntries + previousState.pendingEntries
-            )
-            reviewQueuePersistence.persistTransition(previousState, nextState)
+    internal fun recognize(pageText: String): BillSyncResult = pipeline.sync(
+        pageText = pageText,
+        capturedAtEpochMillis = clock()
+    )
+
+    internal suspend fun persist(result: BillSyncResult): BillSyncResult {
+        if (!result.recognized) return result
+
+        return captureCoordinator.serialize {
+            reviewQueuePersistence.ensureSystemCategories()
+            val previousState = reviewQueuePersistence.observeState().first()
+            val rules = preferencesRepository.categorizationRules.first()
+            val createdEntries = result.createdEntries.map { it.applyCategorizationSuggestion(rules) }
+            if (createdEntries.isNotEmpty()) {
+                val nextState = previousState.copy(
+                    pendingEntries = createdEntries + previousState.pendingEntries
+                )
+                reviewQueuePersistence.persistTransition(previousState, nextState)
+            }
+            result.copy(createdEntries = createdEntries)
         }
-        result.copy(createdEntries = createdEntries)
     }
 }

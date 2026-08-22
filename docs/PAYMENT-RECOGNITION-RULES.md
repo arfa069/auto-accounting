@@ -5,10 +5,10 @@
 ## 1. 采集边界
 
 - 用户必须先开启自动记账；开关默认关闭，与无障碍授权和服务连接状态分别保存与展示。
-- `AssistsService` 只接收窗口状态、窗口内容和窗口集合变化事件，等待 500 ms 后复核活动窗口包名与窗口 ID。
+- `AssistsService` 接收全部无障碍事件，并立即读取当前活动窗口。
 - 排除 BKS 自身。只读取当前活动窗口中可见、非密码、非可编辑节点的文字，最多 512 个节点、24 层和 16 KiB。
 - 不点击、不滚动、不启动其他应用、不截图、不执行 OCR。
-- 相同包名和页面指纹在 30 秒内不重复处理；跨进程和历史记录去重继续由现有 Pipeline 完成。
+- 同一包名、窗口 ID 和页面指纹成功创建后，在该窗口显示其他页面前不重复处理；不查询或合并待确认候选和历史记录。
 
 ## 2. 同时满足的准入条件
 
@@ -43,13 +43,13 @@
 - 资金账户为空，不自动创建或选择账户。
 - 原始证据文本为空，仅保存金额、方向、商户/回退标题、时间和规范化解析字段。
 
-候选经现有本地分类、去重和 `ReviewQueuePersistence` 进入待确认队列。用户确认前不会写入账本。
+候选经现有本地分类和 `ReviewQueuePersistence` 进入待确认队列。用户确认前不会写入账本。
 
 ## 5. 实现依据
 
 - 无障碍入口：[`BillSyncAccessibilityService.kt`](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncAccessibilityService.kt)
 - 通用解析：[`BillPageParser.kt`](../apps/android/src/main/java/com/bks/feature/billsync/BillPageParser.kt)
-- 去重与候选生成：[`BillSyncPipeline.kt`](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncPipeline.kt)
+- 候选生成：[`BillSyncPipeline.kt`](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncPipeline.kt)
 - 待确认写入：[`BillSyncCaptureProcessor.kt`](../apps/android/src/main/java/com/bks/feature/billsync/BillSyncCaptureProcessor.kt)
 
 历史 `PaymentSource.WECHAT`、`PaymentSource.ALIPAY`、通知捕获和账单同步枚举值仅用于读取旧记录，不代表当前识别入口。

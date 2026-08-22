@@ -1,5 +1,6 @@
 package com.bks.feature.billsync
 
+import android.content.Intent
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -11,20 +12,19 @@ import com.bks.data.local.LocalPreferencesRepository
 import com.bks.feature.review.ReviewQueuePersistence
 import com.ven.assists.AssistsCore
 import com.ven.assists.service.AssistsService
-import com.ven.assists.service.AssistsServiceListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class BillSyncAccessibilityService : AssistsService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val acceptedWindows = AcceptedWindowMemory()
+    private var automaticBookkeepingEnabled = false
     private val database by lazy { BksDatabaseProvider.get(this) }
     private val preferencesRepository by lazy { LocalPreferencesRepository(database) }
     private val processor by lazy {
@@ -34,135 +34,114 @@ class BillSyncAccessibilityService : AssistsService() {
             preferencesRepository = preferencesRepository
         )
     }
-    private val recentCaptures = mutableMapOf<String, RecentCapture>()
-    private var pendingCapture: Job? = null
-    private val listener = object : AssistsServiceListener {
-        override fun onAccessibilityEvent(event: AccessibilityEvent) {
-            scheduleCapture(event)
-        }
 
-        override fun onUnbind() {
-            BillSyncServiceHealth.markServiceConnected(this@BillSyncAccessibilityService, false)
+    override fun onCreate() {
+        super.onCreate()
+        serviceScope.launch {
+            preferencesRepository.userPreferences.collect { preferences ->
+                automaticBookkeepingEnabled = preferences.automaticBookkeepingEnabled
+            }
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        AssistsService.listeners.remove(listener)
-        AssistsService.listeners.add(listener)
         BillSyncServiceHealth.markServiceConnected(this, true)
     }
 
-    private fun scheduleCapture(event: AccessibilityEvent) {
-        captureDebug { "event type=${event.eventType} package=${event.packageName} window=${event.windowId}" }
-        if (!isAutomaticCaptureEvent(event.eventType)) {
-            captureDebug { "ignored reason=event_type" }
-            return
-        }
-        val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank)
-        val eventWindowId = event.windowId
-        if (!shouldScheduleCapture(pendingCapture?.isActive == true)) {
-            captureDebug { "ignored reason=capture_pending triggerPackage=$eventPackage" }
-            return
-        }
-        captureDebug { "scheduled triggerPackage=$eventPackage window=$eventWindowId delayMs=$CAPTURE_SETTLE_MILLIS" }
-        pendingCapture = serviceScope.launch {
-            try {
-                captureAfterSettle(eventPackage, eventWindowId)
-            } catch (error: CancellationException) {
-                captureDebug { "cancelled triggerPackage=$eventPackage window=$eventWindowId" }
-                throw error
-            } catch (error: Throwable) {
-                captureError("failed triggerPackage=$eventPackage window=$eventWindowId", error)
-            }
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        super.onAccessibilityEvent(event)
+        try {
+            captureCurrentWindow(event)
+        } catch (error: Throwable) {
+            captureFailed(event.packageName?.toString(), event.windowId, error)
         }
     }
 
-    private suspend fun captureAfterSettle(triggerPackage: String?, triggerWindowId: Int) {
-        delay(CAPTURE_SETTLE_MILLIS)
-        val enabled = preferencesRepository.userPreferences.first().automaticBookkeepingEnabled
-        captureDebug { "settled triggerPackage=$triggerPackage window=$triggerWindowId enabled=$enabled" }
-        if (!enabled) return
+    private fun captureCurrentWindow(event: AccessibilityEvent) {
+        captureEvent(event)
+        val eventPackage = event.packageName?.toString()?.takeIf(String::isNotBlank)
+        captureStarted(eventPackage, event.windowId, automaticBookkeepingEnabled)
+        if (!automaticBookkeepingEnabled || eventPackage == packageName) return
 
-        val activeRoots = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
-        val activeRoot = activeRoots.firstOrNull()
-        val allRoots = if (activeRoot == null || isCaptureDebugEnabled()) {
-            AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.AllWindows)
+        val allRoots = AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.AllWindows)
+        val eventRoot = selectEventRoot(allRoots, eventPackage, event.windowId)
+        val activeRoots = if (eventRoot == null) {
+            AssistsCore.getAccessibilityRootNodes(AssistsCore.NodeLookupScope.ActiveWindow)
         } else {
             emptyList()
         }
-        captureDebug {
-            "roots active=${activeRoots.rootSummary()} all=${allRoots.rootSummary()} " +
-                "triggerPackage=$triggerPackage triggerWindow=$triggerWindowId"
-        }
-        val root = activeRoot
-            ?: allRoots.firstOrNull { it.windowId == triggerWindowId }
-            ?: triggerPackage?.let { expected ->
-                allRoots.firstOrNull { it.packageName?.toString() == expected }
-            }
+        val root = eventRoot ?: activeRoots.firstOrNull()
+        captureRoots(allRoots, activeRoots, root, eventPackage, event.windowId)
         if (root == null) {
-            captureDebug { "ignored reason=root_not_found triggerPackage=$triggerPackage" }
+            captureIgnored("root_missing")
             return
         }
-        val activePackage = root.packageName?.toString()?.takeIf(String::isNotBlank)
-        if (activePackage == null) {
-            captureDebug { "ignored reason=active_package_missing window=${root.windowId}" }
-            return
-        }
-        if (!shouldCapturePackage(activePackage, packageName)) {
-            captureDebug { "ignored reason=own_package package=$activePackage" }
+        val activePackage = root.packageName?.toString().orEmpty()
+        if (activePackage == packageName) {
+            captureIgnored("own_package", "package=$activePackage")
             return
         }
 
         val pageText = root.collectReadableText()
-        val fingerprint = pageText.hashCode()
-        captureDebug {
-            "collected package=$activePackage window=${root.windowId} lines=${pageText.lineSequence().count()} " +
-                "chars=${pageText.length} fingerprint=$fingerprint"
-        }
-        captureDebugPageText(pageText)
-        if (pageText.isBlank()) {
-            captureDebug { "ignored reason=blank_page" }
+        captureCollected(activePackage, root.windowId, pageText)
+        val recognized = processor.recognize(pageText)
+        if (!recognized.recognized) {
+            acceptedWindows.release(activePackage, root.windowId)
+            captureProcessed(recognized = false, createdEntries = 0)
             return
         }
-        val now = System.currentTimeMillis()
-        if (shouldDebounceCapture(recentCaptures[activePackage], fingerprint, now)) {
-            captureDebug { "ignored reason=debounced fingerprint=$fingerprint" }
+        if (!acceptedWindows.acceptIfNew(activePackage, root.windowId)) {
+            captureIgnored(
+                "already_captured_window",
+                "package=$activePackage window=${root.windowId}"
+            )
             return
         }
-        val result = withContext(Dispatchers.IO) { processor.process(pageText) }
-        captureDebug { "processed recognized=${result.recognized} created=${result.createdEntries.size}" }
-        if (result.recognized) recentCaptures[activePackage] = RecentCapture(fingerprint, now)
+        serviceScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { processor.persist(recognized) }
+                captureProcessed(recognized = true, createdEntries = result.createdEntries.size)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                acceptedWindows.release(activePackage, root.windowId)
+                captureFailed(activePackage, root.windowId, error)
+            }
+        }
     }
 
-    override fun onInterrupt() {
-        super.onInterrupt()
+    override fun onUnbind(intent: Intent?): Boolean {
+        BillSyncServiceHealth.markServiceConnected(this, false)
+        return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        AssistsService.listeners.remove(listener)
-        pendingCapture?.cancel()
         serviceScope.cancel()
         BillSyncServiceHealth.markServiceConnected(this, false)
         super.onDestroy()
     }
 }
 
-internal data class RecentCapture(val fingerprint: Int, val capturedAtMillis: Long)
+internal fun selectEventRoot(
+    roots: List<AccessibilityNodeInfo>,
+    eventPackage: String?,
+    eventWindowId: Int
+): AccessibilityNodeInfo? = roots
+    .firstOrNull { eventWindowId >= 0 && it.windowId == eventWindowId }
+    ?: eventPackage?.let { expected ->
+        roots.firstOrNull { it.packageName?.toString() == expected }
+    }
 
-internal fun isAutomaticCaptureEvent(eventType: Int): Boolean = eventType in AUTOMATIC_CAPTURE_EVENT_TYPES
+internal class AcceptedWindowMemory {
+    private val accepted = mutableSetOf<Pair<String, Int>>()
 
-internal fun shouldCapturePackage(eventPackage: String, ownPackage: String): Boolean =
-    eventPackage.isNotBlank() && eventPackage != ownPackage
+    fun acceptIfNew(packageName: String, windowId: Int): Boolean = accepted.add(packageName to windowId)
 
-internal fun shouldScheduleCapture(pendingIsActive: Boolean): Boolean = !pendingIsActive
-
-internal fun shouldDebounceCapture(
-    previous: RecentCapture?,
-    fingerprint: Int,
-    nowMillis: Long
-): Boolean = previous?.fingerprint == fingerprint &&
-    nowMillis - previous.capturedAtMillis < CAPTURE_DEBOUNCE_MILLIS
+    fun release(packageName: String, windowId: Int) {
+        accepted.remove(packageName to windowId)
+    }
+}
 
 @Suppress("CyclomaticComplexMethod")
 internal fun AccessibilityNodeInfo.collectReadableText(): String {
@@ -203,40 +182,70 @@ internal fun AccessibilityNodeInfo.collectReadableText(): String {
     return lines.joinToString("\n")
 }
 
-private val AUTOMATIC_CAPTURE_EVENT_TYPES = setOf(
-    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-    AccessibilityEvent.TYPE_WINDOWS_CHANGED
-)
-internal const val CAPTURE_SETTLE_MILLIS = 500L
-internal const val CAPTURE_DEBOUNCE_MILLIS = 30_000L
 internal const val MAX_CAPTURE_NODES = 512
 internal const val MAX_CAPTURE_DEPTH = 24
 internal const val MAX_CAPTURE_CHARACTERS = 16 * 1024
 
-private const val CAPTURE_DEBUG_TAG = "BillSyncCapture"
-private const val CAPTURE_DEBUG_CHUNK_SIZE = 3_000
+private fun captureEvent(event: AccessibilityEvent) = captureDebug {
+    "event type=${event.eventType} package=${event.packageName} window=${event.windowId}"
+}
 
-private fun isCaptureDebugEnabled(): Boolean =
-    BuildConfig.DEBUG && Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)
+private fun captureStarted(packageName: String?, windowId: Int, enabled: Boolean) = captureDebug {
+    "capture triggerPackage=$packageName window=$windowId enabled=$enabled"
+}
+
+private fun captureRoots(
+    allRoots: List<AccessibilityNodeInfo>,
+    activeRoots: List<AccessibilityNodeInfo>,
+    selectedRoot: AccessibilityNodeInfo?,
+    triggerPackage: String?,
+    triggerWindowId: Int
+) = captureDebug {
+    "roots all=${allRoots.rootSummary()} active=${activeRoots.rootSummary()} " +
+        "selected=${selectedRoot?.let { "${it.packageName}/${it.windowId}" }} " +
+        "triggerPackage=$triggerPackage triggerWindow=$triggerWindowId"
+}
+
+private fun captureIgnored(reason: String, details: String? = null) = captureDebug {
+    "ignored reason=$reason${details?.let { " $it" }.orEmpty()}"
+}
+
+private fun captureCollected(packageName: String, windowId: Int, pageText: String) {
+    captureDebug {
+        "collected package=$packageName window=$windowId lines=${pageText.lineSequence().count()} " +
+            "chars=${pageText.length}"
+    }
+    captureDebugPageText(pageText)
+}
+
+private fun captureProcessed(recognized: Boolean, createdEntries: Int) = captureDebug {
+    "processed recognized=$recognized created=$createdEntries"
+}
 
 private inline fun captureDebug(message: () -> String) {
-    if (isCaptureDebugEnabled()) Log.d(CAPTURE_DEBUG_TAG, message())
+    if (BuildConfig.DEBUG && Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)) {
+        Log.d(CAPTURE_DEBUG_TAG, message())
+    }
 }
 
 private fun captureDebugPageText(pageText: String) {
-    if (!isCaptureDebugEnabled()) return
+    if (!BuildConfig.DEBUG || !Log.isLoggable(CAPTURE_DEBUG_TAG, Log.DEBUG)) return
     val chunks = pageText.ifEmpty { "<blank>" }.chunked(CAPTURE_DEBUG_CHUNK_SIZE)
     chunks.forEachIndexed { index, chunk ->
         Log.d(CAPTURE_DEBUG_TAG, "page ${index + 1}/${chunks.size}:\n$chunk")
     }
 }
 
-private fun captureError(message: String, error: Throwable) {
-    if (BuildConfig.DEBUG) Log.e(CAPTURE_DEBUG_TAG, message, error)
+private fun captureFailed(packageName: String?, windowId: Int, error: Throwable) {
+    if (BuildConfig.DEBUG) {
+        Log.e(CAPTURE_DEBUG_TAG, "failed package=$packageName window=$windowId", error)
+    }
 }
 
 private fun List<AccessibilityNodeInfo>.rootSummary(): String =
     joinToString(prefix = "[", postfix = "]") { root ->
         "${root.packageName}/${root.windowId}/${root.className}"
     }
+
+private const val CAPTURE_DEBUG_TAG = "BillSyncCapture"
+private const val CAPTURE_DEBUG_CHUNK_SIZE = 3_000

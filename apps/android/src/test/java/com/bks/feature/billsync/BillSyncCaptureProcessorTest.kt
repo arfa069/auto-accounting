@@ -94,10 +94,22 @@ class BillSyncCaptureProcessorTest {
         val page = "支付成功\n¥4.99\n交易方式\n花呗"
 
         repeatedProcessor.process(page)
-        now += 31_000
+        now += 1
         repeatedProcessor.process(page)
 
         assertEquals(2, database.pendingEntryDao().listPendingEntries().size)
+    }
+
+    @Test
+    fun recognitionDoesNotPersistUntilExplicitlyRequested() = runBlocking {
+        val recognized = processor.recognize("支付成功\n¥5.99\n交易方式\n花呗")
+
+        assertTrue(recognized.recognized)
+        assertTrue(database.pendingEntryDao().listPendingEntries().isEmpty())
+
+        processor.persist(recognized)
+
+        assertEquals(1, database.pendingEntryDao().listPendingEntries().size)
     }
 
     private companion object {
